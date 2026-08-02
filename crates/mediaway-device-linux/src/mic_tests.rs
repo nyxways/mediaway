@@ -8,7 +8,8 @@
 
 use super::*;
 use mediaway_common::{Rational, SampleFormat};
-use mediaway_device::{AudioCaptureConfig, Select};
+use mediaway_device::Select;
+use mediaway_device_audio::AudioCaptureConfig;
 
 #[test]
 fn usable_pcm_len_rejects_zero_channels() {
@@ -33,26 +34,9 @@ fn usable_pcm_len_exact_multiple_is_unchanged() {
 }
 
 #[test]
-fn non_microphone_source_is_unsupported() {
-    let cfg = AudioCaptureConfig {
-        source: mediaway_device::AudioCaptureSource::Loopback {
-            select: Select::Default,
-        },
-        time_base: Rational::new(1, 48_000),
-        sample_format: SampleFormat::F32,
-    };
-    assert!(matches!(
-        LinuxMicrophoneCapture::open(&cfg),
-        Err(CaptureError::Unsupported)
-    ));
-}
-
-#[test]
 fn non_default_select_is_unsupported() {
     let cfg = AudioCaptureConfig {
-        source: mediaway_device::AudioCaptureSource::Microphone {
-            select: Select::NameContains("nonexistent".to_owned()),
-        },
+        select: Select::NameContains("nonexistent".to_owned()),
         time_base: Rational::new(1, 48_000),
         sample_format: SampleFormat::F32,
     };
@@ -65,9 +49,7 @@ fn non_default_select_is_unsupported() {
 #[test]
 fn non_float_sample_format_is_unsupported() {
     let cfg = AudioCaptureConfig {
-        source: mediaway_device::AudioCaptureSource::Microphone {
-            select: Select::Default,
-        },
+        select: Select::Default,
         time_base: Rational::new(1, 48_000),
         sample_format: SampleFormat::S16,
     };
@@ -80,9 +62,7 @@ fn non_float_sample_format_is_unsupported() {
 #[test]
 fn zero_denominator_time_base_is_invalid_input() {
     let cfg = AudioCaptureConfig {
-        source: mediaway_device::AudioCaptureSource::Microphone {
-            select: Select::Default,
-        },
+        select: Select::Default,
         time_base: Rational::new(1, 0),
         sample_format: SampleFormat::F32,
     };

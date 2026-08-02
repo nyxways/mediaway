@@ -3,7 +3,7 @@
 //! [`LinuxCameraCapture::open`] enumerates `/dev/video*` nodes that report
 //! `V4L2_CAP_VIDEO_CAPTURE` (`VIDIOC_QUERYCAP`, filtering out
 //! metadata-capture-only sibling nodes many UVC webcams also expose),
-//! activates the node at [`CaptureSource::Camera`]'s ordinal index, and
+//! activates the node at [`CameraCaptureConfig`]'s `select` ordinal index, and
 //! negotiates a raw pixel format the driver already advertises via
 //! `VIDIOC_ENUM_FMT` — preferring `YUYV` (the most common raw output of real
 //! UVC webcams), then `NV12`, then `YU12` (planar I420). Unlike the Windows
@@ -40,9 +40,8 @@ use mediaway_common::{
     Bytes, CodecKind, PixelFormat, Rational, StreamInfo, VideoFrame, VideoFrameStorage,
     VideoGeometry,
 };
-use mediaway_device::{
-    CaptureError, CaptureOutputPreference, CaptureSource, Select, VideoCapture, VideoCaptureConfig,
-};
+use mediaway_device::{CaptureError, Select};
+use mediaway_device_camera::{CameraCapture, CameraCaptureConfig, CaptureOutputPreference};
 use v4l::buffer::Type as V4lBufferType;
 use v4l::capability::Flags as V4lCapabilityFlags;
 use v4l::io::mmap::Stream as MmapStream;
@@ -95,10 +94,10 @@ impl LinuxCameraCapture {
     ///
     /// # Errors
     ///
-    /// Returns [`CaptureError::Unsupported`] for non-camera sources, a
-    /// non-`Select::Default` selection (`Select::Id`/`Select::NameContains`
-    /// resolution is not implemented for this backend yet — ADR-0005 §
-    /// Deferred), the [`CaptureOutputPreference::ZeroCopyGpu`] preference
+    /// Returns [`CaptureError::Unsupported`] for a non-`Select::Default`
+    /// selection (`Select::Id`/`Select::NameContains` resolution is not
+    /// implemented for this backend yet — ADR-0005 § Deferred), the
+    /// [`CaptureOutputPreference::ZeroCopyGpu`] preference
     /// (not implemented — see module docs), or when the device offers none
     /// of `YUYV`/`NV12`/`YU12`. Returns [`CaptureError::InvalidInput`] when
     /// no capture-capable node exists at ordinal `0`. Returns
@@ -106,11 +105,8 @@ impl LinuxCameraCapture {
     /// `EACCES` (not a member of the `video` group, or restrictive device
     /// permissions). Returns [`CaptureError::Backend`] on other V4L2/ioctl
     /// failures.
-    pub fn open(config: &VideoCaptureConfig) -> Result<Self, CaptureError> {
-        let CaptureSource::Camera { select } = &config.source else {
-            return Err(CaptureError::Unsupported);
-        };
-        if *select != Select::Default {
+    pub fn open(config: &CameraCaptureConfig) -> Result<Self, CaptureError> {
+        if config.select != Select::Default {
             return Err(CaptureError::Unsupported);
         }
         let device = 0usize;
@@ -149,7 +145,7 @@ impl LinuxCameraCapture {
     }
 }
 
-impl VideoCapture for LinuxCameraCapture {
+impl CameraCapture for LinuxCameraCapture {
     fn stream_info(&self) -> &StreamInfo {
         #[allow(
             clippy::option_if_let_else,
@@ -334,7 +330,7 @@ fn open_and_negotiate(
 /// Capture-capable (`V4L2_CAP_VIDEO_CAPTURE`) `/dev/video*` nodes, numerically
 /// ordered by node index (`video0`, `video1`, …, `video10`, not lexical
 /// `video1` < `video10` < `video2`) and ordinal-indexed the same way
-/// [`CaptureSource::Camera`]'s `device` field is. Filters out the
+/// [`CameraCaptureConfig`]'s `select` field is. Filters out the
 /// metadata-capture-only sibling node many UVC webcams also expose
 /// alongside their real capture node — `VIDIOC_QUERYCAP` is the only
 /// reliable way to tell them apart (name/order are not).

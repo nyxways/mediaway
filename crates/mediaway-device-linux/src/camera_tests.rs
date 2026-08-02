@@ -8,7 +8,8 @@
 
 use super::*;
 use mediaway_common::Rational;
-use mediaway_device::{CaptureOutputPreference, CaptureSource, Select, VideoCaptureConfig};
+use mediaway_device::Select;
+use mediaway_device_camera::{CameraCaptureConfig, CaptureOutputPreference};
 
 #[test]
 fn picks_yuyv_when_available() {
@@ -108,11 +109,9 @@ fn bgra8_is_not_a_supported_capture_pack_format() {
 }
 
 #[test]
-fn non_camera_source_is_unsupported() {
-    let cfg = VideoCaptureConfig {
-        source: CaptureSource::Screen {
-            select: Select::Default,
-        },
+fn non_default_select_is_unsupported() {
+    let cfg = CameraCaptureConfig {
+        select: Select::NameContains("nonexistent".to_owned()),
         time_base: Rational::new(1, 30),
         output: CaptureOutputPreference::CpuFramesOk,
         gpu_device: None,
@@ -125,10 +124,8 @@ fn non_camera_source_is_unsupported() {
 
 #[test]
 fn zero_copy_gpu_preference_is_unsupported_this_session() {
-    let cfg = VideoCaptureConfig {
-        source: CaptureSource::Camera {
-            select: Select::Default,
-        },
+    let cfg = CameraCaptureConfig {
+        select: Select::Default,
         time_base: Rational::new(1, 30),
         output: CaptureOutputPreference::ZeroCopyGpu,
         gpu_device: None,
@@ -165,10 +162,8 @@ fn open_camera_capture_frames_or_skip() {
     }
     eprintln!("opening camera 0: {:?}", paths[0]);
 
-    let cfg = VideoCaptureConfig {
-        source: CaptureSource::Camera {
-            select: Select::Default,
-        },
+    let cfg = CameraCaptureConfig {
+        select: Select::Default,
         time_base: Rational::new(1, 30),
         output: CaptureOutputPreference::CpuFramesOk,
         gpu_device: None,

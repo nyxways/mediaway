@@ -7,16 +7,19 @@
 )]
 
 use super::*;
-use mediaway_common::Rational;
-use mediaway_device::{Select, VideoCaptureConfig};
+use mediaway_common::{NativeHandle, Rational};
+use mediaway_device::Select;
+use mediaway_device_desktop::{
+    CaptureOutputPreference, DesktopCaptureSource, DesktopVideoCaptureConfig,
+};
 
 #[test]
 fn non_default_select_is_unsupported() {
     // Pure request-building/validation logic — no D-Bus/portal access: the
     // portal's own picker chooses the monitor interactively, so a
     // non-`Select::Default` selection is rejected before any I/O happens.
-    let cfg = VideoCaptureConfig {
-        source: CaptureSource::Screen {
+    let cfg = DesktopVideoCaptureConfig {
+        source: DesktopCaptureSource::Screen {
             select: Select::NameContains("nonexistent".to_owned()),
         },
         time_base: Rational::new(1, 30),
@@ -32,7 +35,7 @@ fn non_default_select_is_unsupported() {
 #[test]
 fn zero_copy_gpu_preference_is_unsupported_this_session() {
     // Same: rejected before any I/O — see struct rustdoc's Zero-Copy status.
-    let cfg = VideoCaptureConfig::screen(Select::Default, Rational::new(1, 30));
+    let cfg = DesktopVideoCaptureConfig::screen(Select::Default, Rational::new(1, 30));
     assert_eq!(cfg.output, CaptureOutputPreference::ZeroCopyGpu);
     assert!(matches!(
         LinuxScreenCapture::open(&cfg),
@@ -41,11 +44,10 @@ fn zero_copy_gpu_preference_is_unsupported_this_session() {
 }
 
 #[test]
-fn camera_source_is_unsupported() {
-    let cfg = VideoCaptureConfig {
-        source: CaptureSource::Camera {
-            select: Select::Default,
-        },
+fn window_source_is_unsupported() {
+    let window = NativeHandle::new(1).expect("nonzero handle");
+    let cfg = DesktopVideoCaptureConfig {
+        source: DesktopCaptureSource::Window { window },
         time_base: Rational::new(1, 30),
         output: CaptureOutputPreference::CpuFramesOk,
         gpu_device: None,
@@ -65,8 +67,8 @@ fn open_screen_capture_or_skip() {
     // has never observed a real success in this development session; it
     // exists so the real path gets exercised wherever a portal-capable Linux
     // desktop later runs this suite.
-    let cfg = VideoCaptureConfig {
-        source: CaptureSource::Screen {
+    let cfg = DesktopVideoCaptureConfig {
+        source: DesktopCaptureSource::Screen {
             select: Select::Default,
         },
         time_base: Rational::new(1, 30),

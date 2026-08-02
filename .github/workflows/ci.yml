@@ -58,14 +58,19 @@ jobs:
           # Each namespace saves into itself only.
           save-if: true
 
+      - name: Install cargo-nextest (faster parallel test runner)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
 
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-      - name: cargo test
-        run: cargo test --workspace --all-features
+      - name: cargo nextest test
+        run: cargo nextest run --workspace --all-features
 
       - name: sccache stats
         if: always()
@@ -148,8 +153,10 @@ jobs:
       - name: Add wasm32 target
         run: rustup target add wasm32-unknown-unknown
 
-      - name: Install wasm-bindgen-cli
-        run: cargo install wasm-bindgen-cli --version 0.2.126 --locked
+      - name: Install wasm-bindgen-cli (prebuilt binary)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen-cli@0.2.126
 
       - uses: oven-sh/setup-bun@v2
 

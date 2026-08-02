@@ -12,7 +12,10 @@
 
 use ashpd::desktop::screencast::SourceType;
 use mediaway_common::{Bytes, CodecKind, Rational, StreamInfo, VideoFrame, VideoGeometry};
-use mediaway_device::{CaptureError, CaptureSource, VideoCapture, VideoCaptureConfig};
+use mediaway_device::CaptureError;
+use mediaway_device_desktop::{
+    DesktopCaptureSource, DesktopVideoCapture, DesktopVideoCaptureConfig,
+};
 
 use crate::screencast::{self, Session};
 
@@ -30,21 +33,22 @@ impl LinuxWindowCapture {
     /// Open a portal `ScreenCast` (`SourceType::Window`) + `PipeWire` session
     /// for `config`.
     ///
-    /// The [`CaptureSource::Window`] `window` field is **ignored** — like
-    /// `Screen`'s `output_index`, the portal's own picker UI chooses which
+    /// The [`DesktopCaptureSource::Window`] `window` field is **ignored** —
+    /// like `Screen`'s `select`, the portal's own picker UI chooses which
     /// window interactively; there is no programmatic "capture window with
     /// this handle" portal call the way `WGC`'s `CreateForWindow(HWND)` works
-    /// on Windows. Any [`CaptureSource::Window`] value opens the picker.
+    /// on Windows. Any [`DesktopCaptureSource::Window`] value opens the
+    /// picker.
     ///
     /// # Errors
     ///
     /// Returns [`CaptureError::Unsupported`] for non-window sources or
-    /// [`CaptureOutputPreference::ZeroCopyGpu`](mediaway_device::CaptureOutputPreference::ZeroCopyGpu)
+    /// [`CaptureOutputPreference::ZeroCopyGpu`](mediaway_device_desktop::CaptureOutputPreference::ZeroCopyGpu)
     /// (see [`crate::screencast::LinuxScreenCapture`] docs). Returns other
     /// [`CaptureError`] variants when the portal handshake or `PipeWire`
     /// connection fails.
-    pub fn open(config: &VideoCaptureConfig) -> Result<Self, CaptureError> {
-        let CaptureSource::Window { window: _ } = config.source else {
+    pub fn open(config: &DesktopVideoCaptureConfig) -> Result<Self, CaptureError> {
+        let DesktopCaptureSource::Window { window: _ } = &config.source else {
             return Err(CaptureError::Unsupported);
         };
         let session = screencast::open_session(SourceType::Window, "Window", config)?;
@@ -54,7 +58,7 @@ impl LinuxWindowCapture {
     }
 }
 
-impl VideoCapture for LinuxWindowCapture {
+impl DesktopVideoCapture for LinuxWindowCapture {
     fn stream_info(&self) -> &StreamInfo {
         #[allow(
             clippy::option_if_let_else,

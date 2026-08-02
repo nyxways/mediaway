@@ -7,9 +7,13 @@
 //! session, `PipeWire` daemon, or V4L2 device — compile-checked only.
 
 use mediaway_common::{NativeHandle, Rational};
-use mediaway_device::{
-    CaptureError, CaptureOutputPreference, CaptureSource, DeviceKind, PermissionState, Select,
-    Support, Unavailable, VideoCapture, VideoCaptureConfig,
+use mediaway_device::{CaptureError, DeviceKind, PermissionState, Select, Support, Unavailable};
+use mediaway_device_camera::{
+    CameraCapture, CameraCaptureConfig, CaptureOutputPreference as CameraOutputPreference,
+};
+use mediaway_device_desktop::{
+    CaptureOutputPreference as DesktopOutputPreference, DesktopCaptureSource, DesktopVideoCapture,
+    DesktopVideoCaptureConfig,
 };
 
 use crate::camera::{self, LinuxCameraCapture};
@@ -117,12 +121,12 @@ pub fn request_permission(kind: DeviceKind) -> Result<PermissionState, CaptureEr
 }
 
 fn probe_screen_permission() -> Result<PermissionState, CaptureError> {
-    let cfg = VideoCaptureConfig {
-        source: CaptureSource::Screen {
+    let cfg = DesktopVideoCaptureConfig {
+        source: DesktopCaptureSource::Screen {
             select: Select::Default,
         },
         time_base: Rational::new(1, 30),
-        output: CaptureOutputPreference::CpuFramesOk,
+        output: DesktopOutputPreference::CpuFramesOk,
         gpu_device: None,
     };
     match LinuxScreenCapture::open(&cfg) {
@@ -141,10 +145,10 @@ fn probe_window_permission() -> Result<PermissionState, CaptureError> {
     // picker chooses interactively — see that fn's docs); any nonzero handle
     // satisfies the type.
     let window = NativeHandle::new(1).ok_or(CaptureError::InvalidInput)?;
-    let cfg = VideoCaptureConfig {
-        source: CaptureSource::Window { window },
+    let cfg = DesktopVideoCaptureConfig {
+        source: DesktopCaptureSource::Window { window },
         time_base: Rational::new(1, 30),
-        output: CaptureOutputPreference::CpuFramesOk,
+        output: DesktopOutputPreference::CpuFramesOk,
         gpu_device: None,
     };
     match LinuxWindowCapture::open(&cfg) {
@@ -159,12 +163,10 @@ fn probe_window_permission() -> Result<PermissionState, CaptureError> {
 }
 
 fn probe_camera_permission() -> Result<PermissionState, CaptureError> {
-    let cfg = VideoCaptureConfig {
-        source: CaptureSource::Camera {
-            select: Select::Default,
-        },
+    let cfg = CameraCaptureConfig {
+        select: Select::Default,
         time_base: Rational::new(1, 30),
-        output: CaptureOutputPreference::CpuFramesOk,
+        output: CameraOutputPreference::CpuFramesOk,
         gpu_device: None,
     };
     match LinuxCameraCapture::open(&cfg) {

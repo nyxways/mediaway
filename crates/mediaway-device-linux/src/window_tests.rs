@@ -8,12 +8,15 @@
 
 use super::*;
 use mediaway_common::{NativeHandle, Rational};
-use mediaway_device::{CaptureOutputPreference, CaptureSource, Select, VideoCaptureConfig};
+use mediaway_device::Select;
+use mediaway_device_desktop::{
+    CaptureOutputPreference, DesktopCaptureSource, DesktopVideoCaptureConfig,
+};
 
 #[test]
 fn non_window_source_is_unsupported() {
-    let cfg = VideoCaptureConfig {
-        source: CaptureSource::Screen {
+    let cfg = DesktopVideoCaptureConfig {
+        source: DesktopCaptureSource::Screen {
             select: Select::Default,
         },
         time_base: Rational::new(1, 30),
@@ -30,7 +33,7 @@ fn non_window_source_is_unsupported() {
 fn zero_copy_gpu_preference_is_unsupported_this_session() {
     // Same rejection point as `LinuxScreenCapture` — see `screencast::open_session`.
     let window = NativeHandle::new(1).expect("nonzero handle");
-    let cfg = VideoCaptureConfig::window(window, Rational::new(1, 30));
+    let cfg = DesktopVideoCaptureConfig::window(window, Rational::new(1, 30));
     assert_eq!(cfg.output, CaptureOutputPreference::ZeroCopyGpu);
     assert!(matches!(
         LinuxWindowCapture::open(&cfg),
@@ -46,8 +49,8 @@ fn zero_copy_gpu_preference_is_unsupported_this_session() {
 #[test]
 fn open_window_capture_or_skip() {
     let window = NativeHandle::new(1).expect("nonzero handle");
-    let cfg = VideoCaptureConfig {
-        source: CaptureSource::Window { window },
+    let cfg = DesktopVideoCaptureConfig {
+        source: DesktopCaptureSource::Window { window },
         time_base: Rational::new(1, 30),
         output: CaptureOutputPreference::CpuFramesOk,
         gpu_device: None,

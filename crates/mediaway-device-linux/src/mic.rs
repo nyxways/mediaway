@@ -15,7 +15,8 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
 use mediaway_common::{AudioFrame, Bytes, CodecKind, Rational, StreamInfo};
-use mediaway_device::{AudioCapture, AudioCaptureConfig, AudioCaptureSource, CaptureError, Select};
+use mediaway_device::{CaptureError, Select};
+use mediaway_device_audio::{AudioCapture, AudioCaptureConfig};
 use pipewire as pw;
 use pw::properties::properties;
 use pw::spa;
@@ -52,16 +53,13 @@ impl LinuxMicrophoneCapture {
     ///
     /// # Errors
     ///
-    /// Returns [`CaptureError::Unsupported`] for non-microphone sources, a
-    /// non-`Select::Default` selection, or a non-`F32` `sample_format`.
+    /// Returns [`CaptureError::Unsupported`] for a non-`Select::Default`
+    /// selection or a non-`F32` `sample_format`.
     /// Returns [`CaptureError::InvalidInput`] for a zero-denominator time
     /// base. Returns [`CaptureError::Backend`] when the `PipeWire`
     /// connection or stream negotiation fails.
     pub fn open(config: &AudioCaptureConfig) -> Result<Self, CaptureError> {
-        let AudioCaptureSource::Microphone { select } = &config.source else {
-            return Err(CaptureError::Unsupported);
-        };
-        if *select != Select::Default {
+        if config.select != Select::Default {
             return Err(CaptureError::Unsupported);
         }
         if config.sample_format != mediaway_common::SampleFormat::F32 {

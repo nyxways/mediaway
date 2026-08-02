@@ -11,8 +11,9 @@ use mediaway_common::{
     Bytes, CodecKind, PixelFormat, Rational, StreamInfo, VideoFrame, VideoFrameStorage,
     VideoGeometry,
 };
-use mediaway_device::{
-    CaptureError, CaptureOutputPreference, CaptureSource, Select, VideoCapture, VideoCaptureConfig,
+use mediaway_device::{CaptureError, Select};
+use mediaway_device_desktop::{
+    CaptureOutputPreference, DesktopCaptureSource, DesktopVideoCapture, DesktopVideoCaptureConfig,
 };
 use pipewire as pw;
 use pw::properties::properties;
@@ -75,8 +76,8 @@ impl LinuxScreenCapture {
     /// [`CaptureOutputPreference::ZeroCopyGpu`] (see struct docs). Returns
     /// other [`CaptureError`] variants ([`portal::map_ashpd_error`]) when the
     /// portal handshake or `PipeWire` connection fails.
-    pub fn open(config: &VideoCaptureConfig) -> Result<Self, CaptureError> {
-        let CaptureSource::Screen { select } = &config.source else {
+    pub fn open(config: &DesktopVideoCaptureConfig) -> Result<Self, CaptureError> {
+        let DesktopCaptureSource::Screen { select } = &config.source else {
             return Err(CaptureError::Unsupported);
         };
         if *select != Select::Default {
@@ -93,8 +94,8 @@ impl LinuxScreenCapture {
 /// `PipeWire` stream tagged `MEDIA_ROLE => media_role` — the shared plumbing
 /// behind both [`LinuxScreenCapture::open`] and
 /// [`crate::window::LinuxWindowCapture::open`]. Callers validate their own
-/// [`CaptureSource`] variant before calling this (this function itself only
-/// validates [`CaptureOutputPreference`]).
+/// [`DesktopCaptureSource`] variant before calling this (this function
+/// itself only validates [`CaptureOutputPreference`]).
 ///
 /// # Errors
 ///
@@ -106,7 +107,7 @@ impl LinuxScreenCapture {
 pub(crate) fn open_session(
     source_type: SourceType,
     media_role: &'static str,
-    config: &VideoCaptureConfig,
+    config: &DesktopVideoCaptureConfig,
 ) -> Result<Session, CaptureError> {
     if config.output != CaptureOutputPreference::CpuFramesOk {
         return Err(CaptureError::Unsupported);
@@ -153,12 +154,12 @@ pub(crate) fn open_session(
 impl Session {
     /// Stream metadata for a live session — [`LinuxScreenCapture`] and
     /// [`crate::window::LinuxWindowCapture`] both delegate their
-    /// [`VideoCapture::stream_info`] to this once `self.inner` is `Some`.
+    /// [`DesktopVideoCapture::stream_info`] to this once `self.inner` is `Some`.
     pub(crate) const fn stream_info(&self) -> &StreamInfo {
         &self.stream_info
     }
 
-    /// Pop the next queued frame, if any — shared [`VideoCapture::poll_frame`]
+    /// Pop the next queued frame, if any — shared [`DesktopVideoCapture::poll_frame`]
     /// body for both capture kinds. Takes `&self`: the queue is behind an
     /// `Arc<Mutex<_>>`, so popping from it needs no exclusive borrow of
     /// `Session` itself.
@@ -171,7 +172,7 @@ impl Session {
         Ok(q.pop_front())
     }
 
-    /// Signal the worker to quit and join it — shared [`VideoCapture::close`]
+    /// Signal the worker to quit and join it — shared [`DesktopVideoCapture::close`]
     /// body for both capture kinds. Idempotent-safe to call at most once (the
     /// caller `take()`s `Option<Session>` before calling this).
     pub(crate) fn close(&mut self) {
@@ -184,7 +185,7 @@ impl Session {
     }
 }
 
-impl VideoCapture for LinuxScreenCapture {
+impl DesktopVideoCapture for LinuxScreenCapture {
     fn stream_info(&self) -> &StreamInfo {
         #[allow(
             clippy::option_if_let_else,

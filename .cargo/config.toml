@@ -1,0 +1,6 @@
+# wasm32: enable web-sys unstable APIs (WebCodecs: AudioEncoder/VideoEncoder/AudioData/…,
+# WebGPU: Gpu*) — required by mediaway-encoder-web / mediaway-decoder-web / iso-bmff-wasm.
+# Committed (un-ignored in .gitignore) so CI and fresh clones build wasm targets the same
+# way local dev machines do; was the cause of the first CI wasm failure.
+[target.wasm32-unknown-unknown]
+rustflags = ["--cfg=web_sys_unstable_apis"]

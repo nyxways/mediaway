@@ -44,6 +44,10 @@ jobs:
           # Different SCCACHE_GHA_VERSION ⇒ isolated GHA blob namespace (docs: mozilla/sccache GHA.md)
           echo "SCCACHE_GHA_VERSION=mediaway-${MEDIAWAY_CACHE_NS}-v1" >> "$GITHUB_ENV"
 
+      - name: Install Linux system deps (pipewire camera backend)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libpipewire-0.3-dev libspa-0.2-dev
+
       - name: Cache cargo (registry / git / cleaned target)
         uses: Swatinem/rust-cache@v2
         with:

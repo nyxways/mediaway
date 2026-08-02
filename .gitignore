@@ -53,6 +53,7 @@ lcov.info
 # Cargo per-machine overrides (target-dir etc.)
 .cargo/**
 !.cargo/audit.toml
+!.cargo/config.toml
 
 # Local backup
 *.bak

@@ -68,6 +68,13 @@ impl NvencSession {
         let (device, ctx) = device::open_device()?;
         let upload = Dx11Upload::new(&device, ctx, config.width, config.height)?;
 
+        // The `nvenc` crate's `Session::open_dx` unwraps its internal NVENC runtime DLL
+        // load (`nvenc_init()`), so a machine without the NVENC driver panics instead of
+        // returning `Err`. Pre-check the DLL so `open` degrades to
+        // `Err(EncodeError::Backend)` and the `_or_skip_without_hw` tests skip instead.
+        if !nvenc_runtime_available() {
+            return Err(EncodeError::Backend);
+        }
         let session = Session::open_dx(&device).map_err(|_| EncodeError::Backend)?;
         let codecs = session
             .get_encode_codecs()
@@ -351,6 +358,23 @@ fn stream_info_from(config: &VideoEncoderConfig) -> StreamInfo {
             height: config.height,
         },
         extra_data: Bytes::new(),
+    }
+}
+
+/// Whether the NVENC runtime DLL can be loaded — mirrors the `nvenc` crate's `NVENC_DLL`
+/// constant (64-bit host). The crate itself unwraps this load internally, so the probe
+/// here is what keeps [`NvencSession::open`] (and the `_or_skip_without_hw` tests) honest
+/// on machines without the NVENC driver.
+fn nvenc_runtime_available() -> bool {
+    // SAFETY: probes a well-known driver DLL by name; the returned module handle is
+    // dropped immediately (the load itself is all we check). No other effect.
+    unsafe {
+        windows::Win32::System::LibraryLoader::LoadLibraryExW(
+            windows::core::w!("nvEncodeAPI64.dll"),
+            None,
+            windows::Win32::System::LibraryLoader::LOAD_LIBRARY_SEARCH_DEFAULT_DIRS,
+        )
+        .is_ok()
     }
 }
 

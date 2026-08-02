@@ -1,0 +1,5 @@
+# Nextest — Mediaway
+
+# Prefer fixing flakes over retries.
+[profile.default]
+retries = 0

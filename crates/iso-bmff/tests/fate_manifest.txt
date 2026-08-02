@@ -1,0 +1,16 @@
+# Relative paths under a FFmpeg fate-suite root (TARGET_SAMPLES).
+# Columns: path <TAB> mode
+#   oracle_compare — ffprobe stream + demux packet counts must match Mediaway
+#   must_not_panic — robustness only
+# See docs/conventions/testing.md § FATE corpus.
+# Encrypted rows use FATE ClearKey in demux_exceptions (ADR-0011).
+mov/mov-1elist-noctts.mov	oracle_compare
+mov/mov-1elist-1ctts.mov	oracle_compare
+mov/mov-3elist.mov	oracle_compare
+mov/frag_overlap.mp4	oracle_compare
+mov/mov-frag-encrypted.mp4	oracle_compare
+mov/mov-tenc-only-encrypted.mp4	oracle_compare
+mov/mp4-init-nonkeyframe.mp4	oracle_compare
+mov/invalid_elst_entry_count.mov	oracle_compare
+mov/mov_neg_first_pts_discard.mov	oracle_compare
+mov/extended_atom_size_probe	oracle_compare

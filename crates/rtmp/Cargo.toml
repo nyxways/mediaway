@@ -1,0 +1,19 @@
+[package]
+name = "rtmp"
+description = "Sans-IO RTMP publish-client handshake, chunk stream, and AMF0 command mux (freestanding)"
+version.workspace = true
+publish = false # Proposed — see adr/0001-rtmp-freestanding-core.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+bytes = { workspace = true }
+thiserror = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+
+[lints]
+workspace = true

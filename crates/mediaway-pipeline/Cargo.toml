@@ -1,0 +1,55 @@
+[package]
+name = "mediaway-pipeline"
+description = "Convenience pipeline layer — composes encoder + container (+ device capture)"
+version.workspace = true
+publish = true # hardware-verified — see docs/roadmap.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+mediaway-common = { workspace = true }
+mediaway-container = { workspace = true }
+mediaway-encoder = { workspace = true }
+mediaway-decoder = { workspace = true }
+mediaway-device = { workspace = true }
+mediaway-device-desktop = { workspace = true }
+mediaway-device-audio = { workspace = true }
+# AEC3 + NS + AGC2 + RNN VAD, wired into EncodeSession's audio path — see
+# adr/0003-audio-track-and-apm-integration.md. Unconditional (`full`), matching this
+# crate's "batteries included" posture (unlike mediaway-device-ffi's per-feature
+# code-exclusion goal, which targets a shipped native binary this crate is not).
+mediaway-audio-apm = { workspace = true, features = ["full"] }
+smallvec = { workspace = true }
+thiserror = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+mediaway-encoder-windows = { workspace = true }
+mediaway-decoder-windows = { workspace = true }
+mediaway-device-windows = { workspace = true }
+mediaway-device-windows-desktop = { workspace = true }
+mediaway-device-windows-audio = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+mediaway-encoder-linux = { workspace = true }
+mediaway-decoder-linux = { workspace = true }
+mediaway-device-linux = { workspace = true }
+
+[dev-dependencies]
+mediaway-test-media = { workspace = true }
+
+[target.'cfg(windows)'.dev-dependencies]
+# Integration test only: builds its own D3D11 device to share between screen
+# capture and video encode, and nudges the cursor to keep DXGI Desktop
+# Duplication delivering frames on an idle desktop.
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[lints]
+workspace = true

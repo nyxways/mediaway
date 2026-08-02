@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Block staging of test/binary media fixtures. Generate via mediaway-test-media instead.
+# docs/conventions/testing.md
+set -euo pipefail
+
+# Common media / raw frame extensions used as fixtures
+EXT_RE='\.(mp4|webm|mkv|mov|m4v|avi|wav|mp3|aac|flac|ogg|opus|png|jpe?g|gif|bmp|tiff?|webp|yuv|rgba|bgra|nv12|p010|pcm|raw)$'
+
+EXIT=0
+
+while IFS= read -r file; do
+    [[ -z "$file" ]] && continue
+    # Normalize for matching
+    lower=$(printf '%s' "$file" | tr '[:upper:]' '[:lower:]')
+    if [[ "$lower" =~ $EXT_RE ]]; then
+        echo "❌ Staged media/binary fixture is forbidden: $file" >&2
+        echo "   Generate with mediaway-test-media into local/.cache/ (gitignored)." >&2
+        echo "   See docs/conventions/testing.md" >&2
+        EXIT=1
+    fi
+    # Also block anything under a committed testdata/media tree if someone recreates it
+    if [[ "$lower" =~ (^|/)(testdata|fixtures|test-media|test_media)/ ]] && [[ "$lower" =~ $EXT_RE ]]; then
+        EXIT=1
+    fi
+done < <(git diff --cached --name-only --diff-filter=AM)
+
+exit $EXIT

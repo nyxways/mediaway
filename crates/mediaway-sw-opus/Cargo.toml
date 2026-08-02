@@ -1,0 +1,18 @@
+[package]
+name = "mediaway-sw-opus"
+description = "Pure Rust Opus encode/decode (unsafe-libopus), isolated unsafe boundary"
+version.workspace = true
+publish = false # Proposed — see adr/0001-unsafe-libopus-encode-decode.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+mediaway-common = { workspace = true }
+thiserror = { workspace = true }
+unsafe-libopus = { workspace = true }
+
+[lints]
+workspace = true

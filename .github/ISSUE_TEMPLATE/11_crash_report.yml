@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=https://www.schemastore.org/github-issue-forms.json
+name: Report a crash or hang
+description: Panic, abort, hang, or deadlock.
+title: "[Crash]: "
+labels: ["crash", "state:needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Minimal repro helps most. Redact secrets from backtraces.
+
+        English title/body.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: false
+      options:
+        - mediaway-common
+        - mediaway-encoder
+        - mediaway-decoder
+        - iso-bmff
+        - mediaway-container
+        - iso-cenc
+        - mediaway-device
+        - mediaway-sw
+        - mediaway-test-media
+        - mediaway-avcli / mediaway-avprobe
+        - other / unclear
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      validations:
+        required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, rustc, commit, debug/release, features.
+      validations:
+        required: true
+  - type: textarea
+    id: backtrace
+    attributes:
+      label: Backtrace or hang notes (optional)
+      value: |
+        <details><summary>backtrace</summary>
+
+        ```text
+
+        ```
+
+        </details>
+    validations:
+      required: false

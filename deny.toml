@@ -1,0 +1,76 @@
+# cargo-deny — Mediaway identity: FFmpeg-less *product graph*, permissive (MIT OR Apache-2.0).
+# Ban FFmpeg Rust crates / linking — not the system ffmpeg CLI used as a test oracle (ADR-0002).
+# Allow-list only: anything not listed is denied.
+# docs/conventions/security.md, docs/conventions/deps-policy.md, docs/adr/0002-system-oracle.md
+
+[graph]
+all-features = true
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+[advisories]
+db-path = "$CARGO_HOME/advisory-dbs"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+yanked = "deny"
+ignore = [
+    # `paste` is an unconditional, compile-time-only proc-macro dependency of
+    # rav1e 0.8.1 (mediaway-sw AV1 encoder adapter) — no runtime code ships.
+    # RUSTSEC-2024-0436: upstream archived it as unmaintained; the advisory
+    # itself states "no safe upgrade is available" (rav1e has not migrated to
+    # the `pastey` fork yet). Not a vulnerability. Revisit when rav1e drops it.
+    "RUSTSEC-2024-0436",
+]
+
+[licenses]
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "MIT-0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+    "OpenSSL",
+    "BSL-1.0", # Boost Software License — NOT Business Source License (BUSL)
+]
+confidence-threshold = 0.93
+exceptions = [
+    # rav1e's `cfg(fuzzing)`-gated dev/fuzz-only dependency edge (libfuzzer-sys),
+    # never built by Mediaway (no fuzzing cfg is ever set; cargo-deny's graph
+    # walk still lists cfg-gated target deps regardless). NCSA (University of
+    # Illinois/NCSA license) is OSI-approved/FSF-free permissive, just not on
+    # the global allow-list; scoped here instead of widening it workspace-wide
+    # for one non-shipped edge. See crates/mediaway-sw/adr/0002-rav1e-av1-encode.md.
+    { allow = ["NCSA"], name = "libfuzzer-sys" },
+]
+# Pre-approve permissive licenses we expect as the graph grows (Stage 1+).
+unused-allowed-license = "allow"
+
+[licenses.private]
+ignore = false
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+allow = []
+deny = [
+    { name = "ffmpeg-next" },
+    { name = "ffmpeg-sys-next" },
+    { name = "ffmpeg-sys" },
+    { name = "ac-ffmpeg" },
+    { name = "ez-ffmpeg" },
+]
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

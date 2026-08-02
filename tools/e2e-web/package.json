@@ -1,0 +1,16 @@
+{
+  "name": "mediaway-e2e-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:wasm": "bun run scripts/build-wasm.ts",
+    "test": "playwright test --project=chromium",
+    "test:headed": "playwright test --headed --project=chromium",
+    "test:real-edge": "playwright test --project=msedge-real",
+    "install-browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.49.1",
+    "@types/bun": "1.2.4"
+  }
+}

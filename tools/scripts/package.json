@@ -1,0 +1,15 @@
+{
+  "name": "mediaway-scripts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "fetch-standard": "bun run fetch-standard.ts",
+    "verify-standard": "bun run fetch-standard.ts verify",
+    "fetch-fate-samples": "bun run fetch-fate-samples.ts",
+    "incremental-test": "bun run incremental-test.ts",
+    "incremental-bench": "bun run incremental-bench.ts"
+  },
+  "dependencies": {
+    "@noble/hashes": "1.8.0"
+  }
+}

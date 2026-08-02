@@ -1,0 +1,48 @@
+[package]
+name = "mediaway-encoder-windows"
+description = "Windows Media Foundation / DX11 video-audio encode backend"
+version.workspace = true
+publish = true # hardware-verified — see docs/roadmap.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+mediaway-common = { workspace = true }
+mediaway-encoder = { workspace = true }
+mediaway-sw = { workspace = true }
+mediaway-encoder-nvenc = { workspace = true }
+mediaway-encoder-quicksync = { workspace = true }
+
+[features]
+default = ["full"]
+audio = ["mediaway-encoder/audio"]
+video = ["mediaway-encoder/video"]
+full = ["audio", "video"]
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_Security",
+    "Win32_Media_MediaFoundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Direct3D12",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_System_Threading",
+] }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+mediaway-container = { workspace = true, features = ["full"] }
+criterion = { workspace = true }
+
+[[bench]]
+name = "wmf_h264_encode"
+harness = false

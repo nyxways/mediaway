@@ -1,0 +1,64 @@
+# External standards registry (URL + content digest)
+#
+# Each entry pins the exact bytes agents/humans should use when caching under
+# local/standards/. Policy: docs/conventions/external-standards.md
+#
+# Verify: bun tools/scripts/fetch-standard.ts <id>
+# Pin:    bun tools/scripts/fetch-standard.ts pin <id>
+
+[[standard]]
+id = "iso-14496-12"
+url = "https://www.iso.org/standard/83102.html"
+filename = "iso_iec_14496-12.pdf"
+blake3 = ""
+paywalled = true
+note = "ISOBMFF. Pin blake3 after placing a lawful PDF in local/standards/iso-14496-12/"
+
+[[standard]]
+id = "iso-14496-15"
+url = "https://www.iso.org/standard/74429.html"
+filename = "iso_iec_14496-15.pdf"
+blake3 = ""
+paywalled = true
+note = "NAL video in ISOBMFF. Pin blake3 after lawful local copy."
+
+[[standard]]
+id = "iso-23001-7"
+url = "https://www.iso.org/standard/68042.html"
+filename = "iso_iec_23001-7.pdf"
+blake3 = ""
+paywalled = true
+note = "Common Encryption (CENC). Pin blake3 after lawful local copy. Mediaway notes: docs/spec/iso_23001_7_cenc.md"
+
+[[standard]]
+id = "rfc-8794-ebml"
+url = "https://www.rfc-editor.org/rfc/rfc8794"
+filename = "rfc8794.txt"
+blake3 = ""
+paywalled = false
+note = "EBML (Extensible Binary Meta Language) — VINT encoding used by ebml-webm. Free IETF RFC; not yet cached locally."
+
+[[standard]]
+id = "webm-container-guidelines"
+url = "https://www.webmproject.org/docs/container/"
+filename = "webm_container_guidelines.html"
+blake3 = ""
+paywalled = false
+note = "WebM element ID subset (Segment/Tracks/Cluster/SimpleBlock) used by ebml-webm. Free (CC-BY-3.0); not yet cached locally."
+
+[[standard]]
+id = "vp-codec-iso-media-binding"
+url = "https://www.webmproject.org/vp9/mp4/"
+filename = "vp_codec_iso_media_binding.html"
+blake3 = "65d2d0b0a3ea16cd3e2d0989a184d064918097a86a2b980a68fd8d314e0c7229"
+paywalled = false
+note = "VP Codec ISO Media File Format Binding — vp09/vpcC sample entry used by iso-bmff sample_entry.rs. Free (CC-BY-3.0); not yet cached locally."
+
+[[standard]]
+id = "av1-isobmff-binding"
+url = "https://aomediacodec.github.io/av1-isobmff/"
+filename = "av1_isobmff_binding.html"
+blake3 = "777a1ec8187b57af5876f23bb67be1010e74377ef129d65c2ce053d7d3aa5763"
+paywalled = false
+note = "AV1 Codec ISO Media File Format Binding (AOMedia) — av01/av1C sample entry used by iso-bmff sample_entry.rs. Free; not yet cached locally."
+

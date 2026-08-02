@@ -1,0 +1,5 @@
+# Pedantic / nursery thresholds. Keep Mediaway-specific disallows out of here
+# until an ADR defines them.
+msrv = "1.85"
+too-many-arguments-threshold = 8
+type-complexity-threshold = 250

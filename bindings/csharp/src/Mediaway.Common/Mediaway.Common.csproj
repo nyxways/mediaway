@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- netstandard2.0 is for Unity consumption (NuGetForUnity) — see docs/adr/0018-csharp-netstandard20-unity.md -->
+    <TargetFrameworks>net8.0;netstandard2.0</TargetFrameworks>
+    <LangVersion>12.0</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>Mediaway.Common</RootNamespace>
+    <AssemblyName>Mediaway.Common</AssemblyName>
+    <Description>Shared value types and exception base for Mediaway C# bindings.</Description>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+    <!--
+      Span<T>/Memory<T>/IMemoryOwner<T>/MemoryManager<T> (the buffer-ownership design this
+      binding is built on, ADR-0017 §3) are not part of the netstandard2.0 BCL — this is
+      Microsoft's own compatibility package for that gap, not an optional convenience
+      dependency like the Channels/AsyncInterfaces packages this binding deliberately avoids
+      (ADR-0018). Flows transitively to Mediaway.Container/Pipeline/Device via ProjectReference.
+    -->
+    <PackageReference Include="System.Memory" Version="4.5.5" />
+  </ItemGroup>
+
+</Project>

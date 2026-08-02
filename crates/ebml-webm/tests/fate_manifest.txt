@@ -1,0 +1,7 @@
+# Relative paths under a FFmpeg fate-suite root (TARGET_SAMPLES).
+# Columns: path <TAB> mode
+#   oracle_compare — ffprobe stream + demux frame counts must match Mediaway
+#   must_not_panic — robustness only
+# See docs/conventions/testing.md § FATE corpus.
+mkv/hdr10_plus_vp9_sample.webm	oracle_compare
+mkv/codec_delay_opus.mkv	oracle_compare

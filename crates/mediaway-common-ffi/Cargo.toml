@@ -1,0 +1,19 @@
+[package]
+name = "mediaway-common-ffi"
+description = "Internal rlib shared by mediaway-*-ffi crates: Rational/CodecKind #[repr(C)] mirrors + buffer helpers — no C ABI of its own (ADR-0015)"
+version.workspace = true
+publish = false # internal helper crate, never a header/ABI surface itself — see docs/adr/0015-common-ffi-unification.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+crate-type = ["rlib"] # explicit, not the implicit default — states the "no C symbols" intent (ADR-0015)
+
+[dependencies]
+mediaway-common = { workspace = true }
+
+[lints]
+workspace = true

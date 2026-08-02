@@ -1,0 +1,22 @@
+{
+  "name": "com.mediaway.unity",
+  "version": "0.1.0",
+  "displayName": "Mediaway for Unity",
+  "description": "Unity-specific glue (Texture2D/AudioClip conversion) over the Mediaway.Device.Camera/Mediaway.Device.Audio/Mediaway.Pipeline netstandard2.0 C# bindings (adr/0004-domain-feature-split.md mirrored at the C# layer — Mediaway.Device.* is now a package family, not one package). Does not itself contain the Mediaway bindings — restore Mediaway.Common/Mediaway.Device/Mediaway.Device.Camera/Mediaway.Device.Audio/Mediaway.Pipeline into the project via NuGetForUnity first. See ../../../docs/adr/0018-csharp-netstandard20-unity.md.",
+  "unity": "2021.2",
+  "keywords": [
+    "video",
+    "capture",
+    "mediaway"
+  ],
+  "author": {
+    "name": "Mediaway"
+  },
+  "samples": [
+    {
+      "displayName": "Camera To Texture",
+      "description": "Opens the default camera and displays polled frames on a RawImage via MediawayTextureConverter.",
+      "path": "Samples~/CameraToTexture"
+    }
+  ]
+}

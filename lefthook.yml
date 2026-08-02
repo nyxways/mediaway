@@ -1,0 +1,49 @@
+# lefthook — local git gates (Mediaway)
+# docs/conventions/hooks.md
+
+output:
+  - failure
+  - summary
+  - execution_info
+
+pre-commit:
+  parallel: true
+  commands:
+    cargo-gates:
+      glob: "**/*.{rs,toml}"
+      run: bash ./tools/hooks/cargo-precommit.sh
+
+    secrets:
+      run: bash ./tools/hooks/secrets-check.sh
+
+    no-large-files:
+      run: bash ./tools/hooks/no-large-files.sh
+
+    forbid-bare-todo:
+      glob: "*.{rs,ts,js}"
+      run: bash ./tools/hooks/forbid-bare-todo.sh
+
+    forbid-env-files:
+      run: bash ./tools/hooks/forbid-env.sh
+
+    forbid-test-media:
+      run: bash ./tools/hooks/forbid-test-media.sh
+
+    forbid-long-source:
+      glob: "*.{rs,c,h,cc,cpp,hpp,ts,tsx,js,jsx,go,zig}"
+      run: bash ./tools/hooks/forbid-long-source.sh
+
+commit-msg:
+  commands:
+    format:
+      run: bash ./tools/hooks/commit-msg-check.sh {1}
+
+pre-push:
+  parallel: true
+  commands:
+    cargo-gates:
+      run: bash ./tools/hooks/silent-run.sh bash ./tools/hooks/cargo-prepush.sh
+
+    deny:
+      # Unset GIT_* so advisory-db fetch does not touch this repo's .git
+      run: bash ./tools/hooks/silent-run.sh bash ./tools/hooks/deny-check.sh

@@ -1,0 +1,15 @@
+# Encode
+
+| Doc | Summary |
+|-----|---------|
+| [scaffold](scaffold.md) | Facade traits + `auto`; Windows WMF/DX11 |
+| [auto](auto.md) | High-level auto encode · path classes · `mediaway-codec` |
+| [backend-preference](backend-preference.md) | Auto/Os/Cpu/Gpu(Graphics\|VendorHw)/Sw · README axes |
+| [web-gpu-frame](web-gpu-frame.md) | Web: WebGPU-backed `VideoFrame` — no `GPUTexture` ctor, canvas path, honesty label |
+| [web-real-chrome-bugs](web-real-chrome-bugs.md) | Web: 3 real bugs found only via real Chrome + CDP (arg order, description, AAC flush) |
+| [../platform/linux-encode](../platform/linux-encode.md) | Linux: VA-API H.264 CPU-upload (`cros-libva`); zero HW verification caveat |
+| [../license/sw-opus](../license/sw-opus.md) | `mediaway-sw-opus` — real Opus encode via `unsafe-libopus`; closes the only-platform-with-zero-Opus-encode gap |
+
+Codec matrices: root [`README.md`](../../../../README.md#codec-support) · wiki pointer [support-matrix](../platform/support-matrix.md).  
+Platform order: Windows → Web → Linux → other — [`docs/roadmap.md`](../../../roadmap.md).  
+Packaging: [crate-packaging](../meta/crate-packaging.md). Traits: crate ADR-0001.

@@ -1,0 +1,18 @@
+[book]
+title = "Mediaway"
+authors = ["Mediaway contributors"]
+description = "Rust media stack: Zero-Copy paths, sans-io cores, high-to-low first-class APIs"
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+
+[output.html]
+git-repository-url = "https://github.com/nyxways/mediaway"
+edit-url-template = "https://github.com/nyxways/mediaway/edit/main/docs/book/{path}"
+site-url = "/mediaway/"
+
+[output.html.fold]
+enable = true
+level = 1

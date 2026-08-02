@@ -1,0 +1,25 @@
+[package]
+name = "mediaway-avprobe"
+description = "Media metadata probe CLI (separate from library API; not affiliated with FFmpeg)"
+version.workspace = true
+publish = true # hardware-verified — see docs/roadmap.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "mediaway-avprobe"
+path = "src/main.rs"
+
+[dependencies]
+mediaway-container = { workspace = true }
+mediaway-common = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+mediaway-test-media = { workspace = true }
+
+[lints]
+workspace = true

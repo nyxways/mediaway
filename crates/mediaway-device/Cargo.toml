@@ -1,0 +1,17 @@
+[package]
+name = "mediaway-device"
+description = "Shared device vocabulary — DeviceKind/DeviceId/Select, capability/permission probing, capture/playback errors, and the DeviceHotplug trait. Domain capture facades: mediaway-device-camera, mediaway-device-desktop, mediaway-device-audio."
+version.workspace = true
+publish = true # hardware-verified — see docs/roadmap.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+mediaway-common = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

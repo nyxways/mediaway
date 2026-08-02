@@ -1,0 +1,8 @@
+# Relative paths under a FFmpeg fate-suite root (TARGET_SAMPLES).
+# Columns: path <TAB> mode
+#   oracle_compare — ffprobe channels + sample_rate must match Mediaway
+#   must_not_panic — robustness only
+# See docs/conventions/testing.md § FATE corpus.
+wav/200828-005.wav	oracle_compare
+wav/FLCL_Ending_My-short.wav	must_not_panic	# WMAUDIO2 (tag 0x161) — compressed format, deferred
+wav/wrong-avg-byterate.wav	must_not_panic

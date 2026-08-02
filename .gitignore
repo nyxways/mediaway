@@ -1,0 +1,72 @@
+# Rust
+/target/
+Cargo.lock.bak
+**/*.rs.bk
+
+# .NET (bindings/csharp)
+bin/
+obj/
+*.user
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS
+Thumbs.db
+desktop.ini
+
+# Build artifacts
+*.pdb
+*.dSYM/
+
+# mdBook build output (deployed via CI, not committed)
+/docs/book/book/
+
+# Logs
+*.log
+
+# Secrets — NEVER commit
+.env
+.env.local
+.env.*.local
+secrets.env
+*.pem
+id_rsa*
+id_ed25519*
+*credentials*.json
+*private*.key
+
+# Claude Code local overrides
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+.claude/worktrees/
+
+# Coverage
+*.profraw
+lcov.info
+
+# Cargo per-machine overrides (target-dir etc.)
+.cargo/**
+!.cargo/audit.toml
+
+# Local backup
+*.bak
+
+# Hook logs
+/tmp/
+mediaway-hook-logs/
+
+# Machine-local agent/dev workspace (memory, experiments, HW notes)
+# Content ignored via local/.gitignore; keep local/README.md tracked.
+/local/**
+!/local/README.md
+!/local/.gitignore
+
+# Generated test media (Rust fixtures) — never commit
+# (also covered by /local/** above; kept explicit for clarity)
+local/.cache/

@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://www.schemastore.org/github-issue-forms.json
+name: Docs issue
+description: Gap or error in README, rustdoc, wiki, spec, or ADR.
+title: "[Docs]: "
+labels: ["docs", "state:needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Point at a path or URL. A suggested fix is welcome but optional.
+
+        English title/body.
+  - type: input
+    id: location
+    attributes:
+      label: Doc location
+      placeholder: docs/spec/… or rustdoc item
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong or missing?
+      validations:
+        required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested fix (optional)
+    validations:
+      required: false

@@ -1,0 +1,38 @@
+[package]
+name = "mediaway-container-ffi"
+description = "C ABI facade over mediaway-container (mux/demux) — see docs/spec/c-ffi.md"
+version.workspace = true
+publish = false # no header/ABI has shipped yet — see docs/roadmap.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+crate-type = ["rlib", "cdylib", "staticlib"]
+
+[dependencies]
+mediaway-common = { workspace = true }
+mediaway-common-ffi = { path = "../mediaway-common-ffi", version = "0.1.0" }
+# Pinned explicitly rather than inheriting mediaway-container's own `default = ["full"]` —
+# `audio`+`video` are both required for H.264/AAC sample-entry support (verified in
+# iso-bmff/Cargo.toml). See adr/0001-mp4-mux-demux-c-abi.md §9 for the documented gap this
+# does not fix (mediaway-container's other format cores are not feature-gated yet).
+# Not `workspace = true`: Cargo forbids a member from setting `default-features = false`
+# on an inherited dependency whose workspace entry doesn't already say so, so this crate's
+# explicit feature pin is spelled out directly (same path/version as the workspace entry).
+mediaway-container = { path = "../mediaway-container", version = "0.1.0", default-features = false, features = [
+    "mux",
+    "demux",
+    "audio",
+    "video",
+] }
+
+[features]
+default = ["mux", "demux"]
+mux = []
+demux = []
+
+[lints]
+workspace = true

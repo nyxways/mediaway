@@ -1,0 +1,33 @@
+[package]
+name = "mediaway-container"
+description = "Container facade — mux/demux traits and Mediaway MP4 surface"
+version.workspace = true
+publish = true # hardware-verified — see docs/roadmap.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+mediaway-common = { workspace = true }
+thiserror = { workspace = true }
+iso-bmff = { workspace = true }
+ebml-webm = { workspace = true }
+riff-wave = { workspace = true }
+adts = { workspace = true }
+mpeg-audio = { workspace = true }
+ogg = { workspace = true }
+flv = { workspace = true }
+mpeg-ts = { workspace = true }
+
+[features]
+default = ["full"]
+audio = ["iso-bmff/audio"]
+video = ["iso-bmff/video"]
+mux = ["iso-bmff/mux"]
+demux = ["iso-bmff/demux"]
+full = ["audio", "video", "mux", "demux"]
+
+[lints]
+workspace = true

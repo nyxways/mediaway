@@ -1,0 +1,7 @@
+# Relative paths under a FFmpeg fate-suite root (TARGET_SAMPLES).
+# Columns: path <TAB> mode
+#   oracle_compare — ffprobe stream + demux access-unit counts must match Mediaway
+#   must_not_panic — robustness only
+# See docs/conventions/testing.md § FATE corpus.
+mpegts/h264small.ts	oracle_compare
+mpegts/pmtchange.ts	must_not_panic	# PMT changes mid-stream — outside single-program v1 scope (mpeg-ts/docs/roadmap.md)

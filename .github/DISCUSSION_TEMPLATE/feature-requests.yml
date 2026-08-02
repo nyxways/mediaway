@@ -1,0 +1,28 @@
+# Optional long-form feature brainstorm
+# Filing a Feature *issue* is equally welcome — see ISSUE_TEMPLATE/30_feature.yml
+body:
+  - type: markdown
+    attributes:
+      value: |
+        # Feature discussion
+
+        Use this for open-ended design chat. Prefer an **Issue** ([Feature request](https://github.com/nyxways/mediaway/issues/new?template=30_feature.yml)) when you want trackable acceptance criteria.
+
+        English. Mediaway pillars: [vision](https://github.com/nyxways/mediaway/blob/main/docs/spec/vision.md) · [async/streaming](https://github.com/nyxways/mediaway/blob/main/docs/spec/async-and-streaming.md).
+
+  - type: textarea
+    id: main
+    attributes:
+      label: Body
+      value: |
+        # What are you thinking about?
+
+        # Why?
+
+        # Constraints you care about
+
+        Streaming, async hosts, Zero-Copy, platform (Windows/Web/Linux), license (no FFmpeg/GPL Cargo deps), …
+
+        # Sketches / references
+    validations:
+      required: true

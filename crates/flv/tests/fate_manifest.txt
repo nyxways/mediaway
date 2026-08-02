@@ -1,0 +1,9 @@
+# Relative paths under a FFmpeg fate-suite root (TARGET_SAMPLES).
+# Columns: path <TAB> mode
+#   oracle_compare — ffprobe stream + demux packet counts must match Mediaway
+#   must_not_panic — robustness only
+# See docs/conventions/testing.md § FATE corpus.
+# ffprobe AAC decoder param-change error limits oracle reliability; Mediaway counts 490 frames vs ffprobe 483
+flv/multitrack.flv	must_not_panic
+# ffprobe reports 25 packets; Mediaway counts 27 video tags (25 fps × 1.08s duration suggests 27 is correct)
+flv/streamloop.flv	must_not_panic

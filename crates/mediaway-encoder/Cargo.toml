@@ -1,0 +1,23 @@
+[package]
+name = "mediaway-encoder"
+description = "Hardware-accelerated video/audio encoding (OS-native backends)"
+version.workspace = true
+publish = true # hardware-verified — see docs/roadmap.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+mediaway-common = { workspace = true }
+thiserror = { workspace = true }
+
+[features]
+default = ["full"]
+audio = []
+video = []
+full = ["audio", "video"]
+
+[lints]
+workspace = true

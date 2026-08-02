@@ -1,0 +1,17 @@
+[package]
+name = "mediaway-device-camera"
+description = "Camera video capture facade"
+version.workspace = true
+publish = true # hardware-verified — see docs/roadmap.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+mediaway-common = { workspace = true }
+mediaway-device = { workspace = true }
+
+[lints]
+workspace = true

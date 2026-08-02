@@ -1,0 +1,26 @@
+[package]
+name = "vpl-sys"
+description = "Minimal, unprefixed FFI core for a subset of Intel oneVPL (libvpl); dynamic runtime loading via libloading, no build-time link against an Intel import library"
+version.workspace = true
+publish = true # hardware-verified — see docs/roadmap.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+# Runtime-resolves oneVPL entry points (`libmfxhw64.dll` / driver-shipped equivalent) via
+# LoadLibrary/GetProcAddress — no Intel import-lib linking. See adr/0001 (crate ADR) and
+# mediaway-encoder-quicksync/adr/0001.
+libloading = { workspace = true }
+thiserror = { workspace = true }
+
+[build-dependencies]
+# Parses vendored oneVPL headers (types only, `ignore_functions()`) for exact struct/union
+# layout — see vendor/README.md. Needs `libclang` at build time (already an accepted cost
+# pattern for platform-gated vendor backends; see mediaway-encoder-linux adr/0001).
+bindgen = { workspace = true }
+
+[lints]
+workspace = true

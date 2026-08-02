@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://www.schemastore.org/github-issue-config.json
+# Forms preferred; blank issues allowed.
+blank_issues_enabled: true
+contact_links:
+  - name: Ask a question (GitHub Issue)
+    url: https://github.com/nyxways/mediaway/issues/new/choose
+    about: General inquiries and support — please use Issues (English).
+  - name: Contributing guide
+    url: https://github.com/nyxways/mediaway/blob/main/CONTRIBUTING.md
+    about: Setup, conventions, PR checklist.
+  - name: Design specs
+    url: https://github.com/nyxways/mediaway/blob/main/docs/spec/README.md
+    about: Vision, sans-io, streaming/async, packaging — read before large proposals.
+  - name: Feature discussion (optional)
+    url: https://github.com/nyxways/mediaway/discussions/new?category=feature-requests
+    about: Optional long-form brainstorming; prefer an Issue when you want tracking.

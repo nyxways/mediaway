@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- netstandard2.0 is for Unity consumption (NuGetForUnity) — see docs/adr/0018-csharp-netstandard20-unity.md -->
+    <TargetFrameworks>net8.0;netstandard2.0</TargetFrameworks>
+    <LangVersion>12.0</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>Mediaway.Device</RootNamespace>
+    <AssemblyName>Mediaway.Device</AssemblyName>
+    <Description>Shared base for the Mediaway.Device.* packages (Camera/Desktop/Audio/Hotplug): device kind, status codes, exception types.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Mediaway.Common\Mediaway.Common.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+    <Compile Include="..\Mediaway.Common\Interop\NetStandardPolyfills.cs" Link="Interop\NetStandardPolyfills.cs" />
+  </ItemGroup>
+
+</Project>

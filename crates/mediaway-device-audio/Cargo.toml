@@ -1,0 +1,18 @@
+[package]
+name = "mediaway-device-audio"
+description = "Audio I/O facade — microphone capture and render-endpoint playback"
+version.workspace = true
+publish = true # hardware-verified — see docs/roadmap.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+mediaway-common = { workspace = true }
+mediaway-device = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

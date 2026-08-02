@@ -1,0 +1,4 @@
+# Ignore everything in local/ except the tracked guide files.
+*
+!.gitignore
+!README.md

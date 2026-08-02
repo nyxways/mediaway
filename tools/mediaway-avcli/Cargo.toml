@@ -1,0 +1,23 @@
+[package]
+name = "mediaway-avcli"
+description = "AV CLI compatibility frontend (separate from library API; not affiliated with FFmpeg)"
+version.workspace = true
+publish = true # hardware-verified — see docs/roadmap.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "mediaway-avcli"
+path = "src/main.rs"
+
+[dependencies]
+mediaway-common = { workspace = true }
+mediaway-container = { workspace = true }
+bytes = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

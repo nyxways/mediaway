@@ -1,0 +1,28 @@
+[package]
+name = "iso-bmff"
+description = "Sans-IO ISOBMFF / MP4 mux and demux (freestanding)"
+version.workspace = true
+publish = true # hardware-verified — see docs/roadmap.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+iso-cenc = { workspace = true, optional = true }
+bytes = { workspace = true }
+memchr = { workspace = true }
+smallvec = { workspace = true }
+thiserror = { workspace = true }
+
+[features]
+default = ["full"]
+audio = []
+video = []
+mux = []
+demux = ["dep:iso-cenc"]
+full = ["audio", "video", "mux", "demux"]
+
+[lints]
+workspace = true

@@ -1,0 +1,13 @@
+# Relative paths under a FFmpeg fate-suite root (TARGET_SAMPLES).
+# Columns: path <TAB> mode
+#   oracle_compare — ffprobe stream + demux packet counts must match Mediaway
+#   must_not_panic — robustness only
+# See docs/conventions/testing.md § FATE corpus.
+#
+# Note: Ogg demuxer's poll_packet() includes codec header packets (3 for Vorbis:
+# identification + comment + setup; 2 for Opus: OpusHead + OpusTags), which
+# ffprobe's nb_read_packets counts as part of the audio stream instead. This
+# causes a consistent +N offset that would require custom offset logic to verify.
+# Both files use must_not_panic instead for honest robustness testing.
+ogg-vorbis/tos.ogg	must_not_panic
+ogg-opus/chained-meta.ogg	must_not_panic

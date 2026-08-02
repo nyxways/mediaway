@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- netstandard2.0 is for Unity consumption (NuGetForUnity) — see docs/adr/0018-csharp-netstandard20-unity.md -->
+    <TargetFrameworks>net8.0;netstandard2.0</TargetFrameworks>
+    <LangVersion>12.0</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>Mediaway.Device.Audio</RootNamespace>
+    <AssemblyName>Mediaway.Device.Audio</AssemblyName>
+    <Description>Idiomatic C# binding over mediaway-device-ffi's "audio" feature (Microphone capture only) — see adr/0004-domain-feature-split.md.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Mediaway.Common\Mediaway.Common.csproj" />
+    <ProjectReference Include="..\Mediaway.Device\Mediaway.Device.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+    <Compile Include="..\Mediaway.Common\Interop\NetStandardPolyfills.cs" Link="Interop\NetStandardPolyfills.cs" />
+  </ItemGroup>
+
+</Project>

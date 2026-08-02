@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!--
+      Deliberately NOT nested under `Mediaway.Device` (e.g. not `Mediaway.Device.Tests`):
+      that would make sibling package namespaces like `Mediaway.Device.Camera` reachable as
+      a bare enclosing-namespace identifier, colliding with the `Camera` class inside it
+      (`Mediaway.Device.Camera.Camera`) — `Camera.Open(...)` would then ambiguously resolve
+      to "navigate into the Camera namespace" instead of "call the Camera class", a real
+      CS0234 this project hit once already.
+    -->
+    <RootNamespace>MediawayDeviceIntegrationTests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- adr/0004-domain-feature-split.md mirrored at the C# layer — this project now
+         exercises Camera/Audio/Hotplug together as a cross-package integration suite
+         (same spirit as mediaway-pipeline's Rust screen_mic_av_smoke.rs), not one package. -->
+    <ProjectReference Include="..\..\src\Mediaway.Common\Mediaway.Common.csproj" />
+    <ProjectReference Include="..\..\src\Mediaway.Device\Mediaway.Device.csproj" />
+    <ProjectReference Include="..\..\src\Mediaway.Device.Camera\Mediaway.Device.Camera.csproj" />
+    <ProjectReference Include="..\..\src\Mediaway.Device.Audio\Mediaway.Device.Audio.csproj" />
+    <ProjectReference Include="..\..\src\Mediaway.Device.Hotplug\Mediaway.Device.Hotplug.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Dev-time only: no real NuGet native-asset packaging exists yet (ADR-0017 build
+      sequence step 5). Points straight at the workspace's cargo output so this test
+      exercises the real native library, not a mock.
+    -->
+    <None Include="..\..\..\..\target\debug\mediaway_device_ffi.dll"
+          Link="mediaway_device_ffi.dll"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,28 @@
+[package]
+name = "mediaway-encoder-quicksync"
+description = "Intel Quick Sync / Arc (oneVPL) video encode backend"
+version.workspace = true
+publish = true # hardware-verified — see docs/roadmap.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+mediaway-common = { workspace = true }
+mediaway-encoder = { workspace = true }
+
+# oneVPL bindings only on Windows this stage: this crate must stay buildable
+# (as an honest `Unsupported` stub) on non-Windows hosts running
+# `cargo check --workspace` without pulling in `vpl-sys`'s `bindgen`/`libclang`
+# build step. Mirrors `mediaway-encoder-linux`'s `[target.'cfg(target_os = "linux")'.dependencies]`.
+[target.'cfg(windows)'.dependencies]
+vpl-sys = { workspace = true }
+
+[features]
+default = ["video"]
+video = ["mediaway-encoder/video"]
+
+[lints]
+workspace = true

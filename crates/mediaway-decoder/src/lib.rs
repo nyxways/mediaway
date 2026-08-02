@@ -1,0 +1,14 @@
+//! Hardware-accelerated video decoding **facade**.
+//!
+//! - **Low-level:** [`VideoDecoder`] — OS sessions in `mediaway-decoder-<platform>`
+//!   ([ADR-0001](../adr/0001-decoder-traits.md), [ADR-0002](../adr/0002-facade-platform-boundary.md)).
+//! - Windows Zero-Copy: `mediaway_decoder_windows::WindowsVideoDecoder::open`.
+
+#![forbid(unsafe_code)]
+
+pub mod capability;
+mod error;
+mod video;
+
+pub use error::DecodeError;
+pub use video::{VideoDecoder, VideoDecoderConfig, VideoOutputPreference};

@@ -1,0 +1,19 @@
+[package]
+name = "ebml-webm"
+description = "Sans-IO EBML/WebM mux + demux (Segment/Tracks/Cluster/SimpleBlock subset)"
+version.workspace = true
+publish = true # hardware-verified — see docs/roadmap.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+bytes = { workspace = true }
+# Open-element stack + track table; both usually stay on the stack. See ADR-0009.
+smallvec = { workspace = true }
+
+[lints]
+workspace = true

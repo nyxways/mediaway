@@ -1,0 +1,8 @@
+# Relative paths under a FFmpeg fate-suite root (MEDIAWAY_FATE_SAMPLES).
+# Columns: path <TAB> mode
+#   oracle_compare — ffprobe stream + demux packet counts must match Mediaway
+#   must_not_panic — robustness only (e.g., leading ID3v2 tags not skipped by this crate)
+# See docs/conventions/testing.md § FATE corpus.
+aac/ct_faac-adts.aac	oracle_compare
+aac/foo.aac	must_not_panic	# file ends with truncated frame (86th frame incomplete)
+aac/id3v2.aac	must_not_panic

@@ -1,0 +1,79 @@
+[package]
+name = "mediaway-encoder-web"
+description = "WebCodecs encode backend for wasm32 (browser)"
+version.workspace = true
+publish = true # hardware-verified — see docs/roadmap.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+iso-bmff = { workspace = true, features = ["full"] }
+mediaway-common = { workspace = true }
+mediaway-encoder = { workspace = true }
+bytes = { workspace = true }
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+
+[features]
+default = ["full"]
+audio = ["mediaway-encoder/audio"]
+video = ["mediaway-encoder/video"]
+full = ["audio", "video"]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = { workspace = true }
+js-sys = { workspace = true }
+web-sys = { workspace = true, features = [
+    "AudioData",
+    "AudioDataInit",
+    "AudioSampleFormat",
+    "AudioEncoder",
+    "AudioEncoderConfig",
+    "AudioEncoderInit",
+    "AudioEncoderSupport",
+    "EncodedAudioChunk",
+    "EncodedVideoChunk",
+    "EncodedVideoChunkType",
+    "EncodedVideoChunkMetadata",
+    "VideoDecoderConfig",
+    "VideoEncoder",
+    "VideoEncoderConfig",
+    "VideoEncoderInit",
+    "VideoEncoderSupport",
+    "VideoFrame",
+    "VideoFrameBufferInit",
+    "VideoFrameInit",
+    "VideoPixelFormat",
+    "Window",
+    "Navigator",
+    # WebGPU — GPUTexture-backed canvas source for `VideoFrame` (Stage 2 GPU path).
+    # `web_sys_unstable_apis` is already set for wasm32 in `.cargo/config.toml`.
+    "Gpu",
+    "GpuAdapter",
+    "GpuDevice",
+    "GpuQueue",
+    "GpuCanvasContext",
+    "GpuCanvasConfiguration",
+    "GpuCanvasAlphaMode",
+    "GpuTextureFormat",
+    "GpuTexture",
+    "GpuTextureView",
+    "GpuCommandEncoder",
+    "GpuCommandBuffer",
+    "GpuRenderPassEncoder",
+    "GpuRenderPassDescriptor",
+    "GpuRenderPassColorAttachment",
+    "GpuColorDict",
+    "GpuLoadOp",
+    "GpuStoreOp",
+    "OffscreenCanvas",
+] }
+
+[lints]
+workspace = true

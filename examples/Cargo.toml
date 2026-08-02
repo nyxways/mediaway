@@ -1,0 +1,78 @@
+[package]
+name = "mediaway-examples"
+description = "Runnable Mediaway examples"
+version.workspace = true
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+# ── container/ — mux/demux only, no encoder, no OS codec ──────────────────────
+
+[[example]]
+name = "mux_demux_mp4"
+path = "container/mux_demux_mp4.rs"
+
+# ── encode/ · decode/ — one codec direction, no container ──────────────────────
+
+[[example]]
+name = "encode_h264"
+path = "encode/encode_h264.rs"
+
+[[example]]
+name = "decode_h264"
+path = "decode/decode_h264.rs"
+
+# ── device/ — one capture source, no encode ─────────────────────────────────────
+
+[[example]]
+name = "capture_screen"
+path = "device/capture_screen.rs"
+
+[[example]]
+name = "capture_window"
+path = "device/capture_window.rs"
+
+[[example]]
+name = "capture_camera"
+path = "device/capture_camera.rs"
+
+[[example]]
+name = "capture_microphone"
+path = "device/capture_microphone.rs"
+
+# ── pipeline/ — composed end-to-end flows ───────────────────────────────────────
+
+[[example]]
+name = "encode_to_mp4"
+path = "pipeline/encode_to_mp4.rs"
+
+[[example]]
+name = "screen_record"
+path = "pipeline/screen_record.rs"
+
+[[example]]
+name = "trim_and_splice"
+path = "pipeline/trim_and_splice.rs"
+
+[dependencies]
+mediaway-common = { workspace = true }
+mediaway-container = { workspace = true, features = ["full"] }
+mediaway-device = { workspace = true }
+mediaway-device-camera = { workspace = true }
+mediaway-device-desktop = { workspace = true }
+mediaway-device-audio = { workspace = true }
+mediaway-encoder = { workspace = true }
+mediaway-decoder = { workspace = true }
+mediaway-pipeline = { workspace = true }
+# Both compile on every platform (real backend on Windows, `Unsupported`-returning
+# stubs elsewhere) — used directly by device/capture_window.rs, device/capture_camera.rs,
+# and pipeline/screen_record.rs, none of which `mediaway_pipeline::platform` dispatches yet.
+mediaway-device-windows = { workspace = true }
+mediaway-device-windows-camera = { workspace = true }
+mediaway-encoder-windows = { workspace = true }
+
+[lints]
+workspace = true

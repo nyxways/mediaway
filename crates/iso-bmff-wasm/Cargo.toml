@@ -1,0 +1,21 @@
+[package]
+name = "iso-bmff-wasm"
+description = "WASM bindings for iso-bmff mux/demux (browser)"
+version.workspace = true
+publish.workspace = true # not yet hardware-verified — see docs/roadmap.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+iso-bmff = { workspace = true, features = ["full"] }
+bytes = { workspace = true }
+wasm-bindgen = { workspace = true }
+
+[lints]
+workspace = true

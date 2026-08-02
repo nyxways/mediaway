@@ -1,0 +1,8 @@
+# Relative paths under a FFmpeg fate-suite root (TARGET_SAMPLES).
+# Columns: path <TAB> mode
+#   oracle_compare — ffprobe stream + demux packet counts must match Mediaway
+#   must_not_panic — robustness only
+# See docs/conventions/testing.md § FATE corpus.
+mp3-conformance/si.bit	oracle_compare
+mp3-conformance/compl.bit	must_not_panic  # Xing/VBR header recognition deferred; frame count off by 1 (VBR metadata frame)
+mpegaudio/extra_overread.mp3	must_not_panic  # ID3v2 tag skip deferred; unable to parse (not frame-aligned input)

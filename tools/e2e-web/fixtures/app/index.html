@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Mediaway E2E</title>
+  </head>
+  <body>
+    <h1>Mediaway browser E2E</h1>
+    <p id="status">loading wasm…</p>
+    <script type="module">
+      import initIso, * as iso from "/iso-bmff-wasm/iso_bmff_wasm.js";
+      import initEnc, * as enc from "/mediaway-encoder-web/mediaway_encoder_web.js";
+      import initDec, * as dec from "/mediaway-decoder-web/mediaway_decoder_web.js";
+      import initDev, * as dev from "/mediaway-device-web/mediaway_device_web.js";
+
+      await initIso();
+      await initEnc();
+      await initDec();
+      await initDev();
+
+      window.mediawayE2e = { iso, enc, dec, dev };
+      document.getElementById("status").textContent = "wasm ready";
+    </script>
+  </body>
+</html>

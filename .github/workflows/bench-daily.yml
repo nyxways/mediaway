@@ -1,0 +1,168 @@
+# Daily benchmarks on `main` only.
+# Hosted runners: `ci-smoke` / pure paths only — not HW Zero-Copy (`ref-*` / self-hosted later).
+# Methodology: docs/conventions/benchmarking.md § Daily CI
+name: bench-daily
+
+on:
+  schedule:
+    # Once per day (06:00 UTC). Scheduled workflows use the default branch workflow file.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: bench-daily-main
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  CARGO_TERM_COLOR: always
+  MEDIAWAY_BENCH_MACHINE: ci-smoke
+  MEDIAWAY_CACHE_NS: main
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: sccache
+  SCCACHE_GHA_VERSION: mediaway-main-v1
+
+jobs:
+  bench:
+    name: bench (main / ci-smoke)
+    runs-on: ubuntu-latest
+    # schedule → default branch; manual runs only from main (do not track other branches).
+    if: >
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Skip if no new commits since last successful run
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          HEAD_SHA="$(git rev-parse HEAD)"
+          echo "head_sha=${HEAD_SHA}" >> "$GITHUB_OUTPUT"
+
+          LAST_SHA="$(gh run list \
+            --workflow bench-daily.yml \
+            --branch main \
+            --status success \
+            --limit 1 \
+            --json headSha \
+            --jq '.[0].headSha // empty' || true)"
+
+          if [[ -z "${LAST_SHA}" ]]; then
+            echo "No prior successful run — continuing."
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "${LAST_SHA}" == "${HEAD_SHA}" ]]; then
+            echo "main unchanged since last successful bench-daily (${HEAD_SHA}) — skip."
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          COUNT="$(git rev-list --count "${LAST_SHA}..${HEAD_SHA}" || echo 0)"
+          echo "Commits since last success: ${COUNT} (${LAST_SHA}..${HEAD_SHA})"
+          if [[ "${COUNT}" == "0" ]]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Rust toolchain
+        if: steps.gate.outputs.should_run == 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: sccache
+        if: steps.gate.outputs.should_run == 'true'
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Cache cargo
+        if: steps.gate.outputs.should_run == 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: mediaway-ci-main-v1
+          key: bench-daily-ubuntu
+          cache-on-failure: true
+          save-if: true
+
+      - name: Detect [[bench]] targets
+        if: steps.gate.outputs.should_run == 'true'
+        id: benches
+        run: |
+          set -euo pipefail
+          found=false
+          while IFS= read -r -d '' f; do
+            if grep -q '^\[\[bench\]\]' "$f"; then
+              found=true
+              break
+            fi
+          done < <(find crates tools -name Cargo.toml -print0 2>/dev/null || true)
+          if [[ "${found}" == "true" ]]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "Bench targets present."
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "No [[bench]] targets in workspace yet — nothing to measure."
+          fi
+
+      - name: cargo bench (workspace)
+        if: steps.gate.outputs.should_run == 'true' && steps.benches.outputs.found == 'true'
+        run: cargo bench --workspace --all-features
+
+      - name: Stage CI smoke JSON for artifacts
+        if: steps.gate.outputs.should_run == 'true'
+        env:
+          BENCH_FOUND: ${{ steps.benches.outputs.found }}
+        run: |
+          set -euo pipefail
+          mkdir -p local/benches/ci-smoke
+          python3 - <<'PY'
+          import json, os, subprocess
+          from datetime import datetime, timezone
+          stamp = datetime.now(timezone.utc)
+          short = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
+          found = os.environ.get("BENCH_FOUND") == "true"
+          note = (
+              "bench-daily: cargo bench completed on hosted runner; "
+              "promote parsed Criterion rows to docs/benchmarks/history when ready"
+              if found
+              else "bench-daily: no [[bench]] targets; skip measurement"
+          )
+          payload = {
+              "schema": 1,
+              "recorded_at": stamp.strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "git_commit": short,
+              "machine_id": "ci-smoke",
+              "crate": "(workspace)",
+              "notes": note,
+              "benches": [],
+          }
+          name = stamp.strftime("%Y-%m-%dT%H%M%SZ") + "_ci-smoke.json"
+          path = os.path.join("local", "benches", "ci-smoke", name)
+          with open(path, "w", encoding="utf-8") as f:
+              json.dump(payload, f, indent=2)
+              f.write("\n")
+          with open(os.path.join("local", "benches", "ci-smoke", "LATEST_PATH.txt"), "w", encoding="utf-8") as f:
+              f.write(path + "\n")
+          print(path)
+          PY
+
+      - name: Upload bench artifacts
+        if: steps.gate.outputs.should_run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-daily-${{ github.sha }}
+          path: |
+            local/benches/ci-smoke/
+            target/criterion/
+          if-no-files-found: warn
+          retention-days: 90

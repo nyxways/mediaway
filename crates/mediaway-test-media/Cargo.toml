@@ -1,0 +1,17 @@
+[package]
+name = "mediaway-test-media"
+description = "Deterministic Rust generators for test media; local cache only (gitignored)"
+version.workspace = true
+publish.workspace = true # not yet hardware-verified — see docs/roadmap.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+blake3 = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

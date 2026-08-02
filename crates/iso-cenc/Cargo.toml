@@ -1,0 +1,17 @@
+[package]
+name = "iso-cenc"
+description = "Sans-IO ClearKey ISO Common Encryption (CENC) sample crypto"
+version.workspace = true
+publish = true # hardware-verified — see docs/roadmap.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+aes = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

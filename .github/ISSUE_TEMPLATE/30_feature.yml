@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=https://www.schemastore.org/github-issue-forms.json
+name: Feature request
+description: Propose a feature, API shape, backend, or improvement (issues welcome).
+title: "[Feature]: "
+labels: ["enhancement", "state:needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Features may be filed here **or** as a [Discussion](https://github.com/nyxways/mediaway/discussions/new?category=feature-requests) — either is fine.
+
+        Align with [vision](https://github.com/nyxways/mediaway/blob/main/docs/spec/vision.md): license-safe, streaming-first, Zero-Copy when possible, Windows → Web → Linux.
+
+        Do **not** propose FFmpeg/GPL **Cargo** dependencies. English title/body.
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What are you proposing?
+      description: High-level outcome (not necessarily an implementation plan).
+      validations:
+        required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why does this matter?
+      description: Problem, users, or workflow unlocked.
+      validations:
+        required: true
+  - type: checkboxes
+    id: fits
+    attributes:
+      label: Likely fits (check any)
+      options:
+        - label: Streaming / incremental API
+        - label: Async host support (without forcing a runtime in sans-io cores)
+        - label: Zero-Copy / GPU handle path
+        - label: Sans-io core or facade / platform split
+        - label: Docs / tooling only
+        - label: Unsure — looking for guidance
+  - type: textarea
+    id: approach
+    attributes:
+      label: Possible approach (optional)
+      description: Crate boundaries, platforms, vectorization-friendly hot paths, etc.
+    validations:
+      required: false
+  - type: textarea
+    id: refs
+    attributes:
+      label: References (optional)
+      description: Spec/ADR links, other APIs, prior art.
+    validations:
+      required: false

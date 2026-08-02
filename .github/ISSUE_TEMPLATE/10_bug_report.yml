@@ -1,0 +1,98 @@
+# yaml-language-server: $schema=https://www.schemastore.org/github-issue-forms.json
+name: Report a bug
+description: Wrong output, API failure, or broken behavior in Mediaway.
+title: "[Bug]: "
+labels: ["bug", "state:needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing. Search [existing issues](https://github.com/nyxways/mediaway/issues) first.
+
+        **Security?** Do not post publicly — see [security.md](https://github.com/nyxways/mediaway/blob/main/docs/conventions/security.md).
+
+        English title/body. Early development — [status](https://github.com/nyxways/mediaway/blob/main/docs/spec/status.md).
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: false
+      options:
+        - mediaway-common
+        - mediaway-encoder
+        - mediaway-decoder
+        - iso-bmff
+        - mediaway-container
+        - iso-cenc
+        - mediaway-device
+        - mediaway-sw
+        - mediaway-test-media
+        - mediaway-avcli / mediaway-avprobe
+        - docs / wiki / ADR
+        - CI / hooks / tooling
+        - other / unclear
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform / target
+      multiple: true
+      options:
+        - Windows
+        - Web / WASM
+        - Linux
+        - macOS
+        - iOS
+        - Android
+        - N/A (docs or tooling)
+    validations:
+      required: true
+  - type: checkboxes
+    id: path_class
+    attributes:
+      label: Path class (if known)
+      description: Helps compare to Zero-Copy / streaming goals.
+      options:
+        - label: Streaming (packets/frames/chunks)
+        - label: Whole-buffer / batch
+        - label: Zero-Copy / GPU handle
+        - label: CPU / copy / readback
+        - label: Unsure
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      description: Minimal steps from a clean checkout (commands, features).
+      placeholder: |
+        1. cargo test -p iso-bmff -- …
+        2. …
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Current vs expected
+      placeholder: |
+        Current: …
+        Expected: …
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, arch, rustc, Mediaway commit, Cargo features. Optional oracle CLI version if used.
+      placeholder: |
+        OS: …
+        rustc: …
+        commit: …
+    validations:
+      required: true
+  - type: textarea
+    id: extras
+    attributes:
+      label: Extra context (optional)
+      description: Spec/ADR links, redacted logs. No secrets.
+    validations:
+      required: false

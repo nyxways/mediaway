@@ -1,0 +1,18 @@
+[package]
+name = "mediaway-sw"
+description = "Pure Rust sans-io software codec fallbacks (no C codec FFI)"
+version.workspace = true
+publish = true # hardware-verified — see docs/roadmap.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+mediaway-common = { workspace = true }
+thiserror = { workspace = true }
+rav1e = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,28 @@
+[package]
+name = "mediaway-encoder-linux"
+description = "Linux VA-API video encode backend"
+version.workspace = true
+publish.workspace = true # not yet hardware-verified — see docs/roadmap.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+mediaway-common = { workspace = true }
+mediaway-encoder = { workspace = true }
+
+[features]
+default = ["video"]
+video = ["mediaway-encoder/video"]
+
+# VA-API bindings only on Linux: this crate must stay buildable (as an honest
+# `Unsupported` stub) on non-Linux hosts running `cargo check --workspace`
+# without pulling in `cros-libva`'s `libva`/`pkg-config`/bindgen build step.
+# Mirrors `mediaway-encoder-windows`'s `[target.'cfg(windows)'.dependencies]`.
+[target.'cfg(target_os = "linux")'.dependencies]
+cros-libva = { version = "0.0.13" }
+
+[lints]
+workspace = true

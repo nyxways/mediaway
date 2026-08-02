@@ -9,6 +9,8 @@ Linux **platform backend** for capture:
 
 All four sources are real, complete, and unit-tested; still 👻 in the root codec-support matrix because no portal D-Bus service, PipeWire daemon, or V4L2 device node has been reachable in testing so far.
 
+**Build deps:** `pipewire` crate → `libpipewire-0.3-dev` + `libspa-0.2-dev` (Debian/Ubuntu) at build time; required by CI's Ubuntu job.
+
 | Doc | Role |
 |-----|------|
 | [roadmap.md](docs/roadmap.md) | Stages |

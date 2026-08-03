@@ -106,7 +106,7 @@ jobs:
         shell: bash
         run: |
           # shellcheck disable=SC2046
-          cargo clippy --all-targets --all-features -p $(echo "$AFFECTED" | tr ' ' ' -p ') -- -D warnings
+          cargo clippy --all-targets --all-features -p $(echo "$AFFECTED" | sed 's/ / -p /g') -- -D warnings
 
       - name: cargo clippy (full workspace)
         if: ${{ env.AFFECTED == 'ALL' }}
@@ -117,7 +117,7 @@ jobs:
         shell: bash
         run: |
           # shellcheck disable=SC2046
-          cargo nextest run --all-features -p $(echo "$AFFECTED" | tr ' ' ' -p ')
+          cargo nextest run --all-features -p $(echo "$AFFECTED" | sed 's/ / -p /g')
 
       - name: cargo nextest test (full workspace)
         if: ${{ env.AFFECTED == 'ALL' }}

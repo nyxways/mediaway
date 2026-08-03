@@ -33,12 +33,12 @@ freestanding unprefixed cores separate (ADR-0012 unchanged).
 
 | Crate | Absorbs | Gating |
 |---|---|---|
-| `mediaway-common` | `mediaway-wgpu` (GPU abstraction; `GpuBufferHandle` already lives here) | `cfg(target_os …)` for wgpu adapters |
+| `mediaway-common` | — (shared types; `GpuBufferHandle` already lives here) | — |
 | `mediaway-container` | — (facade over the cores) | — |
 | `mediaway-encoder` | `mediaway-encoder-windows` · `-nvenc` · `-quicksync` · `-vulkan` · `-web` · `-linux`; `vpl-sys` becomes an internal build-dependency of the quicksync module | `cfg(target_os)` / `cfg(target_family = "wasm")` |
 | `mediaway-decoder` | `mediaway-decoder-windows` · `-vulkan` · `-web` · `-linux` | same |
 | `mediaway-device` | `mediaway-device-camera` · `-desktop` · `-audio` + `mediaway-device-windows`×4 · `-linux` · `-web` | same |
-| `mediaway` | `mediaway-pipeline` (EncodeSession + auto-dispatch) **+ re-exports** of container / encoder / decoder / device / sw — consumers depend on one crate | — |
+| `mediaway` | `mediaway-pipeline` (EncodeSession + auto-dispatch) **+ re-exports** of container / encoder / decoder / device / sw — consumers depend on one crate; also absorbs **`mediaway-wgpu`** as `mediaway::wgpu` (addendum: wgpu depends on `mediaway-encoder`/`mediaway-decoder`, so it cannot fold into `mediaway-common` without a cycle — the umbrella is its only in-family home) | — |
 | `mediaway-sw` | `mediaway-sw-opus` · `mediaway-audio-apm` | — |
 | `mediaway-ffi` | `mediaway-common-ffi` · `mediaway-container-ffi` · `mediaway-pipeline-ffi` · `mediaway-device-ffi` → **one C ABI** (one cdylib, one header set) | — |
 

@@ -28,6 +28,7 @@
 
 use std::time::{Duration, Instant};
 
+use mediaway::platform;
 use mediaway_common::{
     CodecKind, GpuDeviceHandle, NativeHandle, Packet, PixelFormat, Rational, SampleFormat,
     StreamInfo,
@@ -41,7 +42,6 @@ use mediaway_device::desktop::{
 use mediaway_encoder::auto::{AutoVideoEncodeConfig, EncodePathClass};
 use mediaway_encoder::windows::WindowsAudioEncoder;
 use mediaway_encoder::{AudioEncoder, AudioEncoderConfig, VideoEncoder};
-use mediaway::platform;
 use windows::Win32::Foundation::{HMODULE, POINT};
 use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
 use windows::Win32::Graphics::Direct3D11::{

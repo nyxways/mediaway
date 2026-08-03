@@ -48,6 +48,11 @@ zero `mediaway-*` deps); CLIs `mediaway-avcli` / `mediaway-avprobe`.
 
 ### Rules amended
 
+- **Versioning** (2026-08-03 addendum): freestanding unprefixed cores (`iso-bmff`,
+  `ebml-webm`, `flv`, `adts`, `ogg`, `riff-wave`, `mpeg-ts`, `mpeg-audio`, `iso-cenc`,
+  `rtmp`) pin their **own** `version = "0.1.0"` — they are independently publishable
+  libraries with their own cadence. Everything else keeps `version.workspace = true`
+  (one workspace version, released together).
 - **ADR-0003**: the platform-backend-as-crate split is abolished for the
   `mediaway-*` family — backends are `#[cfg]`-gated modules in their
   capability crate. The unprefixed-core rule stays. (Crate-local ADRs for the

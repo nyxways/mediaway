@@ -1,7 +1,7 @@
 [package]
 name = "iso-cenc"
 description = "Sans-IO ClearKey ISO Common Encryption (CENC) sample crypto"
-version.workspace = true
+version = "0.1.0" # independent versioning — freestanding core (ADR-0021)
 publish = true # hardware-verified — see docs/roadmap.md
 edition.workspace = true
 rust-version.workspace = true

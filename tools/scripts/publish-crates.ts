@@ -30,8 +30,8 @@ const args = new Set(process.argv.slice(2));
 const dryRun = args.has("--dry-run");
 const listOnly = args.has("--list");
 
-if (!dryRun && !process.env.CARGO_REGISTRY_TOKEN && !listOnly) {
-  console.error("CARGO_REGISTRY_TOKEN is not set — crates.io publish needs it (use --dry-run to validate without it)");
+if (!dryRun && !process.env.CARGO_REGISTRY_TOKEN && !process.env.ACTIONS_ID_TOKEN_REQUEST_URL && !listOnly) {
+  console.error("CARGO_REGISTRY_TOKEN is not set — crates.io publish needs it, or OIDC trusted publishing (ACTIONS_ID_TOKEN_REQUEST_URL) in GitHub Actions (use --dry-run to validate without it)");
   process.exit(2);
 }
 
@@ -119,7 +119,18 @@ for (const name of order) {
   }
   const cmd = dryRun ? ["publish", "-p", name, "--dry-run", "--allow-dirty"] : ["publish", "-p", name, "--allow-dirty"];
   console.log(`\n=== ${dryRun ? "checking" : "publishing"} ${name} ===`);
-  const res = await $`cargo ${cmd}`.cwd(root).nothrow();
+  let res = await $`cargo ${cmd}`.cwd(root).nothrow();
+  // crates.io limits NEW crate publishes (~5 per window) — wait out the
+  // retry time and continue; the batch must not abort on a quota pause.
+  for (let attempt = 0; res.exitCode !== 0 && attempt < 20; attempt++) {
+    const out = res.stdout.toString() + res.stderr.toString();
+    const m = out.match(/429 Too Many Requests[\s\S]*?try again after ([A-Z][a-z]{2}, \d+ [A-Z][a-z]{2} \d+ \d+:\d+:\d+) GMT/);
+    if (!m) break;
+    const waitMs = Math.max(0, Date.parse(m[1] + " GMT") - Date.now()) + 5000;
+    console.log(`rate limited — retrying ${name} in ${Math.ceil(waitMs / 1000)}s (after ${m[1]} GMT)`);
+    await Bun.sleep(waitMs);
+    res = await $`cargo ${cmd}`.cwd(root).nothrow();
+  }
   if (res.exitCode !== 0) {
     // Dry-run still resolves the dep closure against the real crates.io index,
     // so a crate whose in-set deps only passed their dry-run in this run

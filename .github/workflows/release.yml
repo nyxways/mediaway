@@ -387,10 +387,18 @@ jobs:
       # tools/scripts/publish-crates.ts). The gate also runs on dry runs so
       # `cargo package` validation happens for every crate before any real
       # upload.
+      # Auth: OIDC trusted publishing when the crates.io publisher is
+      # configured (rust-lang/crates-io-auth-action exchanges the job's
+      # id-token); the CARGO_REGISTRY_TOKEN secret remains the fallback.
+      - name: Authenticate with crates.io (OIDC trusted publishing)
+        id: crates-auth
+        uses: rust-lang/crates-io-auth-action@v1
+        continue-on-error: true
+
       - name: Publish crates (dependency order)
         shell: bash
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-auth.outputs.token || secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           if [[ "${{ github.event.inputs.dry_run }}" == "true" ]]; then
             bun tools/scripts/publish-crates.ts --dry-run

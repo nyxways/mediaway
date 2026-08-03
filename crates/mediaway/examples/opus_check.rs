@@ -21,7 +21,9 @@
     clippy::cast_precision_loss
 )]
 
-use mediaway_common::{AudioFrame, CodecKind, Packet, Rational, SampleFormat, StreamInfo};
+#[cfg(windows)]
+use mediaway_common::StreamInfo;
+use mediaway_common::{AudioFrame, CodecKind, Packet, Rational, SampleFormat};
 use mediaway_container::ogg;
 #[cfg(windows)]
 use mediaway_decoder::windows::{OpusDecoderConfig, WmfOpusDecoder};
@@ -166,6 +168,11 @@ fn decode(path: &str) {
     let secs = samples_out as f64 / f64::from(sample_rate);
     println!("decoded {frames} frames, {samples_out} samples ({secs:.2} s @ {sample_rate} Hz)");
     assert!(samples_out > 0, "no PCM decoded");
+}
+
+#[cfg(not(windows))]
+fn decode(path: &str) {
+    println!("WMF Opus decode is Windows-only — cannot decode {path} here");
 }
 
 fn main() {

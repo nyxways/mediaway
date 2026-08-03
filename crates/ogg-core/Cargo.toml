@@ -1,5 +1,5 @@
 [package]
-name = "ogg"
+name = "ogg-core"
 description = "Sans-IO Ogg page/packet mux and demux (freestanding)"
 version = "0.1.0" # independent versioning — freestanding core (ADR-0021)
 publish = true # hardware-verified — see docs/roadmap.md

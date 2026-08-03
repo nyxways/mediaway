@@ -18,7 +18,7 @@
     reason = "exception tests may unwrap / skip-log"
 )]
 
-use ogg::Demuxer;
+use ogg_core::Demuxer;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};

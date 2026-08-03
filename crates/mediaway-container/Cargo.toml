@@ -17,7 +17,7 @@ ebml-webm = { workspace = true }
 riff-wave-core = { workspace = true }
 adts-core = { workspace = true }
 mpeg-audio = { workspace = true }
-ogg = { workspace = true }
+ogg-core = { workspace = true }
 flv-core = { workspace = true }
 mpeg-ts-core = { workspace = true }
 

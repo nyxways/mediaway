@@ -1,6 +1,6 @@
-//! Mediaway-typed Ogg (Opus/Vorbis transport) mux + demux over [`ogg`].
+//! Mediaway-typed Ogg (Opus/Vorbis transport) mux + demux over [`ogg-core`].
 //!
-//! [`ogg`] carries the logical-bitstream framing only — it has no notion of
+//! [`ogg-core`] carries the logical-bitstream framing only — it has no notion of
 //! which codec's packets it's transporting. [`Demuxer`] identifies the codec
 //! by reading the first (identification-header) packet's well-known magic
 //! and codec-specific fixed fields (`OpusHead` per RFC 7845 §5.1; the Vorbis
@@ -18,10 +18,10 @@
 
 use crate::{Demux, Mux};
 use mediaway_common::{Bytes, CodecKind, Packet, Rational, StreamInfo};
-use ogg::{Demuxer as CoreDemuxer, Muxer as CoreMuxer};
+use ogg_core::{Demuxer as CoreDemuxer, Muxer as CoreMuxer};
 
-/// Ogg mux/demux error (same as [`ogg::Error`]).
-pub type Error = ogg::Error;
+/// Ogg mux/demux error (same as [`ogg_core::Error`]).
+pub type Error = ogg_core::Error;
 
 /// Live mux session for one logical bitstream (one Ogg `serial`).
 #[derive(Debug)]
@@ -49,7 +49,7 @@ impl Muxer {
     ///
     /// Returns [`Error::PacketTooLargeForSinglePage`] when `packet.payload`
     /// exceeds a single Ogg page's capacity (this mux always emits one page
-    /// per packet — see `ogg` crate docs).
+    /// per packet — see `ogg-core` crate docs).
     pub fn push_packet(&mut self, packet: &Packet) -> Result<(), Error> {
         self.inner.push_packet(
             &packet.payload,
@@ -89,7 +89,7 @@ impl Mux for Muxer {
     }
 }
 
-/// Demuxer wrapping [`ogg::Demuxer`] with a Mediaway stream cache.
+/// Demuxer wrapping [`ogg_core::Demuxer`] with a Mediaway stream cache.
 #[derive(Debug, Default)]
 pub struct Demuxer {
     inner: CoreDemuxer,

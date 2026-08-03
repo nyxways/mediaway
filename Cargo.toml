@@ -8,7 +8,7 @@ members = [
     "crates/riff-wave-core",
     "crates/adts-core",
     "crates/mpeg-audio",
-    "crates/ogg",
+    "crates/ogg-core",
     "crates/flv-core",
     "crates/mpeg-ts-core",
     "crates/rtmp",
@@ -64,7 +64,7 @@ ebml-webm = { path = "crates/ebml-webm", version = "0.1.0" }
 riff-wave-core = { path = "crates/riff-wave-core", version = "0.1.0" }
 adts-core = { path = "crates/adts-core", version = "0.1.0" }
 mpeg-audio = { path = "crates/mpeg-audio", version = "0.1.0" }
-ogg = { path = "crates/ogg", version = "0.1.0" }
+ogg-core = { path = "crates/ogg-core", version = "0.1.0" }
 flv-core = { path = "crates/flv-core", version = "0.1.0" }
 mpeg-ts-core = { path = "crates/mpeg-ts-core", version = "0.1.0" }
 rtmp = { path = "crates/rtmp", version = "0.1.0" }

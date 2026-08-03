@@ -7,8 +7,8 @@ small, self-contained mux + demux, no Mediaway dependency, added to round out
 Each crate below also has a real FATE `fate_manifest.txt`/`demux_exceptions.rs`
 (2026-07-29) — see [testing.md § FATE corpus](../../../conventions/testing.md).
 Not all rows are `oracle_compare`: `riff-wave-core` compares `channels`/`sample_rate`
-(not packetized), and `ogg`'s raw packet count includes Vorbis/Opus header
-packets ffprobe's frame count excludes, so most `ogg` samples stay
+(not packetized), and `ogg-core`'s raw packet count includes Vorbis/Opus header
+packets ffprobe's frame count excludes, so most `ogg-core` samples stay
 `must_not_panic` rather than a forced/fragile offset match.
 
 ## `riff-wave-core` (WAV/PCM) — added 2026-07-29
@@ -67,9 +67,9 @@ Crate-local [ADR-0001](../../../crates/mpeg-audio/adr/0001-mpeg-audio-freestandi
   generic `Packet`, and silently defaulting it would write wrong-length
   frames for real bit-reservoir-using streams. `CodecKind::Mp3` added.
 
-## `ogg` (page/packet transport for Opus/Vorbis/FLAC) — added 2026-07-29
+## `ogg-core` (page/packet transport for Opus/Vorbis/FLAC) — added 2026-07-29
 
-Crate-local [ADR-0001](../../../crates/ogg/adr/0001-ogg-freestanding-core.md).
+Crate-local [ADR-0001](../../../crates/ogg-core/adr/0001-ogg-freestanding-core.md).
 
 - `Codec::Opus` already exists in `iso-bmff`'s `Codec` enum (for ISOBMFF muxing);
   this crate is the separate native Ogg transport, no shared code.

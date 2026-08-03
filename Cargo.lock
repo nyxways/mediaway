@@ -1403,7 +1403,7 @@ dependencies = [
  "mediaway-common",
  "mpeg-audio",
  "mpeg-ts-core",
- "ogg",
+ "ogg-core",
  "riff-wave-core",
  "thiserror 2.0.19",
 ]
@@ -1687,7 +1687,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ogg"
+name = "ogg-core"
 version = "0.1.0"
 dependencies = [
  "bytes",

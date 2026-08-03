@@ -20,7 +20,7 @@ Mediaway is a cross-platform media toolkit built on Zero-Copy paths (GPU
 handles or shared CPU buffers), sans-io cores for mux/demux/bitstream/config,
 and low-level APIs as first-class entry points. This release ships the
 consolidated workspace (ADR-0021): 10 freestanding, independently versioned
-core crates (`iso-bmff`, `ebml-webm`, `flv`, `adts`, `ogg`, `riff-wave`,
+core crates (`iso-bmff`, `ebml-webm`, `flv`, `adts`, `ogg-core`, `riff-wave`,
 `mpeg-ts`, `mpeg-audio`, `iso-cenc`, `rtmp`) plus one `mediaway` umbrella with
 five capability crates (`container`, `encoder`, `decoder`, `device`, `sw`) and
 a single C ABI (`mediaway-ffi`).

@@ -8,7 +8,7 @@
     reason = "integration tests may unwrap; loop index is always tiny"
 )]
 
-use ogg::{Demuxer, Muxer};
+use ogg_core::{Demuxer, Muxer};
 
 #[test]
 fn three_packet_stream_roundtrip_via_public_api() {

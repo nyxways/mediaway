@@ -7,7 +7,7 @@ Canonical: [`docs/conventions/testing.md`](../../../conventions/testing.md).
 | Unit | Sibling `foo_tests.rs` — **no** inline `mod tests {…}` |
 | Integration | `crates/*/tests/*.rs` |
 | Spec / conformance | `conformance_isobmff.rs` (always) · `conformance_oracle.rs` (ffprobe optional) |
-| Demux exceptions | Synthetic always · FATE via `MEDIAWAY_FATE_SAMPLES` + `fate_manifest.txt` (`oracle_compare` / `must_not_panic`) — every container crate (`iso-bmff`, `ebml-webm`, `riff-wave-core`, `adts-core`, `mpeg-audio`, `ogg`, `flv-core`, `mpeg-ts-core`) |
+| Demux exceptions | Synthetic always · FATE via `MEDIAWAY_FATE_SAMPLES` + `fate_manifest.txt` (`oracle_compare` / `must_not_panic`) — every container crate (`iso-bmff`, `ebml-webm`, `riff-wave-core`, `adts-core`, `mpeg-audio`, `ogg-core`, `flv-core`, `mpeg-ts-core`) |
 | Property / fuzz / bench | when justified |
 | Browser E2E | `tools/e2e-web` (Playwright; optional CI) |
 | Fetch FATE subset | `bun tools/scripts/fetch-fate-samples.ts` [--ai-agent] → `local/.cache/fate/` |

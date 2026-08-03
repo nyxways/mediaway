@@ -45,7 +45,7 @@ Largest of the newly-added container crates.
   elementary streams.
 - Module split mirrors the format's own layering: `packet.rs` (188-byte TS
   packets + adaptation-field stuffing), `psi.rs` (PAT/PMT), `pes.rs` (PES +
-  PTS/DTS bit-packing), `crc.rs` (MPEG-2 PSI CRC-32 — same polynomial as `ogg`'s
+  PTS/DTS bit-packing), `crc.rs` (MPEG-2 PSI CRC-32 — same polynomial as `ogg-core`'s
   CRC but a **different init value**, not interchangeable).
 - This crate's own mux↔demux round-trip tests caught one real bug before it
   shipped: the adaptation field's flags byte is mandatory whenever

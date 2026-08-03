@@ -2,6 +2,10 @@
 
 #![forbid(unsafe_code)]
 
+pub mod sw_opus;
+#[cfg(test)]
+mod sw_opus_tests;
+
 use crate::error::EncodeError;
 use mediaway_common::{AudioFrame, CodecKind, Packet, Rational, SampleFormat, StreamInfo};
 

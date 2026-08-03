@@ -3,6 +3,7 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::print_stderr,
+    clippy::cast_precision_loss,
     reason = "unit tests may unwrap"
 )]
 
@@ -91,4 +92,70 @@ fn rejects_invalid_config() {
         .err()
         .expect("zero sample_rate must be rejected");
     assert_eq!(err, DecodeError::InvalidInput);
+}
+
+#[test]
+fn roundtrip_sw_encoded_sine_decodes_to_pcm_or_skip() {
+    use mediaway_common::SampleFormat;
+    use mediaway_sw::opus::{
+        config::{OpusApplication, OpusEncoderConfig},
+        encoder::OpusEncoder,
+    };
+
+    let sample_rate = 48_000;
+    let channels = 2_u16;
+    // WMF decoder MFT present? (skip on machines without it)
+    let Ok(mut dec) = WmfOpusDecoder::open(&OpusDecoderConfig::new(sample_rate, channels)) else {
+        eprintln!("skip: no inbox Opus decoder MFT");
+        return;
+    };
+
+    let mut enc = OpusEncoder::open(&OpusEncoderConfig {
+        sample_rate,
+        channels,
+        application: OpusApplication::Audio,
+        time_base: Rational::new(1, 50),
+        bitrate_bps: Some(64_000),
+        inband_fec: false,
+        packet_loss_percent: 0,
+    })
+    .expect("sw opus encoder");
+
+    // 20 ms sine frames @ 48 kHz stereo f32
+    let frame_samples = (sample_rate / 50) as usize;
+    let mut pcm: Vec<f32> = Vec::with_capacity(frame_samples * 2);
+    for i in 0..frame_samples {
+        let t = i as f32 / sample_rate as f32;
+        let s = (t * 440.0_f32 * std::f32::consts::TAU).sin();
+        pcm.push(s);
+        pcm.push(s);
+    }
+    let bytes: Vec<u8> = pcm.iter().flat_map(|f| f.to_le_bytes()).collect();
+    let frame = mediaway_common::AudioFrame {
+        pts: 0,
+        duration: frame_samples as u64,
+        sample_rate,
+        channels,
+        format: SampleFormat::F32,
+        data: bytes.into(),
+    };
+    enc.push_frame(&frame).expect("sw push");
+    let mut fed = 0usize;
+    let mut decoded_samples = 0u64;
+    while let Some(pkt) = enc.poll_packet().expect("sw poll") {
+        fed += 1;
+        dec.push_packet(&pkt).expect("wmf push");
+        while let Some(f) = dec.poll_frame().expect("wmf poll") {
+            decoded_samples += (f.data.len() as u64) / (4 * u64::from(channels));
+        }
+    }
+    dec.flush().expect("wmf flush");
+    while let Some(f) = dec.poll_frame().expect("wmf poll") {
+        decoded_samples += (f.data.len() as u64) / (4 * u64::from(channels));
+    }
+    assert!(fed >= 1, "sw encoder produced no packets");
+    assert!(
+        decoded_samples >= frame_samples as u64 / 2,
+        "decoded only {decoded_samples} samples (expected >= {frame_samples})"
+    );
 }

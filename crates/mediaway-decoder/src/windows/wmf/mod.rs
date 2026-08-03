@@ -16,7 +16,7 @@ mod dx11;
 #[cfg(feature = "video")]
 mod h264;
 #[cfg(feature = "audio")]
-mod opus;
+pub mod opus;
 mod runtime;
 #[cfg(feature = "video")]
 mod shared;

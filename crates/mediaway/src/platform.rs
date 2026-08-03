@@ -80,6 +80,30 @@ impl AutoEncoder {
 pub fn encoder_support(codec: CodecKind) -> Vec<EncoderCapability> {
     #[cfg(windows)]
     {
+        if codec == CodecKind::Opus {
+            // No inbox WMF Opus encoder MFT exists — the facade's Opus encode
+            // path is `mediaway-sw` (Software). Probe it live.
+            use mediaway_common::{Rational, SampleFormat};
+            use mediaway_encoder::auto::{Backend, EncodePathClass};
+            use mediaway_encoder::capability::{EncodeSupport, EncodeUnavailable};
+            use mediaway_encoder::{AudioEncoderConfig, EncodeError, SwOpusAudioEncoder};
+            let cfg = AudioEncoderConfig {
+                codec,
+                sample_rate: 48_000,
+                channels: 2,
+                sample_format: SampleFormat::F32,
+                time_base: Rational::new(1, 50),
+                bitrate_bps: 0,
+            };
+            let support = match SwOpusAudioEncoder::open(&cfg) {
+                Ok(_) => EncodeSupport::Supported(EncodePathClass::Software),
+                Err(EncodeError::Backend) => {
+                    EncodeSupport::Unavailable(EncodeUnavailable::NoDevice)
+                }
+                Err(_) => EncodeSupport::Unavailable(EncodeUnavailable::NotImplemented),
+            };
+            return vec![EncoderCapability::new(Backend::Software, support)];
+        }
         mediaway_encoder::windows::auto::support(codec)
     }
 
@@ -141,7 +165,15 @@ impl AutoDecoder {
 pub fn decoder_support(codec: CodecKind) -> DecodeSupport {
     #[cfg(windows)]
     {
-        use mediaway_decoder::windows::WindowsVideoDecoder;
+        use mediaway_decoder::windows::{OpusDecoderConfig, WindowsVideoDecoder, WmfOpusDecoder};
+        if codec == CodecKind::Opus {
+            // Inbox WMF Opus decoder MFT (CMSOpusDecMFT) — probe with a real
+            // session, same cost trade-off as the video probes.
+            return match WmfOpusDecoder::open(&OpusDecoderConfig::new(48_000, 2)) {
+                Ok(_) => DecodeSupport::Supported,
+                Err(_) => DecodeSupport::Unavailable(DecodeUnavailable::NoDevice),
+            };
+        }
         let cfg = VideoDecoderConfig {
             codec,
             output: mediaway_decoder::VideoOutputPreference::CpuFramesOk,

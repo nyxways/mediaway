@@ -27,11 +27,6 @@
 //! plumbing. See `docs/roadmap.md`.
 
 #![allow(unsafe_code)]
-#![allow(
-    dead_code,
-    reason = "not yet wired into a public entry point — no `AudioDecoder` trait exists yet \
-              in `mediaway-decoder` to implement against; see module docs / roadmap"
-)]
 
 use std::collections::VecDeque;
 
@@ -49,18 +44,33 @@ use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance};
 
 use super::runtime::{from_hns, to_hns};
 
-/// Config for [`WmfOpusDecoder::open`]. Deliberately not `crate::*` — no
-/// `AudioDecoder`/`AudioDecoderConfig` shape exists in the facade yet (see module docs).
-pub(crate) struct OpusDecoderConfig {
-    pub(crate) sample_rate: u32,
-    pub(crate) channels: u16,
-    /// Stream timebase; audio sessions elsewhere in this workspace use `1 / sample_rate`
-    /// so `Packet`/`AudioFrame` `pts`/`duration` are plain sample counts.
-    pub(crate) time_base: Rational,
+/// Config for [`WmfOpusDecoder::open`].
+pub struct OpusDecoderConfig {
+    /// Sample rate (Hz). The WMF decoder MFT's input type is negotiated at
+    /// this rate; the output (Float32 PCM) comes back at the same rate.
+    pub sample_rate: u32,
+    /// Channel count (1 or 2).
+    pub channels: u16,
+    /// Stream timebase; audio sessions elsewhere in this workspace use
+    /// `1 / sample_rate` so `Packet`/`AudioFrame` `pts`/`duration` are plain
+    /// sample counts.
+    pub time_base: Rational,
+}
+
+impl OpusDecoderConfig {
+    /// Config for `sample_rate`/`channels` with `1 / sample_rate` timebase.
+    #[must_use]
+    pub const fn new(sample_rate: u32, channels: u16) -> Self {
+        Self {
+            sample_rate,
+            channels,
+            time_base: Rational::new(1, sample_rate),
+        }
+    }
 }
 
 /// Opus decode session (WMF `CMSOpusDecMFT`, Float32 PCM output; see module docs).
-pub(crate) struct WmfOpusDecoder {
+pub struct WmfOpusDecoder {
     transform: IMFTransform,
     info: StreamInfo,
     time_base_num: u64,
@@ -73,7 +83,7 @@ pub(crate) struct WmfOpusDecoder {
 
 impl WmfOpusDecoder {
     /// Open a WMF Opus decoder for `config`.
-    pub(crate) fn open(config: &OpusDecoderConfig) -> Result<Self, DecodeError> {
+    pub fn open(config: &OpusDecoderConfig) -> Result<Self, DecodeError> {
         validate(config)?;
         super::runtime::ensure_mf()?;
 
@@ -98,11 +108,18 @@ impl WmfOpusDecoder {
         })
     }
 
-    pub(crate) const fn stream_info(&self) -> &StreamInfo {
+    /// Stream metadata: Opus audio, `1 / sample_rate` timebase, Float32 out.
+    pub const fn stream_info(&self) -> &StreamInfo {
         &self.info
     }
 
-    pub(crate) fn push_packet(&mut self, packet: &Packet) -> Result<(), DecodeError> {
+    /// Submit one compressed Opus packet (pre-extradata `Packet` payload).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecodeError::Closed`] after [`flush`](Self::flush), or
+    /// [`DecodeError::Backend`] when the MFT rejects the sample.
+    pub fn push_packet(&mut self, packet: &Packet) -> Result<(), DecodeError> {
         if self.flushed {
             return Err(DecodeError::Closed);
         }
@@ -114,14 +131,25 @@ impl WmfOpusDecoder {
         self.drain_output()
     }
 
-    pub(crate) fn poll_frame(&mut self) -> Result<Option<AudioFrame>, DecodeError> {
+    /// Pull the next decoded Float32 PCM frame, if any.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecodeError::Backend`] when the MFT's output drain fails.
+    pub fn poll_frame(&mut self) -> Result<Option<AudioFrame>, DecodeError> {
         if self.pending.is_empty() {
             self.drain_output()?;
         }
         Ok(self.pending.pop_front())
     }
 
-    pub(crate) fn flush(&mut self) -> Result<(), DecodeError> {
+    /// Signal end-of-stream; drains any remaining PCM with
+    /// [`poll_frame`](Self::poll_frame).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecodeError::Backend`] when the MFT rejects the drain message.
+    pub fn flush(&mut self) -> Result<(), DecodeError> {
         if self.flushed {
             return Ok(());
         }

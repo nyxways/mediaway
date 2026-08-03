@@ -145,13 +145,23 @@ fn closed_stream_info() -> &'static StreamInfo {
     })
 }
 
-/// Windows audio encode session (WMF AAC when opened on Windows).
+/// Windows audio encode session — WMF AAC or SW Opus (no inbox Opus encoder
+/// MFT exists; see `mediaway-sw`'s opus module docs).
 #[cfg(feature = "audio")]
 pub struct WindowsAudioEncoder {
     #[cfg(windows)]
-    inner: Option<wmf::WmfAacEncoder>,
+    inner: Option<AudioBackend>,
     #[cfg(not(windows))]
     _priv: (),
+}
+
+/// Per-codec audio backend behind [`WindowsAudioEncoder`].
+#[cfg(all(feature = "audio", windows))]
+enum AudioBackend {
+    /// WMF AAC encoder MFT.
+    Aac(wmf::WmfAacEncoder),
+    /// Software Opus encoder (`unsafe-libopus` via `mediaway-sw`).
+    Opus(crate::SwOpusAudioEncoder),
 }
 
 #[cfg(feature = "audio")]
@@ -161,10 +171,16 @@ impl WindowsAudioEncoder {
     /// # Errors
     ///
     /// Returns [`EncodeError::Unsupported`] when the codec/path is not wired, or
-    /// [`EncodeError::Backend`] on MF failure.
+    /// [`EncodeError::Backend`] on MF/backend failure.
     #[cfg(windows)]
     pub fn open(config: &AudioEncoderConfig) -> Result<Self, EncodeError> {
-        let inner = wmf::WmfAacEncoder::open(config)?;
+        let inner = match config.codec {
+            mediaway_common::CodecKind::Aac => AudioBackend::Aac(wmf::WmfAacEncoder::open(config)?),
+            mediaway_common::CodecKind::Opus => {
+                AudioBackend::Opus(crate::SwOpusAudioEncoder::open(config)?)
+            }
+            _ => return Err(EncodeError::Unsupported),
+        };
         Ok(Self { inner: Some(inner) })
     }
 
@@ -196,33 +212,35 @@ impl WindowsAudioEncoder {
 #[cfg(windows)]
 impl AudioEncoder for WindowsAudioEncoder {
     fn stream_info(&self) -> &StreamInfo {
-        #[allow(
-            clippy::option_if_let_else,
-            reason = "map_or_else forces 'static vs 'self lifetime clash"
-        )]
-        if let Some(e) = self.inner.as_ref() {
-            e.stream_info()
-        } else {
-            closed_audio_stream_info()
+        match self.inner.as_ref() {
+            Some(AudioBackend::Aac(e)) => e.stream_info(),
+            Some(AudioBackend::Opus(e)) => e.stream_info(),
+            None => closed_audio_stream_info(),
         }
     }
 
     fn push_frame(&mut self, frame: &AudioFrame) -> Result<(), EncodeError> {
-        self.inner
-            .as_mut()
-            .ok_or(EncodeError::Closed)?
-            .push_frame(frame)
+        match self.inner.as_mut() {
+            Some(AudioBackend::Aac(e)) => e.push_frame(frame),
+            Some(AudioBackend::Opus(e)) => e.push_frame(frame),
+            None => Err(EncodeError::Closed),
+        }
     }
 
     fn poll_packet(&mut self) -> Result<Option<Packet>, EncodeError> {
-        self.inner
-            .as_mut()
-            .ok_or(EncodeError::Closed)?
-            .poll_packet()
+        match self.inner.as_mut() {
+            Some(AudioBackend::Aac(e)) => e.poll_packet(),
+            Some(AudioBackend::Opus(e)) => e.poll_packet(),
+            None => Err(EncodeError::Closed),
+        }
     }
 
     fn flush(&mut self) -> Result<(), EncodeError> {
-        self.inner.as_mut().ok_or(EncodeError::Closed)?.flush()
+        match self.inner.as_mut() {
+            Some(AudioBackend::Aac(e)) => e.flush(),
+            Some(AudioBackend::Opus(e)) => e.flush(),
+            None => Err(EncodeError::Closed),
+        }
     }
 }
 

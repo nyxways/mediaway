@@ -24,11 +24,13 @@ pub mod auto;
 pub mod capability;
 
 #[cfg(feature = "audio")]
-mod audio;
+pub mod audio;
 mod error;
 #[cfg(feature = "video")]
 mod video;
 
+#[cfg(feature = "audio")]
+pub use audio::sw_opus::SwOpusAudioEncoder;
 #[cfg(feature = "audio")]
 pub use audio::{AudioEncoder, AudioEncoderConfig};
 pub use error::EncodeError;

@@ -30,7 +30,14 @@ mod d3d11_shared_decode_bridge;
 #[cfg(all(windows, feature = "video"))]
 pub use d3d11_shared_decode_bridge::D3d11SharedDecodeBridge;
 
-#[cfg(all(windows, feature = "video"))]
+/// Public WMF Opus decode session (inbox `CMSOpusDecMFT`, Float32 PCM out).
+/// Reachable as `mediaway_decoder::windows::WmfOpusDecoder` — real, tested
+/// MFT plumbing (see `wmf::opus` module docs); no facade `AudioDecoder`
+/// trait exists yet, so this is the low-level first-class entry.
+#[cfg(all(windows, feature = "audio"))]
+pub use wmf::opus::{OpusDecoderConfig, WmfOpusDecoder};
+
+#[cfg(all(windows, any(feature = "video", feature = "audio")))]
 mod wmf;
 
 // Not wired into `WindowsVideoDecoder` yet — see the module's own doc comment

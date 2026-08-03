@@ -84,7 +84,7 @@ web-sys = { workspace = true, features = [
 
 
 [features]
-default = ["full", "video"]
+default = ["full", "video", "audio"]
 video = []
-full = ["video"]
+full = ["video", "audio"]
 audio = []

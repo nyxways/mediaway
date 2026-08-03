@@ -11,7 +11,10 @@ Create a GitHub issue — "$1".
    - Docs → `20_docs.yml`
    - Feature → `30_feature.yml` **or** Discussion `feature-requests`
 2. `gh issue create` with English title/body, or open the web form.
-3. Labels: `state:needs triage` plus `bug` / `crash` / `docs` / `enhancement` as appropriate.
+3. Labels: `state:needs triage` plus `bug` / `crash` / `docs` / `enhancement` as
+   appropriate. Binding issues additionally get `area:bindings` + `binding:<lang>`
+   (rust|c|cpp|csharp|python|node|browser); platform-scoped issues get
+   `platform:<os>` (see [`docs/conventions/issues.md`](../../docs/conventions/issues.md) § Labels).
 4. Link related ADR/spec paths.
 5. Return the issue number for `TODO(#N)`.
 

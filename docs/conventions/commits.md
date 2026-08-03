@@ -47,8 +47,20 @@ Hooks check **Conventional Commits shape** only. English is an agent/human rule 
 | Core | `common`, `encoder`, `decoder`, `muxer`, `demuxer`, `device`, `sw` |
 | Platform crate | `encoder-windows`, `device-web`, `decoder-linux`, … |
 | Backend tech | `wmf`, `videotoolbox`, `mediacodec`, `webcodecs`, `vulkan`, `vaapi` |
+| Bindings | `bindings` (cross-cutting), `binding-rust`, `binding-c`, `binding-cpp`, `binding-csharp`, `binding-python`, `binding-node`, `binding-browser` |
 | Tools | `avcli`, `avprobe`, `tools` |
 | Meta | `spec`, `adr`, `ci`, `deps`, `hooks`, `docs` |
+
+### Binding scopes
+
+Bindings are split **per language** so each binding's history is reviewable on
+its own: `fix(binding-python): demuxer streams() crash on short moov` is a
+Python-only change. Use the **umbrella `bindings`** scope when a change spans
+languages or the shared packaging/scripts layer
+(`feat(bindings): publish-ready packages for all languages`), and
+`binding-rust` for the Rust API surface itself (examples, docs, API shape).
+The `-ffi` crates stay under their core/backend scopes
+(`pipeline-ffi`, `container-ffi`, `device-ffi`) — they are Rust, not bindings.
 
 ## subject
 
@@ -72,3 +84,13 @@ Hooks check **Conventional Commits shape** only. English is an agent/human rule 
 - Title: Conventional Commits style or short English summary
 - Body: English — Summary + Test plan (checklist)
 - Do not mention AI agent names in PR text
+
+## Templates
+
+- Commit: `.gitmessage` at the repo root
+  (`git commit --template=.gitmessage`; the commit-msg hook enforces the shape).
+- PR: [`.github/PULL_REQUEST_TEMPLATE.md`](../../.github/PULL_REQUEST_TEMPLATE.md).
+- Issues: `.github/ISSUE_TEMPLATE/` forms.
+- Labels: [`docs/conventions/issues.md`](issues.md) § Labels, applied by
+  `bun tools/scripts/sync-labels.ts`.
+- Going public: [`docs/contributing/public-launch.md`](../contributing/public-launch.md).

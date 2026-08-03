@@ -46,6 +46,16 @@ Titles and bodies: **English only** ([`AGENTS.md`](../../AGENTS.md)).
 | `perf` | Performance / vectorization / alloc |
 | `state:needs triage` | New inbound |
 | `good first issue` | Small, well-scoped |
+| `area:core` | `mediaway-common`, sans-io cores (`iso-bmff`, `iso-cenc`, `riff_wave`, …) |
+| `area:container` | mux/demux + `container-ffi` |
+| `area:encoder` / `area:decoder` / `area:device` | Encoder / decoder / device crates + their `-ffi` |
+| `area:bindings` | Cross-language binding or packaging work |
+| `binding:rust` / `binding:c` / `binding:cpp` / `binding:csharp` / `binding:python` / `binding:node` / `binding:browser` | Per-language binding issues (always paired with `area:bindings` or a core `area:*`) |
+| `platform:windows` / `platform:web` / `platform:linux` / `platform:apple` / `platform:android` | Platform scope |
+| `priority:high` | Urgent: data loss, security, red CI, broken released package |
+
+Label list is maintained in [`tools/scripts/sync-labels.ts`](../../tools/scripts/sync-labels.ts)
+(run `bun tools/scripts/sync-labels.ts` with `gh` authenticated to apply).
 
 ## Titles
 

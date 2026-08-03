@@ -13,6 +13,8 @@
 
 - Commands run (`cargo test`, `-p <crate>`, optional PATH oracle).
 - Gaps / platforms not tested (Windows-first when it matters).
+- Bindings: per-language example re-verified against the real DLLs/wasm when the
+  change touches a binding (scope `binding-<lang>`) — or N/A.
 
 ## Checklist
 

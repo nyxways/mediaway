@@ -1,0 +1,15 @@
+# <type>(<scope>): <subject>
+
+# Mediaway commit template (Conventional Commits 1.0.0) — docs/conventions/commits.md.
+# Use: git commit --template=.gitmessage  (the commit-msg hook enforces the shape)
+#
+# type:  feat | fix | docs | refactor | perf | test | build | ci | chore | revert
+# scope: core crate (encoder, container, iso-bmff, ...) | platform crate | backend tech
+#        | bindings | binding-<lang> (rust|c|cpp|csharp|python|node|browser)
+#        | tools | spec | adr | ci | deps | hooks | docs
+# subject: imperative mood, ≤50 chars preferred (72 max), lowercase, no trailing period.
+#
+# English only — AGENTS.md language policy (commits and PRs are English).
+#
+# body: why, not what. Streaming/sync-vs-async, Zero-Copy vs copy when it matters.
+# footer: BREAKING CHANGE: ... | Refs: #N

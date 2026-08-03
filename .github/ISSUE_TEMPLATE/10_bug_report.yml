@@ -28,6 +28,7 @@ body:
         - mediaway-sw
         - mediaway-test-media
         - mediaway-avcli / mediaway-avprobe
+        - bindings: C / C++ / C# / Python / Node / Browser
         - docs / wiki / ADR
         - CI / hooks / tooling
         - other / unclear

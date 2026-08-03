@@ -163,30 +163,32 @@ For decode on its own, see [`examples/decode/decode_h264.rs`](examples/decode/de
 
 ---
 
-## Language support & FFI (planned)
+## Language support & FFI
 
-Rust is the primary, always-first-class native API. Multi-language bindings and engine wrappers are architected with **selective linking**:
+Rust is the primary, always-first-class native API. Bindings for the supported
+host languages are **real, verified code** under [`bindings/`](bindings/) — not
+aspirational sketches. Multi-language bindings and engine wrappers are
+architected with **selective linking**:
 
-- **Per-Capability C ABI (`mediaway-*-ffi`)**: Non-Rust applications link only the specific C ABI crates or features they need (e.g. `mediaway-container-ffi` for standalone MP4/WebM muxing, or `mediaway-encoder-ffi` for hardware encoding). This ensures host applications in C, C++, C#, Python, Go, Swift, Kotlin, and Node.js keep their own binary sizes minimal without linking unused codecs or capture drivers.
+- **Per-Capability C ABI (`mediaway-*-ffi`)**: Non-Rust applications link only the specific C ABI crates or features they need (e.g. `mediaway-container-ffi` for standalone MP4/WebM muxing, or `mediaway-encoder-ffi` for hardware encoding). This ensures host applications in C, C++, C#, Python, and Node.js keep their own binary sizes minimal without linking unused codecs or capture drivers.
 - **Seamless Engine & Graphics Wrappers (`wgpu`, Three.js, Unity, Godot)**: High-level binding wrappers designed to hand off native GPU texture pointers (`GpuBufferHandle` / D3D11, D3D12, Vulkan, Metal) between real-time game engines or renderers and Mediaway's hardware pipeline with zero CPU copy overhead.
 - **Browser WebAssembly (WASM)**: Web hosts target WASM (`wasm-bindgen`) directly integrated with native browser WebCodecs and WebGPU APIs — bypassing the C ABI entirely for zero-overhead browser execution.
 
-[`bindings/`](bindings/) contains **aspirational** example code for each supported language (written to drive API ergonomics from the consumer side before FFI crates ship — see [`docs/spec/c-ffi.md`](docs/spec/c-ffi.md)).
+| Language / Host | Interop Path | Status | Target Ergonomics & Use Cases | Examples |
+|-----------------|--------------|--------|-------------------------------|----------|
+| **Rust** | Native crates | ✅ primary | Primary API (100% Zero-Copy, Sans-IO, traits) | [`examples/`](examples/) |
+| **C** | Direct C ABI | ✅ verified | ABI contract baseline, zero-overhead FFI | [`bindings/c/examples/`](bindings/c/examples/) |
+| **C++** | Thin RAII C ABI | ✅ verified | Native desktop apps, custom engines, rendering pipelines | [`bindings/cpp/examples/`](bindings/cpp/examples/) |
+| **C# (.NET)** | P/Invoke | ✅ verified | Windows desktop, WPF/WinUI, Unity native plugins | [`bindings/csharp/`](bindings/csharp/) |
+| **Python** | `ctypes` / `cffi` | ✅ verified | Data processing pipelines, ML model input/output streams | [`bindings/python/examples/`](bindings/python/examples/) |
+| **Node.js (TS)** | Native Addon / N-API (koffi FFI today) | ✅ verified | Node.js server-side video processing and CLI tools | [`bindings/nodejs/examples/`](bindings/nodejs/examples/) |
+| **Browser (TS)** | WASM + WebCodecs | 📐 design | Browser-native high-performance video apps (no C FFI) | [`bindings/browser/examples/`](bindings/browser/examples/) |
+| **Unity / Godot** | Native GPU Plugin | Planned | Seamless Zero-Copy GPU texture sharing & camera/screen record | — |
 
-| Language / Host | Interop Path | Target Ergonomics & Use Cases | Examples |
-|-----------------|--------------|-------------------------------|----------|
-| **Rust** | Native crates | Primary API (100% Zero-Copy, Sans-IO, traits) | [`examples/`](examples/) |
-| **C** | Direct C ABI | ABI contract baseline, zero-overhead FFI | [`bindings/c/examples/`](bindings/c/examples/) |
-| **C++** | Thin RAII C ABI | Native desktop apps, custom engines, rendering pipelines | [`bindings/cpp/examples/`](bindings/cpp/examples/) |
-| **C# (.NET)** | P/Invoke | Windows desktop, WPF/WinUI, Unity native plugins | [`bindings/csharp/examples/`](bindings/csharp/examples/) |
-| **Python** | `ctypes` / `cffi` | Data processing pipelines, ML model input/output streams | [`bindings/python/examples/`](bindings/python/examples/) |
-| **Zig** | `@cImport` | Lightweight systems tooling and native utilities | [`bindings/zig/examples/`](bindings/zig/examples/) |
-| **Go** | `cgo` | High-throughput backend services and streaming servers | [`bindings/go/examples/`](bindings/go/examples/) |
-| **Swift** | C Bridging Header | macOS / iOS native desktop and mobile applications | [`bindings/swift/examples/`](bindings/swift/examples/) |
-| **Kotlin / Java** | JNI over C ABI | Android native apps, JVM server pipelines | [`bindings/kotlin/examples/`](bindings/kotlin/examples/) |
-| **Node.js (TS)** | Native Addon / N-API | Node.js server-side video processing and CLI tools | [`bindings/nodejs/examples/`](bindings/nodejs/examples/) |
-| **Browser (TS)** | WASM + WebCodecs | Browser-native high-performance video apps (no C FFI) | [`bindings/browser/examples/`](bindings/browser/examples/) |
-| **Unity / Godot** | Native GPU Plugin | Seamless Zero-Copy GPU texture sharing & camera/screen record | Planned |
+Status legend: ✅ verified = real binding source built and run against the native
+libraries; 📐 design = README brief + example code only (nothing compiles/ships
+yet). Per-language detail lives in [`bindings/README.md`](bindings/README.md)
+and each folder's own README.
 
 Node.js (C ABI FFI) and the Browser (WASM + WebCodecs) are two distinct JS/TS environments with distinct interop paths — see [`docs/spec/c-ffi.md`](docs/spec/c-ffi.md) § Tier C.
 

@@ -4,8 +4,8 @@ Root [`bindings/`](../../../../bindings/README.md) holds per-language folders
 for the languages planned in [`docs/spec/c-ffi.md`](../../../spec/c-ffi.md)
 (Tier B via C ABI, Tier C browser via WASM). The C ABI itself is real and
 hardware-verified: `mediaway-common-ffi`, `mediaway-container-ffi`,
-`mediaway-pipeline-ffi`, `mediaway-device-ffi`. `bindings/README.md`'s
-"nothing compiles" line is stale for C and C# specifically — see below.
+`mediaway-pipeline-ffi`, `mediaway-device-ffi`. `bindings/README.md` is the
+hub: per-language status legend, capability truth table, and scenario map.
 
 ## Status per language
 
@@ -63,12 +63,18 @@ hardware-verified: `mediaway-common-ffi`, `mediaway-container-ffi`,
     package that is **unverified** (no Unity Editor available to compile or
     run it). Design:
     [`docs/adr/0018-csharp-netstandard20-unity.md`](../../../adr/0018-csharp-netstandard20-unity.md).
-- **All other languages** (C++, Python, Zig, Go, Swift, Kotlin, Node.js,
-  Browser) — `bindings/<lang>/examples/*` remain **aspirational,
-  non-compiling** design sketches only. Written as if the binding package
-  already existed, to design the idiomatic consumer-side API before building
-  it (wishful-thinking API design). Confirmed build order: C# → Python →
-  Node → rest.
+- **C++** — real under `bindings/cpp/`: RAII wrapper over the C ABI
+  (`mediaway.hpp`), 7 examples compile `-Wall -Werror` and run against the
+  real native libraries (incl. two-track camera_record).
+- **Python** — real under `bindings/python/mediaway/` (`ctypes`), 7 examples
+  run; encode output byte-identical to C/C++/Node.
+- **Node.js** — real under `bindings/nodejs/packages/@mediaway/*` (koffi
+  FFI); napi-rs is the eventual official path.
+- **Browser** — 📐 design: README brief + example code only (WASM path, not
+  the C ABI); no `@mediaway/browser` package yet (needs an ADR).
+- **Zig / Go / Swift / Kotlin** — not in the supported set; folders removed
+  2026-08. Revisit per `docs/spec/c-ffi.md` Tier B when a concrete consumer
+  appears.
 
 ## Rules the examples/bindings follow
 

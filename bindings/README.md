@@ -20,10 +20,6 @@ Each language folder is self-contained: its own `README.md` is the entry point. 
 | C++ | [`cpp/`](cpp/) | Thin RAII wrapper over the C ABI | ✅ verified | [README](cpp/README.md) |
 | C# | [`csharp/`](csharp/) | P/Invoke over the C ABI (net8.0 + netstandard2.0) | ✅ verified | [src](csharp/src/) · [unity UPM](csharp/unity/com.mediaway.unity/README.md) (🔷) |
 | Python | [`python/`](python/) | `ctypes` over the C ABI | ✅ verified | [README](python/README.md) |
-| Zig | [`zig/`](zig/) | `@cImport` of the C ABI | 📐 design | [examples](zig/examples/) |
-| Go | [`go/`](go/) | `cgo` over the C ABI | 📐 design | [examples](go/examples/) |
-| Swift | [`swift/`](swift/) | C bridging header | 📐 design | [examples](swift/examples/) |
-| Kotlin | [`kotlin/`](kotlin/) | JNI over the C ABI | 📐 design | [examples](kotlin/examples/) |
 | Node.js | [`nodejs/`](nodejs/) | FFI over the C ABI (`koffi`; napi-rs is the eventual official path) | ✅ verified | [README](nodejs/README.md) |
 | Browser | [`browser/`](browser/) | WASM (`wasm-bindgen`) + Web APIs — **not** the C ABI | 📐 design | [README](browser/README.md) |
 

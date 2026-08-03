@@ -7,7 +7,8 @@
     "verify-standard": "bun run fetch-standard.ts verify",
     "fetch-fate-samples": "bun run fetch-fate-samples.ts",
     "incremental-test": "bun run incremental-test.ts",
-    "incremental-bench": "bun run incremental-bench.ts"
+    "incremental-bench": "bun run incremental-bench.ts",
+    "release-secrets": "bun run release-secrets.ts"
   },
   "dependencies": {
     "@noble/hashes": "1.8.0"

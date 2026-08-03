@@ -41,6 +41,7 @@ Conventional Commits **format** only ([commits.md](commits.md)). English for com
 |----------|---------|------|
 | [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) | `push` / `pull_request` → `main` | fmt · clippy · test · deny (merge gate) |
 | [`.github/workflows/bench-daily.yml`](../../.github/workflows/bench-daily.yml) | **Daily cron** + `workflow_dispatch` on **`main` only** | Bench smoke (`ci-smoke`); skip if `main` unchanged since last success; artifacts (not PR noise) |
+| [`.github/workflows/release.yml`](../../.github/workflows/release.yml) | push to `release` / `release/**` (+ `workflow_dispatch`, `dry_run` input) | Publish crates.io · npm · NuGet · PyPI · CPack, then tag `v<version>` + GitHub release (needs repo secrets — [repo-operations.md](repo-operations.md) § Publishing) |
 
 Daily benches do **not** replace pre-push. Hosted runners are not `ref-*` GPU baselines — see [benchmarking.md](benchmarking.md) § Daily CI (`main`).
 

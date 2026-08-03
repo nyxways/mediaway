@@ -40,28 +40,93 @@ authenticated whenever the list changes). New issues start as
   -D warnings`, `cargo nextest run --workspace`, `cargo deny check` — the
   graph stays GPL-free.
 
-## Publishing
+## Publishing (automatic)
 
-Packages are built from `main` by the Bun scripts under `tools/scripts/`, then
-uploaded with the registry's CLI:
+A push to a **release branch** (`release` or `release/*`) publishes everything
+via [`.github/workflows/release.yml`](../../.github/workflows/release.yml):
 
-| Registry | Package(s) | Build | Upload |
-|---|---|---|---|
-| npm | `@mediaway/ffi`, `@mediaway/container`, `@mediaway/device`, `@mediaway/encoder`, `@mediaway/browser` | `bun tools/scripts/build-node-packages.ts`; browser: `npm run build` in `bindings/browser/packages/browser` | `npm publish` (CI secret `NPM_TOKEN`, `@mediaway` scope) |
-| NuGet | `Mediaway.*` (8 packages) | `bun tools/scripts/package-csharp.ts` | `dotnet nuget push` (secret `NUGET_KEY`) |
-| PyPI | `mediaway` | `bun tools/scripts/build-python-package.ts` | `twine upload` (secret `PYPI_TOKEN`) |
-| crates.io | `iso-bmff-wasm` (+ future `publish.workspace` crates) | `cargo publish` | cargo token (secret `CARGO_REGISTRY_TOKEN`) |
-| C/C++ | `Mediaway-<version>-win64.zip/.tgz` | `cmake --build build && cpack` in `bindings/cpp` | GitHub release assets |
+1. `version` — reads the version from `[workspace.package]` in the root
+   `Cargo.toml` (**single source of truth**; npm / NuGet / PyPI / CPack
+   versions are stamped from it at publish time) and refuses to re-release an
+   existing `v<version>`; a `release/vX.Y.Z` branch must match the workspace
+   version.
+2. `native-assets` — builds the three `-ffi` win64 cdylibs
+   (`x86_64-pc-windows-gnu`, MinGW-w64) and stages them for the binding jobs.
+3. `npm` / `nuget` / `pypi` / `native` — publish `@mediaway/*` (5 packages),
+   `Mediaway.*` (8 NuGet packages), the `mediaway` wheel, and the C/C++ CPack
+   archives (`Mediaway-<version>-win64.zip/.tgz`).
+4. `release` — creates the `v<version>` tag and the GitHub release
+   (prefers `RELEASE_NOTES.md`, falls back to generated notes) and attaches
+   the CPack archives — only after every registry job succeeded.
 
-Versioning: workspace `0.1.0` today; tag `v<version>` per release.
+**crates.io is deferred** (no crates job in the first release) — the first
+release covers npm / NuGet / PyPI / CPack only. When crates.io returns, re-add
+a crates job (dependency-order publish of the 39 `publish = true` crates; the
+pre-flight closure check is in git history). `CARGO_REGISTRY_TOKEN`
+(https://crates.io/settings/tokens) is not needed until then.
+
+All registry jobs run in parallel. Registries are **one-shot per version**: a
+failed publish leaves a partial release, so fix and **bump the workspace
+version** for the next attempt (or delete the half-published packages
+manually). Never re-run a release without bumping.
+
+- **Environment**: every publishing job (`npm` / `nuget` / `pypi` /
+  `native` / `release`) runs under the GitHub **`release` environment**
+  (Settings → Environments → release). Protection rules there (e.g. required
+  reviewers) gate **all** registry publishes and the GitHub release; with no
+  rules the jobs run immediately. Registry-side environment restrictions —
+  the NuGet Trusted Publishing policy's Environment field and the npm trusted
+  publisher — are set to `release` to match the workflow.
+
+- **Secrets** (repo-level Actions secrets) — set interactively with
+  `bun tools/scripts/release-secrets.ts` (prints where to obtain each token,
+  lets you change only the ones you pick; `--list` / `--set` / `--delete` for
+  scripting):
+
+  | Secret | Registry | Get it at |
+  |---|---|---|
+  | `NUGET_USER` | nuget.org | your nuget.org account name (profile, not email) — used by NuGet/login@v1 |
+  | `PYPI_TOKEN` | PyPI | https://pypi.org/manage/account/token/ (project `mediaway`) |
+
+  npm and NuGet need **no long-lived tokens**: the `@mediaway` org
+  authenticates npm publishes with OIDC **Trusted Publishing** (npmjs.com →
+  org Settings → Trusted Publishing → add this repo as a publisher), so
+  `npm publish --provenance` runs tokenless via its `id-token`. nuget.org uses
+  a **Trusted Publishing policy** (nuget.org → Trusted Publishing → repo
+  `nyxways/mediaway`, workflow file `release.yml`, environment left empty);
+  `NuGet/login@v1` exchanges the job's `id-token` for a 1-hour API key — only
+  the nuget.org username (`NUGET_USER`) is stored. `GITHUB_TOKEN` is also
+  automatic (creates the tag + release) — nothing to set.
+
+- **Dry-run**: `workflow_dispatch` with `dry_run=true` (pick the release
+  branch as the ref) runs the whole pipeline — version checks, crates
+  pre-flight, `npm publish --dry-run`, `dotnet pack`, wheel build, CPack —
+  and publishes nothing.
+
+- **Manual fallback** (pre-1.0, when the workflow is not used): build with the
+  Bun scripts under `tools/scripts/`, then upload with the registry's CLI:
+
+  | Registry | Package(s) | Build | Upload |
+  |---|---|---|---|
+  | npm | `@mediaway/ffi`, `@mediaway/container`, `@mediaway/device`, `@mediaway/encoder`, `@mediaway/browser` | `bun tools/scripts/build-node-packages.ts`; browser: `npm run build` in `bindings/browser/packages/browser` | `npm publish --provenance` (OIDC Trusted Publishing, `@mediaway` scope) |
+  | NuGet | `Mediaway.*` (8 packages) | `bun tools/scripts/package-csharp.ts` | `dotnet nuget push` with a 1-hour key from `NuGet/login@v1` (OIDC Trusted Publishing; needs `NUGET_USER`) |
+  | PyPI | `mediaway` | `bun tools/scripts/build-python-package.ts` | `twine upload` (secret `PYPI_TOKEN`) |
+  | crates.io | — deferred (no crates job in the first release; see note above) | `cargo publish` | cargo token (secret `CARGO_REGISTRY_TOKEN`, not needed yet) |
+  | C/C++ | `Mediaway-<version>-win64.zip/.tgz` | `cmake --build build && cpack` in `bindings/cpp` | GitHub release assets |
 
 ## Releases
 
-1. Bump the workspace version (workspace `Cargo.toml` `version`), update
-   [`docs/spec/status.md`](../spec/status.md) if support promises change.
-2. Tag `v<version>` on `main`; write release notes covering platforms
-   (Windows-first), codecs (H.264/AAC/…), bindings
-   (C/C++/C#/Python/Node/Browser), and the honest maturity bar.
-3. Run the publishing table above; attach the C/C++ CPack archives to the
-   release.
-4. Wiki: note the new package versions under `docs/ai/wiki/bindings/`.
+1. Bump the workspace version (root `Cargo.toml` → `[workspace.package]` →
+   `version`) and update [`docs/spec/status.md`](../spec/status.md) if support
+   promises change. Do **not** hand-bump the npm / NuGet / PyPI / CPack
+   manifests — the workflow stamps them from the workspace version.
+2. Create a **release branch** `release/vX.Y.Z` (version must match the
+   workspace version — the workflow refuses a mismatch), fill
+   [`RELEASE_NOTES.md`](../../RELEASE_NOTES.md) (template in the file), and
+   push. The workflow publishes everything and opens the GitHub release
+   (prefers `RELEASE_NOTES.md`, falls back to generated notes). When in
+   doubt, run `workflow_dispatch` with `dry_run=true` first.
+3. Wiki: note the new package versions under `docs/ai/wiki/bindings/`.
+
+Release notes should cover platforms (Windows-first), codecs (H.264/AAC/…),
+bindings (C/C++/C#/Python/Node/Browser), and the honest maturity bar.

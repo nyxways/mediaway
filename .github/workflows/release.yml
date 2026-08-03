@@ -1,0 +1,418 @@
+# Release: publish every registry package and create the GitHub release.
+# Triggered by a push to a release branch (`release` or `release/*`). The
+# version is read from `[workspace.package]` in the root Cargo.toml (single
+# source of truth) and stamped into the npm / NuGet / PyPI / CPack manifests
+# at publish time — bump only the workspace version, never the per-package
+# ones by hand.
+#
+# Manual run: `workflow_dispatch` — pick the release branch as the ref; set
+# `dry_run=true` to run the whole pipeline (version checks, crates pre-flight,
+# package builds, `npm publish --dry-run`) without publishing anything.
+#
+# Registry tokens live in repo Actions secrets; set them with
+# `bun tools/scripts/release-secrets.ts` (interactive TUI, prints where to get
+# each token):
+#   NUGET_USER            nuget.org   your nuget.org username (for NuGet/login OIDC)
+#   PYPI_TOKEN            PyPI        https://pypi.org/manage/account/token/
+#   GITHUB_TOKEN          — automatic (creates the v<version> tag + release)
+#
+# crates.io is deferred (no crates job): the first release covers npm / NuGet /
+# PyPI / CPack only. When crates.io returns, re-add a crates job (39-crate
+# dependency-order publish; see git history / docs/ai/wiki/meta/release.md).
+# CARGO_REGISTRY_TOKEN (https://crates.io/settings/tokens) is not needed yet.
+#
+# npm and NuGet need NO long-lived tokens: the @mediaway org uses npm OIDC
+# Trusted Publishing (npmjs.com → org Settings → Trusted Publishing), and
+# nuget.org uses a Trusted Publishing policy (nuget.org → Trusted Publishing →
+# repo nyxways/mediaway, workflow file release.yml). Both authenticate with
+# the workflow's id-token (see `permissions`) — npm directly, NuGet via
+# NuGet/login@v1, which exchanges it for a 1-hour API key.
+#
+# Every publishing job runs under the `release` GitHub environment (Settings →
+# Environments → release). Protection rules there gate ALL registry publishes;
+# registry-side environment restrictions (NuGet policy, npm trusted publisher)
+# are set to `release` to match. No rules = jobs run immediately.
+#
+# Failure semantics: registries are one-shot per version — if a publish fails
+# partway, fix and bump the workspace version for the next attempt (or delete
+# the half-published packages manually). The GitHub release is created only
+# when every registry job succeeded.
+name: release
+
+on:
+  push:
+    branches: ["release", "release/**"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Validate the pipeline (version checks + builds) but publish nothing"
+        type: boolean
+        default: false
+      npm_provenance:
+        description: "Publish npm packages with provenance (requires npm trusted publishing on the @mediaway org)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  id-token: write # npm provenance (OIDC)
+
+# One release at a time per branch; a second push queues instead of cancelling
+# an in-flight publish.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    name: version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version (workspace Cargo.toml)
+        id: extract
+        shell: bash
+        run: |
+          VERSION="$(awk '/^\[workspace\.package\]/{f=1} f && /^version[[:space:]]*=/{sub(/^version[[:space:]]*=[[:space:]]*"/, ""); sub(/".*$/, ""); print; exit}' Cargo.toml)"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::invalid workspace version '$VERSION' — expected semver under [workspace.package] in Cargo.toml"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Refuse re-releasing an existing version
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.extract.outputs.version }}"
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "::error::release v$VERSION already exists — bump [workspace.package] version in Cargo.toml"
+            exit 1
+          fi
+
+      - name: Release branch version must match the workspace version
+        # A push to release/vX.Y.Z publishes that exact X.Y.Z — refuse a
+        # mismatch (branch says v0.1.1 but Cargo.toml still 0.1.0) instead of
+        # silently releasing the wrong version.
+        if: ${{ startsWith(github.ref_name, 'release/v') }}
+        shell: bash
+        run: |
+          BRANCH_VERSION="${GITHUB_REF_NAME#release/v}"
+          VERSION="${{ steps.extract.outputs.version }}"
+          if [[ "$BRANCH_VERSION" != "$VERSION" ]]; then
+            echo "::error::branch ${GITHUB_REF_NAME} implies version ${BRANCH_VERSION} but the workspace version is ${VERSION} — bump [workspace.package] version in Cargo.toml on this branch"
+            exit 1
+          fi
+
+  native-assets:
+    name: native assets (win64 DLLs)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Add windows-gnu target
+        shell: bash
+        run: rustup target add x86_64-pc-windows-gnu
+
+      # The bindings' verified build is the GNU target (see
+      # tools/scripts/copy-native-dlls.ts) — MinGW-w64 provides the linker.
+      - uses: msys2/setup-msys2@v2
+        with:
+          update: false
+
+      - name: Install MinGW-w64 (ucrt)
+        shell: msys2 {0}
+        run: pacman -S --noconfirm mingw-w64-ucrt-x86_64-gcc
+
+      - name: Put ucrt64 bin on PATH
+        shell: bash
+        run: echo "C:\msys64\ucrt64\bin" >> "$GITHUB_PATH"
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Enable sccache (release namespace)
+        shell: bash
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_GHA_VERSION=mediaway-release-v1" >> "$GITHUB_ENV"
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: mediaway-release-v1
+          key: native-win64
+
+      - name: Build + stage cdylibs
+        shell: bash
+        run: bun tools/scripts/copy-native-dlls.ts --release
+
+      - name: Upload native DLLs
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-dlls
+          path: |
+            bindings/nodejs/packages/ffi/native
+            bindings/python/mediaway/_native
+            bindings/csharp/runtime/win-x64/native
+            bindings/native/runtime/win-x64
+
+  npm:
+    name: npm (@mediaway/*)
+    runs-on: windows-latest
+    needs: [version, native-assets]
+    environment: release
+    env:
+      MEDIAWAY_SKIP_CARGO_BUILD: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Browser prepack runs `wasm-pack build` (bindings/browser/packages/browser)
+      - name: Add wasm32 target
+        shell: bash
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        uses: jetli/wasm-pack-action@v0.4.0
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-dlls
+          path: .
+
+      - name: Install node deps (workspace root)
+        run: bun install
+        working-directory: bindings/nodejs
+
+      - name: Install browser dev deps
+        run: bun install
+        working-directory: bindings/browser/packages/browser
+
+      - name: Build node packages (tsc)
+        shell: bash
+        run: bun tools/scripts/build-node-packages.ts --release
+
+      - name: Stamp npm versions
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          bun -e '
+          for (const p of ["ffi", "container", "device", "encoder"]) {
+            const f = `bindings/nodejs/packages/${p}/package.json`;
+            const j = JSON.parse(await Bun.file(f).text());
+            j.version = process.env.VERSION;
+            await Bun.write(f, JSON.stringify(j, null, 2) + "\n");
+          }
+          const fb = "bindings/browser/packages/browser/package.json";
+          const jb = JSON.parse(await Bun.file(fb).text());
+          jb.version = process.env.VERSION;
+          await Bun.write(fb, JSON.stringify(jb, null, 2) + "\n");
+          '
+          echo "stamped npm versions to $VERSION"
+
+      - name: Ensure npm >= 11.5.1 (OIDC trusted publishing)
+        shell: bash
+        run: npm install -g npm@latest
+
+      - name: Validate packs (npm publish --dry-run)
+        if: ${{ github.event.inputs.dry_run == 'true' }}
+        shell: bash
+        run: |
+          for p in ffi container device encoder; do
+            (cd "bindings/nodejs/packages/$p" && npm publish --dry-run)
+          done
+          (cd bindings/browser/packages/browser && npm publish --dry-run)
+
+      - name: Publish npm packages (ffi → container/device/encoder → browser)
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        shell: bash
+        run: |
+          PROV=""
+          if [[ "${{ github.event.inputs.npm_provenance }}" != "false" ]]; then PROV="--provenance"; fi
+          # No auth token: npm OIDC Trusted Publishing authenticates this
+          # workflow (id-token permission above). Requires the @mediaway org
+          # to have added nyxways/mediaway as a trusted publisher.
+          for p in ffi container device encoder; do
+            (cd "bindings/nodejs/packages/$p" && npm publish --access public $PROV)
+          done
+          (cd bindings/browser/packages/browser && npm publish --access public $PROV)
+
+  nuget:
+    name: nuget (Mediaway.*)
+    runs-on: windows-latest
+    needs: [version, native-assets]
+    environment: release
+    env:
+      MEDIAWAY_SKIP_CARGO_BUILD: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-dlls
+          path: .
+
+      - name: Stamp NuGet version
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          sed -i "s|<Version>[^<]*</Version>|<Version>$VERSION</Version>|" bindings/csharp/src/Directory.Build.props
+          grep -n "<Version>" bindings/csharp/src/Directory.Build.props
+
+      - name: Pack nupkgs
+        shell: bash
+        run: bun tools/scripts/package-csharp.ts --release
+
+      # Tokenless: exchange the job's OIDC id-token for a 1-hour API key via
+      # the nuget.org Trusted Publishing policy (nuget.org → Trusted
+      # Publishing → repo nyxways/mediaway, workflow file release.yml). Needs
+      # the nuget.org username in the NUGET_USER secret.
+      - name: NuGet login (OIDC → temp API key)
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      - name: Push nupkgs (skip duplicates)
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        shell: bash
+        run: |
+          for f in bindings/csharp/dist/Mediaway.*.nupkg; do
+            dotnet nuget push "$f" --api-key "$NUGET_API_KEY" \
+              -s https://api.nuget.org/v3/index.json --skip-duplicate
+          done
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+
+  pypi:
+    name: pypi (mediaway)
+    runs-on: windows-latest
+    needs: [version, native-assets]
+    environment: release
+    env:
+      MEDIAWAY_SKIP_CARGO_BUILD: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build + twine
+        run: python -m pip install --quiet build twine
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-dlls
+          path: .
+
+      - name: Stamp PyPI version
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          sed -i "s|^version[[:space:]]*=[[:space:]]*\"[^\"]*\"|version = \"$VERSION\"|" bindings/python/pyproject.toml
+          grep -n "^version" bindings/python/pyproject.toml
+
+      - name: Build wheel
+        shell: bash
+        run: bun tools/scripts/build-python-package.ts --release
+
+      - name: Push wheel to PyPI
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        shell: bash
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: |
+          twine upload --non-interactive bindings/python/dist/*
+
+  native:
+    name: cpp (CPack win64)
+    runs-on: windows-latest
+    needs: [version, native-assets]
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-dlls
+          path: .
+
+      - name: Stamp CPack version
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          sed -i "s|project(mediaway-bindings VERSION [^ ]*|project(mediaway-bindings VERSION $VERSION|" bindings/cpp/CMakeLists.txt
+          grep -n "project(mediaway-bindings" bindings/cpp/CMakeLists.txt
+
+      - name: Configure + package
+        shell: bash
+        run: |
+          cmake -S bindings/cpp -B build
+          cmake --build build --config Release
+          cpack --config build/CPackConfig.cmake
+
+      - name: Upload CPack archives
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpack-archives
+          path: build/Mediaway-*
+
+  release:
+    name: GitHub release
+    runs-on: ubuntu-latest
+    needs: [version, npm, nuget, pypi, native]
+    environment: release
+    if: ${{ github.event.inputs.dry_run != 'true' }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: cpack-archives
+          path: archives
+
+      - name: Create tag + release, attach CPack archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ needs.version.outputs.version }}"
+          ls -1 archives
+          # Release notes: prefer the hand-written RELEASE_NOTES.md on the
+          # release branch; fall back to GitHub-generated notes.
+          NOTES=("--generate-notes")
+          if [[ -f RELEASE_NOTES.md ]]; then
+            NOTES=(--notes-file RELEASE_NOTES.md)
+            echo "using RELEASE_NOTES.md for release notes"
+          fi
+          gh release create "v$VERSION" --target "$GITHUB_SHA" \
+            --title "Mediaway $VERSION" "${NOTES[@]}"
+          gh release upload "v$VERSION" archives/*.zip archives/*.tar.gz

@@ -10,6 +10,11 @@
  * and copies them next to the package so `npm pack`/`publish` ships them and
  * the loader's `<package>/native` search path finds them. `--release` builds
  * with `--release` and copies from target/release instead of debug.
+ *
+ * Set MEDIAWAY_SKIP_CARGO_BUILD=1 to skip the cargo build and only stage the
+ * DLLs that already exist (the release workflow prebuilds them once in its
+ * `native-assets` job and downloads them as an artifact — see
+ * .github/workflows/release.yml).
  */
 
 import { $ } from "bun";
@@ -18,6 +23,7 @@ import { join } from "node:path";
 
 const root = join(import.meta.dir, "..", "..");
 const release = process.argv.includes("--release");
+const skipBuild = process.env.MEDIAWAY_SKIP_CARGO_BUILD === "1";
 const profile = release ? "release" : "debug";
 const target = "x86_64-pc-windows-gnu";
 const cargoTargetDir = join(root, "target");
@@ -41,9 +47,13 @@ const nativeDirs = [
 ];
 for (const dir of nativeDirs) mkdirSync(dir, { recursive: true });
 
-const args = ["build", ...(release ? ["--release"] : []), "--target", target];
-for (const c of crates) args.push("-p", c);
-await $`cargo ${args}`.cwd(root);
+if (skipBuild) {
+  console.log("MEDIAWAY_SKIP_CARGO_BUILD=1 — staging prebuilt DLLs (no cargo build)");
+} else {
+  const args = ["build", ...(release ? ["--release"] : []), "--target", target];
+  for (const c of crates) args.push("-p", c);
+  await $`cargo ${args}`.cwd(root);
+}
 
 for (const dll of dlls) {
   const src = join(cargoTargetDir, target, profile, dll);

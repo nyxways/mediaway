@@ -245,16 +245,29 @@ jobs:
       - name: Publish npm packages (ffi → container/device/encoder → browser)
         if: ${{ github.event.inputs.dry_run != 'true' }}
         shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           PROV=""
           if [[ "${{ github.event.inputs.npm_provenance }}" != "false" ]]; then PROV="--provenance"; fi
           # No auth token: npm OIDC Trusted Publishing authenticates this
           # workflow (id-token permission above). Requires the @mediaway org
           # to have added nyxways/mediaway as a trusted publisher.
+          # Skip versions already on the registry (a manual first publish
+          # precedes OIDC: 0.1.0/0.1.1 were published by hand) — npm rejects
+          # republishing an existing version with 409.
           for p in ffi container device encoder; do
-            (cd "bindings/nodejs/packages/$p" && npm publish --access public $PROV)
+            if npm view "@mediaway/$p@$VERSION" version >/dev/null 2>&1; then
+              echo "@mediaway/$p@$VERSION already published — skip"
+            else
+              (cd "bindings/nodejs/packages/$p" && npm publish --access public $PROV)
+            fi
           done
-          (cd bindings/browser/packages/browser && npm publish --access public $PROV)
+          if npm view "@mediaway/browser@$VERSION" version >/dev/null 2>&1; then
+            echo "@mediaway/browser@$VERSION already published — skip"
+          else
+            (cd bindings/browser/packages/browser && npm publish --access public $PROV)
+          fi
 
   nuget:
     name: nuget (Mediaway.*)

@@ -25,6 +25,8 @@
 //! **Status: encode + decode implemented.** See `docs/roadmap.md` for remaining wiring work
 //! (an `AudioDecoder` trait does not exist in `mediaway-decoder` yet to implement against).
 
+#![allow(clippy::too_long_first_doc_paragraph)]
+// crate-root doc became module doc (ADR-0021 merge)
 // This crate's entire purpose is a safe wrapper around `unsafe-libopus`'s C-shaped
 // create/encode/decode/destroy/ctl API — every module here touches the raw pointer boundary,
 // so the allow lives at the crate root rather than being sprinkled per-module (mirrors

@@ -6,9 +6,9 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use mediaway_common::{AudioFrame, SampleFormat};
 use sonora::{AudioProcessing, StreamConfig};
 
-use crate::ApmConfig;
-use crate::error::ApmError;
-use crate::pcm::{bytes_to_f32, f32_to_bytes};
+use crate::apm::ApmConfig;
+use crate::apm::error::ApmError;
+use crate::apm::pcm::{bytes_to_f32, f32_to_bytes};
 
 /// Sample format / rate / channel layout for one side of an [`AudioProcessor`].
 ///

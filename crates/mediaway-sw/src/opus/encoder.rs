@@ -20,8 +20,8 @@ use unsafe_libopus::{
     opus_encoder_destroy, opus_strerror,
 };
 
-use crate::config::{OpusEncoderConfig, frame_size_samples};
-use crate::error::OpusError;
+use crate::opus::config::{OpusEncoderConfig, frame_size_samples};
+use crate::opus::error::OpusError;
 
 /// Output payload buffer allocated per encode call. `unsafe-libopus`'s own
 /// `opus_encode_float` returns `OPUS_BUFFER_TOO_SMALL` if this is not enough

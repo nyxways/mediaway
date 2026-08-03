@@ -9,10 +9,25 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
+
 [dependencies]
 mediaway-common = { workspace = true }
 thiserror = { workspace = true }
 rav1e = { workspace = true }
 
+unsafe-libopus = { workspace = true }
+
+sonora = { workspace = true, optional = true }
+sonora-agc2 = { workspace = true, optional = true }
+sonora-simd = { workspace = true, optional = true }
+
+
 [lints]
 workspace = true
+
+
+[features]
+default = []
+apm = ["dep:sonora"]
+vad = ["dep:sonora-agc2", "dep:sonora-simd"]
+full = ["apm", "vad"]

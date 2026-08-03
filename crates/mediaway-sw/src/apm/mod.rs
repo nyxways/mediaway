@@ -18,6 +18,7 @@
 //! each usable standalone. Both catch `sonora`/`sonora-agc2` panics and
 //! permanently disable the offending instance rather than propagate — see
 //! `is_disabled()` on each type and [`ApmError::BackendPanicked`].
+#![allow(clippy::too_long_first_doc_paragraph)] // crate-root doc became module doc (ADR-0021 merge)
 #![forbid(unsafe_code)]
 
 mod error;

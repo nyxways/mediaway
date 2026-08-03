@@ -8,7 +8,7 @@
 )]
 
 use super::*;
-use crate::config::OpusApplication;
+use crate::opus::config::OpusApplication;
 use mediaway_common::Rational;
 
 const SAMPLE_RATE: u32 = 48_000;

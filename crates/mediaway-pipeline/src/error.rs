@@ -7,7 +7,7 @@ use thiserror::Error;
 /// Error from an [`crate::EncodeSession`] operation.
 ///
 /// Does **not** derive `Clone + PartialEq + Eq` (unlike this crate's earlier shape) —
-/// [`ApmError`](Self::Apm) wraps `mediaway_audio_apm::ApmError`, which itself wraps an
+/// [`ApmError`](Self::Apm) wraps `mediaway_sw::apm::ApmError`, which itself wraps an
 /// external `sonora::Error` (`#[source]`, no `Clone`/`PartialEq` upstream) and cannot
 /// honestly support them either. See `adr/0003-audio-track-and-apm-integration.md`
 /// § Consequences.
@@ -26,7 +26,7 @@ pub enum PipelineError {
     /// Audio enhancement (AEC/NS/AGC/VAD) failure — see
     /// `adr/0003-audio-track-and-apm-integration.md`.
     #[error("audio processing error: {0}")]
-    Apm(#[from] mediaway_audio_apm::ApmError),
+    Apm(#[from] mediaway_sw::apm::ApmError),
     /// [`crate::EncodeSession::attach_audio_processor`]/[`crate::EncodeSession::attach_vad`]/
     /// [`crate::EncodeSession::write_audio_frame`]/[`crate::EncodeSession::write_audio_render_frame`]
     /// called on a session opened via [`crate::EncodeSession::open`] (video-only) instead

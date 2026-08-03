@@ -10,6 +10,7 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+mediaway-sw = { workspace = true, features = ["full"] }
 mediaway-common = { workspace = true }
 mediaway-container = { workspace = true }
 mediaway-encoder = { workspace = true }
@@ -19,7 +20,6 @@ mediaway-device = { workspace = true }
 # adr/0003-audio-track-and-apm-integration.md. Unconditional (`full`), matching this
 # crate's "batteries included" posture (unlike mediaway-device-ffi's per-feature
 # code-exclusion goal, which targets a shipped native binary this crate is not).
-mediaway-audio-apm = { workspace = true, features = ["full"] }
 smallvec = { workspace = true }
 thiserror = { workspace = true }
 

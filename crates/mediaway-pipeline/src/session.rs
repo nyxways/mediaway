@@ -6,10 +6,10 @@ use std::collections::VecDeque;
 
 use crate::error::PipelineError;
 use crate::filter::{FilterError, FrameFilter};
-use mediaway_audio_apm::{AudioProcessor, VoiceActivityDetector};
 use mediaway_common::{AudioFrame, VideoFrame, VideoFrameStorage};
 use mediaway_container::mp4;
 use mediaway_encoder::{AudioEncoder, VideoEncoder};
+use mediaway_sw::apm::{AudioProcessor, VoiceActivityDetector};
 use smallvec::SmallVec;
 
 /// The optional audio side of an [`EncodeSession`] — present only when opened via

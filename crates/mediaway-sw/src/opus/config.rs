@@ -3,7 +3,7 @@
 
 use mediaway_common::Rational;
 
-use crate::error::OpusError;
+use crate::opus::error::OpusError;
 
 /// Opus encoder application/use-case hint — mirrors upstream `OPUS_APPLICATION_*`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,7 +27,7 @@ impl OpusApplication {
     }
 }
 
-/// Parameters for opening an [`crate::OpusEncoder`] session.
+/// Parameters for opening an [`crate::opus::OpusEncoder`] session.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpusEncoderConfig {
     /// Sample rate (Hz). `unsafe-libopus`'s own `opus_encoder_create` is the
@@ -41,7 +41,7 @@ pub struct OpusEncoderConfig {
     /// [`mediaway_common::Packet`], in seconds (`num`/`den`) — e.g.
     /// `Rational::new(1, 50)` for Opus's standard 20 ms frame. Combined with
     /// `sample_rate`, this fixes the exact PCM sample count
-    /// [`crate::OpusEncoder::push_frame`] requires per call. Opus only
+    /// [`crate::opus::OpusEncoder::push_frame`] requires per call. Opus only
     /// accepts 2.5/5/10/20/40/60 ms frames — a non-legal duration surfaces as
     /// [`OpusError::Backend`] from `unsafe-libopus`'s own encode call, not
     /// hand-validated here (same "dependency's own validator is the source
@@ -81,7 +81,7 @@ impl OpusEncoderConfig {
     }
 }
 
-/// Parameters for opening an [`crate::OpusDecoder`] session.
+/// Parameters for opening an [`crate::opus::OpusDecoder`] session.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpusDecoderConfig {
     /// Sample rate (Hz).
@@ -90,7 +90,7 @@ pub struct OpusDecoderConfig {
     pub channels: u16,
     /// Duration of one decoded output [`mediaway_common::AudioFrame`], in
     /// seconds — also the upper bound on decode buffer capacity per
-    /// [`crate::OpusDecoder::push_packet`] call (see that method's
+    /// [`crate::opus::OpusDecoder::push_packet`] call (see that method's
     /// costly-path doc for the buffer-capacity caveat).
     pub time_base: Rational,
 }

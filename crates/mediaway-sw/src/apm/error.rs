@@ -1,5 +1,5 @@
-//! Errors returned by [`AudioProcessor`](crate::AudioProcessor) and
-//! [`VoiceActivityDetector`](crate::VoiceActivityDetector).
+//! Errors returned by [`AudioProcessor`](crate::apm::AudioProcessor) and
+//! [`VoiceActivityDetector`](crate::apm::VoiceActivityDetector).
 
 use mediaway_common::SampleFormat;
 use thiserror::Error;
@@ -12,22 +12,22 @@ use thiserror::Error;
 /// (see this crate's panic-safety posture in
 /// `adr/0001-sonora-audio-processing-adoption.md` § 4). Check
 /// `is_disabled()` on the relevant type to understand what happens next:
-/// [`AudioProcessor`](crate::AudioProcessor) passes raw PCM through
-/// unmodified on every later call; [`VoiceActivityDetector`](crate::VoiceActivityDetector)
+/// [`AudioProcessor`](crate::apm::AudioProcessor) passes raw PCM through
+/// unmodified on every later call; [`VoiceActivityDetector`](crate::apm::VoiceActivityDetector)
 /// has no honest passthrough for a scalar score and instead returns this
 /// same error on every later call — see its `analyze` rustdoc.
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum ApmError {
     /// `sonora` processes `f32` PCM only; some other [`SampleFormat`] was
-    /// supplied — either at construction ([`AudioProcessor::open`](crate::AudioProcessor::open))
+    /// supplied — either at construction ([`AudioProcessor::open`](crate::apm::AudioProcessor::open))
     /// or on a pushed/analyzed [`AudioFrame`](mediaway_common::AudioFrame).
     #[error("unsupported sample format {0:?} — this crate requires SampleFormat::F32")]
     UnsupportedSampleFormat(SampleFormat),
 
     /// A pushed [`AudioFrame`](mediaway_common::AudioFrame)'s sample rate or
     /// channel count does not match the stream format the
-    /// [`AudioProcessor`](crate::AudioProcessor) instance was opened with.
+    /// [`AudioProcessor`](crate::apm::AudioProcessor) instance was opened with.
     #[error(
         "frame format ({actual_sample_rate} Hz, {actual_channels} ch) does not match the \
          stream this instance was opened with ({expected_sample_rate} Hz, {expected_channels} ch)"
@@ -43,7 +43,7 @@ pub enum ApmError {
         actual_channels: u16,
     },
 
-    /// [`VoiceActivityDetector::analyze`](crate::VoiceActivityDetector::analyze)
+    /// [`VoiceActivityDetector::analyze`](crate::apm::VoiceActivityDetector::analyze)
     /// requires an exact 10ms block (`sample_rate / 100` samples per
     /// channel) — no internal re-blocking ring buffer exists (by design; see
     /// that method's rustdoc).

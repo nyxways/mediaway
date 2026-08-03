@@ -1,5 +1,5 @@
-//! Byte <-> interleaved-`f32` PCM conversions shared by [`AudioProcessor`](crate::AudioProcessor)
-//! and [`VoiceActivityDetector`](crate::VoiceActivityDetector).
+//! Byte <-> interleaved-`f32` PCM conversions shared by [`AudioProcessor`](crate::apm::AudioProcessor)
+//! and [`VoiceActivityDetector`](crate::apm::VoiceActivityDetector).
 //!
 //! `sonora`/`sonora-agc2` take `&[f32]`/`&mut [f32]`; `mediaway_common::AudioFrame`
 //! carries raw interleaved bytes. Converting between the two, with
@@ -24,9 +24,9 @@ pub(crate) fn bytes_to_f32(data: &[u8]) -> Vec<f32> {
 }
 
 /// Inverse of [`bytes_to_f32`] — packs interleaved `f32` samples back to
-/// little-endian bytes. Only [`AudioProcessor`](crate::AudioProcessor)
+/// little-endian bytes. Only [`AudioProcessor`](crate::apm::AudioProcessor)
 /// (`apm` feature) produces output frames this way —
-/// [`VoiceActivityDetector`](crate::VoiceActivityDetector) only ever
+/// [`VoiceActivityDetector`](crate::apm::VoiceActivityDetector) only ever
 /// consumes bytes via [`bytes_to_f32`].
 #[cfg(feature = "apm")]
 #[allow(

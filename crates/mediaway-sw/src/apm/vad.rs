@@ -7,8 +7,8 @@ use mediaway_common::{AudioFrame, SampleFormat};
 use sonora_agc2::vad_wrapper::VoiceActivityDetectorWrapper;
 use sonora_simd::detect_backend;
 
-use crate::error::ApmError;
-use crate::pcm::bytes_to_f32;
+use crate::apm::error::ApmError;
+use crate::apm::pcm::bytes_to_f32;
 
 /// `sonora`'s RNN VAD is a port of WebRTC's internal detector, which assumes
 /// i16-scale PCM (`±32768`) for its spectral-energy silence threshold.
@@ -24,7 +24,7 @@ const SONORA_PCM_SCALE: f32 = 32768.0;
 
 /// Standalone RNN voice-activity detector, via `sonora_agc2::vad_wrapper`.
 ///
-/// Independent of [`AudioProcessor`](crate::AudioProcessor) — `sonora`'s own
+/// Independent of [`AudioProcessor`](crate::apm::AudioProcessor) — `sonora`'s own
 /// AGC2 uses this VAD internally but does not expose it, so this type wraps
 /// the standalone `sonora-agc2` crate directly.
 #[derive(Debug)]
@@ -65,7 +65,7 @@ impl VoiceActivityDetector {
 
     /// Speech probability in `[0, 1]` for one 10ms frame.
     ///
-    /// **Intended input is [`AudioProcessor::poll_processed_frame`](crate::AudioProcessor::poll_processed_frame)'s
+    /// **Intended input is [`AudioProcessor::poll_processed_frame`](crate::apm::AudioProcessor::poll_processed_frame)'s
     /// output** — already exactly-10ms-blocked and post-NS, matching
     /// `sonora`'s own validated usage pattern (AGC2's internal VAD consumes
     /// post-NS audio). `frame`'s first channel is analyzed (multi-channel
@@ -80,7 +80,7 @@ impl VoiceActivityDetector {
     /// not pre-scale it yourself (see the module docs / ADR § 5).
     ///
     /// # Disabled behavior
-    /// Unlike [`AudioProcessor`](crate::AudioProcessor), which falls back to
+    /// Unlike [`AudioProcessor`](crate::apm::AudioProcessor), which falls back to
     /// raw PCM passthrough once disabled, a scalar VAD score has no honest
     /// passthrough equivalent — synthesizing a fixed probability (e.g.
     /// always `0.0`) would be silently and dangerously wrong for a caller

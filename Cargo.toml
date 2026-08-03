@@ -34,8 +34,8 @@ members = [
 
 
     "crates/mediaway-sw",
-    "crates/mediaway-sw-opus",
-    "crates/mediaway-audio-apm",
+
+
     "crates/mediaway-test-media",
     "crates/mediaway-wgpu",
     "tools/mediaway-avcli",
@@ -97,8 +97,8 @@ iso-bmff-wasm = { path = "crates/iso-bmff-wasm", version = "0.1.0" }
 
 
 mediaway-sw = { path = "crates/mediaway-sw", version = "0.1.0" }
-mediaway-sw-opus = { path = "crates/mediaway-sw-opus", version = "0.1.0" }
-mediaway-audio-apm = { path = "crates/mediaway-audio-apm", version = "0.1.0" }
+
+
 mediaway-test-media = { path = "crates/mediaway-test-media", version = "0.1.0" }
 mediaway-wgpu = { path = "crates/mediaway-wgpu", version = "0.1.0" }
 # Official Win32 projection (MIT OR Apache-2.0). Feature set per consumer crate.

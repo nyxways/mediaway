@@ -19,8 +19,8 @@ use unsafe_libopus::{
     opus_strerror,
 };
 
-use crate::config::{OpusDecoderConfig, frame_size_samples};
-use crate::error::OpusError;
+use crate::opus::config::{OpusDecoderConfig, frame_size_samples};
+use crate::opus::error::OpusError;
 
 /// Streaming Opus decoder session over `unsafe-libopus`'s C-shaped API.
 ///
@@ -33,7 +33,7 @@ use crate::error::OpusError;
 /// [`push_packet`](Self::push_packet) decodes into an `f32` scratch buffer
 /// via `unsafe-libopus`'s raw `*mut f32` output parameter, then copies the
 /// decoded samples out into an owned [`Bytes`] — not Zero-Copy. Same
-/// `unsafe-libopus` transpile cost note as [`crate::OpusEncoder`]: no inline
+/// `unsafe-libopus` transpile cost note as [`crate::opus::OpusEncoder`]: no inline
 /// asm/SIMD, ~20% higher CPU cost than the hand-tuned C reference per
 /// upstream's own benchmark. See `docs/spec/caveats-and-clarity.md`.
 #[derive(Debug)]
@@ -122,7 +122,7 @@ impl OpusDecoder {
     /// multi-frame Opus packet longer than the configured duration) fails
     /// with [`OpusError::Backend`] (`OPUS_BUFFER_TOO_SMALL`) instead of
     /// growing the buffer — this crate never re-buffers, the same contract
-    /// [`crate::OpusEncoder::push_frame`] applies symmetrically on encode.
+    /// [`crate::opus::OpusEncoder::push_frame`] applies symmetrically on encode.
     ///
     /// # Errors
     ///

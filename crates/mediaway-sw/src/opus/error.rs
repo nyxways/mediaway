@@ -1,8 +1,8 @@
-//! [`OpusError`] — errors from [`crate::OpusEncoder`] / [`crate::OpusDecoder`] sessions.
+//! [`OpusError`] — errors from [`crate::opus::OpusEncoder`] / [`crate::opus::OpusDecoder`] sessions.
 
 use thiserror::Error;
 
-/// Errors from opening or running an [`crate::OpusEncoder`] / [`crate::OpusDecoder`] session.
+/// Errors from opening or running an [`crate::opus::OpusEncoder`] / [`crate::opus::OpusDecoder`] session.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum OpusError {

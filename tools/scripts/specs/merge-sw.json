@@ -1,0 +1,18 @@
+{
+  "crate": "mediaway-sw",
+  "dir": "crates/mediaway-sw",
+  "rootUnsafe": "allow",
+  "children": [
+    { "name": "mediaway-sw-opus", "dir": "crates/mediaway-sw-opus", "module": "opus" },
+    { "name": "mediaway-audio-apm", "dir": "crates/mediaway-audio-apm", "module": "apm" }
+  ],
+  "renames": [
+    ["mediaway_sw_opus", "crate::opus::"],
+    ["mediaway_audio_apm", "crate::apm::"],
+    ["mediaway_sw", "crate::"]
+  ],
+  "depSweep": [
+    ["mediaway_sw_opus", "mediaway_sw::opus::"],
+    ["mediaway_audio_apm", "mediaway_sw::apm::"]
+  ]
+}

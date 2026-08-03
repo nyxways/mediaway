@@ -8,8 +8,8 @@
 )]
 
 use super::*;
-use crate::config::{OpusApplication, OpusEncoderConfig};
-use crate::encoder::OpusEncoder;
+use crate::opus::config::{OpusApplication, OpusEncoderConfig};
+use crate::opus::encoder::OpusEncoder;
 use mediaway_common::Rational;
 
 const SAMPLE_RATE: u32 = 48_000;

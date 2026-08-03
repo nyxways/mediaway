@@ -7,12 +7,12 @@
 
 use super::*;
 use crate::filter::{FilterError, FrameFilter};
-use mediaway_audio_apm::{ApmConfig, AudioProcessor, VoiceActivityDetector};
 use mediaway_common::{
     Bytes, CodecKind, GpuBufferHandle, Packet, PixelFormat, Rational, SampleFormat, StreamInfo,
     VideoFrameStorage, VideoGeometry,
 };
 use mediaway_encoder::EncodeError;
+use mediaway_sw::apm::{ApmConfig, AudioProcessor, VoiceActivityDetector};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -89,7 +89,7 @@ fn audio_frame(pts: i64, samples: &[f32]) -> AudioFrame {
 
 /// All-components-disabled config — deterministic passthrough, no `sonora` DSP cost.
 fn open_processor() -> AudioProcessor {
-    let format = mediaway_audio_apm::AudioStreamFormat {
+    let format = mediaway_sw::apm::AudioStreamFormat {
         sample_rate: AUDIO_SAMPLE_RATE,
         channels: AUDIO_CHANNELS,
         sample_format: SampleFormat::F32,

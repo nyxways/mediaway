@@ -1347,17 +1347,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mediaway-audio-apm"
-version = "0.1.0"
-dependencies = [
- "mediaway-common",
- "sonora",
- "sonora-agc2",
- "sonora-simd",
- "thiserror 2.0.19",
-]
-
-[[package]]
 name = "mediaway-avcli"
 version = "0.1.0"
 dependencies = [
@@ -1487,12 +1476,12 @@ dependencies = [
 name = "mediaway-pipeline"
 version = "0.1.0"
 dependencies = [
- "mediaway-audio-apm",
  "mediaway-common",
  "mediaway-container",
  "mediaway-decoder",
  "mediaway-device",
  "mediaway-encoder",
+ "mediaway-sw",
  "mediaway-test-media",
  "smallvec",
  "thiserror 2.0.19",
@@ -1505,14 +1494,9 @@ version = "0.1.0"
 dependencies = [
  "mediaway-common",
  "rav1e",
- "thiserror 2.0.19",
-]
-
-[[package]]
-name = "mediaway-sw-opus"
-version = "0.1.0"
-dependencies = [
- "mediaway-common",
+ "sonora",
+ "sonora-agc2",
+ "sonora-simd",
  "thiserror 2.0.19",
  "unsafe-libopus",
 ]

@@ -11,8 +11,12 @@
 //! staging plan, `adr/0003-cavlc-i-slice-first-decode.md` for this decode loop's exact
 //! scope cuts, and `adr/0002-rav1e-av1-encode.md` for the AV1 adapter scope.
 
-#![forbid(unsafe_code)]
+#![allow(unsafe_code)]
 
 pub mod av1;
 pub mod h264;
 pub mod pcm;
+
+// ── merged platform/domain modules (ADR-0021) ──
+pub mod apm;
+pub mod opus;

@@ -232,7 +232,7 @@ const fn c_kind_to_device_kind(kind: MediawayDeviceKind) -> Option<DeviceKind> {
 fn open_hotplug(kinds: &[DeviceKind]) -> Result<Box<dyn DeviceHotplug>, CaptureError> {
     #[cfg(windows)]
     {
-        let hotplug = mediaway_device_windows::WindowsDeviceHotplug::open(kinds)?;
+        let hotplug = mediaway_device::windows::WindowsDeviceHotplug::open(kinds)?;
         Ok(Box::new(hotplug))
     }
 

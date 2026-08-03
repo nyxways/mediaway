@@ -34,8 +34,8 @@ use mediaway_common::{
 };
 use mediaway_container::mp4::{Demuxer, Muxer};
 use mediaway_device::Select;
-use mediaway_device_audio::{AudioCapture, AudioCaptureConfig};
-use mediaway_device_desktop::{
+use mediaway_device::audio::{AudioCapture, AudioCaptureConfig};
+use mediaway_device::desktop::{
     CaptureOutputPreference, DesktopCaptureSource, DesktopVideoCapture, DesktopVideoCaptureConfig,
 };
 use mediaway_encoder::auto::{AutoVideoEncodeConfig, EncodePathClass};

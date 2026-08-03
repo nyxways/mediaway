@@ -1,8 +1,14 @@
 # mediaway-device — docs
 
-Capture facade: camera, microphone, screen/window. Traits live here; OS backends are `mediaway-device-windows`, `mediaway-device-web`, … ([crate packaging](../../docs/spec/crate-packaging.md)).
+Device capture: camera, microphone, screen/window, audio hotplug, capability and
+permission probing. Traits and domain facades live here, and the OS backends are
+merged in as `#[cfg]`-gated modules per ADR-0021: `camera`, `desktop`, `audio`
+(domain facades), `windows`/`windows_camera`/`windows_desktop`/`windows_audio`
+(Win32 MF/DXGI/WGC/WASAPI), `linux` (xdg-desktop-portal + PipeWire + V4L2), and
+`web` (getUserMedia/getDisplayMedia).
 
 | Doc | Notes |
 |-----|-------|
-| [roadmap.md](docs/roadmap.md) | Facade + platform crate stages |
-| [adr/](adr/) | Traits; backend crates hold OS ADRs |
+| [roadmap.md](docs/roadmap.md) | Capability stages |
+| [adr/](adr/) | Traits + merged backend ADRs (per-module subdirs) |
+| [docs/](docs/) | Merged module docs/READMEs |

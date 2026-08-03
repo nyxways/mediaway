@@ -30,9 +30,6 @@ mediaway-container = { path = "../mediaway-container", version = "0.1.0", defaul
 ] }
 
 mediaway-device = { workspace = true }
-mediaway-device-camera = { workspace = true, optional = true }
-mediaway-device-desktop = { workspace = true, optional = true }
-mediaway-device-audio = { workspace = true, optional = true }
 
 # Needed to match `mp4::Error` variants when converting `PipelineError::Mux` to a
 # status code (status.rs) — `mediaway-pipeline` already pulls this in transitively
@@ -44,14 +41,9 @@ mediaway-pipeline = { workspace = true }
 
 [dev-dependencies]
 mediaway-device = { workspace = true }
-mediaway-device-desktop = { workspace = true }
 
 
 [target.'cfg(windows)'.dependencies]
-mediaway-device-windows-camera = { workspace = true, optional = true }
-mediaway-device-windows-desktop = { workspace = true, optional = true }
-mediaway-device-windows-audio = { workspace = true, optional = true }
-mediaway-device-windows = { workspace = true, optional = true }
 
 
 [target.'cfg(windows)'.dev-dependencies]
@@ -64,17 +56,16 @@ windows = { workspace = true, features = [
 
 
 [target.'cfg(target_os = "linux")'.dependencies]
-mediaway-device-linux = { workspace = true }
 
 
 [features]
 default = ["mux", "demux", "camera", "desktop", "audio", "hotplug"]
 mux = []
 demux = []
-camera = ["dep:mediaway-device-camera", "dep:mediaway-device-windows-camera"]
-desktop = ["dep:mediaway-device-desktop", "dep:mediaway-device-windows-desktop"]
-audio = ["dep:mediaway-device-audio", "dep:mediaway-device-windows-audio"]
-hotplug = ["dep:mediaway-device-windows"]
+camera = [] # device backends merged into mediaway-device (ADR-0021)
+desktop = []
+audio = []
+hotplug = []
 
 [lints]
 workspace = true

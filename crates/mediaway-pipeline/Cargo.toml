@@ -15,8 +15,6 @@ mediaway-container = { workspace = true }
 mediaway-encoder = { workspace = true }
 mediaway-decoder = { workspace = true }
 mediaway-device = { workspace = true }
-mediaway-device-desktop = { workspace = true }
-mediaway-device-audio = { workspace = true }
 # AEC3 + NS + AGC2 + RNN VAD, wired into EncodeSession's audio path — see
 # adr/0003-audio-track-and-apm-integration.md. Unconditional (`full`), matching this
 # crate's "batteries included" posture (unlike mediaway-device-ffi's per-feature
@@ -28,14 +26,10 @@ thiserror = { workspace = true }
 [target.'cfg(windows)'.dependencies]
 mediaway-encoder-windows = { workspace = true }
 mediaway-decoder-windows = { workspace = true }
-mediaway-device-windows = { workspace = true }
-mediaway-device-windows-desktop = { workspace = true }
-mediaway-device-windows-audio = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 mediaway-encoder-linux = { workspace = true }
 mediaway-decoder-linux = { workspace = true }
-mediaway-device-linux = { workspace = true }
 
 [dev-dependencies]
 mediaway-test-media = { workspace = true }

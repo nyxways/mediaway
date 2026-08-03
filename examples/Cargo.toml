@@ -61,17 +61,12 @@ path = "pipeline/trim_and_splice.rs"
 mediaway-common = { workspace = true }
 mediaway-container = { workspace = true, features = ["full"] }
 mediaway-device = { workspace = true }
-mediaway-device-camera = { workspace = true }
-mediaway-device-desktop = { workspace = true }
-mediaway-device-audio = { workspace = true }
 mediaway-encoder = { workspace = true }
 mediaway-decoder = { workspace = true }
 mediaway-pipeline = { workspace = true }
 # Both compile on every platform (real backend on Windows, `Unsupported`-returning
 # stubs elsewhere) — used directly by device/capture_window.rs, device/capture_camera.rs,
 # and pipeline/screen_record.rs, none of which `mediaway_pipeline::platform` dispatches yet.
-mediaway-device-windows = { workspace = true }
-mediaway-device-windows-camera = { workspace = true }
 mediaway-encoder-windows = { workspace = true }
 
 [lints]

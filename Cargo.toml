@@ -27,20 +27,20 @@ members = [
     "crates/mediaway-decoder-windows",
     "crates/mediaway-decoder-linux",
     "crates/mediaway-decoder-vulkan",
-    "crates/mediaway-device-windows",
-    "crates/mediaway-device-windows-camera",
-    "crates/mediaway-device-windows-desktop",
-    "crates/mediaway-device-windows-audio",
-    "crates/mediaway-device-linux",
+
+
+
+
+
     "crates/iso-bmff-wasm",
     "crates/mediaway-encoder-web",
     "crates/mediaway-decoder-web",
-    "crates/mediaway-device-web",
+
     "crates/mediaway-decoder",
     "crates/mediaway-device",
-    "crates/mediaway-device-camera",
-    "crates/mediaway-device-desktop",
-    "crates/mediaway-device-audio",
+
+
+
     "crates/mediaway-sw",
     "crates/mediaway-sw-opus",
     "crates/mediaway-audio-apm",
@@ -93,19 +93,18 @@ mediaway-decoder-windows = { path = "crates/mediaway-decoder-windows", version =
 mediaway-decoder-linux = { path = "crates/mediaway-decoder-linux", version = "0.1.0" }
 mediaway-decoder-vulkan = { path = "crates/mediaway-decoder-vulkan", version = "0.1.0" }
 mediaway-device = { path = "crates/mediaway-device", version = "0.1.0" }
-mediaway-device-camera = { path = "crates/mediaway-device-camera", version = "0.1.0" }
-mediaway-device-desktop = { path = "crates/mediaway-device-desktop", version = "0.1.0" }
-mediaway-device-audio = { path = "crates/mediaway-device-audio", version = "0.1.0" }
-mediaway-device-windows = { path = "crates/mediaway-device-windows", version = "0.1.0" }
-mediaway-device-windows-camera = { path = "crates/mediaway-device-windows-camera", version = "0.1.0" }
-mediaway-device-windows-desktop = { path = "crates/mediaway-device-windows-desktop", version = "0.1.0" }
-mediaway-device-windows-audio = { path = "crates/mediaway-device-windows-audio", version = "0.1.0" }
-mediaway-device-linux = { path = "crates/mediaway-device-linux", version = "0.1.0" }
+
+
+
+
+
+
+
 
 iso-bmff-wasm = { path = "crates/iso-bmff-wasm", version = "0.1.0" }
 mediaway-encoder-web = { path = "crates/mediaway-encoder-web", version = "0.1.0" }
 mediaway-decoder-web = { path = "crates/mediaway-decoder-web", version = "0.1.0" }
-mediaway-device-web = { path = "crates/mediaway-device-web", version = "0.1.0" }
+
 mediaway-sw = { path = "crates/mediaway-sw", version = "0.1.0" }
 mediaway-sw-opus = { path = "crates/mediaway-sw-opus", version = "0.1.0" }
 mediaway-audio-apm = { path = "crates/mediaway-audio-apm", version = "0.1.0" }

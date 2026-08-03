@@ -14,7 +14,7 @@
 //!
 //! See `adr/0007-domain-crate-split.md` for why this crate split from one unified facade.
 
-#![forbid(unsafe_code)]
+#![allow(unsafe_code)]
 
 mod capability;
 mod device_id;
@@ -27,3 +27,14 @@ pub use device_id::{DeviceId, ParseDeviceIdError, Select};
 pub use enumeration::DeviceInfo;
 pub use error::CaptureError;
 pub use hotplug::{DeviceEvent, DeviceHotplug};
+
+// ── merged platform/domain modules (ADR-0021) ──
+pub mod audio;
+pub mod camera;
+pub mod desktop;
+pub mod linux;
+pub mod web;
+pub mod windows;
+pub mod windows_audio;
+pub mod windows_camera;
+pub mod windows_desktop;

@@ -27,7 +27,7 @@ use std::time::{Duration, Instant};
 use mediaway_common::{GpuDeviceHandle, NativeHandle, Rational, VideoFrameStorage};
 use mediaway_container::mp4::Demuxer;
 use mediaway_device::Select;
-use mediaway_device_desktop::{
+use mediaway_device::desktop::{
     CaptureOutputPreference, DesktopCaptureSource, DesktopVideoCaptureConfig,
 };
 use mediaway_ffi::pipeline::{
@@ -191,7 +191,7 @@ fn open_shared_d3d11_device() -> Option<(ID3D11Device, NativeHandle)> {
 /// through the real C ABI function. Terminates at [`CAPTURE_SECS`] regardless of
 /// activity — not "until Ctrl+C". Returns the number of frames successfully pushed.
 fn record_loop(
-    screen: &mut dyn mediaway_device_desktop::DesktopVideoCapture,
+    screen: &mut dyn mediaway_device::desktop::DesktopVideoCapture,
     session: *mut mediaway_ffi::pipeline::EncodeSessionHandle,
 ) -> usize {
     let mut pushed_frames = 0usize;

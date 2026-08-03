@@ -1461,103 +1461,15 @@ dependencies = [
 name = "mediaway-device"
 version = "0.1.0"
 dependencies = [
- "mediaway-common",
- "thiserror 2.0.19",
-]
-
-[[package]]
-name = "mediaway-device-audio"
-version = "0.1.0"
-dependencies = [
- "mediaway-common",
- "mediaway-device",
- "thiserror 2.0.19",
-]
-
-[[package]]
-name = "mediaway-device-camera"
-version = "0.1.0"
-dependencies = [
- "mediaway-common",
- "mediaway-device",
-]
-
-[[package]]
-name = "mediaway-device-desktop"
-version = "0.1.0"
-dependencies = [
- "mediaway-common",
- "mediaway-device",
-]
-
-[[package]]
-name = "mediaway-device-linux"
-version = "0.1.0"
-dependencies = [
  "ashpd",
- "mediaway-common",
- "mediaway-device",
- "mediaway-device-audio",
- "mediaway-device-camera",
- "mediaway-device-desktop",
- "pipewire",
- "v4l",
-]
-
-[[package]]
-name = "mediaway-device-web"
-version = "0.1.0"
-dependencies = [
  "js-sys",
+ "mediaway-common",
+ "pipewire",
+ "thiserror 2.0.19",
+ "v4l",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
-]
-
-[[package]]
-name = "mediaway-device-windows"
-version = "0.1.0"
-dependencies = [
- "mediaway-common",
- "mediaway-device",
- "mediaway-device-audio",
- "mediaway-device-windows-audio",
- "mediaway-device-windows-camera",
- "mediaway-device-windows-desktop",
- "windows 0.62.2",
- "windows-core 0.62.2",
-]
-
-[[package]]
-name = "mediaway-device-windows-audio"
-version = "0.1.0"
-dependencies = [
- "mediaway-common",
- "mediaway-device",
- "mediaway-device-audio",
- "windows 0.62.2",
- "windows-core 0.62.2",
-]
-
-[[package]]
-name = "mediaway-device-windows-camera"
-version = "0.1.0"
-dependencies = [
- "mediaway-common",
- "mediaway-device",
- "mediaway-device-camera",
- "windows 0.62.2",
- "windows-core 0.62.2",
-]
-
-[[package]]
-name = "mediaway-device-windows-desktop"
-version = "0.1.0"
-dependencies = [
- "mediaway-common",
- "mediaway-device",
- "mediaway-device-desktop",
- "mediaway-device-windows-audio",
  "windows 0.62.2",
  "windows-core 0.62.2",
 ]
@@ -1644,11 +1556,6 @@ dependencies = [
  "mediaway-container",
  "mediaway-decoder",
  "mediaway-device",
- "mediaway-device-audio",
- "mediaway-device-camera",
- "mediaway-device-desktop",
- "mediaway-device-windows",
- "mediaway-device-windows-camera",
  "mediaway-encoder",
  "mediaway-encoder-windows",
  "mediaway-pipeline",
@@ -1661,14 +1568,6 @@ dependencies = [
  "mediaway-common",
  "mediaway-container",
  "mediaway-device",
- "mediaway-device-audio",
- "mediaway-device-camera",
- "mediaway-device-desktop",
- "mediaway-device-linux",
- "mediaway-device-windows",
- "mediaway-device-windows-audio",
- "mediaway-device-windows-camera",
- "mediaway-device-windows-desktop",
  "mediaway-encoder",
  "mediaway-encoder-windows",
  "mediaway-pipeline",
@@ -1686,12 +1585,6 @@ dependencies = [
  "mediaway-decoder-linux",
  "mediaway-decoder-windows",
  "mediaway-device",
- "mediaway-device-audio",
- "mediaway-device-desktop",
- "mediaway-device-linux",
- "mediaway-device-windows",
- "mediaway-device-windows-audio",
- "mediaway-device-windows-desktop",
  "mediaway-encoder",
  "mediaway-encoder-linux",
  "mediaway-encoder-windows",

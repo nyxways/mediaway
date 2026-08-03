@@ -20,8 +20,8 @@
 
 use mediaway_common::Rational;
 use mediaway_device::Select;
-use mediaway_device_camera::{CameraCapture, CameraCaptureConfig, CaptureOutputPreference};
-use mediaway_device_windows_camera::WindowsCameraCapture;
+use mediaway_device::camera::{CameraCapture, CameraCaptureConfig, CaptureOutputPreference};
+use mediaway_device::windows_camera::WindowsCameraCapture;
 use std::time::{Duration, Instant};
 
 const CAPTURE_SECS: u64 = 2;

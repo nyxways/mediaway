@@ -163,7 +163,7 @@ pub struct MediawayCameraFrame {
 }
 
 /// Desktop video capture source selection — mirrors
-/// `mediaway_device_desktop::DesktopCaptureSource`'s two variants.
+/// `mediaway_device::desktop::DesktopCaptureSource`'s two variants.
 ///
 /// Only `Screen` is reachable via [`crate::device::desktop_video::mediaway_desktop_capture_open`]
 /// in this pass; `Window` deterministically returns
@@ -346,7 +346,7 @@ pub struct MediawayDeviceAudioFrame {
 // ── Desktop audio (Loopback / ProcessLoopback) ──────────────────────────────────
 
 /// Desktop audio capture source selection — mirrors
-/// `mediaway_device_desktop::DesktopAudioSource`'s two variants.
+/// `mediaway_device::desktop::DesktopAudioSource`'s two variants.
 #[cfg(feature = "desktop")]
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

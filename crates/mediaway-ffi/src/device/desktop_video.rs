@@ -16,10 +16,10 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Duration;
 
 use mediaway_common::VideoFrameStorage;
-use mediaway_device::{CaptureError, Select};
-use mediaway_device_desktop::{
+use mediaway_device::desktop::{
     CaptureOutputPreference, DesktopCaptureSource, DesktopVideoCapture, DesktopVideoCaptureConfig,
 };
+use mediaway_device::{CaptureError, Select};
 
 use crate::device::buffer::{leak_boxed_slice, reclaim_boxed_slice};
 use crate::device::status::MediawayDeviceStatus;
@@ -163,7 +163,7 @@ fn screen_select(source_index: u32) -> Result<Select, CaptureError> {
 
     #[cfg(windows)]
     {
-        let devices = mediaway_device_windows_desktop::enumerate_outputs()?;
+        let devices = mediaway_device::windows_desktop::enumerate_outputs()?;
         let entry = devices
             .into_iter()
             .find(|d| d.ordinal == source_index)
@@ -189,7 +189,7 @@ fn open_screen_capture(
 ) -> Result<Box<dyn DesktopVideoCapture>, CaptureError> {
     #[cfg(windows)]
     {
-        use mediaway_device_windows_desktop::WindowsScreenCapture;
+        use mediaway_device::windows_desktop::WindowsScreenCapture;
         let cap = WindowsScreenCapture::open(config)?;
         Ok(Box::new(cap))
     }

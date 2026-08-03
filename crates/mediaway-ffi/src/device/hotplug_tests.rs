@@ -279,7 +279,7 @@ fn open_with_valid_kind_succeeds_and_stays_idle() {
 /// `close()` on a successfully-constructed real handle no longer crashes.
 ///
 /// This test used to leak the handle (`std::mem::forget`) instead of calling `close()`,
-/// because `mediaway_device_windows::WindowsDeviceHotplug::close()` reliably crashed the
+/// because `mediaway_device::windows::WindowsDeviceHotplug::close()` reliably crashed the
 /// whole process with `STATUS_ACCESS_VIOLATION` — root-caused (via a real SEH exception
 /// filter pinpointing the fault inside
 /// `IMMDeviceEnumerator::UnregisterEndpointNotificationCallback`) to `open()` calling

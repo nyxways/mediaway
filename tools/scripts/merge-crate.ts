@@ -1,49 +1,54 @@
 #!/usr/bin/env bun
 /**
- * merge-crate.ts — merge child crates into a parent crate as `#[cfg]`-gated modules.
+ * merge-crate.ts — merge child crates into a parent crate as modules (ADR-0021).
  *
- * Migration tool for ADR-0021 workspace consolidation. Mechanical, reviewable,
- * history-preserving (git mv), dry-run by default:
+ * Mechanical, reviewable, history-preserving (git mv), dry-run by default:
  *
  *   bun tools/scripts/merge-crate.ts <spec.json>          # plan only
  *   bun tools/scripts/merge-crate.ts <spec.json> --apply  # execute
  *
- * Spec shape:
+ * Spec:
  *   {
- *     "crate": "mediaway-ffi",
- *     "dir": "crates/mediaway-ffi",          // destination (created if missing)
- *     "description": "…",
+ *     "crate": "mediaway-device",
+ *     "dir": "crates/mediaway-device",   // parent dir (may already exist)
+ *     "description": "…",                // used only when scaffolding a NEW parent
+ *     "rootUnsafe": "allow",             // replace parent lib.rs #![forbid(unsafe_code)]
+ *                                        // with #![allow(unsafe_code)] (platform backends)
  *     "children": [
- *       { "name": "mediaway-container-ffi", "dir": "crates/mediaway-container-ffi", "module": "container" },
+ *       { "name": "mediaway-device-camera", "dir": "crates/mediaway-device-camera", "module": "camera" },
  *       …
+ *     ],
+ *     "renames": [                       // merged-src sibling/parent path rewrites,
+ *       ["mediaway_device_camera", "crate::camera::"],   // applied as `X::` -> path
+ *       ["mediaway_device", "crate::"]
+ *     ],
+ *     "depSweep": [                      // dependent .rs rewrites (outside merged dirs)
+ *       ["mediaway_device_camera", "mediaway_device::camera::"]
  *     ]
  *   }
  *
- * What it does (each step is planned, then executed only with --apply):
- *   1. git mv each child's src -> <dir>/src/<module>; tests/benches likewise;
- *      include/* merged into <dir>/include/; adr -> <dir>/adr/<module>; docs ->
- *      <dir>/docs/<module>; README.md -> <dir>/docs/<module>/README.md; git rm
- *      the child Cargo.toml.
- *   2. Root workspace Cargo.toml: drop children from `members` and
- *      `[workspace.dependencies]`, add the parent (exact-line anchored).
- *   3. Rust rewrites (tree-sitter-rust targeted, byte-applied at node ranges)
- *      on moved src/tests files:
- *        - `mediaway_common_ffi::` -> `crate::common::`  (module != common)
- *        - `crate::` -> `crate::<module>::`  (never `crate::<module>::`/`crate::common::`)
- *        - integration tests: `<child>_ffi::` -> `<parent>_ffi::`
- *        - doc-link depth: `../../../docs/` -> `../../../../docs/`, `(adr/` -> `(../../adr/<module>/`
- *   4. Non-Rust reference rewrites across tracked bindings/tools/.github/docs
- *      files (word-boundary; tree-sitter-json/typescript where the file parses):
- *        - `mediaway-{container,common,device,pipeline}-ffi` -> `mediaway-ffi`
- *        - `mediaway_{container,device,pipeline}_ffi` -> `mediaway_ffi`  (cdylib/DLL names)
- *   5. Scaffold a draft parent Cargo.toml (union of child deps/features) and
- *      src/lib.rs (`pub mod <module>;`) — printed in dry-run, written with --apply,
- *      always review before building.
- *
- * TOML edits are exact-line anchored (not tree-sitter): the Cargo.toml entries
- * this tool touches are single-line, verbatim-matchable keys. Rust/TS/JSON use
- * tree-sitter. See tools/scripts/package.json deps (tree-sitter, tree-sitter-rust,
- * tree-sitter-json, tree-sitter-typescript).
+ * Steps (planned first, executed with --apply):
+ *   1. git mv each child src -> <dir>/src/<module> (lib.rs -> mod.rs); tests/benches/
+ *      adr/docs/README.md -> <dir>/{tests,benches,adr,docs}/<module>/; include/* merged.
+ *      git rm child Cargo.toml.
+ *   2. Root workspace Cargo.toml: drop children from members + [workspace.dependencies]
+ *      (parent ADD queued before removals), add parent if new.
+ *   3. Merged-src Rust rewrites (tree-sitter-rust targeted where noted):
+ *        - `crate::` -> `crate::<module>::` (self root refs; skips existing module refs)
+ *        - `renames` entries: `<old>::` -> `<path>`
+ *        - doc-link depth (`../../../docs/` -> `../../../../docs/`)
+ *      Integration tests: `<child>_::` -> `<parent>_::<module>::`
+ *   4. Dependent Rust sweep (tracked .rs outside <dir>/): `depSweep` entries.
+ *   5. Dependent Cargo.tomls: drop child dep entries (add parent entry only when the
+ *      parent dep is not already present). Feature tables referencing removed deps
+ *      (`dep:mediaway-device-camera`) are NOT rewritten — flag for manual fix.
+ *   6. Parent Cargo.toml + src/lib.rs:
+ *        - parent absent: scaffold draft (union of child deps/features)
+ *        - parent present: merge child deps into existing tables (no duplicates, no
+ *          self/sibling refs), union [features], append `pub mod <module>;` to lib.rs,
+ *          apply rootUnsafe
+ *   7. Non-Rust name replacements (tracked bindings/tools/docs, word-boundary,
+ *      tree-sitter-json/typescript verified where parseable): ffi crate/DLL names.
  */
 
 import Parser from "tree-sitter";
@@ -65,50 +70,36 @@ if (!specPath) {
   process.exit(2);
 }
 const spec = JSON.parse(readFileSync(specPath, "utf8"));
+const PARENT_EXISTS = existsSync(join(spec.dir, "Cargo.toml"));
 
-// ── helpers ─────────────────────────────────────────────────────────────────
 const log = (s = "") => console.log(s);
-const plan = []; // { what, detail } printed in order; executed in order
-const edits = []; // { path, old, new } content edits (plan items reference them)
+const plan = [];
+const edits = []; // { path, old, next, count? }
 const movedOrig = new Map(); // moved target -> original path (dry-run reads originals)
 
 function git(...cmd) {
-  return execFileSync("git", cmd, { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
-    .trim();
+  return execFileSync("git", cmd, { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
-
 const toSlash = (p) => p.replace(/\\/g, "/");
-
 function isTracked(p) {
-  try {
-    git("ls-files", "--error-unmatch", "--", p);
-    return true;
-  } catch {
-    return false;
-  }
+  try { git("ls-files", "--error-unmatch", "--", p); return true; } catch { return false; }
 }
-
 function listFiles(dir) {
-  const out = git("ls-files", dir).split("\n").filter(Boolean);
-  return out.map(toSlash);
+  return git("ls-files", dir).split("\n").filter(Boolean).map(toSlash);
 }
-
 function queueEdit(path, old, next) {
   const cur = readFileSync(path, "utf8");
   if (!cur.includes(old)) throw new Error(`${path}: anchor not found: ${JSON.stringify(old.slice(0, 60))}`);
   edits.push({ path, old, next, count: cur.split(old).length - 1 });
 }
 
-// ── tree-sitter languages (native prebuilds, verified working under Bun) ────
-const parser = new Parser();
-parser.setLanguage(RustLang);
-const jsonParser = new Parser();
-jsonParser.setLanguage(JsonLang);
-const tsParser = new Parser();
-tsParser.setLanguage(TsLang);
+// ── tree-sitter ─────────────────────────────────────────────────────────────
+const parser = new Parser(); parser.setLanguage(RustLang);
+const jsonParser = new Parser(); jsonParser.setLanguage(JsonLang);
+const tsParser = new Parser(); tsParser.setLanguage(TsLang);
 
 // ── step 1: moves ───────────────────────────────────────────────────────────
-const movedFiles = []; // relative paths that moved (for rewrite passes)
+const movedFiles = [];
 for (const child of spec.children) {
   for (const [sub, dest] of [
     ["src", join(spec.dir, "src", child.module)],
@@ -119,7 +110,7 @@ for (const child of spec.children) {
   ]) {
     const srcDir = join(child.dir, sub);
     if (!existsSync(srcDir) || listFiles(srcDir).length === 0) continue;
-    plan.push({ what: `git mv ${srcDir}/ -> ${dest}/`, detail: `${listFiles(srcDir).length} files` });
+    plan.push({ what: `git mv ${toSlash(srcDir)}/ -> ${toSlash(dest)}/`, detail: `${listFiles(srcDir).length} files` });
     for (const f of listFiles(srcDir)) {
       const target = join(dest, relative(srcDir, f));
       movedFiles.push(toSlash(target));
@@ -130,12 +121,11 @@ for (const child of spec.children) {
       }
     }
   }
-  // include/ merges file-by-file into the parent include/ tree
   const incDir = join(child.dir, "include");
   if (existsSync(incDir)) {
     for (const f of listFiles(incDir)) {
       const target = join(spec.dir, "include", relative(incDir, f));
-      plan.push({ what: `git mv ${f} -> ${target}`, detail: "" });
+      plan.push({ what: `git mv ${f} -> ${toSlash(target)}`, detail: "" });
       movedFiles.push(toSlash(target));
       movedOrig.set(toSlash(target), toSlash(f));
       if (APPLY) {
@@ -144,19 +134,18 @@ for (const child of spec.children) {
       }
     }
   }
-  // module root file: src/<module>/lib.rs -> src/<module>/mod.rs (dir modules need mod.rs)
+  // module root file: src/<module>/lib.rs -> mod.rs
   {
     const lib = join(spec.dir, "src", child.module, "lib.rs");
-    const mod = join(spec.dir, "src", child.module, "mod.rs");
-    if (existsSync(lib)) {
-      plan.push({ what: `git mv ${toSlash(lib)} -> ${toSlash(mod)}`, detail: "dir-module root" });
-      if (APPLY) execFileSync("git", ["mv", "--", toSlash(lib), toSlash(mod)], { cwd: ROOT, stdio: "ignore" });
+    if (existsSync(lib) || (APPLY && existsSync(join(spec.dir, "src", child.module)))) {
+      plan.push({ what: `git mv ${toSlash(join(spec.dir, "src", child.module, "lib.rs"))} -> mod.rs`, detail: "dir-module root" });
+      if (APPLY && existsSync(lib)) execFileSync("git", ["mv", "--", toSlash(lib), toSlash(join(spec.dir, "src", child.module, "mod.rs"))], { cwd: ROOT, stdio: "ignore" });
     }
   }
   const readme = join(child.dir, "README.md");
   if (existsSync(readme) && isTracked(readme)) {
     const target = join(spec.dir, "docs", child.module, "README.md");
-    plan.push({ what: `git mv ${readme} -> ${target}`, detail: "" });
+    plan.push({ what: `git mv ${readme} -> ${toSlash(target)}`, detail: "" });
     movedFiles.push(toSlash(target));
     movedOrig.set(toSlash(target), toSlash(readme));
     if (APPLY) {
@@ -164,149 +153,313 @@ for (const child of spec.children) {
       execFileSync("git", ["mv", "--", readme, target], { cwd: ROOT, stdio: "ignore" });
     }
   }
-  plan.push({ what: `git rm ${child.dir}/Cargo.toml`, detail: "deps merged into parent (see draft)" });
+  plan.push({ what: `git rm ${child.dir}/Cargo.toml`, detail: "deps merged into parent" });
   if (APPLY && existsSync(join(child.dir, "Cargo.toml")))
     execFileSync("git", ["rm", "--", join(child.dir, "Cargo.toml")], { cwd: ROOT, stdio: "ignore" });
 }
 
 // ── step 2: root workspace manifest ─────────────────────────────────────────
-// Idempotent: re-running after a partial apply skips already-done edits.
 {
   const wc = readFileSync("Cargo.toml", "utf8");
   const childDirs = spec.children.map((c) => toSlash(c.dir));
-  // members array entries are exactly `    "crates/…",` lines
   const membersRe = /^(\s*)"(crates\/[^"]+)",\s*$/gm;
   const memberLines = [];
   let m;
   while ((m = membersRe.exec(wc)) !== null) memberLines.push(m);
   const present = memberLines.filter((x) => childDirs.includes(x[2]));
-  if (present.length !== spec.children.length) {
-    log(`⚠ members: found ${present.length}/${spec.children.length} children in workspace members`);
-  }
-  // Queue the parent ADD before the removals: the add anchors on a line the
-  // removals delete, so it must run first in the apply loop.
   const want = toSlash(spec.dir);
+  // parent ADD first (its anchor line is deleted by the removals below)
   if (!memberLines.some((x) => x[2] === want)) {
     const anchor = present[0] ?? memberLines.find((x) => x[2] < want);
-    plan.push({ what: `Cargo.toml members: add "${want}"`, detail: "at first removed position" });
-    queueEdit("Cargo.toml", anchor[0], `    "${want}",\n${anchor[0]}`);
+    if (anchor) {
+      plan.push({ what: `Cargo.toml members: add "${want}"`, detail: "at first removed position" });
+      queueEdit("Cargo.toml", anchor[0], `    "${want}",\n${anchor[0]}`);
+    } else {
+      plan.push({ what: "Cargo.toml members: add MANUALLY (no anchor)", detail: want });
+    }
   }
   for (const p of present) {
     plan.push({ what: `Cargo.toml members: remove "${p[2]}"`, detail: "" });
     queueEdit("Cargo.toml", p[0], "");
   }
-  // workspace.dependencies entries: `mediaway-…-ffi = { path = "crates/…", version = "0.1.0" }`
-  const parentDep = `${spec.crate} = { path = "${toSlash(spec.dir)}", version = "0.1.0" }`;
+  const parentDep = `${spec.crate} = { path = "${want}", version = "0.1.0" }`;
   if (!wc.includes(parentDep)) {
     const firstChild = spec.children.find((c) => wc.includes(`${c.name} = { path = "`));
-    const anchor = firstChild && wc.match(new RegExp(`^${firstChild.name} = \{ path = "[^"]+", version = "[^"]+" \}`, "m"));
+    const anchor = firstChild && wc.match(new RegExp(`^${firstChild.name} = \\{ path = "[^"]+", version = "[^"]+" \\}`, "m"));
     plan.push({ what: `Cargo.toml [workspace.dependencies]: add ${parentDep}`, detail: "" });
     if (anchor) queueEdit("Cargo.toml", anchor[0], `${parentDep}\n${anchor[0]}`);
     else plan.push({ what: "Cargo.toml: add parent dep MANUALLY (no anchor)", detail: parentDep });
   }
   for (const child of spec.children) {
-    const re = new RegExp(`^(${child.name} = \{ path = "[^"]+", version = "[^"]+" \}\s*)$`, "m");
+    const re = new RegExp(`^(${child.name} = \\{ path = "[^"]+", version = "[^"]+" \\}\\s*)$`, "m");
     const hit = wc.match(re);
-    if (!hit) {
-      log(`⚠ [workspace.dependencies]: no entry for ${child.name} — check manually`);
-      continue;
-    }
+    if (!hit) { log(`⚠ [workspace.dependencies]: no entry for ${child.name} — check manually`); continue; }
     plan.push({ what: `Cargo.toml [workspace.dependencies]: remove ${child.name}`, detail: "" });
     queueEdit("Cargo.toml", hit[1], "");
   }
 }
 
-// ── step 3: Rust rewrites on moved files ────────────────────────────────────
-function rustUsePaths(src, want) {
-  // Return ranges of `use …;` declarations whose path contains `want` textually.
-  const out = [];
-  const t = parser.parse(src);
-  const walk = (n) => {
-    if (n.type === "use_declaration") {
-      const txt = src.slice(n.startIndex, n.endIndex);
-      if (txt.includes(want)) out.push([n.startIndex, n.endIndex]);
-    }
-    for (const c of n.namedChildren) walk(c);
-  };
-  walk(t.rootNode);
-  return out;
-}
-
-for (const child of spec.children) {
-  // Glob the destination dirs directly — idempotent across re-runs (files may
-  // already be moved by an earlier apply; content rewrites must not skip them).
-  const moduleFiles = git("ls-files", toSlash(join(spec.dir, "src", child.module)))
-    .split("\n").filter(Boolean)
-    .map(toSlash)
-    .filter((f) => f.endsWith(".rs"))
-    .concat(
-      // dry-run: nothing moved yet — use the planned move list
-      movedFiles.filter(
-        (f) => f.startsWith(`${toSlash(spec.dir)}/src/${child.module}/`) && f.endsWith(".rs")
-      )
-    )
+// ── step 3: merged-src Rust rewrites ────────────────────────────────────────
+const parentUnderscore = spec.crate.replace(/-/g, "_");
+function mergedSrcFiles(child) {
+  return git("ls-files", toSlash(join(spec.dir, "src", child.module)))
+    .split("\n").filter(Boolean).map(toSlash).filter((f) => f.endsWith(".rs"))
+    .concat(movedFiles.filter((f) => f.startsWith(`${toSlash(spec.dir)}/src/${child.module}/`) && f.endsWith(".rs")))
     .filter((v, i, a) => a.indexOf(v) === i);
-  const parentUnderscore = spec.crate.replace(/-/g, "_");
-  const childUnderscore = child.name.replace(/-/g, "_");
-  for (const f of moduleFiles) {
+}
+for (const child of spec.children) {
+  for (const f of mergedSrcFiles(child)) {
     const srcPath = APPLY ? f : (movedOrig.get(f) ?? f);
+    if (!existsSync(srcPath)) continue;
     const orig = readFileSync(srcPath, "utf8");
     let s = orig;
-    const rangeApply = (ranges, fn) => {
-      // apply fn to each [start,end) slice, bottom-up (reverse order keeps offsets valid)
-      for (const [a, b] of ranges.slice().reverse()) {
-        const replaced = fn(s.slice(a, b));
-        if (replaced !== s.slice(a, b)) s = s.slice(0, a) + replaced + s.slice(b);
-      }
-    };
-    // (a) shared rlib references
-    if (child.module !== "common") {
-      const ranges = rustUsePaths(s, "mediaway_common_ffi");
-      rangeApply(ranges, (seg) => seg.split("mediaway_common_ffi::").join("crate::common::"));
-    }
-    // (b) crate-root paths gain the module prefix (skip existing module/common refs)
+    // (a) self root refs gain the module prefix (skip existing module/common refs)
     const skip = `(?:${child.module}::|common::)`;
-    const re = new RegExp(`crate::(?!${skip})`, "g");
-    s = s.replace(re, `crate::${child.module}::`);
-    // (c) doc-link depth (moved files sit one level deeper)
-    s = s.split("../../../docs/").join("../../../../docs/");
-    if (child.module !== "common") {
-      s = s.split(`(adr/`).join(`(../../adr/${child.module}/`).split(`[adr/`).join(`[../../adr/${child.module}/`);
+    s = s.replace(new RegExp(`crate::(?!${skip})`, "g"), `crate::${child.module}::`);
+    // (b) sibling/parent renames (after (a): their `crate::` prefixes are new)
+    for (const [old, path] of spec.renames ?? []) {
+      s = s.split(`${old}::`).join(path);
+      s = s.split(`use ${old} as `).join(`use ${path.replace(/::$/, "")} as `);
     }
+    // (c) doc-link depth
+    s = s.split("../../../docs/").join("../../../../docs/");
     if (s !== orig) {
-      plan.push({ what: `rewrite ${f}`, detail: `${(orig.split(orig).length - 1)} edited (rust)` });
+      plan.push({ what: `rewrite ${f}`, detail: `module src (rust)` });
       edits.push({ path: f, old: orig, next: s, count: 1 });
     }
   }
-  // integration tests reference the child crate by name
-  const testFiles = git("ls-files", toSlash(spec.dir))
-    .split("\n").filter(Boolean)
-    .map(toSlash)
-    .filter((f) => f.startsWith(`${toSlash(spec.dir)}/tests/`) && f.endsWith(".rs"))
-    .concat(
-      movedFiles.filter(
-        (f) => f.startsWith(`${toSlash(spec.dir)}/tests/`) && f.endsWith(".rs")
-      )
-    )
-    .filter((v, i, a) => a.indexOf(v) === i);
-  for (const f of testFiles) {
+  for (const f of mergedSrcFiles(child).filter((f) => f.startsWith(`${toSlash(spec.dir)}/tests/`))) {
     const srcPath = APPLY ? f : (movedOrig.get(f) ?? f);
+    if (!existsSync(srcPath)) continue;
     const orig = readFileSync(srcPath, "utf8");
-    // integration tests referenced the child crate's root re-exports; in the
-    // merged crate those live under the module path
-    const s = orig.split(`${childUnderscore}::`).join(`${parentUnderscore}::${child.module}::`);
+    const childU = child.name.replace(/-/g, "_");
+    const s = orig.split(`${childU}::`).join(`${parentUnderscore}::${child.module}::`);
     if (s !== orig) {
-      plan.push({ what: `rewrite ${f}`, detail: `crate ref ${childUnderscore} -> ${parentUnderscore}` });
+      plan.push({ what: `rewrite ${f}`, detail: `test crate ref` });
       edits.push({ path: f, old: orig, next: s, count: 1 });
     }
   }
 }
 
-// ── step 4: non-Rust reference rewrites (tracked, non-build-output) ────────
-const SKIP_DIRS = ["node_modules", "target", "dist", "build", "runtime", "pkg", ".git"];
-// Historical records keep their original crate names (ADR-0021 amends them in
-// place; the old names document the pre-consolidation design). Current-state
-// docs (wiki, roadmap, runbooks) are rewritten. Specs are updated by hand.
+// ── step 4: dependent Rust sweep (outside merged dirs) ──────────────────────
+if (spec.depSweep?.length) {
+  const depRust = git("ls-files", "crates", "tools", "examples")
+    .split("\n").filter(Boolean).map(toSlash)
+    .filter((f) => f.endsWith(".rs") && !f.startsWith(`${toSlash(spec.dir)}/`));
+  for (const f of depRust) {
+    const orig = readFileSync(f, "utf8");
+    let s = orig;
+    for (const [old, path] of spec.depSweep) {
+      s = s.split(`${old}::`).join(path);
+      s = s.split(`use ${old} as `).join(`use ${path.replace(/::$/, "")} as `);
+    }
+    if (s !== orig) {
+      plan.push({ what: `rewrite ${f}`, detail: `dependent rust refs` });
+      edits.push({ path: f, old: orig, next: s, count: 1 });
+    }
+  }
+}
+
+// ── step 5: dependent Cargo.tomls ───────────────────────────────────────────
+{
+  const childNames = spec.children.map((c) => c.name);
+  const depTomls = git("ls-files", "crates", "tools", "examples")
+    .split("\n").filter(Boolean).map(toSlash)
+    .filter((f) => f.endsWith("Cargo.toml") && !childNames.some((n) => f.includes(`/${n}/`)) && !f.startsWith(`${toSlash(spec.dir)}/`));
+  for (const f of depTomls) {
+    const orig = readFileSync(f, "utf8");
+    let s = orig;
+    let touched = false;
+    // line-anchored entries, skipping multi-line inline tables until braces balance
+    const lines = s.split("\n");
+    const out = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const name = line.match(/^([A-Za-z0-9_-]+)\s*=\s*\{/)?.[1];
+      if (name && childNames.includes(name)) {
+        // skip until the entry closes (balanced braces, best-effort: `] }` or `}`)
+        let depth = 0;
+        for (let j = i; j < lines.length; j++) {
+          depth += (lines[j].match(/\{/g) ?? []).length - (lines[j].match(/\}/g) ?? []).length;
+          if (depth <= 0) { i = j; break; }
+        }
+        touched = true;
+        continue;
+      }
+      out.push(line);
+    }
+    if (touched && out.join("\n") !== s) {
+      // ensure parent dep exists when the file references the parent path already
+      const needsParent = orig.includes("mediaway-") && childNames.some((n) => orig.includes(n));
+      const hasParent = out.some((l) => l.startsWith(`${spec.crate} = `) || l.includes(`"${spec.crate}"`));
+      if (needsParent && !hasParent) {
+        // append to [dependencies] if present
+        const di = out.findIndex((l) => l.trim() === "[dependencies]");
+        if (di >= 0) {
+          out.splice(di + 1, 0, `${spec.crate} = { workspace = true }`);
+        } else {
+          plan.push({ what: `${f}: parent dep add MANUAL (no [dependencies])`, detail: spec.crate });
+        }
+      }
+      const next = out.join("\n");
+      plan.push({ what: `rewrite ${f}`, detail: `dependent cargo deps` });
+      edits.push({ path: f, old: orig, next, count: 1 });
+    }
+  }
+}
+
+// ── step 6: parent Cargo.toml + lib.rs ──────────────────────────────────────
+function childToml(child) {
+  const p = join(child.dir, "Cargo.toml");
+  let txt;
+  if (existsSync(p)) txt = readFileSync(p, "utf8");
+  else txt = git("show", `HEAD:${toSlash(p)}`);
+  const sections = {};
+  let cur = null;
+  for (const line of txt.split("\n")) {
+    const h = line.match(/^\[(.+)\]\s*$/);
+    if (h) { cur = h[1]; sections[cur] = sections[cur] ?? []; continue; }
+    if (cur) sections[cur].push(line);
+  }
+  return sections;
+}
+function mergeDepLines(depLines, table, t, childNames) {
+  const bucket = depLines.get(table) ?? [];
+  for (const line of t[table] ?? []) {
+    const name = line.match(/^([A-Za-z0-9_-]+)\s*=/)?.[1];
+    if (!name) { if (bucket.length) bucket[bucket.length - 1] += "\n" + line; continue; }
+    if (childNames.includes(name) || name === spec.crate) continue;
+    if (!bucket.some((l) => l.startsWith(name + " = "))) bucket.push(line);
+  }
+  if (bucket.length) depLines.set(table, bucket);
+}
+{
+  const childNames = spec.children.map((c) => c.name);
+  const childTomls = spec.children.map(childToml);
+  // standard tables + every target-cfg table children declare (windows/linux/wasm32/…)
+  const depTables = [
+    "dependencies",
+    "dev-dependencies",
+    ...new Set(childTomls.flatMap((t) => Object.keys(t).filter((k) => k.startsWith("target.")))),
+  ];
+  const features = new Map();
+  const defaults = [];
+  const crateTypes = new Set();
+
+  if (PARENT_EXISTS) {
+    // merge into existing parent manifest
+    const p = join(spec.dir, "Cargo.toml");
+    const orig = readFileSync(p, "utf8");
+    const sections = {};
+    let cur = null;
+    for (const line of orig.split("\n")) {
+      const h = line.match(/^\[(.+)\]\s*$/);
+      if (h) { cur = h[1]; sections[cur] = sections[cur] ?? []; continue; }
+      if (cur) sections[cur].push(line);
+    }
+    const depLines = new Map();
+    for (const t of depTables) depLines.set(t, [...(sections[t] ?? [])]);
+    for (const t of childTomls) for (const table of depTables) mergeDepLines(depLines, table, t, childNames);
+    for (const line of sections.features ?? []) {
+      const kv = line.match(/^([A-Za-z0-9_-]+)\s*=\s*(.*)$/);
+      if (!kv) continue;
+      if (kv[1] === "default") { kv[2].match(/\[([^\]]*)\]/)?.[1].split(",").map((x) => x.trim().replace(/["']/g, "")).filter(Boolean).forEach((x) => defaults.push(x)); continue; }
+      features.set(kv[1], line);
+    }
+    for (const t of childTomls) for (const line of t.features ?? []) {
+      const kv = line.match(/^([A-Za-z0-9_-]+)\s*=\s*(.*)$/);
+      if (!kv) continue;
+      if (kv[1] === "default") { kv[2].match(/\[([^\]]*)\]/)?.[1].split(",").map((x) => x.trim().replace(/["']/g, "")).filter(Boolean).forEach((x) => defaults.push(x)); continue; }
+      if (!features.has(kv[1])) features.set(kv[1], line);
+    }
+    // rebuild the manifest preserving non-dep tables in order; append child-only
+    // target tables (e.g. wasm32 deps the parent never had)
+    const order = [...Object.keys(sections)];
+    for (const t of depTables) if (!order.includes(t) && (depLines.get(t) ?? []).length) order.push(t);
+    const parts = [];
+    for (const t of order) {
+      if (t === "features") continue;
+      if (depTables.includes(t)) {
+        const lines = depLines.get(t) ?? [];
+        if (lines.length === 0) continue;
+        parts.push(`[${t}]`, ...lines, "");
+      } else {
+        parts.push(`[${t}]`, ...(sections[t] ?? []), "");
+      }
+    }
+    parts.push(`[features]`);
+    parts.push(`default = [${[...new Set(defaults)].map((d) => `"${d}"`).join(", ")}]`);
+    for (const f of features.values()) parts.push(f);
+    parts.push("");
+    const next = parts.join("\n");
+    if (next !== orig) {
+      plan.push({ what: `merge deps into ${toSlash(p)}`, detail: "REVIEW: feature merge" });
+      edits.push({ path: p, old: orig, next, count: 1 });
+    }
+    // lib.rs: append module decls + rootUnsafe
+    const lr = join(spec.dir, "src", "lib.rs");
+    if (existsSync(lr)) {
+      const lOrig = readFileSync(lr, "utf8");
+      let l = lOrig;
+      if (spec.rootUnsafe) {
+        const attr = `#![${spec.rootUnsafe}(unsafe_code)]`;
+        const reForbid = /#!\[forbid\(unsafe_code\)\]/;
+        const reDeny = /#!\[deny\(unsafe_code\)\]/;
+        const reAllow = /#!\[allow\(unsafe_code\)\]/;
+        if (reForbid.test(l) || reDeny.test(l) || reAllow.test(l)) {
+          l = l.replace(reForbid, attr).replace(reDeny, attr).replace(reAllow, attr);
+          plan.push({ what: `lib.rs: unsafe attr -> ${spec.rootUnsafe}`, detail: "platform backends merged in" });
+        }
+      }
+      const mods = spec.children.map((c) => `pub mod ${c.module};`).join("\n");
+      if (!l.includes(`pub mod ${spec.children[0].module};`)) {
+        l = l.replace(/\s*$/, "\n\n// ── merged platform/domain modules (ADR-0021) ──\n" + mods + "\n");
+        plan.push({ what: `lib.rs: append ${spec.children.length} module decls`, detail: "REVIEW: cfg gating" });
+      }
+      if (l !== lOrig) edits.push({ path: lr, old: lOrig, next: l, count: 1 });
+    }
+  } else {
+    // scaffold a new parent (ffi-style): union draft
+    for (const t of childTomls) {
+      const lib = (t["lib"] ?? []).join("\n");
+      const ct = lib.match(/crate-type\s*=\s*\[([^\]]+)\]/);
+      if (ct) ct[1].split(",").map((x) => x.trim().replace(/["']/g, "")).filter(Boolean).forEach((x) => crateTypes.add(x));
+    }
+    const depLines = new Map();
+    for (const table of depTables) depLines.set(table, []);
+    for (const t of childTomls) for (const table of depTables) mergeDepLines(depLines, table, t, childNames);
+    for (const t of childTomls) for (const line of t.features ?? []) {
+      const kv = line.match(/^([A-Za-z0-9_-]+)\s*=\s*(.*)$/);
+      if (!kv) continue;
+      if (kv[1] === "default") { kv[2].match(/\[([^\]]*)\]/)?.[1].split(",").map((x) => x.trim().replace(/["']/g, "")).filter(Boolean).forEach((x) => defaults.push(x)); continue; }
+      features.set(kv[1], line);
+    }
+    const parts = [
+      `[package]`, `name = "${spec.crate}"`,
+      spec.description ? `description = "${spec.description}"` : null,
+      `version.workspace = true`, `publish = false # early development — see docs/roadmap.md`,
+      `edition.workspace = true`, `rust-version.workspace = true`, `license.workspace = true`,
+      `repository.workspace = true`, `authors.workspace = true`, ``,
+      `[lib]`, `crate-type = [${[...crateTypes].map((x) => `"${x}"`).join(", ")}]`, ``,
+    ].filter((x) => x !== null);
+    for (const table of depTables) {
+      const lines = depLines.get(table) ?? [];
+      if (lines.length === 0) continue;
+      parts.push(`[${table}]`, ...lines, "");
+    }
+    parts.push(`[features]`, `default = [${[...new Set(defaults)].map((d) => `"${d}"`).join(", ")}]`);
+    for (const f of features.values()) parts.push(f);
+    parts.push("", `[lints]`, `workspace = true`, "");
+    plan.push({ what: `draft ${spec.dir}/Cargo.toml`, detail: "REVIEW: feature merge + dep pins" });
+    edits.push({ path: join(spec.dir, "Cargo.toml"), old: "", next: parts.join("\n") });
+    const libRs = `//! ${spec.description ?? spec.crate}\n//!\n//! Merged from: ${spec.children.map((c) => c.name).join(", ")} — ADR-0021.\n\n#![allow(unsafe_code)] // FFI/platform crate — SAFETY comments per file\n\n${spec.children.map((c) => `pub mod ${c.module};`).join("\n")}\n`;
+    plan.push({ what: `draft ${spec.dir}/src/lib.rs`, detail: "REVIEW: module wiring" });
+    edits.push({ path: join(spec.dir, "src", "lib.rs"), old: "", next: libRs });
+  }
+}
+
+// ── step 7: non-Rust name replacements ──────────────────────────────────────
+const SKIP_DIRS = ["node_modules", "target", "dist", "build", "runtime", "pkg", ".git", "obj", "bin", "specs"];
 const SKIP_PREFIXES = ["docs/adr/", "docs/spec/"];
 function sweepable() {
   const roots = ["bindings", "tools", "docs", "examples"];
@@ -332,127 +485,10 @@ for (const f of sweepable()) {
   let s = orig;
   for (const [re, rep] of nameMaps) s = s.replace(re, rep);
   if (s !== orig) {
-    // verify: JSON files must stay parseable; TS files parseable by tree-sitter
-    if (f.endsWith(".json")) {
-      try {
-        JSON.parse(s);
-      } catch {
-        throw new Error(`${f}: rewrite broke JSON`);
-      }
-    }
+    if (f.endsWith(".json")) { try { JSON.parse(s); } catch { throw new Error(`${f}: rewrite broke JSON`); } }
     plan.push({ what: `replace refs in ${f}`, detail: "ffi crate/DLL names" });
-    edits.push({ path: f, old: orig, next: s });
+    edits.push({ path: f, old: orig, next: s, count: 1 });
   }
-}
-
-// ── step 5: draft parent Cargo.toml + src/lib.rs ────────────────────────────
-function childToml(child) {
-  const p = join(child.dir, "Cargo.toml");
-  let txt;
-  if (existsSync(p)) {
-    txt = readFileSync(p, "utf8");
-  } else {
-    // already git rm'd by an earlier apply — read from HEAD
-    txt = git("show", `HEAD:${toSlash(p)}`);
-  }
-  const sections = {};
-  let cur = null;
-  for (const line of txt.split("\n")) {
-    const h = line.match(/^\[(.+)\]\s*$/);
-    if (h) {
-      cur = h[1];
-      sections[cur] = sections[cur] ?? [];
-      continue;
-    }
-    if (cur) sections[cur].push(line);
-  }
-  return sections;
-}
-{
-  const childrenNames = spec.children.map((c) => c.name);
-  const depLines = new Map(); // table -> ordered lines
-  const features = new Map();
-  const defaults = [];
-  const crateTypes = new Set();
-  for (const child of spec.children) {
-    const t = childToml(child);
-    const lib = (t["lib"] ?? []).join("\n");
-    const ct = lib.match(/crate-type\s*=\s*\[([^\]]+)\]/);
-    if (ct) ct[1].split(",").map((x) => x.trim().replace(/["']/g, "")).filter(Boolean).forEach((x) => crateTypes.add(x));
-    for (const table of ["dependencies", "dev-dependencies", "target.'cfg(windows)'.dependencies", "target.'cfg(windows)'.dev-dependencies", "target.'cfg(target_os = \"linux\")'.dependencies"]) {
-      const key = table;
-      const bucket = depLines.get(key) ?? [];
-      for (const line of t[key] ?? []) {
-        const name = line.match(/^([A-Za-z0-9_-]+)\s*=/)?.[1];
-        if (!name) {
-          // continuation line of a multi-line inline table — append to last entry
-          if (bucket.length) bucket[bucket.length - 1] += "\n" + line;
-          continue;
-        }
-        if (childrenNames.includes(name)) continue; // drop self/sibling refs
-        if (!bucket.some((l) => l.startsWith(name + " = "))) bucket.push(line);
-      }
-      if (bucket.length) depLines.set(key, bucket);
-    }
-    for (const line of t.features ?? []) {
-      const kv = line.match(/^([A-Za-z0-9_-]+)\s*=\s*(.*)$/);
-      if (!kv) continue;
-      if (kv[1] === "default") {
-        kv[2].match(/\[([^\]]*)\]/)?.[1].split(",").map((x) => x.trim().replace(/["']/g, "")).filter(Boolean).forEach((x) => defaults.push(x));
-        continue;
-      }
-      features.set(kv[1], line);
-    }
-    for (const line of t["lints"] ?? []) {
-      // `workspace = true` — emit once
-    }
-  }
-  const defaultLine = `default = [${[...new Set(defaults)].map((d) => `"${d}"`).join(", ")}]`;
-  const parts = [
-    `[package]`,
-    `name = "${spec.crate}"`,
-    spec.description ? `description = "${spec.description}"` : null,
-    `version.workspace = true`,
-    `publish = false # no header/ABI has shipped yet — see docs/roadmap.md`,
-    `edition.workspace = true`,
-    `rust-version.workspace = true`,
-    `license.workspace = true`,
-    `repository.workspace = true`,
-    `authors.workspace = true`,
-    ``,
-    `[lib]`,
-    `crate-type = [${[...crateTypes].map((x) => `"${x}"`).join(", ")}]`,
-    ``,
-  ].filter((x) => x !== null);
-  const tables = [["dependencies", "dependencies"], ["dev-dependencies", "dev-dependencies"], ["target.'cfg(windows)'.dependencies", "target.'cfg(windows)'.dependencies"], ["target.'cfg(windows)'.dev-dependencies", "target.'cfg(windows)'.dev-dependencies"], ["target.'cfg(target_os = \"linux\")'.dependencies", "target.'cfg(target_os = \"linux\")'.dependencies"]];
-  const draft = [...parts];
-  for (const [key, header] of tables) {
-    const lines = depLines.get(key) ?? [];
-    if (lines.length === 0) continue;
-    draft.push(`[${header}]`);
-    draft.push(...lines);
-    draft.push("");
-  }
-  draft.push(`[features]`);
-  draft.push(defaultLine);
-  for (const f of features.values()) draft.push(f);
-  draft.push("");
-  draft.push(`[lints]`);
-  draft.push(`workspace = true`);
-  draft.push("");
-  plan.push({ what: `draft ${spec.dir}/Cargo.toml`, detail: "REVIEW: feature merge + dep pins" });
-  edits.push({ path: join(spec.dir, "Cargo.toml"), old: "", next: draft.join("\n") });
-  const libRs = `//! ${spec.description ?? `C ABI facade (merged per ADR-0021)`}
-//!
-//! Merged from: ${spec.children.map((c) => c.name).join(", ")} — see
-//! ../../docs/adr/0021-workspace-consolidation.md.
-
-#![allow(unsafe_code)] // FFI crate — see docs/conventions/code-style.md § unsafe
-
-${spec.children.map((c) => `pub mod ${c.module};`).join("\n")}
-`;
-  plan.push({ what: `draft ${spec.dir}/src/lib.rs`, detail: "REVIEW: module wiring" });
-  edits.push({ path: join(spec.dir, "src", "lib.rs"), old: "", next: libRs });
 }
 
 // ── output / execute ────────────────────────────────────────────────────────
@@ -466,7 +502,7 @@ if (!APPLY) {
     if (e.old === "") {
       log(`\n--- NEW ${e.path} ---\n${e.next}`);
     } else {
-      log(`\n--- EDIT ${e.path} (${e.count} occurrence(s)) ---`);
+      log(`\n--- EDIT ${e.path} (${e.count ?? 1} occurrence(s)) ---`);
       const a = e.old.split("\n"), b = e.next.split("\n");
       const N = Math.max(a.length, b.length);
       for (let k = 0; k < N; k++) {
@@ -474,29 +510,23 @@ if (!APPLY) {
       }
     }
   }
-  log(`\n[DRY RUN] ${edits.length} file edits + ${plan.length} operations planned. Re-run with --apply to execute.`);
+  log(`\n[DRY RUN] ${edits.length} file edits planned. Re-run with --apply to execute.`);
   process.exit(0);
 }
 
-// apply
 mkdirSync(join(spec.dir, "src"), { recursive: true });
+let skipped = 0;
 for (const e of edits) {
   if (e.old === "") {
-    // new file (draft scaffold)
     writeFileSync(e.path, e.next);
   } else {
-    // in-place edit: replace the anchor/whole-file content once; a missing
-    // anchor on re-run means a previous apply already did this edit — skip.
     const cur = existsSync(e.path) ? readFileSync(e.path, "utf8") : "";
-    if (!cur.includes(e.old)) {
-      log(`⚠ skip (already applied?): ${e.path}`);
-      continue;
-    }
+    if (!cur.includes(e.old)) { skipped++; log(`⚠ skip (already applied?): ${e.path}`); continue; }
     writeFileSync(e.path, cur.replace(e.old, e.next));
   }
 }
-log(`APPLIED: ${spec.crate} — ${edits.length} file writes + moves executed.`);
+log(`APPLIED: ${spec.crate} — ${edits.length} edits (${skipped} skipped).`);
 log("Review before building:");
-log("  cargo check -p " + spec.crate);
-log("  cargo fmt --all && cargo clippy -p " + spec.crate);
-log("Manual follow-ups (per spec): bindings scripts, ci.yml/release.yml -p flags, DLL names.");
+log(`  cargo check -p ${spec.crate}`);
+log(`  cargo test -p ${spec.crate}`);
+log("Manual follow-ups: feature tables referencing removed deps (dep:…), bindings scripts.");

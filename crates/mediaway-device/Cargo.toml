@@ -1,6 +1,6 @@
 [package]
 name = "mediaway-device"
-description = "Shared device vocabulary — DeviceKind/DeviceId/Select, capability/permission probing, capture/playback errors, and the DeviceHotplug trait. Domain capture facades: mediaway-device-camera, mediaway-device-desktop, mediaway-device-audio."
+description = "Device capture: camera/desktop/audio facades + hotplug, with Windows/Linux/Web backends as #[cfg]-gated modules (ADR-0021)"
 version.workspace = true
 publish = true # hardware-verified — see docs/roadmap.md
 edition.workspace = true
@@ -9,9 +9,81 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
+
 [dependencies]
 mediaway-common = { workspace = true }
 thiserror = { workspace = true }
 
+
+
+
+
+
+
+
+
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+
+
 [lints]
 workspace = true
+
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Foundation",
+    "Graphics",
+    "Graphics_Capture",
+    "Graphics_DirectX",
+    "Graphics_DirectX_Direct3D11",
+    "Win32_Devices_FunctionDiscovery",
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Gdi",
+    "Win32_Media_Audio",
+    "Win32_Media_MediaFoundation",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
+    "Win32_System_WinRT",
+    "Win32_System_WinRT_Direct3D11",
+    "Win32_System_WinRT_Graphics_Capture",
+    "Win32_UI_Shell_PropertiesSystem",
+    "Win32_UI_WindowsAndMessaging",
+] }
+windows-core = { workspace = true }
+
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { workspace = true, default-features = false, features = [
+    "screencast",
+    "async-io",
+] }
+# Safe Rust bindings to libpipewire (build-time pkg-config: libpipewire-0.3).
+pipewire = { workspace = true }
+# Safe V4L2 bindings for camera capture (build-time: bindgen + libclang +
+# system <linux/videodev2.h>, no runtime library link). See
+# adr/0002-v4l2-camera-capture.md.
+v4l = { workspace = true }
+
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = { workspace = true }
+js-sys = { workspace = true }
+web-sys = { workspace = true, features = [
+    "Window",
+    "Navigator",
+    "MediaDevices",
+    "MediaStream",
+    "MediaStreamConstraints",
+    "MediaTrackConstraints",
+    "DisplayMediaStreamConstraints",
+] }
+
+
+[features]
+default = []

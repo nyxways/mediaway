@@ -48,8 +48,8 @@ use mediaway_common::{
 };
 use mediaway_container::mp4::Muxer;
 use mediaway_device::Select;
-use mediaway_device_audio::{AudioCapture, AudioCaptureConfig};
-use mediaway_device_desktop::{DesktopVideoCapture, DesktopVideoCaptureConfig};
+use mediaway_device::audio::{AudioCapture, AudioCaptureConfig};
+use mediaway_device::desktop::{DesktopVideoCapture, DesktopVideoCaptureConfig};
 use mediaway_encoder::auto::AutoVideoEncodeConfig;
 use mediaway_encoder::{AudioEncoder, AudioEncoderConfig, VideoEncoder};
 use mediaway_encoder_windows::WindowsAudioEncoder;

@@ -16,7 +16,7 @@
 )]
 
 use mediaway_common::Rational;
-use mediaway_device_audio::AudioCaptureConfig;
+use mediaway_device::audio::AudioCaptureConfig;
 use mediaway_pipeline::platform;
 use std::time::{Duration, Instant};
 

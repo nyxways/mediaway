@@ -14,7 +14,7 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use mediaway_device::Select;
-use mediaway_device_audio::{AudioCapture, AudioCaptureConfig, CaptureError};
+use mediaway_device::audio::{AudioCapture, AudioCaptureConfig, CaptureError};
 
 use crate::device::buffer::{leak_boxed_slice, reclaim_boxed_slice};
 use crate::device::status::MediawayDeviceStatus;
@@ -110,14 +110,14 @@ pub unsafe extern "C" fn mediaway_audio_capture_open(
 fn open_audio_capture(config: &AudioCaptureConfig) -> Result<Box<dyn AudioCapture>, CaptureError> {
     #[cfg(windows)]
     {
-        use mediaway_device_windows_audio::WindowsWasapiCapture;
+        use mediaway_device::windows_audio::WindowsWasapiCapture;
         let cap = WindowsWasapiCapture::open_microphone(config)?;
         Ok(Box::new(cap))
     }
 
     #[cfg(target_os = "linux")]
     {
-        use mediaway_device_linux::LinuxMicrophoneCapture;
+        use mediaway_device::linux::LinuxMicrophoneCapture;
         let cap = LinuxMicrophoneCapture::open(config)?;
         Ok(Box::new(cap))
     }

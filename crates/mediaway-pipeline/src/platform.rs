@@ -9,9 +9,9 @@
 use mediaway_common::CodecKind;
 use mediaway_decoder::capability::{DecodeSupport, DecodeUnavailable};
 use mediaway_decoder::{DecodeError, VideoDecoder, VideoDecoderConfig};
+use mediaway_device::audio::{AudioCapture, AudioCaptureConfig};
+use mediaway_device::desktop::{DesktopVideoCapture, DesktopVideoCaptureConfig};
 use mediaway_device::{CaptureError, DeviceKind, PermissionState, Support};
-use mediaway_device_audio::{AudioCapture, AudioCaptureConfig};
-use mediaway_device_desktop::{DesktopVideoCapture, DesktopVideoCaptureConfig};
 use mediaway_encoder::auto::AutoVideoEncodeConfig;
 use mediaway_encoder::capability::EncoderCapability;
 use mediaway_encoder::{EncodeError, VideoEncoder};
@@ -186,7 +186,7 @@ pub fn decoder_support(codec: CodecKind) -> DecodeSupport {
 ///
 /// A zero-sized marker type — no state, just a home for [`Self::open`]; the real
 /// per-platform dispatch lives inside it, `#[cfg]`-gated. Use
-/// [`mediaway_device_desktop::DesktopVideoCaptureConfig::screen`] to build the
+/// [`mediaway_device::desktop::DesktopVideoCaptureConfig::screen`] to build the
 /// primary-display config this takes.
 pub struct ScreenCapture;
 
@@ -203,14 +203,14 @@ impl ScreenCapture {
     ) -> Result<Box<dyn DesktopVideoCapture>, CaptureError> {
         #[cfg(windows)]
         {
-            use mediaway_device_windows_desktop::WindowsScreenCapture;
+            use mediaway_device::windows_desktop::WindowsScreenCapture;
             let cap = WindowsScreenCapture::open(config)?;
             Ok(Box::new(cap))
         }
 
         #[cfg(target_os = "linux")]
         {
-            use mediaway_device_linux::LinuxScreenCapture;
+            use mediaway_device::linux::LinuxScreenCapture;
             let cap = LinuxScreenCapture::open(config)?;
             Ok(Box::new(cap))
         }
@@ -242,7 +242,7 @@ impl Microphone {
     pub fn open(config: &AudioCaptureConfig) -> Result<Box<dyn AudioCapture>, CaptureError> {
         #[cfg(windows)]
         {
-            use mediaway_device_windows_audio::WindowsWasapiCapture;
+            use mediaway_device::windows_audio::WindowsWasapiCapture;
             let cap = WindowsWasapiCapture::open_microphone(config)?;
             Ok(Box::new(cap))
         }
@@ -263,12 +263,12 @@ impl Microphone {
 pub fn device_support(kind: DeviceKind) -> Support {
     #[cfg(windows)]
     {
-        mediaway_device_windows::support(kind)
+        mediaway_device::windows::support(kind)
     }
 
     #[cfg(target_os = "linux")]
     {
-        mediaway_device_linux::support(kind)
+        mediaway_device::linux::support(kind)
     }
 
     #[cfg(not(any(windows, target_os = "linux")))]
@@ -289,12 +289,12 @@ pub fn device_support(kind: DeviceKind) -> Support {
 pub fn request_device_permission(kind: DeviceKind) -> Result<PermissionState, CaptureError> {
     #[cfg(windows)]
     {
-        mediaway_device_windows::request_permission(kind)
+        mediaway_device::windows::request_permission(kind)
     }
 
     #[cfg(target_os = "linux")]
     {
-        mediaway_device_linux::request_permission(kind)
+        mediaway_device::linux::request_permission(kind)
     }
 
     #[cfg(not(any(windows, target_os = "linux")))]

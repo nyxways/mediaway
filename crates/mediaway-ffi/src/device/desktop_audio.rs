@@ -14,10 +14,10 @@
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use mediaway_device::{CaptureError, Select};
-use mediaway_device_desktop::{
+use mediaway_device::desktop::{
     DesktopAudioCapture, DesktopAudioCaptureConfig, DesktopAudioSource, ProcessTreeScope,
 };
+use mediaway_device::{CaptureError, Select};
 
 use crate::device::buffer::{leak_boxed_slice, reclaim_boxed_slice};
 use crate::device::status::MediawayDeviceStatus;
@@ -153,7 +153,7 @@ fn open_desktop_audio_capture(
 ) -> Result<Box<dyn DesktopAudioCapture>, CaptureError> {
     #[cfg(windows)]
     {
-        use mediaway_device_windows_desktop::WindowsDesktopAudioCapture;
+        use mediaway_device::windows_desktop::WindowsDesktopAudioCapture;
         let cap = WindowsDesktopAudioCapture::open(config)?;
         Ok(Box::new(cap))
     }

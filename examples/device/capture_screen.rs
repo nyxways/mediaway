@@ -16,7 +16,7 @@
 )]
 
 use mediaway_device::Select;
-use mediaway_device_desktop::DesktopVideoCaptureConfig;
+use mediaway_device::desktop::DesktopVideoCaptureConfig;
 use mediaway_pipeline::platform;
 use std::time::{Duration, Instant};
 

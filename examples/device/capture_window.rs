@@ -28,7 +28,7 @@
 )]
 
 use mediaway_common::Rational;
-use mediaway_device_desktop::{
+use mediaway_device::desktop::{
     CaptureOutputPreference, DesktopCaptureSource, DesktopVideoCaptureConfig,
 };
 

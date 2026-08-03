@@ -1,0 +1,39 @@
+{
+  "crate": "mediaway-device",
+  "dir": "crates/mediaway-device",
+  "rootUnsafe": "allow",
+  "children": [
+    { "name": "mediaway-device-camera", "dir": "crates/mediaway-device-camera", "module": "camera" },
+    { "name": "mediaway-device-desktop", "dir": "crates/mediaway-device-desktop", "module": "desktop" },
+    { "name": "mediaway-device-audio", "dir": "crates/mediaway-device-audio", "module": "audio" },
+    { "name": "mediaway-device-windows", "dir": "crates/mediaway-device-windows", "module": "windows" },
+    { "name": "mediaway-device-windows-camera", "dir": "crates/mediaway-device-windows-camera", "module": "windows_camera" },
+    { "name": "mediaway-device-windows-desktop", "dir": "crates/mediaway-device-windows-desktop", "module": "windows_desktop" },
+    { "name": "mediaway-device-windows-audio", "dir": "crates/mediaway-device-windows-audio", "module": "windows_audio" },
+    { "name": "mediaway-device-linux", "dir": "crates/mediaway-device-linux", "module": "linux" },
+    { "name": "mediaway-device-web", "dir": "crates/mediaway-device-web", "module": "web" }
+  ],
+  "renames": [
+    ["mediaway_device_windows_camera", "crate::windows_camera::"],
+    ["mediaway_device_windows_desktop", "crate::windows_desktop::"],
+    ["mediaway_device_windows_audio", "crate::windows_audio::"],
+    ["mediaway_device_camera", "crate::camera::"],
+    ["mediaway_device_desktop", "crate::desktop::"],
+    ["mediaway_device_audio", "crate::audio::"],
+    ["mediaway_device_windows", "crate::windows::"],
+    ["mediaway_device_linux", "crate::linux::"],
+    ["mediaway_device_web", "crate::web::"],
+    ["mediaway_device", "crate::"]
+  ],
+  "depSweep": [
+    ["mediaway_device_windows_camera", "mediaway_device::windows_camera::"],
+    ["mediaway_device_windows_desktop", "mediaway_device::windows_desktop::"],
+    ["mediaway_device_windows_audio", "mediaway_device::windows_audio::"],
+    ["mediaway_device_camera", "mediaway_device::camera::"],
+    ["mediaway_device_desktop", "mediaway_device::desktop::"],
+    ["mediaway_device_audio", "mediaway_device::audio::"],
+    ["mediaway_device_windows", "mediaway_device::windows::"],
+    ["mediaway_device_linux", "mediaway_device::linux::"],
+    ["mediaway_device_web", "mediaway_device::web::"]
+  ]
+}

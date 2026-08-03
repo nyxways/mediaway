@@ -244,7 +244,13 @@ OS codec APIs (WMF, WebCodecs, VA-API, …) fed with CPU buffers (upload may app
 | VP9          | 🆗 / 🆗 | 🆗      | 🛠️   | 👻    | 👻      |
 | ProRes       | 👻       | 👻       | 👻    | 👻    | 👻      |
 | AAC          | 🆗       | 🆗       | 🛠️   | 👻    | 👻      |
-| Opus         | 🆗 / ❌  | 🛠️      | 🛠️   | 👻    | 👻      |
+| Opus         | ❌ / 🛠️ | 🛠️      | 🛠️   | 👻    | 👻      |
+
+> Windows Opus: **no** inbox encoder MFT (verified via `MFTEnumEx` — zero results), so
+> encode is ❌ on the OS path (SW encode lives in `mediaway-sw`); decode is 🛠️ — the inbox
+> decoder MFT session (`CMSOpusDecMFT`) is implemented and real-packet-verified on
+> Windows 11 in `mediaway-decoder` (`windows::wmf::opus`), but is not yet wired into a
+> public `AudioDecoder` entry point.
 
 
 Detail: [`mediaway-decoder-windows`](crates/mediaway-decoder-windows/README.md) · [`mediaway-encoder-windows`](crates/mediaway-encoder-windows/README.md) · [`mediaway-decoder-web`](crates/mediaway-decoder-web/README.md) · [`mediaway-encoder-web`](crates/mediaway-encoder-web/README.md) · [`mediaway-decoder-linux`](crates/mediaway-decoder-linux/README.md) · [`mediaway-encoder-linux`](crates/mediaway-encoder-linux/README.md).

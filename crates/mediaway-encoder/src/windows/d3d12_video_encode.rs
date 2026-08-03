@@ -51,11 +51,11 @@
 use std::collections::VecDeque;
 use std::mem::size_of;
 
+use crate::{EncodeError, VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 use mediaway_common::{
     Bytes, CodecKind, GpuDeviceHandle, Packet, PixelFormat, StreamInfo, VideoFrame,
     VideoFrameStorage, VideoGeometry,
 };
-use crate::{EncodeError, VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Graphics::Direct3D12::{
     D3D12_COMMAND_LIST_TYPE_COPY, D3D12_COMMAND_LIST_TYPE_VIDEO_ENCODE, D3D12_FENCE_FLAG_NONE,

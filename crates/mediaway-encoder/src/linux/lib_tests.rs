@@ -7,8 +7,8 @@
 )]
 
 use super::*;
-use mediaway_common::Rational;
 use crate::VideoInputPreference;
+use mediaway_common::Rational;
 
 const fn tiny_h264_cfg() -> VideoEncoderConfig {
     VideoEncoderConfig {

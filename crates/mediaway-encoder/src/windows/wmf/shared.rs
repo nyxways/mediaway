@@ -2,8 +2,8 @@
 
 #![allow(unsafe_code)]
 
-use mediaway_common::{Bytes, Packet, PixelFormat, StreamInfo};
 use crate::EncodeError;
+use mediaway_common::{Bytes, Packet, PixelFormat, StreamInfo};
 use windows::Win32::Media::MediaFoundation::{
     IMFMediaBuffer, IMFSample, IMFTransform, MF_E_TRANSFORM_NEED_MORE_INPUT,
     MF_E_TRANSFORM_STREAM_CHANGE, MF_MT_AVG_BITRATE, MF_MT_FRAME_RATE, MF_MT_FRAME_SIZE,

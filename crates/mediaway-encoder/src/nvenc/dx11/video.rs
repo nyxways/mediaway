@@ -11,11 +11,11 @@
 
 use std::collections::VecDeque;
 
+use crate::{EncodeError, VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 use mediaway_common::{
     Bytes, CodecKind, Packet, PixelFormat, Rational, StreamInfo, VideoFrame, VideoFrameStorage,
     VideoGeometry,
 };
-use crate::{EncodeError, VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 
 use nvenc::bitstream::BitStream;
 use nvenc::encoder::{Encoder, RegisteredResource};

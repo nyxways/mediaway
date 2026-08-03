@@ -6,8 +6,8 @@
 //! construction differs per codec, for the C-union reasons [`super::hevc`]'s doc comment
 //! explains.
 
-use mediaway_common::Packet;
 use crate::EncodeError;
+use mediaway_common::Packet;
 use std::mem::ManuallyDrop;
 use windows::Win32::Graphics::Direct3D12::{
     D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_VIDEO_ENCODE_READ,

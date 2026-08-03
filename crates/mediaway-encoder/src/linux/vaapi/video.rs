@@ -7,10 +7,10 @@
 use std::collections::VecDeque;
 use std::rc::Rc;
 
+use crate::{EncodeError, VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 use mediaway_common::{
     Bytes, CodecKind, Packet, PixelFormat, StreamInfo, VideoFrame, VideoFrameStorage, VideoGeometry,
 };
-use crate::{EncodeError, VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 
 use cros_libva::{
     BufferType, Config, Context, Display, EncPictureParameter, EncSequenceParameter,

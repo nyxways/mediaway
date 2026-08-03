@@ -7,8 +7,8 @@
 )]
 
 use super::*;
-use mediaway_common::{CodecKind, PixelFormat, Rational};
 use crate::VideoInputPreference;
+use mediaway_common::{CodecKind, PixelFormat, Rational};
 
 const fn h264_cfg(width: u32, height: u32) -> VideoEncoderConfig {
     VideoEncoderConfig {

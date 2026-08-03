@@ -2,8 +2,8 @@
 
 #![allow(unsafe_code)]
 
-use mediaway_common::CodecKind;
 use crate::EncodeError;
+use mediaway_common::CodecKind;
 use windows::Win32::Media::MediaFoundation::{
     MFVideoFormat_AV1, MFVideoFormat_H264, MFVideoFormat_HEVC, MFVideoFormat_VP90,
 };

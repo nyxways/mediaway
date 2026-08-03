@@ -10,11 +10,11 @@
     reason = "unit tests"
 )]
 
+use crate::{VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 use mediaway_common::{
     Bytes, CodecKind, GpuDeviceHandle, NativeHandle, PixelFormat, Rational, VideoFrame,
     VideoFrameStorage,
 };
-use crate::{VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::{
     D3D12_MESSAGE, D3D12CreateDevice, D3D12GetDebugInterface, ID3D12Debug, ID3D12Device,

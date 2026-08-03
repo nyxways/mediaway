@@ -18,16 +18,16 @@
 #[cfg(all(not(feature = "audio"), not(feature = "video")))]
 compile_error!("enable at least one of `audio` or `video` on mediaway-encoder-windows");
 
-#[cfg(feature = "audio")]
-use mediaway_common::AudioFrame;
-#[cfg(feature = "video")]
-use mediaway_common::VideoFrame;
-use mediaway_common::{Bytes, Packet, StreamInfo};
 use crate::EncodeError;
 #[cfg(feature = "audio")]
 use crate::{AudioEncoder, AudioEncoderConfig};
 #[cfg(feature = "video")]
 use crate::{VideoEncoder, VideoEncoderConfig};
+#[cfg(feature = "audio")]
+use mediaway_common::AudioFrame;
+#[cfg(feature = "video")]
+use mediaway_common::VideoFrame;
+use mediaway_common::{Bytes, Packet, StreamInfo};
 
 #[cfg(feature = "video")]
 pub mod auto;
@@ -269,10 +269,10 @@ fn closed_audio_stream_info() -> &'static StreamInfo {
 )]
 mod tests {
     use super::*;
+    use crate::VideoInputPreference;
     use mediaway_common::{
         CodecKind, GpuDeviceHandle, NativeHandle, PixelFormat, Rational, VideoFrameStorage,
     };
-    use crate::VideoInputPreference;
 
     #[test]
     fn open_h264_encodes_black_nv12_frame() {
@@ -601,9 +601,9 @@ mod tests {
     /// machines without that hardware.
     #[test]
     fn auto_open_gpu_copy_via_d3d12_bridge_or_skip() {
+        use crate::auto::{AutoVideoEncodeConfig, EncodePathClass};
         use crate::windows::auto::AutoVideoEncoder;
         use mediaway_common::GpuBufferHandle;
-        use crate::auto::{AutoVideoEncodeConfig, EncodePathClass};
         use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
         use windows::Win32::Graphics::Direct3D12::{D3D12CreateDevice, ID3D12Device};
         use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIAdapter1, IDXGIFactory1};
@@ -708,8 +708,8 @@ mod tests {
 )]
 mod audio_tests {
     use super::*;
-    use mediaway_common::{CodecKind, Rational};
     use crate::AudioEncoderConfig;
+    use mediaway_common::{CodecKind, Rational};
 
     #[test]
     fn open_aac_encodes_silence_pcm() {

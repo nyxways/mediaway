@@ -22,10 +22,10 @@
 #[cfg(not(feature = "video"))]
 compile_error!("enable the `video` feature on mediaway-encoder-linux");
 
-use mediaway_common::VideoFrame;
-use mediaway_common::{Bytes, Packet, StreamInfo};
 use crate::EncodeError;
 use crate::{VideoEncoder, VideoEncoderConfig};
+use mediaway_common::VideoFrame;
+use mediaway_common::{Bytes, Packet, StreamInfo};
 
 #[cfg(target_os = "linux")]
 mod vaapi;

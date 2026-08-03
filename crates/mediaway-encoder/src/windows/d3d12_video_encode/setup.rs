@@ -1,8 +1,8 @@
 //! `open`-time D3D12 object creation: device/queue/allocator/list objects, feature-support
 //! queries, and the `ID3D12VideoEncoder`/`ID3D12VideoEncoderHeap` pair.
 
-use mediaway_common::NativeHandle;
 use crate::EncodeError;
+use mediaway_common::NativeHandle;
 use windows::Win32::Graphics::Direct3D12::{
     D3D12_COMMAND_LIST_FLAG_NONE, D3D12_COMMAND_LIST_TYPE, D3D12_COMMAND_QUEUE_DESC,
     D3D12_COMMAND_QUEUE_FLAG_NONE, D3D12_CPU_PAGE_PROPERTY_UNKNOWN, D3D12_HEAP_FLAG_NONE,

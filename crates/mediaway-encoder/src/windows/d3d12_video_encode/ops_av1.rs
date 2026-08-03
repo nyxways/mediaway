@@ -7,8 +7,8 @@
 //! driver's compressed byte count varies frame to frame), unlike H.264/HEVC's
 //! start-code-delimited NALs which need no length prefix at all.
 
-use mediaway_common::{Bytes, Packet};
 use crate::EncodeError;
+use mediaway_common::{Bytes, Packet};
 use std::mem::ManuallyDrop;
 use windows::Win32::Graphics::Direct3D12::{
     D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_VIDEO_ENCODE_READ,

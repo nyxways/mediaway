@@ -4,8 +4,8 @@
 
 use std::collections::VecDeque;
 
-use mediaway_common::{AudioFrame, Bytes, CodecKind, Packet, SampleFormat, StreamInfo};
 use crate::{AudioEncoder, AudioEncoderConfig, EncodeError};
+use mediaway_common::{AudioFrame, Bytes, CodecKind, Packet, SampleFormat, StreamInfo};
 use windows::Win32::Media::MediaFoundation::{
     AACMFTEncoder, IMFMediaBuffer, IMFSample, IMFTransform, MF_MT_AUDIO_BITS_PER_SAMPLE,
     MF_MT_AUDIO_BLOCK_ALIGNMENT, MF_MT_AUDIO_NUM_CHANNELS, MF_MT_AUDIO_SAMPLES_PER_SECOND,

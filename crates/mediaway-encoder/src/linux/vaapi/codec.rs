@@ -1,7 +1,7 @@
 //! Map [`CodecKind`] to VA-API profile/entrypoint for encode.
 
-use mediaway_common::CodecKind;
 use crate::EncodeError;
+use mediaway_common::CodecKind;
 
 /// VA-API profile for a Mediaway video codec, this crate's Stage 1 scope only.
 ///

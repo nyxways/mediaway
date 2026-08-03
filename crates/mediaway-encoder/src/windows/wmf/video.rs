@@ -4,11 +4,11 @@
 
 use std::collections::VecDeque;
 
+use crate::{EncodeError, VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 use mediaway_common::{
     Bytes, CodecKind, GpuBufferHandle, GpuDeviceHandle, Packet, PixelFormat, StreamInfo,
     VideoFrame, VideoFrameStorage, VideoGeometry,
 };
-use crate::{EncodeError, VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 use windows::Win32::Media::MediaFoundation::{
     CLSID_MSH264EncoderMFT, IMFMediaBuffer, IMFSample, IMFTransform, MF_MT_MPEG_SEQUENCE_HEADER,
     MFCreateMemoryBuffer, MFCreateSample, MFT_MESSAGE_COMMAND_DRAIN,

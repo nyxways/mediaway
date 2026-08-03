@@ -7,12 +7,12 @@
 )]
 
 use super::AutoVideoEncoder;
-use mediaway_common::{
-    CodecKind, GpuDeviceHandle, NativeHandle, PixelFormat, Rational, VideoFrame, VideoFrameStorage,
-};
 use crate::EncodeError;
 use crate::VideoEncoder;
 use crate::auto::{AutoVideoEncodeConfig, Backend, BackendSelection, EncodePathClass};
+use mediaway_common::{
+    CodecKind, GpuDeviceHandle, NativeHandle, PixelFormat, Rational, VideoFrame, VideoFrameStorage,
+};
 
 fn tiny_h264() -> AutoVideoEncodeConfig {
     AutoVideoEncodeConfig::new(CodecKind::H264, 64, 64, Rational::new(1, 30))

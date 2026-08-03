@@ -5,11 +5,11 @@
 
 #![forbid(unsafe_code)]
 
+use crate::auto::{AutoVideoEncodeConfig, Backend, BackendSelection, EncodePathClass};
+use crate::{EncodeError, VideoEncoder, VideoInputPreference};
 use mediaway_common::{
     CodecKind, GpuBufferHandle, GpuDeviceHandle, NativeHandle, Packet, StreamInfo, VideoFrame,
 };
-use crate::auto::{AutoVideoEncodeConfig, Backend, BackendSelection, EncodePathClass};
-use crate::{EncodeError, VideoEncoder, VideoInputPreference};
 use std::fmt;
 
 use crate::windows::WindowsVideoEncoder;
@@ -278,8 +278,11 @@ impl AutoVideoEncoder {
         config: &AutoVideoEncodeConfig,
         d3d12_device: NativeHandle,
     ) -> Result<Self, EncodeError> {
-        let bridge =
-            crate::windows::D3d12SharedEncodeBridge::open(d3d12_device, config.width, config.height)?;
+        let bridge = crate::windows::D3d12SharedEncodeBridge::open(
+            d3d12_device,
+            config.width,
+            config.height,
+        )?;
         let d3d11_device = bridge.d3d11_device_handle()?;
         let low = config.to_low_level(
             VideoInputPreference::ZeroCopyGpu,

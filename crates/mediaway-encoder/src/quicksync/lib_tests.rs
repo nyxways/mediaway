@@ -10,8 +10,8 @@
 )]
 
 use super::*;
-use mediaway_common::{CodecKind, PixelFormat, Rational, VideoFrameStorage};
 use crate::VideoInputPreference;
+use mediaway_common::{CodecKind, PixelFormat, Rational, VideoFrameStorage};
 
 #[test]
 fn open_rejects_zero_copy_gpu_this_stage() {

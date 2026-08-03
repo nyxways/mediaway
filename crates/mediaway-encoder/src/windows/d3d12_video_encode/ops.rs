@@ -2,8 +2,8 @@
 //! compressed-bitstream readback. Split out of [`super`] to keep files under the
 //! 1000-line source limit — see [`super::D3d12VideoEncoder`] for the owning struct.
 
-use mediaway_common::{Bytes, Packet};
 use crate::EncodeError;
+use mediaway_common::{Bytes, Packet};
 use std::mem::ManuallyDrop;
 use windows::Win32::Graphics::Direct3D12::{
     D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST,

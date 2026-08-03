@@ -2,8 +2,8 @@
 
 #![allow(unsafe_code)]
 
-use mediaway_common::NativeHandle;
 use crate::EncodeError;
+use mediaway_common::NativeHandle;
 use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11Multithread, ID3D11Texture2D};
 use windows::Win32::Media::MediaFoundation::{
     IMFActivate, IMFDXGIDeviceManager, IMFMediaEventGenerator, IMFSample, IMFTransform,

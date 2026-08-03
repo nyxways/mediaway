@@ -24,10 +24,10 @@
 
 use std::collections::VecDeque;
 
+use crate::{EncodeError, VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 use mediaway_common::{
     Bytes, CodecKind, Packet, PixelFormat, StreamInfo, VideoFrame, VideoFrameStorage, VideoGeometry,
 };
-use crate::{EncodeError, VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 use vulkanalia::vk;
 use vulkanalia::vk::{DeviceV1_0, HasBuilder, InstanceV1_0};
 

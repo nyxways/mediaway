@@ -8,8 +8,8 @@
 
 #![allow(unsafe_code)]
 
-use mediaway_common::{GpuBufferHandle, NativeHandle};
 use crate::EncodeError;
+use mediaway_common::{GpuBufferHandle, NativeHandle};
 use windows::Win32::Foundation::{CloseHandle, GENERIC_ALL, HANDLE, HMODULE};
 use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_UNKNOWN;
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL;

@@ -35,11 +35,11 @@
 use std::collections::VecDeque;
 use std::time::Duration;
 
+use crate::{EncodeError, VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 use mediaway_common::{
     Bytes, CodecKind, Packet, PixelFormat, Rational, StreamInfo, VideoFrame, VideoFrameStorage,
     VideoGeometry,
 };
-use crate::{EncodeError, VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 
 use vpl_sys::consts::{
     MFX_CHROMAFORMAT_YUV420, MFX_CODEC_AV1, MFX_CODEC_AVC, MFX_CODEC_HEVC, MFX_ERR_MORE_DATA,

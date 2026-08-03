@@ -12,8 +12,8 @@
     reason = "test modules may unwrap / print"
 )]
 
-use mediaway_common::{Bytes, CodecKind, PixelFormat, Rational, VideoFrame, VideoFrameStorage};
 use crate::{VideoEncoder, VideoEncoderConfig, VideoInputPreference};
+use mediaway_common::{Bytes, CodecKind, PixelFormat, Rational, VideoFrame, VideoFrameStorage};
 
 use crate::vulkan::VulkanVideoEncoder;
 use crate::vulkan::nal::{scan_nal_headers, scan_nal_headers_hevc, scan_obu_headers};

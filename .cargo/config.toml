@@ -3,10 +3,13 @@
 
 # wasm32: enable web-sys unstable APIs (WebCodecs: AudioEncoder/VideoEncoder/AudioData/…,
 # WebGPU: Gpu*) — required by mediaway-encoder-web / mediaway-decoder-web / iso-bmff-wasm.
+# opt-level=z: size-first for the wasm distribution (browser package); cargo ignores
+# [profile.release.package.*] overrides for the package being built directly, so this
+# comes via target rustflags instead (applies to every wasm32 build in the workspace).
 # Committed (un-ignored in .gitignore) so CI and fresh clones build wasm targets the same
 # way local dev machines do; was the cause of the first CI wasm failure.
 [target.wasm32-unknown-unknown]
-rustflags = ["--cfg=web_sys_unstable_apis"]
+rustflags = ["--cfg=web_sys_unstable_apis", "-C", "opt-level=z"]
 
 # Windows GNU target (local dev loop: the bindings' native DLLs are built with
 # `--target x86_64-pc-windows-gnu`) — link through the mingw gcc driver but with

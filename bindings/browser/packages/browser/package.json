@@ -34,7 +34,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "build:wasm": "wasm-pack build ../../../../crates/iso-bmff-wasm --target web --out-dir pkg --release",
+    "build:wasm": "wasm-pack build ../../../../crates/iso-bmff-wasm --target web --out-dir pkg --release && bun ../../../../tools/scripts/optimize-wasm.ts pkg/iso_bmff_wasm_bg.wasm",
     "build": "npm run build:wasm && tsc -p tsconfig.json",
     "prepack": "npm run build && node -e \"require('node:fs').rmSync('pkg/.gitignore',{force:true})\"",
     "test": "npm run build && npx tsx ../../examples/container/mux-roundtrip.ts"

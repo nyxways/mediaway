@@ -181,7 +181,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      # Browser prepack runs `wasm-pack build` (bindings/browser/packages/browser)
+      # Browser prepack runs `wasm-pack build` + wasm-opt -Oz size pass (bindings/browser/packages/browser)
       - name: Add wasm32 target
         shell: bash
         run: rustup target add wasm32-unknown-unknown

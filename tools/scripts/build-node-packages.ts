@@ -18,7 +18,10 @@ const root = join(import.meta.dir, "..", "..");
 const nodejs = join(root, "bindings", "nodejs");
 const release = process.argv.includes("--release");
 
-await $`bun ${join(root, "tools", "scripts", "copy-native-dlls.ts")}${release ? " --release" : ""}`;
+const dllScript = join(root, "tools", "scripts", "copy-native-dlls.ts").replaceAll("\\", "/");
+const dllArgs = [dllScript];
+if (release) dllArgs.push("--release");
+await $`bun ${dllArgs}`.quiet();
 
 for (const pkg of ["ffi", "container", "device", "encoder"]) {
   const dir = join(nodejs, "packages", pkg);

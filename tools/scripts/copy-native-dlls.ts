@@ -58,6 +58,15 @@ if (skipBuild) {
 for (const dll of dlls) {
   const src = join(cargoTargetDir, target, profile, dll);
   if (!existsSync(src)) {
+    // Skip-build + artifact flow (release.yml): the native-assets job already
+    // staged the DLLs into nativeDirs and the npm job downloads them — a
+    // missing target/ build dir is expected, not an error, as long as the
+    // staged copy exists. No-op so `npm publish` prepack works in CI.
+    const staged = nativeDirs.map((d) => join(d, dll)).filter(existsSync);
+    if (staged.length > 0) {
+      console.log(`already staged: ${dll} (${profile} build missing, keeping staged copy)`);
+      continue;
+    }
     throw new Error(`missing built cdylib: ${src}`);
   }
   for (const dir of nativeDirs) {

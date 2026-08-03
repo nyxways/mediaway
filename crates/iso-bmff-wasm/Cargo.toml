@@ -12,7 +12,10 @@ authors.workspace = true
 [lib]
 crate-type = ["cdylib", "rlib"]
 
-# wasm-opt (binaryen) is flaky on Windows; the wasm is small — skip it.
+# wasm-pack's own wasm-opt integration is off (binaryen auto-download is
+# flaky on Windows); the browser package runs tools/scripts/optimize-wasm.ts
+# (pinned binaryen, -Oz) as a deterministic post-pass instead. Min-size
+# opt-level comes from .cargo/config.toml [target.wasm32-unknown-unknown].
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false
 

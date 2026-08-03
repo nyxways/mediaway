@@ -388,10 +388,9 @@ jobs:
         with:
           packages-dir: dist
           attestations: true
-        env:
-          # Skip versions already uploaded (PyPI rejects 409); first publish
-          # of a version happens once per release run.
-          TWINE_SKIP_EXISTING: "true"
+          # Skip versions already on PyPI (409 on re-run) — first publish of a
+          # version happens once per release.
+          skip-existing: true
 
   crates:
     name: crates.io

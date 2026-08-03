@@ -1,9 +1,27 @@
-# Mediaway
+<p align="center">
+  <a href="https://github.com/nyxways/mediaway">
+    <img src="docs/assets/mediaway-logo.svg" width="180" height="180" alt="Mediaway Logo" style="display: block; margin: 0 auto;">
+  </a>
+</p>
 
-[![CI](https://github.com/nyxways/mediaway/actions/workflows/ci.yml/badge.svg)](https://github.com/nyxways/mediaway/actions/workflows/ci.yml)
-[![Docs](https://img.shields.io/badge/docs-mdBook-blue)](https://nyxways.github.io/mediaway/)
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](LICENSE-MIT)
-[![Status: pre-1.0](https://img.shields.io/badge/status-pre--1.0%20%7C%20early%20development-orange)](docs/spec/status.md)
+<h1 align="center">Mediaway</h1>
+
+<p align="center">
+  <b>High-Performance Native-First Media Engine</b>
+</p>
+
+<p align="center">
+  <sub>Zero-Copy Support (GPU/CPU Handles) • Hardware Offloading • Sans-IO Cores • Permissive (MIT / Apache-2.0)</sub>
+</p>
+
+<p align="center">
+  <a href="https://github.com/nyxways/mediaway/actions/workflows/ci.yml"><img src="https://github.com/nyxways/mediaway/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://nyxways.github.io/mediaway/"><img src="https://img.shields.io/badge/docs-mdBook-blue" alt="Docs"></a>
+  <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue" alt="License"></a>
+  <a href="docs/spec/status.md"><img src="https://img.shields.io/badge/status-pre--1.0%20%7C%20early%20development-orange" alt="Status"></a>
+</p>
+
+<br>
 
 > **Status:** early development (`0.x`). **Not recommended for production.**  
 > **Pre-1.0:** public APIs, crate layout, and backends may change often (no stability guarantee).  
@@ -402,5 +420,4 @@ cargo install cargo-nextest gitleaks   # or scoop/brew for gitleaks
 - **License:** MIT OR Apache-2.0 — `[LICENSE-MIT](LICENSE-MIT)`, `[LICENSE-APACHE](LICENSE-APACHE)`.
 - **Cargo graph:** no GPL/LGPL (etc.) deps; no linking `libav`* / FFmpeg libraries in shipped crates. See `[docs/spec/vision.md](docs/spec/vision.md)` § License & dependency boundary.
 - System `ffmpeg` / `ffprobe` on `PATH` are optional **test/dev oracles** only ([ADR-0002](docs/adr/0002-system-oracle.md)).
-- Mediaway is **not affiliated with** the FFmpeg project. Product CLIs: `mediaway-avcli`, `mediaway-avprobe`.
 

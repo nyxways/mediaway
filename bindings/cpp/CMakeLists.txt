@@ -95,4 +95,8 @@ set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
 set(CPACK_PACKAGE_FILE_NAME "Mediaway-${PROJECT_VERSION}-win64")
 set(CPACK_GENERATOR "ZIP;TGZ")
 set(CPACK_STRIP_FILES OFF)
+# Stage packages (and the _CPack_Packages temp dir) inside the build dir —
+# CPack's default output dir is the invoking cwd, which pollutes the repo
+# root when run from there (and breaks the CI upload glob).
+set(CPACK_OUTPUT_FILE_PREFIX "${CMAKE_CURRENT_BINARY_DIR}/dist")
 include(CPack)

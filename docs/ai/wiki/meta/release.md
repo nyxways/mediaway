@@ -18,16 +18,18 @@ runbook: [`docs/contributing/repo-operations.md`](../../../contributing/repo-ope
   environment** (Settings → Environments → release); protection rules there
   gate every publish. NuGet policy / npm trusted-publisher Environment fields
   are set to `release` to match.
-- **Secrets** (repo Actions secrets): `CARGO_REGISTRY_TOKEN` ·
-  `NUGET_USER` · `PYPI_TOKEN` — set with
+- **Secrets** (repo Actions secrets): `CARGO_REGISTRY_TOKEN` · `NUGET_USER` —
+  set with
   `bun tools/scripts/release-secrets.ts` (interactive TUI, prints each token's
-  source URL; `--list` / `--set` / `--delete` for scripting). npm and NuGet
-  need **no long-lived tokens**: npm via OIDC **Trusted Publishing**
+  source URL; `--list` / `--set` / `--delete` for scripting). npm, NuGet, and
+  PyPI need **no long-lived tokens**: npm via OIDC **Trusted Publishing**
   (`@mediaway` org Settings on npmjs.com → add this repo), NuGet via a
   **Trusted Publishing policy** on nuget.org (repo `nyxways/mediaway`, workflow
   file `release.yml`) + `NuGet/login@v1` exchanging the job's `id-token` for a
-  1-hour API key — only the nuget.org username is stored. `GITHUB_TOKEN` is
-  automatic.
+  1-hour API key — only the nuget.org username is stored. PyPI via **Trusted
+  Publishing** (pypi.org → Pending publishers: repo `nyxways/mediaway`, workflow
+  `release.yml`, environment `release`) + `pypa/gh-action-pypi-publish` with
+  PEP 740 attestations. `GITHUB_TOKEN` is automatic.
 - **Crates set — deferred**: no crates.io job in the first release (npm /
   NuGet / PyPI / CPack only). After the ADR-0021 consolidation the publishable
   set is **19 crates** (9 freestanding cores with independent versions + 8

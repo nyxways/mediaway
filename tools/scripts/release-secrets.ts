@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Configure the GitHub Actions secrets used by the release workflow
- * (.github/workflows/release.yml) — crates.io and PyPI tokens, plus the
+ * (.github/workflows/release.yml) — crates.io token + nuget.org username;
  * nuget.org username for NuGet's OIDC login.
  *
  * npm and NuGet need NO long-lived tokens: the @mediaway org authenticates
@@ -61,20 +61,13 @@ const SECRETS: SecretSpec[] = [
     ],
     note: "No long-lived NuGet API key is stored.",
   },
-  {
-    name: "PYPI_TOKEN",
-    registry: "PyPI",
-    url: "https://pypi.org/manage/account/token/",
-    steps: [
-      "Add API token → Scope: entire account, or project `mediaway` only (recommended).",
-      "The upload username is `__token__` — the release workflow sets it automatically.",
-    ],
-    note: "Uploads the `mediaway` wheel.",
-  },
 ];
 
 const GITHUB_TOKEN_NOTE =
   "GITHUB_TOKEN is automatic (Actions provides it); it creates the v<version> tag and the GitHub release — nothing to set.";
+
+const PYPI_OIDC_NOTE =
+  "PyPI needs no token: Trusted Publishing (OIDC) is configured on pypi.org for\n  nyxways/mediaway@release.yml (environment: release).";
 
 const NPM_OIDC_NOTE =
   "npm needs no token: @mediaway uses OIDC Trusted Publishing (org Settings → Trusted Publishing on npmjs.com).";
@@ -267,6 +260,7 @@ function renderStatus(secrets: Map<string, string>): void {
     console.log(`  ${spec.name.padEnd(22)} ${spec.registry.padEnd(10)} ${status}`);
   }
   console.log(color(C_DIM, `  ${NPM_OIDC_NOTE}`));
+  console.log(color(C_DIM, `  ${PYPI_OIDC_NOTE}`));
   console.log(color(C_DIM, `  ${NUGET_OIDC_NOTE}`));
   console.log(color(C_DIM, `  ${GITHUB_TOKEN_NOTE}`));
 }

@@ -13,9 +13,11 @@
 # `bun tools/scripts/release-secrets.ts` (interactive TUI, prints where to get
 # each token):
 #   NUGET_USER            nuget.org   your nuget.org username (for NuGet/login OIDC)
-#   PYPI_TOKEN            PyPI        https://pypi.org/manage/account/token/
 #   CARGO_REGISTRY_TOKEN  crates.io   https://crates.io/settings/tokens
 #   GITHUB_TOKEN          — automatic (creates the v<version> tag + release)
+#
+# PyPI needs NO token: Trusted Publishing (OIDC) is configured on pypi.org
+# for nyxways/mediaway@release.yml (environment: release) — see the pypi job.
 #
 # crates.io: dependency-ordered publish of the 19-crate set (9 freestanding
 # cores + the mediaway-* family + avcli/avprobe + vpl-sys; rtmp and
@@ -325,8 +327,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install build + twine
-        run: python -m pip install --quiet build twine
+      - name: Install build
+        run: python -m pip install --quiet build
 
       - uses: actions/download-artifact@v4
         with:
@@ -345,14 +347,16 @@ jobs:
         shell: bash
         run: bun tools/scripts/build-python-package.ts --release
 
-      - name: Push wheel to PyPI
+      # PyPI Trusted Publishing (OIDC): pending publisher configured on pypi.org
+      # for nyxways/mediaway@release.yml (environment: release) — no API token.
+      # `attestations: true` emits PEP 740 provenance (needs id-token: write,
+      # granted at the workflow level).
+      - name: Publish wheel to PyPI (OIDC trusted publishing)
         if: ${{ github.event.inputs.dry_run != 'true' }}
-        shell: bash
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: |
-          twine upload --non-interactive bindings/python/dist/*
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: bindings/python/dist
+          attestations: true
 
   crates:
     name: crates.io

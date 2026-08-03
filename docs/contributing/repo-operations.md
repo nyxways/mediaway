@@ -86,7 +86,6 @@ manually). Never re-run a release without bumping.
   | Secret | Registry | Get it at |
   |---|---|---|
   | `NUGET_USER` | nuget.org | your nuget.org account name (profile, not email) — used by NuGet/login@v1 |
-  | `PYPI_TOKEN` | PyPI | https://pypi.org/manage/account/token/ (project `mediaway`) |
 
   npm and NuGet need **no long-lived tokens**: the `@mediaway` org
   authenticates npm publishes with OIDC **Trusted Publishing** (npmjs.com →
@@ -110,7 +109,7 @@ manually). Never re-run a release without bumping.
   |---|---|---|---|
   | npm | `@mediaway/ffi`, `@mediaway/container`, `@mediaway/device`, `@mediaway/encoder`, `@mediaway/browser` | `bun tools/scripts/build-node-packages.ts`; browser: `npm run build` in `bindings/browser/packages/browser` | `npm publish --provenance` (OIDC Trusted Publishing, `@mediaway` scope) |
   | NuGet | `Mediaway.*` (8 packages) | `bun tools/scripts/package-csharp.ts` | `dotnet nuget push` with a 1-hour key from `NuGet/login@v1` (OIDC Trusted Publishing; needs `NUGET_USER`) |
-  | PyPI | `mediaway` | `bun tools/scripts/build-python-package.ts` | `twine upload` (secret `PYPI_TOKEN`) |
+  | PyPI | `mediaway` | `bun tools/scripts/build-python-package.ts` | `pypa/gh-action-pypi-publish` (OIDC Trusted Publishing + PEP 740 attestations) |
   | crates.io | 19 crates (dependency order, see note above) | `bun tools/scripts/publish-crates.ts` | cargo token (secret `CARGO_REGISTRY_TOKEN`) |
   | C/C++ | `Mediaway-<version>-win64.zip/.tgz` | `cmake --build build && cpack` in `bindings/cpp` | GitHub release assets |
 

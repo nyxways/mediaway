@@ -1,7 +1,18 @@
-# Mediaway v0.1.0
+# Mediaway v0.1.1
 
-First public release. This is an early pre-1.0 snapshot — see the maturity bar
-below before relying on any API.
+First release (0.1.0 was a manual npm-only publish; this is the first
+cross-registry release). This is an early pre-1.0 snapshot — see the maturity
+bar below before relying on any API.
+
+## What's new since 0.1.0
+
+- npm packages now ship READMEs with runnable examples + consumer-facing
+  descriptions; NuGet packages carry a shared README
+- crates.io: 19-crate dependency-ordered publish (9 freestanding cores +
+  mediaway family + avcli/avprobe + vpl-sys; colliding names published as
+  adts-core / mpeg-ts-core / riff-wave-core)
+- release pipeline: OIDC Trusted Publishing for npm/NuGet/PyPI (no tokens),
+  branch ruleset + environment approval gate on release branches
 
 ## Overview
 

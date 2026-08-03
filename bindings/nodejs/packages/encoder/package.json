@@ -1,0 +1,11 @@
+{
+  "name": "@mediaway/encoder",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "dependencies": {
+    "@mediaway/ffi": "0.1.0",
+    "@mediaway/container": "0.1.0"
+  }
+}

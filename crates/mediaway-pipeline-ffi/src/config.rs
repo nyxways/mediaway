@@ -4,8 +4,9 @@
 //! so no `catch_unwind` is needed (`adr/0001-auto-encode-c-abi.md` §4).
 
 use crate::types::{
-    MediawayAutoVideoEncodeConfig, MediawayGpuDeviceHandle, MediawayGpuDeviceKind,
-    MediawayPipelineCodecKind, MediawayPixelFormat, MediawayRational,
+    MediawayAudioEncodeConfig, MediawayAutoVideoEncodeConfig, MediawayGpuDeviceHandle,
+    MediawayGpuDeviceKind, MediawayPipelineCodecKind, MediawayPixelFormat, MediawayRational,
+    MediawaySampleFormat,
 };
 
 /// Build a config for `codec` at `width`x`height`/`time_base`.
@@ -49,4 +50,25 @@ pub const extern "C" fn mediaway_auto_video_encode_config_h264(
     time_base: MediawayRational,
 ) -> MediawayAutoVideoEncodeConfig {
     mediaway_auto_video_encode_config_new(MediawayPipelineCodecKind::H264, width, height, time_base)
+}
+
+/// Build an AAC audio encode config (`adr/0003-auto-audio-encode-c-abi.md`):
+/// stereo, F32 input, backend-default bitrate.
+///
+/// Mirrors [`mediaway_audio_encode_config_aac`]'s sugar role — the general
+/// form (any codec/format) exists as the struct itself, so no general
+/// constructor is exported yet.
+#[unsafe(no_mangle)]
+pub const extern "C" fn mediaway_audio_encode_config_aac(
+    sample_rate: u32,
+    time_base: MediawayRational,
+) -> MediawayAudioEncodeConfig {
+    MediawayAudioEncodeConfig {
+        codec: MediawayPipelineCodecKind::Aac,
+        sample_rate,
+        channels: 2,
+        sample_format: MediawaySampleFormat::F32,
+        time_base,
+        bitrate_bps: 0,
+    }
 }

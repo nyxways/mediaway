@@ -20,6 +20,7 @@ mediaway-common-ffi = { path = "../mediaway-common-ffi", version = "0.1.0" }
 # with the same default ("full") features, so this adds no new feature surface.
 mediaway-container = { workspace = true }
 mediaway-encoder = { workspace = true }
+mediaway-encoder-windows = { workspace = true, features = ["audio"] }
 mediaway-pipeline = { workspace = true }
 
 [dev-dependencies]

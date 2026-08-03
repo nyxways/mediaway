@@ -1,0 +1,14 @@
+{
+  "name": "mediaway-nodejs-bindings",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Node.js bindings for Mediaway (@mediaway/container, @mediaway/encoder, @mediaway/device) over the C ABI",
+  "workspaces": [
+    "packages/*"
+  ],
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

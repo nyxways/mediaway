@@ -24,6 +24,12 @@ desktop.ini
 *.pdb
 *.dSYM/
 
+# Language bindings (C/C++ examples, Node workspace)
+node_modules/
+__pycache__/
+*.exe
+*.mp4
+
 # mdBook build output (deployed via CI, not committed)
 /docs/book/book/
 

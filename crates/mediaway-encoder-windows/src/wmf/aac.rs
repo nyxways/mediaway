@@ -7,11 +7,11 @@ use std::collections::VecDeque;
 use mediaway_common::{AudioFrame, Bytes, CodecKind, Packet, SampleFormat, StreamInfo};
 use mediaway_encoder::{AudioEncoder, AudioEncoderConfig, EncodeError};
 use windows::Win32::Media::MediaFoundation::{
-    AACMFTEncoder, IMFMediaBuffer, IMFSample, IMFTransform, MF_MT_AAC_PAYLOAD_TYPE,
-    MF_MT_AUDIO_AVG_BYTES_PER_SECOND, MF_MT_AUDIO_BITS_PER_SAMPLE, MF_MT_AUDIO_BLOCK_ALIGNMENT,
-    MF_MT_AUDIO_NUM_CHANNELS, MF_MT_AUDIO_SAMPLES_PER_SECOND, MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE,
-    MF_MT_USER_DATA, MFAudioFormat_AAC, MFAudioFormat_PCM, MFCreateMediaType, MFCreateMemoryBuffer,
-    MFCreateSample, MFMediaType_Audio, MFT_MESSAGE_COMMAND_DRAIN, MFT_MESSAGE_NOTIFY_END_OF_STREAM,
+    AACMFTEncoder, IMFMediaBuffer, IMFSample, IMFTransform, MF_MT_AUDIO_BITS_PER_SAMPLE,
+    MF_MT_AUDIO_BLOCK_ALIGNMENT, MF_MT_AUDIO_NUM_CHANNELS, MF_MT_AUDIO_SAMPLES_PER_SECOND,
+    MF_MT_AVG_BITRATE, MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE, MF_MT_USER_DATA, MFAudioFormat_Float,
+    MFCreateMediaType, MFCreateMemoryBuffer, MFCreateSample, MFMediaType_Audio,
+    MFT_MESSAGE_COMMAND_DRAIN, MFT_MESSAGE_NOTIFY_END_OF_STREAM,
 };
 use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance};
 
@@ -51,7 +51,6 @@ impl WmfAacEncoder {
         };
         let (bytes_per_sample, bits_per_sample) = pcm_layout(config.sample_format)?;
         let block_align = u32::from(config.channels) * u32::from(bytes_per_sample);
-
         configure_types(
             &transform,
             config.sample_rate,
@@ -225,39 +224,17 @@ fn configure_types(
     block_align: u32,
     bitrate_bps: u32,
 ) -> Result<(), EncodeError> {
-    let out_type = unsafe { MFCreateMediaType() }.map_err(|_| EncodeError::Backend)?;
-    unsafe {
-        out_type
-            .SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Audio)
-            .map_err(|_| EncodeError::Backend)?;
-        out_type
-            .SetGUID(&MF_MT_SUBTYPE, &MFAudioFormat_AAC)
-            .map_err(|_| EncodeError::Backend)?;
-        out_type
-            .SetUINT32(&MF_MT_AUDIO_NUM_CHANNELS, u32::from(channels))
-            .map_err(|_| EncodeError::Backend)?;
-        out_type
-            .SetUINT32(&MF_MT_AUDIO_SAMPLES_PER_SECOND, sample_rate)
-            .map_err(|_| EncodeError::Backend)?;
-        out_type
-            .SetUINT32(&MF_MT_AUDIO_AVG_BYTES_PER_SECOND, bitrate_bps / 8)
-            .map_err(|_| EncodeError::Backend)?;
-        // Raw AAC payload (no ADTS) for MP4-friendly elementary stream.
-        out_type
-            .SetUINT32(&MF_MT_AAC_PAYLOAD_TYPE, 0)
-            .map_err(|_| EncodeError::Backend)?;
-        transform
-            .SetOutputType(0, &out_type, 0)
-            .map_err(|_| EncodeError::Backend)?;
-    }
-
+    // 1. Input type first: the AAC encoder MFT renegotiates its available
+    // output types based on the accepted input type. F32 input must be
+    // `MFAudioFormat_Float` — `MFAudioFormat_PCM` with 32 bits/sample is
+    // rejected.
     let in_type = unsafe { MFCreateMediaType() }.map_err(|_| EncodeError::Backend)?;
     unsafe {
         in_type
             .SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Audio)
             .map_err(|_| EncodeError::Backend)?;
         in_type
-            .SetGUID(&MF_MT_SUBTYPE, &MFAudioFormat_PCM)
+            .SetGUID(&MF_MT_SUBTYPE, &MFAudioFormat_Float)
             .map_err(|_| EncodeError::Backend)?;
         in_type
             .SetUINT32(&MF_MT_AUDIO_NUM_CHANNELS, u32::from(channels))
@@ -275,7 +252,38 @@ fn configure_types(
             .SetInputType(0, &in_type, 0)
             .map_err(|_| EncodeError::Backend)?;
     }
-    Ok(())
+
+    // 2. Output type: take a type from the MFT's own catalog (which carries the
+    // codec-specific attributes a hand-built type gets rejected for with
+    // MF_E_ATTRIBUTENOTFOUND), matching our sample rate / channel count.
+    // Override the bitrate on a copy when the caller asked for one; fall back
+    // to the catalog default if the MFT rejects the override.
+    for i in 0..64u32 {
+        let Ok(out_type) = (unsafe { transform.GetOutputAvailableType(0, i) }) else {
+            break;
+        };
+        let rate = unsafe { out_type.GetUINT32(&MF_MT_AUDIO_SAMPLES_PER_SECOND) }.unwrap_or(0);
+        let ch = unsafe { out_type.GetUINT32(&MF_MT_AUDIO_NUM_CHANNELS) }.unwrap_or(0);
+        if rate != sample_rate || ch != u32::from(channels) {
+            continue;
+        }
+        if bitrate_bps != 0 {
+            // The catalog type is owned by the caller, so overriding the bitrate
+            // in place is safe. If the MFT rejects the override, re-query for a
+            // pristine catalog type and set that.
+            let _ = unsafe { out_type.SetUINT32(&MF_MT_AVG_BITRATE, bitrate_bps) };
+            if unsafe { transform.SetOutputType(0, &out_type, 0) }.is_ok() {
+                return Ok(());
+            }
+            let fresh = unsafe { transform.GetOutputAvailableType(0, i) }
+                .map_err(|_| EncodeError::Backend)?;
+            return unsafe { transform.SetOutputType(0, &fresh, 0) }
+                .map_err(|_| EncodeError::Backend);
+        }
+        return unsafe { transform.SetOutputType(0, &out_type, 0) }
+            .map_err(|_| EncodeError::Backend);
+    }
+    Err(EncodeError::Backend) // no catalog output type matches our params
 }
 
 fn validate(config: &AudioEncoderConfig) -> Result<(), EncodeError> {
@@ -341,17 +349,34 @@ fn audio_duration_hns(samples: usize, sample_rate: u32) -> i64 {
         .max(1)
 }
 
-/// Extract `AudioSpecificConfig` bytes from a `WAVEFORMATEX` blob in `MF_MT_USER_DATA`.
+/// Extract the `AudioSpecificConfig` from the AAC encoder's `MF_MT_USER_DATA` blob.
+///
+/// The WMF AAC MFT exposes the ASC in two shapes, both observed in the wild:
+/// 1. A `WAVEFORMATEX` + `cbSize` extension (>= 20 bytes) — the ASC is the
+///    `cbSize` bytes after the 18-byte header.
+/// 2. A shorter blob whose trailing bytes *are* the ASC — e.g. the 14-byte
+///    blob `[00 00 29 00 00 00 00 00 00 00 00 00 11 90]` seen for 48 kHz
+///    stereo LC, where the last two bytes are `0x11 0x90` = the canonical
+///    `AudioSpecificConfig`.
+///
+/// Only AAC-LC is configured today, whose ASC is exactly 2 bytes; the trailing
+/// bytes are validated against plausible `audioObjectType` values (2 = LC,
+/// 5 = SBR/HE, 29 = PS/HEv2) so garbage is rejected.
 fn asc_from_waveformatex(blob: &[u8]) -> Option<Vec<u8>> {
-    // WAVEFORMATEX is 18 bytes; AAC uses WAVEFORMATEX + cbSize extension (HEAACWAVEINFO etc.).
-    if blob.len() < 20 {
-        return None;
+    if blob.len() >= 20 {
+        let cb_size = u16::from_le_bytes([blob[16], blob[17]]) as usize;
+        if cb_size >= 2 && blob.len() >= 18 + cb_size {
+            return Some(blob[18..18 + cb_size].to_vec());
+        }
     }
-    let cb_size = u16::from_le_bytes([blob[16], blob[17]]) as usize;
-    if cb_size < 2 || blob.len() < 18 + cb_size {
-        return None;
+    if blob.len() >= 2 {
+        let asc = &blob[blob.len() - 2..];
+        let object_type = asc[0] >> 3;
+        if matches!(object_type, 2 | 5 | 29) {
+            return Some(asc.to_vec());
+        }
     }
-    Some(blob[18..18 + cb_size].to_vec())
+    None
 }
 
 #[allow(clippy::missing_const_for_fn, reason = "StreamInfo holds Bytes")]

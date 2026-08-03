@@ -174,3 +174,117 @@ pub struct MediawayVideoFrame {
     /// Borrowed GPU texture handle (GPU only); zeroed whenever `storage_kind == Cpu`.
     pub gpu_buffer: MediawayGpuBufferHandle,
 }
+
+// ── Audio encode (adr/0003-auto-audio-encode-c-abi.md) ─────────────────────────
+
+/// Audio PCM sample layout — mirrors `mediaway_common::SampleFormat`'s 3 variants.
+///
+/// First definition in this header; `mediaway-device-ffi` carries its own
+/// independent copy (no shared header exists yet). Only `F32` is accepted by
+/// the real Windows backend today.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediawaySampleFormat {
+    /// Signed 16-bit little-endian interleaved PCM.
+    S16 = 0,
+    /// Signed 32-bit little-endian interleaved PCM.
+    S32 = 1,
+    /// IEEE float32 interleaved PCM.
+    F32 = 2,
+}
+
+/// Config for [`crate::audio::mediaway_audio_encoder_open`] — plain value struct,
+/// no handle, no heap allocation, no free function.
+///
+/// `codec` is `Aac` today; passing any other kind is a runtime
+/// [`crate::MediawayPipelineStatus::Unsupported`]. `sample_format` is `F32`
+/// today (the format the real WASAPI capture backends deliver).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MediawayAudioEncodeConfig {
+    /// Output codec (AAC today).
+    pub codec: MediawayPipelineCodecKind,
+    /// Input sample rate (Hz). Must be non-zero.
+    pub sample_rate: u32,
+    /// Input channel count. Must be non-zero.
+    pub channels: u16,
+    /// Input PCM format (F32 today).
+    pub sample_format: MediawaySampleFormat,
+    /// Timestamp timebase for pushed PCM frames / polled packets.
+    pub time_base: MediawayRational,
+    /// Target bitrate in bits per second (`0` = backend default).
+    pub bitrate_bps: u32,
+}
+
+/// Input to [`crate::audio::mediaway_audio_encode_session_push_pcm`].
+///
+/// Borrowed view, valid for the call only (same ownership direction as
+/// `MediawayVideoFrame`'s `raw_bytes`). The encoder copies synchronously.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct MediawayAudioFrameView {
+    /// Presentation timestamp in the stream timebase.
+    pub pts: i64,
+    /// Duration in timebase units (`0` if unknown).
+    pub duration: u64,
+    /// Sample rate (Hz).
+    pub sample_rate: u32,
+    /// Channel count.
+    pub channels: u16,
+    /// PCM sample format.
+    pub sample_format: MediawaySampleFormat,
+    /// Borrowed interleaved PCM bytes; null iff `data_len == 0`.
+    pub data: *const u8,
+    /// Length of `data` in bytes.
+    pub data_len: usize,
+}
+
+/// Output of [`crate::audio::mediaway_audio_encode_session_poll_packet`] — OWNED;
+/// release with [`crate::audio::mediaway_pipeline_ffi_packet_free`].
+///
+/// No `stream_id` field: the caller assigns the muxer track id when pushing
+/// this packet into their own container muxer (the audio session does not mux).
+#[repr(C)]
+#[derive(Debug)]
+pub struct MediawayAudioPacket {
+    /// Presentation timestamp in the stream timebase.
+    pub pts: i64,
+    /// Decode timestamp in the stream timebase.
+    pub dts: i64,
+    /// Duration in timebase units.
+    pub duration: u64,
+    /// Whether this packet is a keyframe / random access point.
+    pub is_keyframe: bool,
+    /// Outside the active edit window; decoders may skip.
+    pub is_discard: bool,
+    /// Owned AAC bitstream bytes; `NULL` after
+    /// [`crate::audio::mediaway_pipeline_ffi_packet_free`].
+    pub payload: *mut u8,
+    /// Length of `payload` in bytes.
+    pub payload_len: usize,
+}
+
+/// Output of [`crate::audio::mediaway_audio_encode_session_stream_info`] — OWNED;
+/// release with [`crate::audio::mediaway_pipeline_ffi_stream_info_free`].
+///
+/// The `extra_data` (`AudioSpecificConfig` for AAC) is what a muxer's audio
+/// track needs to be playable — the caller copies it into
+/// `mediaway_audio_track_info_t` (container.h) when registering the track.
+#[repr(C)]
+#[derive(Debug)]
+pub struct MediawayAudioStreamInfo {
+    /// Output codec (AAC today).
+    pub codec: MediawayPipelineCodecKind,
+    /// Stream timebase.
+    pub time_base: MediawayRational,
+    /// Sample rate (Hz) — `0` when not yet known.
+    pub sample_rate: u32,
+    /// Channel count — `0` when not yet known.
+    pub channels: u16,
+    /// Owned codec config (e.g. `AudioSpecificConfig`); `NULL` after
+    /// [`crate::audio::mediaway_pipeline_ffi_stream_info_free`], and whenever
+    /// `extra_data_len == 0`.
+    pub extra_data: *mut u8,
+    /// Length of `extra_data` in bytes.
+    pub extra_data_len: usize,
+}

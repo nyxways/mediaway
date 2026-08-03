@@ -1723,6 +1723,7 @@ dependencies = [
  "mediaway-device",
  "mediaway-device-desktop",
  "mediaway-encoder",
+ "mediaway-encoder-windows",
  "mediaway-pipeline",
  "windows 0.62.2",
 ]

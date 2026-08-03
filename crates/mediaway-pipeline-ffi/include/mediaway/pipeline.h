@@ -70,7 +70,7 @@
 #ifndef MEDIAWAY_PIPELINE_H
 #define MEDIAWAY_PIPELINE_H
 
-#define MEDIAWAY_PIPELINE_FFI_ABI_VERSION 1 /* bump on any breaking change; pre-1.0, no stability promise */
+#define MEDIAWAY_PIPELINE_FFI_ABI_VERSION 2 /* bump on any breaking change; pre-1.0, no stability promise */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -86,6 +86,7 @@ extern "C" {
  * notice pre-1.0. Always access through the functions below. */
 typedef struct mediaway_auto_encoder mediaway_auto_encoder_t;
 typedef struct mediaway_encode_session mediaway_encode_session_t;
+typedef struct mediaway_audio_encode_session mediaway_audio_encode_session_t; /* adr/0003 — the session IS the encoder; no intermediate handle */
 
 /* ── Status codes ────────────────────────────────────────────────────────────────── */
 
@@ -109,10 +110,13 @@ typedef enum mediaway_pipeline_status {
 
 /* Identical shape to mediaway-container-ffi's mediaway_rational_t — reused, not
  * re-derived, but a distinct typedef name (no shared header exists yet). */
+#ifndef MEDIAWAY_RATIONAL_T_DEFINED
+#define MEDIAWAY_RATIONAL_T_DEFINED
 typedef struct mediaway_rational {
     uint64_t num;
     uint32_t den; /* must be non-zero */
 } mediaway_rational_t;
+#endif
 
 /* Distinct type name from mediaway_codec_kind_t (mediaway-container-ffi), but numeric
  * values are deliberately mirrored 1:1 — both wrap the same shared Rust type
@@ -138,6 +142,8 @@ typedef enum mediaway_pipeline_codec_kind {
  * to reconcile against. Only NV12/BGRA8 are exercised by the current Windows
  * CPU-upload backend today (an existing Rust-level limitation, not a new FFI one);
  * passing another variant surfaces as MEDIAWAY_PIPELINE_STATUS_UNSUPPORTED. */
+#ifndef MEDIAWAY_PIXEL_FORMAT_T_DEFINED
+#define MEDIAWAY_PIXEL_FORMAT_T_DEFINED
 typedef enum mediaway_pixel_format {
     MEDIAWAY_PIXEL_FORMAT_NV12  = 0,
     MEDIAWAY_PIXEL_FORMAT_I420  = 1,
@@ -145,6 +151,7 @@ typedef enum mediaway_pixel_format {
     MEDIAWAY_PIXEL_FORMAT_RGBA8 = 3,
     MEDIAWAY_PIXEL_FORMAT_YUYV  = 4,
 } mediaway_pixel_format_t;
+#endif
 
 /* Both mediaway_gpu_device_handle_t/mediaway_gpu_buffer_handle_t wrap Rust
  * data-carrying enums (mediaway_common::GpuDeviceHandle/GpuBufferHandle) — first
@@ -154,6 +161,8 @@ typedef enum mediaway_pixel_format {
  * definition in mediaway-common-ffi::gpu). Flat struct + discriminant, not a C
  * union — matches this header's existing mediaway_video_frame_t convention. */
 
+#ifndef MEDIAWAY_GPU_DEVICE_KIND_T_DEFINED
+#define MEDIAWAY_GPU_DEVICE_KIND_T_DEFINED
 typedef enum mediaway_gpu_device_kind {
     MEDIAWAY_GPU_DEVICE_NONE      = 0, /* no device supplied — the safe zero-init default */
     MEDIAWAY_GPU_DEVICE_DIRECTX11 = 1,
@@ -162,7 +171,10 @@ typedef enum mediaway_gpu_device_kind {
     MEDIAWAY_GPU_DEVICE_METAL     = 4,
     MEDIAWAY_GPU_DEVICE_WEBGPU    = 5,
 } mediaway_gpu_device_kind_t;
+#endif
 
+#ifndef MEDIAWAY_GPU_DEVICE_HANDLE_T_DEFINED
+#define MEDIAWAY_GPU_DEVICE_HANDLE_T_DEFINED
 /* Caller-supplied GPU device handle (mediaway_auto_video_encode_config_t.gpu_device).
  * The caller owns the underlying device and must keep it alive for at least the
  * duration of mediaway_auto_encoder_open. Plain value; no free function. */
@@ -171,7 +183,10 @@ typedef struct mediaway_gpu_device_handle {
     uintptr_t native;           /* ID3D11Device* / ID3D12Device* / VkDevice / MTLDevice bits; 0 for NONE/WebGpu */
     uint64_t webgpu_device_id;  /* WebGpu only; 0 otherwise */
 } mediaway_gpu_device_handle_t;
+#endif
 
+#ifndef MEDIAWAY_GPU_BUFFER_KIND_T_DEFINED
+#define MEDIAWAY_GPU_BUFFER_KIND_T_DEFINED
 typedef enum mediaway_gpu_buffer_kind {
     MEDIAWAY_GPU_BUFFER_DIRECTX11       = 0, /* native_a = texture, subresource meaningful */
     MEDIAWAY_GPU_BUFFER_DIRECTX12       = 1, /* native_a = resource */
@@ -182,7 +197,10 @@ typedef enum mediaway_gpu_buffer_kind {
     MEDIAWAY_GPU_BUFFER_WEBGPU          = 6, /* webgpu_texture_id meaningful */
     MEDIAWAY_GPU_BUFFER_UNKNOWN         = 255, /* GpuBufferHandle is #[non_exhaustive]; decode-side catch-all only */
 } mediaway_gpu_buffer_kind_t;
+#endif
 
+#ifndef MEDIAWAY_GPU_BUFFER_HANDLE_T_DEFINED
+#define MEDIAWAY_GPU_BUFFER_HANDLE_T_DEFINED
 /* mediaway_video_frame_t's GPU-storage input — BORROWED, not owned. See the file
  * header's GPU HAZARDS section for the full read-window / immediate-context
  * contract. Opposite ownership direction from mediaway-device-ffi's identically-shaped
@@ -194,6 +212,7 @@ typedef struct mediaway_gpu_buffer_handle {
     uint32_t subresource;       /* DirectX11 only; 0 otherwise */
     uint64_t webgpu_texture_id; /* WebGpu only; 0 otherwise */
 } mediaway_gpu_buffer_handle_t;
+#endif
 
 /* Plain value type; no free function. gpu_device (adr/0002-gpu-frame-input-c-abi.md
  * §1) opts the session into the Zero-Copy/GPU-copy input path at open time;
@@ -209,10 +228,13 @@ typedef struct mediaway_auto_video_encode_config {
     mediaway_gpu_device_handle_t gpu_device; /* MEDIAWAY_GPU_DEVICE_NONE for CPU-only */
 } mediaway_auto_video_encode_config_t;
 
+#ifndef MEDIAWAY_VIDEO_FRAME_STORAGE_KIND_T_DEFINED
+#define MEDIAWAY_VIDEO_FRAME_STORAGE_KIND_T_DEFINED
 typedef enum mediaway_video_frame_storage_kind {
     MEDIAWAY_VIDEO_FRAME_STORAGE_CPU = 0, /* raw_bytes/raw_bytes_len valid; gpu_buffer unused */
     MEDIAWAY_VIDEO_FRAME_STORAGE_GPU = 1, /* gpu_buffer valid; raw_bytes == NULL, raw_bytes_len == 0 */
 } mediaway_video_frame_storage_kind_t;
+#endif
 
 /* Input to mediaway_encode_session_write_frame — borrowed view, valid for the call
  * only. storage_kind decides which of raw_bytes/gpu_buffer is read (see the file
@@ -301,6 +323,130 @@ void mediaway_encode_session_close(mediaway_encode_session_t *session);
 /* Free a buffer returned by mediaway_encode_session_finish. Distinctly named from
  * mediaway-container-ffi's mediaway_buffer_free — see the file header comment above. */
 void mediaway_pipeline_ffi_buffer_free(uint8_t *data, size_t len);
+
+/* ── Audio encode (adr/0003-auto-audio-encode-c-abi.md) ─────────────────────────── */
+
+/* Identical shape/values to mediaway-device-ffi's mediaway_sample_format_t —
+ * reused, not re-derived, but a distinct header (no shared header exists yet).
+ * First definition in this header is not guaranteed — include order decides.
+ * Only F32 is accepted by the real Windows backend today; the other variants
+ * exist so the enum can be extended without a version bump. */
+#ifndef MEDIAWAY_SAMPLE_FORMAT_T_DEFINED
+#define MEDIAWAY_SAMPLE_FORMAT_T_DEFINED
+typedef enum mediaway_sample_format {
+    MEDIAWAY_SAMPLE_FORMAT_S16 = 0, /* signed 16-bit LE interleaved PCM */
+    MEDIAWAY_SAMPLE_FORMAT_S32 = 1, /* signed 32-bit LE interleaved PCM */
+    MEDIAWAY_SAMPLE_FORMAT_F32 = 2, /* IEEE float32 interleaved PCM */
+} mediaway_sample_format_t;
+#endif
+
+/* Config for mediaway_audio_encoder_open — plain value struct, no handle, no heap
+ * allocation, no free function. codec is AAC today (any other kind is a runtime
+ * MEDIAWAY_PIPELINE_STATUS_UNSUPPORTED); sample_format is F32 today. */
+typedef struct mediaway_audio_encode_config {
+    mediaway_pipeline_codec_kind_t codec;  /* output codec (AAC today) */
+    uint32_t sample_rate;                  /* input sample rate in Hz, non-zero */
+    uint16_t channels;                     /* input channel count, non-zero */
+    mediaway_sample_format_t sample_format; /* input PCM format (F32 today) */
+    mediaway_rational_t time_base;         /* timestamp timebase for pushed frames / polled packets */
+    uint32_t bitrate_bps;                  /* target bitrate; 0 = backend default (128 kbps) */
+} mediaway_audio_encode_config_t;
+
+/* Build a stereo AAC config (F32 input, backend-default bitrate) — the only
+ * combination the real backend accepts today, kept as the ergonomic sugar. The
+ * general form exists as the struct itself; no general constructor is exported. */
+mediaway_audio_encode_config_t mediaway_audio_encode_config_aac(
+    uint32_t sample_rate, mediaway_rational_t time_base);
+
+/* Input to mediaway_audio_encode_session_push_pcm — BORROWED view, valid for the
+ * call only (same ownership direction as mediaway_video_frame_t's raw_bytes). */
+typedef struct mediaway_audio_frame_view {
+    int64_t pts;               /* presentation timestamp in the stream timebase */
+    uint64_t duration;         /* duration in timebase units (0 if unknown) */
+    uint32_t sample_rate;      /* sample rate in Hz */
+    uint16_t channels;         /* channel count */
+    mediaway_sample_format_t sample_format; /* PCM sample format (F32 today) */
+    const uint8_t *data;       /* BORROWED interleaved PCM bytes; NULL iff data_len == 0 */
+    size_t data_len;           /* length of data in bytes */
+} mediaway_audio_frame_view_t;
+
+/* Output of mediaway_audio_encode_session_poll_packet — OWNED; release with
+ * mediaway_pipeline_ffi_packet_free. No stream_id: the caller assigns the muxer
+ * track id when pushing into their own container muxer (the session does not mux). */
+typedef struct mediaway_audio_packet {
+    int64_t pts;           /* presentation timestamp in the stream timebase */
+    int64_t dts;           /* decode timestamp in the stream timebase */
+    uint64_t duration;     /* duration in timebase units */
+    bool is_keyframe;      /* random access point */
+    bool is_discard;       /* outside the active edit window; decoders may skip */
+    uint8_t *payload;      /* OWNED AAC bitstream bytes; NULL after packet_free */
+    size_t payload_len;    /* length of payload in bytes */
+} mediaway_audio_packet_t;
+
+/* Output of mediaway_audio_encode_session_stream_info — OWNED; release with
+ * mediaway_pipeline_ffi_stream_info_free. extra_data is the AudioSpecificConfig
+ * (raw, MP4 esds-ready) — copy it into mediaway_audio_track_info_t (container.h)
+ * when registering the muxer track. */
+typedef struct mediaway_audio_stream_info {
+    mediaway_pipeline_codec_kind_t codec; /* output codec (AAC today) */
+    mediaway_rational_t time_base;        /* stream timebase */
+    uint32_t sample_rate;                 /* Hz; 0 when not yet known */
+    uint16_t channels;                    /* channel count; 0 when not yet known */
+    uint8_t *extra_data;                  /* OWNED codec config (AudioSpecificConfig); NULL after stream_info_free */
+    size_t extra_data_len;                /* length of extra_data in bytes */
+} mediaway_audio_stream_info_t;
+
+/* Open the best available audio encoder for `config`. The returned handle IS the
+ * encode session — no intermediate handle, so no consumption trap (adr/0003 §
+ * Decision: audio has no internal muxer). MEDIAWAY_PIPELINE_STATUS_NO_BACKEND is
+ * an expected graceful outcome on platforms without an audio backend; check for it
+ * and exit cleanly. *out_session is NULL on any non-OK status (a normal Err, or a
+ * caught panic). */
+mediaway_pipeline_status_t mediaway_audio_encoder_open(
+    const mediaway_audio_encode_config_t *config,
+    mediaway_audio_encode_session_t **out_session);
+
+/* Query the session's stream metadata: codec, timebase, sample rate, channel count,
+ * and the codec config (extra_data — the AudioSpecificConfig an MP4 audio track
+ * needs to be playable). The AudioSpecificConfig materializes only after the first
+ * PCM frame is pushed, so call this after pushing, before muxing. OWNED output:
+ * release *out_info with mediaway_pipeline_ffi_stream_info_free. */
+mediaway_pipeline_status_t mediaway_audio_encode_session_stream_info(
+    mediaway_audio_encode_session_t *session,
+    mediaway_audio_stream_info_t *out_info);
+
+/* Push one PCM buffer. `frame` is a BORROWED view valid for the duration of this
+ * call only — the encoder copies synchronously (same cost class as the video
+ * CPU-upload path). */
+mediaway_pipeline_status_t mediaway_audio_encode_session_push_pcm(
+    mediaway_audio_encode_session_t *session,
+    const mediaway_audio_frame_view_t *frame);
+
+/* Pull the next encoded packet, if one is ready. *out_has_packet == true: *out_packet
+ * is an OWNED output — release it with mediaway_pipeline_ffi_packet_free. false is
+ * a valid "nothing ready" result, not an error. */
+mediaway_pipeline_status_t mediaway_audio_encode_session_poll_packet(
+    mediaway_audio_encode_session_t *session,
+    mediaway_audio_packet_t *out_packet, bool *out_has_packet);
+
+/* Signal end-of-input; drain the remaining packets with
+ * mediaway_audio_encode_session_poll_packet afterwards. */
+mediaway_pipeline_status_t mediaway_audio_encode_session_flush(
+    mediaway_audio_encode_session_t *session);
+
+/* Close and free an audio encode session. Always safe to call, including with
+ * session == NULL — this surface has no handle-consumption trap (adr/0003). */
+void mediaway_audio_encode_session_close(mediaway_audio_encode_session_t *session);
+
+/* Free a packet returned by mediaway_audio_encode_session_poll_packet. Nulls the
+ * payload fields afterward, making a double-free a visible no-op. Always safe to
+ * call, including with packet == NULL. */
+void mediaway_pipeline_ffi_packet_free(mediaway_audio_packet_t *packet);
+
+/* Free stream info returned by mediaway_audio_encode_session_stream_info. Nulls the
+ * extra_data fields afterward, making a double-free a visible no-op. Always safe to
+ * call, including with info == NULL. */
+void mediaway_pipeline_ffi_stream_info_free(mediaway_audio_stream_info_t *info);
 
 #ifdef __cplusplus
 }

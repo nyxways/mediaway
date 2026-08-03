@@ -6,7 +6,7 @@ use mediaway_decoder::DecodeError;
 use mediaway_encoder::EncodeError;
 use thiserror::Error;
 
-/// Errors from [`crate::WgpuDx12Bridge`] / [`crate::WgpuDx12DecodeBridge`] (and future
+/// Errors from [`crate::wgpu::WgpuDx12Bridge`] / [`crate::wgpu::WgpuDx12DecodeBridge`] (and future
 /// non-Windows bridges).
 #[derive(Debug, Error)]
 #[non_exhaustive]
@@ -37,7 +37,7 @@ pub enum WgpuInteropError {
     /// public contract as a distinct, non-overloaded variant. In the current implementation
     /// `D3d11SharedDecodeBridge::open`'s own two-sided LUID check already folds an adapter
     /// mismatch into `DecodeError::InvalidInput` (surfaced here as
-    /// [`WgpuInteropError::DecodeBridge`]), so [`WgpuDx12DecodeBridge::new`](crate::WgpuDx12DecodeBridge::new)
+    /// [`WgpuInteropError::DecodeBridge`]), so [`WgpuDx12DecodeBridge::new`](crate::wgpu::WgpuDx12DecodeBridge::new)
     /// does not construct this variant today — kept so a future caller-side LUID check (or a
     /// `DecodeError` variant split) has a home without a breaking enum change.
     #[error("D3D11/D3D12 device adapter mismatch")]

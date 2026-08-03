@@ -1,0 +1,14 @@
+{
+  "crate": "mediaway",
+  "dir": "crates/mediaway",
+  "rootUnsafe": "allow",
+  "children": [
+    { "name": "mediaway-wgpu", "dir": "crates/mediaway-wgpu", "module": "wgpu" }
+  ],
+  "renames": [
+    ["mediaway_wgpu", "crate::wgpu::"]
+  ],
+  "depSweep": [
+    ["mediaway_wgpu", "mediaway::wgpu::"]
+  ]
+}

@@ -37,7 +37,7 @@ members = [
 
 
     "crates/mediaway-test-media",
-    "crates/mediaway-wgpu",
+
     "tools/mediaway-avcli",
     "tools/mediaway-avprobe",
     "examples",
@@ -100,7 +100,7 @@ mediaway-sw = { path = "crates/mediaway-sw", version = "0.1.0" }
 
 
 mediaway-test-media = { path = "crates/mediaway-test-media", version = "0.1.0" }
-mediaway-wgpu = { path = "crates/mediaway-wgpu", version = "0.1.0" }
+
 # Official Win32 projection (MIT OR Apache-2.0). Feature set per consumer crate.
 windows = { version = "0.62", default-features = false }
 # COM `#[implement]` expansion needs the `windows_core` crate name in scope.

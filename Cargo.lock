@@ -1357,8 +1357,11 @@ dependencies = [
  "mediaway-encoder",
  "mediaway-sw",
  "mediaway-test-media",
+ "pollster",
  "smallvec",
  "thiserror 2.0.19",
+ "wgpu",
+ "windows 0.58.0",
  "windows 0.62.2",
 ]
 
@@ -1507,20 +1510,6 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "thiserror 2.0.19",
-]
-
-[[package]]
-name = "mediaway-wgpu"
-version = "0.1.0"
-dependencies = [
- "mediaway-common",
- "mediaway-decoder",
- "mediaway-encoder",
- "pollster",
- "thiserror 2.0.19",
- "wgpu",
- "windows 0.58.0",
- "windows 0.62.2",
 ]
 
 [[package]]

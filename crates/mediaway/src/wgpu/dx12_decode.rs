@@ -1,5 +1,5 @@
 //! Windows decode-output → `wgpu::Texture` import bridge — the reverse direction of
-//! [`crate::dx12`]'s DX12 → WMF encode bridge.
+//! [`crate::wgpu::dx12`]'s DX12 → WMF encode bridge.
 //!
 //! Reaches past `wgpu`'s own API via the same HAL interop escape hatches
 //! (`wgpu::Device::as_hal`, `wgpu::Device::create_texture_from_hal`) to recover the native
@@ -31,7 +31,7 @@ use mediaway_decoder::windows::D3d11SharedDecodeBridge;
 use windows_hal_interop::Win32::Graphics::Direct3D12::{ID3D12Device, ID3D12Resource};
 use windows_hal_interop::core::Interface;
 
-use crate::error::WgpuInteropError;
+use crate::wgpu::error::WgpuInteropError;
 
 /// NV12, matching Windows decode output's `PixelFormat::Nv12` (WMF DX11 Zero-Copy, see
 /// `mediaway-decoder-windows` ADR-0001).
@@ -44,7 +44,7 @@ use crate::error::WgpuInteropError;
 /// **Requires `wgpu::Features::TEXTURE_FORMAT_NV12`** (native-only, DX12 + Vulkan) on the
 /// caller's `wgpu::Device` at `request_device` time. [`WgpuDx12DecodeBridge::new`]'s
 /// `create_texture_from_hal` call itself does not check this feature — it bypasses `wgpu`'s
-/// own texture-*creation* validation, the same way [`crate::WgpuDx12Bridge`]'s BGRA8 wrap
+/// own texture-*creation* validation, the same way [`crate::wgpu::WgpuDx12Bridge`]'s BGRA8 wrap
 /// does. But any later `wgpu::Texture::create_view` call a caller makes on the texture
 /// [`WgpuDx12DecodeBridge::import_decoded_texture`] returns (e.g. a per-plane
 /// `TextureAspect::Plane0`/`Plane1` view for sampling) **does** validate the format against
@@ -60,7 +60,7 @@ pub const DECODE_BRIDGE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::NV12;
 pub struct WgpuDx12DecodeBridge {
     bridge: D3d11SharedDecodeBridge,
     /// The bridge's own shared D3D12 resource, wrapped as a `wgpu::Texture` exactly **once**,
-    /// at [`Self::new`] time — mirrors [`crate::dx12::WgpuDx12Bridge`]'s `dest` field. Every
+    /// at [`Self::new`] time — mirrors [`crate::wgpu::dx12::WgpuDx12Bridge`]'s `dest` field. Every
     /// [`Self::import_decoded_texture`] call copies into the same underlying D3D12 allocation
     /// and hands back a fresh `wgpu::Texture` handle (cheap `Clone`, Arc-backed) pointing at
     /// it — never a distinct resource.
@@ -140,7 +140,7 @@ impl WgpuDx12DecodeBridge {
     ///
     /// **Footgun — the returned `wgpu::Texture` is the SAME underlying GPU allocation on
     /// every call, reused and overwritten each `import_decoded_texture`.** This is a sharper
-    /// trap than [`crate::WgpuDx12Bridge`]'s analogous single-buffered `dest` (encode's
+    /// trap than [`crate::wgpu::WgpuDx12Bridge`]'s analogous single-buffered `dest` (encode's
     /// immediate push-and-forget vs. decode output that is often sampled across multiple
     /// render frames): holding a `wgpu::Texture` returned from one call while calling
     /// `import_decoded_texture` again observes the **second** frame's content, not a stable

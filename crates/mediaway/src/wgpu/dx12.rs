@@ -33,7 +33,7 @@ use mediaway_encoder::EncodeError;
 use windows_hal_interop::Win32::Graphics::Direct3D12::{ID3D12Device, ID3D12Resource};
 use windows_hal_interop::core::Interface;
 
-use crate::error::WgpuInteropError;
+use crate::wgpu::error::WgpuInteropError;
 
 /// Fixed pixel format the bridge's shared D3D12 texture is allocated in.
 ///

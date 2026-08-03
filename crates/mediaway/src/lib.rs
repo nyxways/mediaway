@@ -12,7 +12,7 @@
 //!   [`EncodeSession`] (see [ADR-0001](../../adr/0001-frame-filter-hook.md)).
 //! - [`platform`] — OS auto-dispatch (moved from the former `examples/platform.rs`).
 
-#![forbid(unsafe_code)]
+#![allow(unsafe_code)]
 
 mod error;
 mod filter;
@@ -31,3 +31,6 @@ pub use mediaway_decoder;
 pub use mediaway_device;
 pub use mediaway_encoder;
 pub use mediaway_sw;
+
+// ── merged platform/domain modules (ADR-0021) ──
+pub mod wgpu;

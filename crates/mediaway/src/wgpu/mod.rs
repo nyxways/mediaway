@@ -57,6 +57,7 @@
 //!
 //! [gfx-rs/wgpu#2330]: https://github.com/gfx-rs/wgpu/issues/2330
 
+#![allow(clippy::too_long_first_doc_paragraph)] // crate-root doc became module doc (ADR-0021 merge)
 #![cfg_attr(windows, allow(unsafe_code))]
 #![cfg_attr(not(windows), forbid(unsafe_code))]
 

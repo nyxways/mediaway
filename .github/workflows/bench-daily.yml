@@ -77,6 +77,10 @@ jobs:
             echo "should_run=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Install Linux system deps (pipewire camera backend)
+        if: steps.gate.outputs.should_run == 'true'
+        run: sudo apt-get update && sudo apt-get install -y libpipewire-0.3-dev libspa-0.2-dev libva-dev
+
       - name: Install Rust toolchain
         if: steps.gate.outputs.should_run == 'true'
         uses: dtolnay/rust-toolchain@stable

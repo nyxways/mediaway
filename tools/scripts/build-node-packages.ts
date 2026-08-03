@@ -23,8 +23,13 @@ const dllArgs = [dllScript];
 if (release) dllArgs.push("--release");
 await $`bun ${dllArgs}`.quiet();
 
+// Resolve tsc by absolute path: CI bun install may skip .bin shims on
+// Windows (symlink-less runners) and npx then installs the fake tsc@2.0.4
+// placeholder package. `bun <path>` runs the JS directly, no PATH/`.cmd`
+// resolution involved.
+const tsc = join(nodejs, "node_modules", "typescript", "bin", "tsc");
 for (const pkg of ["ffi", "container", "device", "encoder"]) {
   const dir = join(nodejs, "packages", pkg);
-  await $`npx tsc -p tsconfig.json`.cwd(dir);
+  await $`bun ${tsc} -p tsconfig.json`.cwd(dir);
   console.log(`built @mediaway/${pkg} dist`);
 }

@@ -58,6 +58,7 @@ on:
 permissions:
   contents: write
   id-token: write # npm provenance (OIDC)
+  attestations: write # PyPI PEP 740 provenance (pypa/gh-action-pypi-publish)
 
 # One release at a time per branch; a second push queues instead of cancelling
 # an in-flight publish.
@@ -328,7 +329,6 @@ jobs:
     name: pypi (mediaway)
     runs-on: windows-latest
     needs: [version, native-assets]
-    environment: release
     env:
       MEDIAWAY_SKIP_CARGO_BUILD: "1"
     steps:
@@ -360,15 +360,33 @@ jobs:
         shell: bash
         run: bun tools/scripts/build-python-package.ts --release
 
-      # PyPI Trusted Publishing (OIDC): pending publisher configured on pypi.org
-      # for nyxways/mediaway@release.yml (environment: release) — no API token.
-      # `attestations: true` emits PEP 740 provenance (needs id-token: write,
-      # granted at the workflow level).
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: pypi-dist
+          path: bindings/python/dist
+
+  pypi-publish:
+    name: pypi publish (mediaway)
+    runs-on: ubuntu-latest
+    needs: [pypi]
+    environment: release
+    # PyPI Trusted Publishing (OIDC): pending publisher configured on pypi.org
+    # for nyxways/mediaway@release.yml (environment: release) — no API token.
+    # `attestations: true` emits PEP 740 provenance (needs id-token: write,
+    # granted at the workflow level). Runs on Linux: gh-action-pypi-publish's
+    # Docker container cannot start on the Windows build runner.
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pypi-dist
+          path: dist
+
       - name: Publish wheel to PyPI (OIDC trusted publishing)
         if: ${{ github.event.inputs.dry_run != 'true' }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: bindings/python/dist
+          packages-dir: dist
           attestations: true
 
   crates:
@@ -446,7 +464,7 @@ jobs:
   release:
     name: GitHub release
     runs-on: ubuntu-latest
-    needs: [version, npm, nuget, pypi, native, crates]
+    needs: [version, npm, nuget, pypi, pypi-publish, native, crates]
     environment: release
     if: ${{ github.event.inputs.dry_run != 'true' }}
     steps:

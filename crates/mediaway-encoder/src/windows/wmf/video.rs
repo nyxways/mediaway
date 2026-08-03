@@ -155,7 +155,11 @@ impl WmfVideoEncoder {
         {
             buf.truncate(written as usize);
             if let StreamInfo::Video { extra_data, .. } = &mut self.info {
-                *extra_data = Bytes::from(buf);
+                // WMF's MF_MT_MPEG_SEQUENCE_HEADER is an Annex-B SPS/PPS blob;
+                // the container contract wants a full AVCDecoderConfigurationRecord
+                // (avcC). Normalize here so the muxer can write it verbatim.
+                let avcc = iso_bmff::bitstream::avc::to_avcc(&buf).avcc;
+                *extra_data = avcc.unwrap_or_else(|| Bytes::from(buf));
             }
         }
     }

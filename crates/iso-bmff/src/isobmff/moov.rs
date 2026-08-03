@@ -179,12 +179,20 @@ fn write_trak(buf: &mut Vec<u8>, track: &Track) {
                 });
                 write_box(mf, tag::STBL, |st| {
                     write_stsd(st, track);
-                    for empty in [b"stts", b"stsc", b"stsz", b"stco"] {
+                    for empty in [b"stts", b"stsc", b"stco"] {
                         write_box(st, FourCc(*empty), |e| {
                             e.extend_from_slice(&0u32.to_be_bytes());
                             e.extend_from_slice(&0u32.to_be_bytes());
                         });
                     }
+                    // stsz needs version/flags + sample_size + sample_count (12B
+                    // payload) — writing only 8B makes readers overread into the
+                    // next atom ("overread end of atom 'stsz'", broken header).
+                    write_box(st, FourCc(*b"stsz"), |e| {
+                        e.extend_from_slice(&0u32.to_be_bytes()); // version/flags
+                        e.extend_from_slice(&0u32.to_be_bytes()); // sample_size = 0
+                        e.extend_from_slice(&0u32.to_be_bytes()); // sample_count = 0
+                    });
                 });
             });
         });

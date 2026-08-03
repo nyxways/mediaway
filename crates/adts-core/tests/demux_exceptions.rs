@@ -4,7 +4,7 @@
 //! `FATE_SAMPLES` points at a local fate-suite tree (see testing.md).
 //!
 //! When `ffprobe` is on PATH, `oracle_compare` manifest rows must match Mediaway
-//! `channels` and `sample_rate`.
+//! demux frame count (`nb_read_packets`, else `nb_frames`).
 
 #![forbid(unsafe_code)]
 #![allow(
@@ -14,10 +14,11 @@
     clippy::print_stderr,
     clippy::panic,
     clippy::cast_possible_truncation,
-    clippy::cast_sign_loss
+    clippy::cast_sign_loss,
+    reason = "exception tests may unwrap / skip-log"
 )]
 
-use riff_wave::parse;
+use adts_core::Demuxer;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -64,17 +65,18 @@ fn ffprobe_ok() -> bool {
         .is_ok_and(|o| o.status.success())
 }
 
-/// `(channels, sample_rate)` from ffprobe (first audio stream).
+/// `demux_packet_count` from ffprobe.
 ///
-/// Runs: `ffprobe -v error -show_entries stream=channels,sample_rate -of csv=p=0 <path>`
-/// (Note: ffprobe outputs `sample_rate,channels` regardless of entry order)
-fn ffprobe_audio_info(path: &Path) -> Option<(u16, u32)> {
+/// Prefers `nb_read_packets` (demux packet count) when present;
+/// falls back to `nb_frames`.
+fn ffprobe_counts(path: &Path) -> Option<usize> {
     let out = Command::new("ffprobe")
         .args([
             "-v",
             "error",
+            "-count_packets",
             "-show_entries",
-            "stream=channels,sample_rate",
+            "stream=nb_frames,nb_read_packets",
             "-of",
             "csv=p=0",
             path.to_str()?,
@@ -85,57 +87,92 @@ fn ffprobe_audio_info(path: &Path) -> Option<(u16, u32)> {
         return None;
     }
     let text = String::from_utf8_lossy(&out.stdout);
+    let mut frames = 0usize;
+    let mut packets = 0usize;
+    let mut any_packets = false;
+    let mut any_frames = false;
     for line in text.lines() {
-        let line = line.trim();
-        if line.is_empty() {
+        let cols: Vec<&str> = line.split(',').collect();
+        if cols.is_empty() || line.trim().is_empty() {
             continue;
         }
-        let cols: Vec<&str> = line.split(',').collect();
+        // csv: nb_frames,nb_read_packets (either may be empty/N/A)
+        if let Some(f) = cols.first().and_then(|s| s.trim().parse::<usize>().ok()) {
+            frames += f;
+            any_frames = true;
+        }
         if cols.len() >= 2 {
-            if let (Ok(sr), Ok(ch)) = (cols[0].trim().parse::<u32>(), cols[1].trim().parse::<u16>())
-            {
-                return Some((ch, sr));
+            if let Ok(p) = cols[1].trim().parse::<usize>() {
+                packets += p;
+                any_packets = true;
             }
         }
     }
-    None
+    let count = if any_packets {
+        packets
+    } else if any_frames {
+        frames
+    } else {
+        return None;
+    };
+    Some(count)
+}
+
+fn demux_chunked(bytes: &[u8]) -> usize {
+    let mut d = Demuxer::new();
+    for chunk in bytes.chunks(17) {
+        d.push_bytes(chunk);
+    }
+    let mut frames = 0usize;
+    loop {
+        match d.poll_frame() {
+            Ok(Some(_)) => {
+                frames += 1;
+            }
+            Ok(None) => {
+                // Need more bytes; all input consumed without further frames
+                break;
+            }
+            Err(_) => {
+                // Bad sync or unsupported sampling freq — stop
+                break;
+            }
+        }
+    }
+    frames
+}
+
+fn demux_chunked_no_panic(bytes: &[u8]) {
+    demux_chunked(bytes);
 }
 
 #[test]
-fn parse_empty_input_returns_error() {
-    let result = parse(&[]);
-    assert!(result.is_err(), "parse([]) should return Err");
+fn demux_empty_input_yields_nothing() {
+    let frames = demux_chunked(&[]);
+    assert_eq!(frames, 0);
 }
 
 #[test]
-fn parse_truncated_riff_header_returns_error() {
-    // 12 bytes but not a RIFF/WAVE header
-    let truncated = b"xxxxxxxxxxxx";
-    let result = parse(truncated);
-    assert!(
-        result.is_err(),
-        "parse on truncated buffer should return Err"
-    );
+fn demux_truncated_header_does_not_panic() {
+    demux_chunked_no_panic(&[0xFF, 0xF0, 0x50]);
 }
 
 #[test]
-fn parse_random_noise_does_not_panic() {
+fn demux_random_noise_does_not_panic() {
     let noise: Vec<u8> = (0u16..256).map(|i| ((i * 17) & 0xff) as u8).collect();
-    let result = parse(&noise);
-    // Ok or Err is fine; just must not panic.
-    let _ = result;
+    demux_chunked_no_panic(&noise);
 }
 
 #[test]
-fn parse_fate_manifest_samples() {
+fn demux_fate_manifest_samples() {
     let Some(root) = fate_root() else {
         eprintln!(
-            "skip fate parse: set MEDIAWAY_FATE_SAMPLES or FATE_SAMPLES to a local fate-suite root"
+            "skip fate demux: set MEDIAWAY_FATE_SAMPLES or FATE_SAMPLES to a local fate-suite root"
         );
         return;
     };
     if !root.is_dir() {
-        eprintln!("skip fate parse: {} is not a directory", root.display());
+        eprintln!("skip fate demux: {} is not a directory", root.display());
         return;
     }
 
@@ -153,40 +190,19 @@ fn parse_fate_manifest_samples() {
             continue;
         }
         let bytes = fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        demux_file_resilient(&path, &bytes);
 
-        // Always check for panic.
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| parse(&bytes)));
-        assert!(
-            result.is_ok(),
-            "parse panicked on FATE sample {}",
-            path.display()
-        );
-
-        // If oracle_compare and ffprobe available, compare format info.
         if ent.mode == FateMode::OracleCompare && probe {
-            let Some((ff_channels, ff_sample_rate)) = ffprobe_audio_info(&path) else {
+            let Some(ff_count) = ffprobe_counts(&path) else {
                 panic!("ffprobe failed on {} (oracle_compare)", path.display());
             };
-
-            if let Ok(Ok((fmt, _payload))) = &result {
-                assert_eq!(
-                    fmt.channels, ff_channels,
-                    "channels mismatch on {}: mediaway={} ffprobe={}",
-                    ent.rel, fmt.channels, ff_channels
-                );
-                assert_eq!(
-                    fmt.sample_rate, ff_sample_rate,
-                    "sample_rate mismatch on {}: mediaway={} ffprobe={}",
-                    ent.rel, fmt.sample_rate, ff_sample_rate
-                );
-            } else if let Ok(Err(e)) = &result {
-                panic!(
-                    "parse() failed on {}: {} (expected oracle_compare success)",
-                    ent.rel, e
-                );
-            }
+            let mw_frames = demux_chunked(&bytes);
+            assert_eq!(
+                mw_frames, ff_count,
+                "frame count mismatch on {}: mediaway={mw_frames} ffprobe={ff_count} (nb_read_packets preferred)",
+                ent.rel
+            );
         }
-
         seen += 1;
     }
 
@@ -202,5 +218,16 @@ fn parse_fate_manifest_samples() {
         "expected all {} manifest samples under {}; found {seen} (missing files printed above)",
         entries.len(),
         root.display()
+    );
+}
+
+fn demux_file_resilient(path: &Path, bytes: &[u8]) {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        demux_chunked(bytes);
+    }));
+    assert!(
+        result.is_ok(),
+        "demux panicked on FATE sample {}",
+        path.display()
     );
 }

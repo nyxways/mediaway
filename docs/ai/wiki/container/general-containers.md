@@ -7,7 +7,7 @@ audio-only containers ([audio-containers](audio-containers.md)).
 Both crates below also have a real FATE `fate_manifest.txt`/`demux_exceptions.rs`
 (2026-07-29) — see [testing.md § FATE corpus](../../../conventions/testing.md).
 `flv` counts only `Audio`/`Video` tags (excludes `ScriptData`) to match
-ffprobe's semantics. `mpeg-ts` oracle rows need ffprobe's CSV de-duplicated —
+ffprobe's semantics. `mpeg-ts-core` oracle rows need ffprobe's CSV de-duplicated —
 `-count_packets` prints every MPEG-TS stream twice (program-grouped view +
 flat view), confirmed via `-of json`; a real ffprobe quirk, not a bug here.
 
@@ -36,9 +36,9 @@ Crate-local [ADR-0001](../../../crates/flv/adr/0001-flv-freestanding-core.md).
   `add_track`, not silently dropped. Still its own method shape
   (`push_packet(&Packet, &mut Vec<u8>)`), not the shared `Mux` trait.
 
-## `mpeg-ts` (MPEG-2 Transport Stream) — added 2026-07-29
+## `mpeg-ts-core` (MPEG-2 Transport Stream) — added 2026-07-29
 
-Crate-local [ADR-0001](../../../crates/mpeg-ts/adr/0001-mpeg-ts-freestanding-core.md).
+Crate-local [ADR-0001](../../../crates/mpeg-ts-core/adr/0001-mpeg-ts-freestanding-core.md).
 Largest of the newly-added container crates.
 
 - Single-program v1 scope: one PAT entry, one PMT, `H264`/`Hevc`/`Aac`/`Mp3`

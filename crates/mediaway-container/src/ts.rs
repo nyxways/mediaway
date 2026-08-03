@@ -1,4 +1,4 @@
-//! Mediaway-typed MPEG-2 Transport Stream mux + demux over [`mpeg_ts`].
+//! Mediaway-typed MPEG-2 Transport Stream mux + demux over [`mpeg_ts_core`].
 //!
 //! MPEG-TS's PTS/DTS are always a 90 kHz clock (ISO/IEC 13818-1) — a
 //! per-track [`mediaway_common::Rational`] time base like other facades use
@@ -13,11 +13,11 @@
 
 use crate::Demux;
 use mediaway_common::{Bytes, CodecKind, Packet, Rational, StreamInfo};
-use mpeg_ts::{Demuxer as CoreDemuxer, Muxer as CoreMuxer};
-pub use mpeg_ts::{ElementaryStream, StreamType};
+use mpeg_ts_core::{Demuxer as CoreDemuxer, Muxer as CoreMuxer};
+pub use mpeg_ts_core::{ElementaryStream, StreamType};
 
-/// MPEG-TS mux/demux error (same as [`mpeg_ts::Error`]).
-pub type Error = mpeg_ts::Error;
+/// MPEG-TS mux/demux error (same as [`mpeg_ts_core::Error`]).
+pub type Error = mpeg_ts_core::Error;
 
 /// 90 kHz — the fixed MPEG-TS system clock (not a per-track choice).
 pub const TS_TIME_BASE: Rational = Rational::new(1, 90_000);
@@ -73,7 +73,7 @@ impl Muxer {
     }
 }
 
-/// Demuxer wrapping [`mpeg_ts::Demuxer`] with a Mediaway stream cache.
+/// Demuxer wrapping [`mpeg_ts_core::Demuxer`] with a Mediaway stream cache.
 #[derive(Debug, Default)]
 pub struct Demuxer {
     inner: CoreDemuxer,

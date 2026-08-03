@@ -4,7 +4,7 @@
 //! interpret or build the codec-specific sub-framing inside a tag's data
 //! (`AudioTagHeader`/`VideoTagHeader`, e.g. `AVCPacketType`/composition time),
 //! the same "frame, don't encode" boundary as this workspace's
-//! `adts`/`mpeg-audio`/`ogg` crates.
+//! `adts-core`/`mpeg-audio`/`ogg` crates.
 //!
 //! [`Muxer`] has no `finish()` — FLV tags are independently appendable, each
 //! self-trailed with its own `PreviousTagSize`. [`Demuxer`] is a true incremental

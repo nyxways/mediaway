@@ -12,7 +12,7 @@ Reusable sans-io libraries with zero `mediaway-*` deps; own `version = "0.1.0"`.
 |--------|-------|
 | `iso-bmff` | ISOBMFF/MP4 sans-io mux+demux; `iso-bmff-wasm` = wasm-bindgen wrapper for the browser package |
 | `iso-cenc` | ClearKey CENC (ADR-0011) |
-| `ebml-webm` · `ogg` · `flv` · `adts` · `riff-wave` · `mpeg-ts` · `mpeg-audio` | format cores consumed by `mediaway-container` |
+| `ebml-webm` · `ogg` · `flv` · `adts-core` · `riff-wave-core` · `mpeg-ts-core` · `mpeg-audio` | format cores consumed by `mediaway-container` |
 | `rtmp` | RTMP publish client (sans-io handshake + chunk stream + AMF0); Proposed (publish = false) |
 
 ## Mediaway family (one workspace version, released together)

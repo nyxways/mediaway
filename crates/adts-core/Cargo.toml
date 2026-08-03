@@ -1,5 +1,5 @@
 [package]
-name = "adts"
+name = "adts-core"
 description = "Sans-IO ADTS (raw AAC elementary stream) mux and demux (freestanding)"
 version = "0.1.0" # independent versioning — freestanding core (ADR-0021)
 publish = true # hardware-verified — see docs/roadmap.md

@@ -23,7 +23,7 @@ const fn version_from_bits(bits: u8) -> Option<MpegVersion> {
 ///
 /// Assumes the input is already frame-aligned (no ID3 tag or leading garbage
 /// skipping) — a bad sync word or reserved header field is a hard `Err`, never a
-/// silent resync scan (matches this workspace's `adts` crate).
+/// silent resync scan (matches this workspace's `adts-core` crate).
 #[derive(Debug, Clone, Default)]
 pub struct Demuxer {
     buf: Vec<u8>,

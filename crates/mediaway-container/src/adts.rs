@@ -1,8 +1,8 @@
-//! Mediaway-typed ADTS (raw AAC elementary stream) mux + demux over [`adts`].
+//! Mediaway-typed ADTS (raw AAC elementary stream) mux + demux over [`adts-core`].
 //!
 //! ADTS has no container-level header and no timing metadata of its own — one
 //! AAC frame always covers 1024 samples (the standard case this crate's
-//! `adts` core assumes; see that crate's docs), so [`Demuxer::poll_packet`]
+//! `adts-core` core assumes; see that crate's docs), so [`Demuxer::poll_packet`]
 //! synthesizes `pts`/`duration` from a running sample count and the track's
 //! sample rate rather than reading them from the bitstream (there is nothing
 //! to read — documented here, not silently guessed).
@@ -10,15 +10,17 @@
 #![forbid(unsafe_code)]
 
 use crate::{Demux, Mux};
-use adts::{AacProfile as CoreAacProfile, AdtsConfig, Demuxer as CoreDemuxer, Muxer as CoreMuxer};
+use adts_core::{
+    AacProfile as CoreAacProfile, AdtsConfig, Demuxer as CoreDemuxer, Muxer as CoreMuxer,
+};
 use mediaway_common::{CodecKind, Packet, Rational, StreamInfo};
 
 /// Standard AAC-LC frame size in samples — fixed by the format, not signaled
 /// in ADTS itself.
 const SAMPLES_PER_FRAME: u64 = 1024;
 
-/// ADTS mux error (same as [`adts::Error`]).
-pub type Error = adts::Error;
+/// ADTS mux error (same as [`adts_core::Error`]).
+pub type Error = adts_core::Error;
 
 /// Live ADTS mux session. Fixed `AdtsConfig` for the session's lifetime — ADTS
 /// carries no track-registration step (unlike `mp4`/`webm`, it is a single
@@ -88,7 +90,7 @@ impl Mux for Muxer {
     }
 }
 
-/// Demuxer wrapping [`adts::Demuxer`] with a Mediaway stream cache.
+/// Demuxer wrapping [`adts_core::Demuxer`] with a Mediaway stream cache.
 #[derive(Debug, Default)]
 pub struct Demuxer {
     inner: CoreDemuxer,

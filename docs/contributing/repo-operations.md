@@ -52,18 +52,18 @@ via [`.github/workflows/release.yml`](../../.github/workflows/release.yml):
    version.
 2. `native-assets` — builds the three `-ffi` win64 cdylibs
    (`x86_64-pc-windows-gnu`, MinGW-w64) and stages them for the binding jobs.
-3. `npm` / `nuget` / `pypi` / `native` — publish `@mediaway/*` (5 packages),
+3. `npm` / `nuget` / `pypi` / `native` / `crates` — publish `@mediaway/*` (5 packages),
    `Mediaway.*` (8 NuGet packages), the `mediaway` wheel, and the C/C++ CPack
    archives (`Mediaway-<version>-win64.zip/.tgz`).
 4. `release` — creates the `v<version>` tag and the GitHub release
    (prefers `RELEASE_NOTES.md`, falls back to generated notes) and attaches
    the CPack archives — only after every registry job succeeded.
 
-**crates.io is deferred** (no crates job in the first release) — the first
-release covers npm / NuGet / PyPI / CPack only. When crates.io returns, re-add
-a crates job (dependency-order publish of the 39 `publish = true` crates; the
-pre-flight closure check is in git history). `CARGO_REGISTRY_TOKEN`
-(https://crates.io/settings/tokens) is not needed until then.
+**crates.io** publishes the 19-crate set in dependency order (9 freestanding
+cores + the `mediaway-*` family + avcli/avprobe + vpl-sys; rtmp and
+mediaway-ffi stay `publish = false`) via `tools/scripts/publish-crates.ts`
+(runs `--dry-run` in the pre-flight, `CARGO_REGISTRY_TOKEN`
+(https://crates.io/settings/tokens) for the real publish).
 
 All registry jobs run in parallel. Registries are **one-shot per version**: a
 failed publish leaves a partial release, so fix and **bump the workspace
@@ -111,7 +111,7 @@ manually). Never re-run a release without bumping.
   | npm | `@mediaway/ffi`, `@mediaway/container`, `@mediaway/device`, `@mediaway/encoder`, `@mediaway/browser` | `bun tools/scripts/build-node-packages.ts`; browser: `npm run build` in `bindings/browser/packages/browser` | `npm publish --provenance` (OIDC Trusted Publishing, `@mediaway` scope) |
   | NuGet | `Mediaway.*` (8 packages) | `bun tools/scripts/package-csharp.ts` | `dotnet nuget push` with a 1-hour key from `NuGet/login@v1` (OIDC Trusted Publishing; needs `NUGET_USER`) |
   | PyPI | `mediaway` | `bun tools/scripts/build-python-package.ts` | `twine upload` (secret `PYPI_TOKEN`) |
-  | crates.io | — deferred (no crates job in the first release; see note above) | `cargo publish` | cargo token (secret `CARGO_REGISTRY_TOKEN`, not needed yet) |
+  | crates.io | 19 crates (dependency order, see note above) | `bun tools/scripts/publish-crates.ts` | cargo token (secret `CARGO_REGISTRY_TOKEN`) |
   | C/C++ | `Mediaway-<version>-win64.zip/.tgz` | `cmake --build build && cpack` in `bindings/cpp` | GitHub release assets |
 
 ## Releases

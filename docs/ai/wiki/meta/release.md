@@ -30,9 +30,10 @@ runbook: [`docs/contributing/repo-operations.md`](../../../contributing/repo-ope
   automatic.
 - **Crates set — deferred**: no crates.io job in the first release (npm /
   NuGet / PyPI / CPack only). After the ADR-0021 consolidation the publishable
-  set is **17 crates** (9 freestanding cores with independent versions + 8
-  `mediaway-*` family crates sharing the workspace version) — a crates.io job
-  becomes viable whenever it is un-deferred.
+  set is **19 crates** (9 freestanding cores with independent versions + 8
+  `mediaway-*` family crates sharing the workspace version + avcli/avprobe +
+  vpl-sys; rtmp and mediaway-ffi stay `publish = false`) — published in
+  dependency order by `tools/scripts/publish-crates.ts`.
 - **Failure = partial release**: registries are one-shot per version; bump the
   workspace version and re-run (or delete half-published packages manually).
   The GitHub release is created only when every registry job succeeded.

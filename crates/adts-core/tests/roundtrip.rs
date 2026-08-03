@@ -7,7 +7,7 @@
     reason = "integration tests may unwrap"
 )]
 
-use adts::{AacProfile, AdtsConfig, Demuxer, Muxer};
+use adts_core::{AacProfile, AdtsConfig, Demuxer, Muxer};
 
 #[test]
 fn multi_frame_roundtrip_via_public_api() {

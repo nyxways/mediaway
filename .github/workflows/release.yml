@@ -14,12 +14,12 @@
 # each token):
 #   NUGET_USER            nuget.org   your nuget.org username (for NuGet/login OIDC)
 #   PYPI_TOKEN            PyPI        https://pypi.org/manage/account/token/
+#   CARGO_REGISTRY_TOKEN  crates.io   https://crates.io/settings/tokens
 #   GITHUB_TOKEN          — automatic (creates the v<version> tag + release)
 #
-# crates.io is deferred (no crates job): the first release covers npm / NuGet /
-# PyPI / CPack only. When crates.io returns, re-add a crates job (39-crate
-# dependency-order publish; see git history / docs/ai/wiki/meta/release.md).
-# CARGO_REGISTRY_TOKEN (https://crates.io/settings/tokens) is not needed yet.
+# crates.io: dependency-ordered publish of the 19-crate set (9 freestanding
+# cores + the mediaway-* family + avcli/avprobe + vpl-sys; rtmp and
+# mediaway-ffi stay `publish = false`) via tools/scripts/publish-crates.ts.
 #
 # npm and NuGet need NO long-lived tokens: the @mediaway org uses npm OIDC
 # Trusted Publishing (npmjs.com → org Settings → Trusted Publishing), and
@@ -354,6 +354,33 @@ jobs:
         run: |
           twine upload --non-interactive bindings/python/dist/*
 
+  crates:
+    name: crates.io
+    runs-on: ubuntu-latest
+    needs: [version]
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: oven-sh/setup-bun@v2
+
+      # Dependency-ordered publish of the 19-crate set (see
+      # tools/scripts/publish-crates.ts). The gate also runs on dry runs so
+      # `cargo package` validation happens for every crate before any real
+      # upload.
+      - name: Publish crates (dependency order)
+        shell: bash
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [[ "${{ github.event.inputs.dry_run }}" == "true" ]]; then
+            bun tools/scripts/publish-crates.ts --dry-run
+          else
+            bun tools/scripts/publish-crates.ts
+          fi
+
   native:
     name: cpp (CPack win64)
     runs-on: windows-latest
@@ -391,7 +418,7 @@ jobs:
   release:
     name: GitHub release
     runs-on: ubuntu-latest
-    needs: [version, npm, nuget, pypi, native]
+    needs: [version, npm, nuget, pypi, native, crates]
     environment: release
     if: ${{ github.event.inputs.dry_run != 'true' }}
     steps:

@@ -18,7 +18,7 @@
     reason = "exception tests may unwrap / skip-log"
 )]
 
-use mpeg_ts::Demuxer;
+use mpeg_ts_core::Demuxer;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;

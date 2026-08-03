@@ -325,12 +325,12 @@ Freestanding mux/demux cores plus the `mediaway-container` facade (wraps all eig
 | ------------------------------------------------ | --- | ----- |
 | [MP4 / fMP4](crates/iso-bmff/README.md)           | 🆗  | 🆗    |
 | [WebM](crates/ebml-webm/README.md)                | 🆗  | 🆗    |
-| [WAV / RIFF (PCM)](crates/riff-wave/README.md)    | 🆗  | 🆗    |
-| [ADTS (raw AAC)](crates/adts/README.md)           | 🆗  | 🆗    |
+| [WAV / RIFF (PCM)](crates/riff-wave-core/README.md)    | 🆗  | 🆗    |
+| [ADTS (raw AAC)](crates/adts-core/README.md)           | 🆗  | 🆗    |
 | [MP3 (MPEG Layer III)](crates/mpeg-audio/README.md) | 🆗  | 🆗    |
 | [Ogg](crates/ogg/README.md)                       | 🆗  | 🆗    |
 | [FLV](crates/flv/README.md)                       | 🆗  | 🆗    |
-| [MPEG-TS](crates/mpeg-ts/README.md)               | 🆗  | 🆗    |
+| [MPEG-TS](crates/mpeg-ts-core/README.md)               | 🆗  | 🆗    |
 
 <!-- ANCHOR_END: container-support -->
 

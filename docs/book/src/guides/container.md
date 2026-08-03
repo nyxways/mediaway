@@ -1,8 +1,8 @@
 # Container: Mux + Demux
 
 `mediaway-container` wraps eight freestanding, sans-io container cores
-(`iso-bmff`, `ebml-webm`, `riff-wave`, `adts`, `mpeg-audio`, `ogg`, `flv`,
-`mpeg-ts`) behind one shape: register tracks, push packets, poll bytes out —
+(`iso-bmff`, `ebml-webm`, `riff-wave-core`, `adts-core`, `mpeg-audio`, `ogg`, `flv`,
+`mpeg-ts-core`) behind one shape: register tracks, push packets, poll bytes out —
 and the mirror for demux. None of it touches a file handle or socket; I/O is
 entirely the caller's job.
 

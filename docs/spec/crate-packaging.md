@@ -40,6 +40,11 @@ Canonical decisions:
 **Platform suffixes** (module names, used consistently): `windows`, `web`, `linux`,
 `apple`, `android` (split further only with an ADR).
 
+**Collision disambiguation**: three core names were already taken on crates.io
+by unrelated projects (`adts`, `mpeg-ts`, `riff-wave`) — they publish as
+`adts-core`, `mpeg-ts-core`, `riff-wave-core` (uniform `-core` suffix; the
+in-repo directory and module names keep the base form).
+
 ## Dependency rules
 
 - Apps may depend on an **unprefixed core** directly (preferred when Mediaway types are not needed).

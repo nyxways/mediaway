@@ -7,7 +7,7 @@
     reason = "integration tests may unwrap"
 )]
 
-use mpeg_ts::{Demuxer, ElementaryStream, Muxer, StreamType};
+use mpeg_ts_core::{Demuxer, ElementaryStream, Muxer, StreamType};
 
 #[test]
 fn single_program_two_stream_roundtrip_via_public_api() {

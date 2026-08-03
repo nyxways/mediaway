@@ -6,14 +6,14 @@ small, self-contained mux + demux, no Mediaway dependency, added to round out
 
 Each crate below also has a real FATE `fate_manifest.txt`/`demux_exceptions.rs`
 (2026-07-29) — see [testing.md § FATE corpus](../../../conventions/testing.md).
-Not all rows are `oracle_compare`: `riff-wave` compares `channels`/`sample_rate`
+Not all rows are `oracle_compare`: `riff-wave-core` compares `channels`/`sample_rate`
 (not packetized), and `ogg`'s raw packet count includes Vorbis/Opus header
 packets ffprobe's frame count excludes, so most `ogg` samples stay
 `must_not_panic` rather than a forced/fragile offset match.
 
-## `riff-wave` (WAV/PCM) — added 2026-07-29
+## `riff-wave-core` (WAV/PCM) — added 2026-07-29
 
-Crate-local [ADR-0001](../../../crates/riff-wave/adr/0001-riff-wave-freestanding-core.md).
+Crate-local [ADR-0001](../../../crates/riff-wave-core/adr/0001-riff-wave-freestanding-core.md).
 
 - Scope: PCM integer + IEEE float `fmt ` only (`wFormatTag` 1 / 3). No
   `WAVE_FORMAT_EXTENSIBLE`, no compressed WAV payloads (ADPCM, µ-law/A-law,
@@ -29,15 +29,15 @@ Crate-local [ADR-0001](../../../crates/riff-wave/adr/0001-riff-wave-freestanding
   shape (`push_packet`/`finish`, `parse`) rather than the incremental
   `Mux`/`Demux` traits, which the format genuinely can't satisfy.
 
-## `adts` (raw AAC elementary stream) — added 2026-07-29
+## `adts-core` (raw AAC elementary stream) — added 2026-07-29
 
-Crate-local [ADR-0001](../../../crates/adts/adr/0001-adts-freestanding-core.md).
+Crate-local [ADR-0001](../../../crates/adts-core/adr/0001-adts-freestanding-core.md).
 
 - No Mediaway or `iso-bmff` dependency — cross-checked field-for-field against
   `iso-bmff`'s pre-existing single-frame `strip_adts` helper
   (`bitstream/aac.rs`) so both agree on the wire format, but no shared code.
 - `Muxer::write_frame` appends one self-contained frame per call (no container
-  header, no `finish()` — unlike `riff-wave`, ADTS frames are genuinely
+  header, no `finish()` — unlike `riff-wave-core`, ADTS frames are genuinely
   independently streamable).
 - `Demuxer` is a true incremental `push_bytes`/`poll_frame` reader, matching
   `iso-bmff`'s demux shape.
@@ -55,13 +55,13 @@ Crate-local [ADR-0001](../../../crates/mpeg-audio/adr/0001-mpeg-audio-freestandi
   misparsed) — "MP3" in the commonly-used sense. All three MPEG versions
   (1/2/2.5) supported, since low-bitrate MP3 commonly uses MPEG-2/2.5's
   half/quarter sample rates.
-- Same framing-only philosophy as `adts`: `Muxer::write_frame` validates the
+- Same framing-only philosophy as `adts-core`: `Muxer::write_frame` validates the
   already-encoded body length against the header's bitrate/sample-rate/padding,
   never fabricates or decodes audio data.
 - Padding is a per-call parameter, not baked into the header config, since real
   encoders flip it per frame for bit-reservoir accounting.
 - `Demuxer` is incremental (`push_bytes`/`poll_frame`), assumes frame-aligned
-  input like `adts` (no ID3-tag/leading-garbage resync scan).
+  input like `adts-core` (no ID3-tag/leading-garbage resync scan).
 - Facade: `mediaway-container::mp3` (2026-07-29) — `Demux` only, no `Mux`
   trait impl: `write_frame`'s explicit `padding` argument has no slot in the
   generic `Packet`, and silently defaulting it would write wrong-length

@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "adts"
+name = "adts-core"
 version = "0.1.0"
 dependencies = [
  "bytes",
@@ -1396,15 +1396,15 @@ dependencies = [
 name = "mediaway-container"
 version = "0.1.0"
 dependencies = [
- "adts",
+ "adts-core",
  "ebml-webm",
  "flv",
  "iso-bmff",
  "mediaway-common",
  "mpeg-audio",
- "mpeg-ts",
+ "mpeg-ts-core",
  "ogg",
- "riff-wave",
+ "riff-wave-core",
  "thiserror 2.0.19",
 ]
 
@@ -1542,7 +1542,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "mpeg-ts"
+name = "mpeg-ts-core"
 version = "0.1.0"
 dependencies = [
  "bytes",
@@ -2106,7 +2106,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
-name = "riff-wave"
+name = "riff-wave-core"
 version = "0.1.0"
 dependencies = [
  "bytes",

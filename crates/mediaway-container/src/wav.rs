@@ -1,8 +1,8 @@
-//! Mediaway-typed RIFF/WAVE (PCM) mux + demux over [`riff_wave`].
+//! Mediaway-typed RIFF/WAVE (PCM) mux + demux over [`riff_wave_core`].
 //!
 //! RIFF's chunk sizes must be known up front — there is no fragmented or
 //! streamable profile in scope in the core crate, so this module exposes
-//! [`riff_wave`]'s own whole-buffer shape (`push_packet`/`finish`, [`parse`])
+//! [`riff_wave_core`]'s own whole-buffer shape (`push_packet`/`finish`, [`parse`])
 //! rather than forcing it into the incremental push/poll
 //! [`crate::Mux`]/[`crate::Demux`] traits, which this format cannot honestly
 //! satisfy.
@@ -10,11 +10,11 @@
 #![forbid(unsafe_code)]
 
 use mediaway_common::{Bytes, CodecKind, Packet, Rational, StreamInfo};
-use riff_wave::Muxer as CoreMuxer;
-pub use riff_wave::{SampleFormat, WaveFormat};
+use riff_wave_core::Muxer as CoreMuxer;
+pub use riff_wave_core::{SampleFormat, WaveFormat};
 
-/// WAV mux/demux error (same as [`riff_wave::Error`]).
-pub type Error = riff_wave::Error;
+/// WAV mux/demux error (same as [`riff_wave_core::Error`]).
+pub type Error = riff_wave_core::Error;
 
 /// Buffers pushed PCM samples for a single-track WAV file.
 #[derive(Debug, Clone)]
@@ -63,9 +63,9 @@ impl Muxer {
 ///
 /// # Errors
 ///
-/// Propagates [`riff_wave::Error`] parse failures.
+/// Propagates [`riff_wave_core::Error`] parse failures.
 pub fn parse(data: &[u8]) -> Result<(StreamInfo, Packet), Error> {
-    let (format, payload) = riff_wave::parse(data)?;
+    let (format, payload) = riff_wave_core::parse(data)?;
     let stream = StreamInfo::Audio {
         id: 0,
         codec: CodecKind::RawAudio,

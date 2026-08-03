@@ -41,7 +41,7 @@ impl TagType {
 /// or two followed by codec data) — this crate frames FLV's tag/header/trailer
 /// structure only; it does not interpret or build the codec-specific sub-framing
 /// inside `data` (AudioTagHeader/VideoTagHeader), the same "frame, don't encode"
-/// boundary as this workspace's `adts`/`mpeg-audio`/`ogg` crates.
+/// boundary as this workspace's `adts-core`/`mpeg-audio`/`ogg` crates.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tag {
     /// Tag type.

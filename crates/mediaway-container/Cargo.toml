@@ -14,12 +14,12 @@ mediaway-common = { workspace = true }
 thiserror = { workspace = true }
 iso-bmff = { workspace = true }
 ebml-webm = { workspace = true }
-riff-wave = { workspace = true }
-adts = { workspace = true }
+riff-wave-core = { workspace = true }
+adts-core = { workspace = true }
 mpeg-audio = { workspace = true }
 ogg = { workspace = true }
 flv = { workspace = true }
-mpeg-ts = { workspace = true }
+mpeg-ts-core = { workspace = true }
 
 [features]
 default = ["full"]

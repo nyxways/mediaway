@@ -58,7 +58,7 @@ pub struct AccessUnit {
     pub pid: u16,
     /// Already-encoded elementary-stream payload (e.g. Annex-B H.264 NAL units,
     /// or an ADTS AAC frame) — this crate frames PES/TS structure only, the same
-    /// "frame, don't encode" boundary as this workspace's `adts`/`mpeg-audio`/
+    /// "frame, don't encode" boundary as this workspace's `adts-core`/`mpeg-audio`/
     /// `ogg`/`flv` crates.
     pub data: Bytes,
     /// Presentation timestamp, 90 kHz clock (33-bit range).

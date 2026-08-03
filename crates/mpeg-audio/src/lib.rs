@@ -6,7 +6,7 @@
 //! PCM into Layer III bitstreams (a codec's job, out of scope for a
 //! container/framing crate).
 //!
-//! Like `adts`, MPEG audio frames have no container-level header — [`Muxer`]
+//! Like `adts-core`, MPEG audio frames have no container-level header — [`Muxer`]
 //! appends one frame per call (no `finish()`); [`Demuxer`] is a true incremental
 //! `push_bytes`/`poll_frame` reader.
 

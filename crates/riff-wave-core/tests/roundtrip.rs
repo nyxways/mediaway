@@ -7,7 +7,7 @@
     reason = "integration tests may unwrap"
 )]
 
-use riff_wave::{Muxer, SampleFormat, WaveFormat, parse};
+use riff_wave_core::{Muxer, SampleFormat, WaveFormat, parse};
 
 #[test]
 fn pcm_roundtrip_via_public_api() {

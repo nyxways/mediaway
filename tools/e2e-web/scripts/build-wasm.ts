@@ -13,11 +13,12 @@ const flag = profile === "release" ? "--release" : "";
 const cargoTargetDir = join(root, "target");
 process.env.CARGO_TARGET_DIR = cargoTargetDir;
 
+// mediaway-device stays out: the facade is rlib-only (no cdylib → no .wasm
+// artifact); the CI wasm job still compile-gates it for wasm32.
 const crates = [
   "iso-bmff-wasm",
   "mediaway-encoder",
   "mediaway-decoder",
-  "mediaway-device",
 ] as const;
 
 mkdirSync(pkgRoot, { recursive: true });

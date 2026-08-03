@@ -19,7 +19,10 @@ const root = join(import.meta.dir, "..", "..");
 const csharp = join(root, "bindings", "csharp");
 const release = process.argv.includes("--release");
 
-await $`bun ${join(root, "tools", "scripts", "copy-native-dlls.ts")}${release ? " --release" : ""}`;
+const dllScript = join(root, "tools", "scripts", "copy-native-dlls.ts").replaceAll("\\", "/");
+const dllArgs = [dllScript];
+if (release) dllArgs.push("--release");
+await $`bun ${dllArgs}`.quiet();
 
 const projects = [
   "Mediaway.Common",

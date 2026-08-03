@@ -17,9 +17,14 @@ const root = join(import.meta.dir, "..", "..");
 const pythonDir = join(root, "bindings", "python");
 const release = process.argv.includes("--release");
 
-await $`bun ${join(root, "tools", "scripts", "copy-native-dlls.ts")}${release ? " --release" : ""}`;
+const dllScript = join(root, "tools", "scripts", "copy-native-dlls.ts").replaceAll("\\", "/");
+const dllArgs = [dllScript];
+if (release) dllArgs.push("--release");
+await $`bun ${dllArgs}`.quiet();
 
-const buildCheck = await $`python -c "import build"`.cwd(pythonDir).quiet().nothrow();
+// Check for the real PyPA build module from a cwd where the local
+// bindings/python/build/ output dir cannot shadow it.
+const buildCheck = await $`python -c "import build"`.cwd(root).quiet().nothrow();
 if (buildCheck.exitCode === 0) {
   await $`python -m build`.cwd(pythonDir);
 } else {

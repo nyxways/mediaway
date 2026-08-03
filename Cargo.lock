@@ -1404,54 +1404,19 @@ dependencies = [
 name = "mediaway-decoder"
 version = "0.1.0"
 dependencies = [
- "mediaway-common",
- "thiserror 2.0.19",
-]
-
-[[package]]
-name = "mediaway-decoder-linux"
-version = "0.1.0"
-dependencies = [
+ "criterion",
  "cros-libva",
+ "iso-bmff",
+ "js-sys",
  "mediaway-common",
- "mediaway-decoder",
- "mediaway-sw",
-]
-
-[[package]]
-name = "mediaway-decoder-vulkan"
-version = "0.1.0"
-dependencies = [
- "mediaway-common",
- "mediaway-decoder",
  "mediaway-encoder",
  "mediaway-sw",
  "smallvec",
  "thiserror 2.0.19",
  "vulkanalia",
-]
-
-[[package]]
-name = "mediaway-decoder-web"
-version = "0.1.0"
-dependencies = [
- "js-sys",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
-]
-
-[[package]]
-name = "mediaway-decoder-windows"
-version = "0.1.0"
-dependencies = [
- "criterion",
- "iso-bmff",
- "mediaway-common",
- "mediaway-decoder",
- "mediaway-encoder",
- "mediaway-sw",
- "smallvec",
  "windows 0.62.2",
 ]
 
@@ -1526,8 +1491,6 @@ dependencies = [
  "mediaway-common",
  "mediaway-container",
  "mediaway-decoder",
- "mediaway-decoder-linux",
- "mediaway-decoder-windows",
  "mediaway-device",
  "mediaway-encoder",
  "mediaway-test-media",
@@ -1568,7 +1531,6 @@ version = "0.1.0"
 dependencies = [
  "mediaway-common",
  "mediaway-decoder",
- "mediaway-decoder-windows",
  "mediaway-encoder",
  "pollster",
  "thiserror 2.0.19",

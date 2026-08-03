@@ -1,0 +1,24 @@
+{
+  "crate": "mediaway-decoder",
+  "dir": "crates/mediaway-decoder",
+  "rootUnsafe": "allow",
+  "children": [
+    { "name": "mediaway-decoder-windows", "dir": "crates/mediaway-decoder-windows", "module": "windows" },
+    { "name": "mediaway-decoder-linux", "dir": "crates/mediaway-decoder-linux", "module": "linux" },
+    { "name": "mediaway-decoder-vulkan", "dir": "crates/mediaway-decoder-vulkan", "module": "vulkan" },
+    { "name": "mediaway-decoder-web", "dir": "crates/mediaway-decoder-web", "module": "web" }
+  ],
+  "renames": [
+    ["mediaway_decoder_windows", "crate::windows::"],
+    ["mediaway_decoder_linux", "crate::linux::"],
+    ["mediaway_decoder_vulkan", "crate::vulkan::"],
+    ["mediaway_decoder_web", "crate::web::"],
+    ["mediaway_decoder", "crate::"]
+  ],
+  "depSweep": [
+    ["mediaway_decoder_windows", "mediaway_decoder::windows::"],
+    ["mediaway_decoder_linux", "mediaway_decoder::linux::"],
+    ["mediaway_decoder_vulkan", "mediaway_decoder::vulkan::"],
+    ["mediaway_decoder_web", "mediaway_decoder::web::"]
+  ]
+}

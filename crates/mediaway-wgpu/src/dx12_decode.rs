@@ -4,7 +4,7 @@
 //! Reaches past `wgpu`'s own API via the same HAL interop escape hatches
 //! (`wgpu::Device::as_hal`, `wgpu::Device::create_texture_from_hal`) to recover the native
 //! `ID3D12Device` `wgpu`'s DX12 backend already holds, then hands it to
-//! [`mediaway_decoder_windows::D3d11SharedDecodeBridge`] (D3D11 shared texture →
+//! [`mediaway_decoder::windows::D3d11SharedDecodeBridge`] (D3D11 shared texture →
 //! `ID3D12Device::OpenSharedHandle`) so an app already rendering/compositing with `wgpu` can
 //! display or post-process a Mediaway-decoded (WMF DX11 Zero-Copy, NV12) frame without a
 //! forced GPU→CPU readback.
@@ -19,7 +19,7 @@
 use mediaway_common::{
     GpuBufferHandle, GpuDeviceHandle, NativeHandle, PixelFormat, VideoFrame, VideoFrameStorage,
 };
-use mediaway_decoder_windows::D3d11SharedDecodeBridge;
+use mediaway_decoder::windows::D3d11SharedDecodeBridge;
 // Same `windows`-crate 0.58 straddle `dx12.rs` already documents: `wgpu_hal::dx12` pins its
 // own `windows`/`windows-core` dependency to 0.58, incompatible as a Rust *type* with this
 // workspace's ordinary `windows = "0.62"` even though both model the same COM interface.

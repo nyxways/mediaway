@@ -19,8 +19,8 @@ use mediaway_common::{
     Bytes, CodecKind, PixelFormat, Rational, StreamInfo, VideoFrame, VideoFrameStorage,
 };
 use mediaway_container::mp4::{Demuxer, Muxer};
+use mediaway_decoder::windows::WindowsVideoDecoder;
 use mediaway_decoder::{VideoDecoder, VideoDecoderConfig, VideoOutputPreference};
-use mediaway_decoder_windows::WindowsVideoDecoder;
 use mediaway_encoder::windows::WindowsVideoEncoder;
 use mediaway_encoder::{VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 use mediaway_test_media::solid_nv12_bytes;

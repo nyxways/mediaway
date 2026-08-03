@@ -4,7 +4,7 @@
 //!   ([ADR-0001](../adr/0001-decoder-traits.md), [ADR-0002](../adr/0002-facade-platform-boundary.md)).
 //! - Windows Zero-Copy: `mediaway_decoder_windows::WindowsVideoDecoder::open`.
 
-#![forbid(unsafe_code)]
+#![allow(unsafe_code)]
 
 pub mod capability;
 mod error;
@@ -12,3 +12,9 @@ mod video;
 
 pub use error::DecodeError;
 pub use video::{VideoDecoder, VideoDecoderConfig, VideoOutputPreference};
+
+// ── merged platform/domain modules (ADR-0021) ──
+pub mod linux;
+pub mod vulkan;
+pub mod web;
+pub mod windows;

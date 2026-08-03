@@ -109,14 +109,14 @@ impl AutoDecoder {
     pub fn open(config: &VideoDecoderConfig) -> Result<Box<dyn VideoDecoder>, DecodeError> {
         #[cfg(windows)]
         {
-            use mediaway_decoder_windows::WindowsVideoDecoder;
+            use mediaway_decoder::windows::WindowsVideoDecoder;
             let dec = WindowsVideoDecoder::open(config)?;
             Ok(Box::new(dec))
         }
 
         #[cfg(target_os = "linux")]
         {
-            use mediaway_decoder_linux::LinuxVideoDecoder;
+            use mediaway_decoder::linux::LinuxVideoDecoder;
             let dec = LinuxVideoDecoder::open(config)?;
             Ok(Box::new(dec))
         }
@@ -141,7 +141,7 @@ impl AutoDecoder {
 pub fn decoder_support(codec: CodecKind) -> DecodeSupport {
     #[cfg(windows)]
     {
-        use mediaway_decoder_windows::WindowsVideoDecoder;
+        use mediaway_decoder::windows::WindowsVideoDecoder;
         let cfg = VideoDecoderConfig {
             codec,
             output: mediaway_decoder::VideoOutputPreference::CpuFramesOk,
@@ -158,7 +158,7 @@ pub fn decoder_support(codec: CodecKind) -> DecodeSupport {
 
     #[cfg(target_os = "linux")]
     {
-        use mediaway_decoder_linux::LinuxVideoDecoder;
+        use mediaway_decoder::linux::LinuxVideoDecoder;
         let cfg = VideoDecoderConfig {
             codec,
             output: mediaway_decoder::VideoOutputPreference::CpuFramesOk,

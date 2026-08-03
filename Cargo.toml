@@ -24,17 +24,9 @@ members = [
 
     "crates/vpl-sys",
 
-    "crates/mediaway-decoder-windows",
-    "crates/mediaway-decoder-linux",
-    "crates/mediaway-decoder-vulkan",
-
-
-
 
 
     "crates/iso-bmff-wasm",
-
-    "crates/mediaway-decoder-web",
 
     "crates/mediaway-decoder",
     "crates/mediaway-device",
@@ -89,9 +81,9 @@ mediaway-encoder = { path = "crates/mediaway-encoder", version = "0.1.0" }
 vpl-sys = { path = "crates/vpl-sys", version = "0.1.0" }
 
 mediaway-decoder = { path = "crates/mediaway-decoder", version = "0.1.0" }
-mediaway-decoder-windows = { path = "crates/mediaway-decoder-windows", version = "0.1.0" }
-mediaway-decoder-linux = { path = "crates/mediaway-decoder-linux", version = "0.1.0" }
-mediaway-decoder-vulkan = { path = "crates/mediaway-decoder-vulkan", version = "0.1.0" }
+
+
+
 mediaway-device = { path = "crates/mediaway-device", version = "0.1.0" }
 
 
@@ -103,7 +95,6 @@ mediaway-device = { path = "crates/mediaway-device", version = "0.1.0" }
 
 iso-bmff-wasm = { path = "crates/iso-bmff-wasm", version = "0.1.0" }
 
-mediaway-decoder-web = { path = "crates/mediaway-decoder-web", version = "0.1.0" }
 
 mediaway-sw = { path = "crates/mediaway-sw", version = "0.1.0" }
 mediaway-sw-opus = { path = "crates/mediaway-sw-opus", version = "0.1.0" }

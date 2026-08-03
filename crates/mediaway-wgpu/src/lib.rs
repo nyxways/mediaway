@@ -50,7 +50,7 @@
 //!
 //! The reverse direction of Stage 1: WMF DX11 Zero-Copy decode output
 //! (`GpuBufferHandle::DirectX11`, NV12) → an ordinary `wgpu::Texture`, via
-//! [`mediaway_decoder_windows::D3d11SharedDecodeBridge`] (D3D11 shared texture →
+//! [`mediaway_decoder::windows::D3d11SharedDecodeBridge`] (D3D11 shared texture →
 //! `ID3D12Device::OpenSharedHandle`). Same `GpuCopy` cost class as Stage 1 (one D3D11→D3D11
 //! copy plus a CPU↔GPU query/flush stall per imported frame), never Zero-Copy. See
 //! [ADR-0002](https://github.com/nyxways/mediaway/blob/main/crates/mediaway-wgpu/adr/0002-decode-to-wgpu-texture-bridge.md).

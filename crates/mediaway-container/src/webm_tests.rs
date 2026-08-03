@@ -15,6 +15,7 @@ fn track(codec_id: &str, is_video: bool, width: u32, height: u32) -> CoreTrackIn
         track_number: 1,
         track_type: if is_video { 1 } else { 2 },
         codec_id: codec_id.to_string(),
+        codec_private: None,
         width,
         height,
         sample_rate: 8000.0,

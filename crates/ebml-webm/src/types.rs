@@ -32,6 +32,9 @@ pub struct TrackInfo {
     /// Raw `WebM` `CodecID` string (e.g. `"V_VP9"`, `"A_OPUS"`). Mapping to a
     /// Mediaway `CodecKind` is the facade's job, not this crate's.
     pub codec_id: String,
+    /// `TrackEntry\CodecPrivate` (codec-specific init data, e.g. `OpusHead`).
+    /// `None` when absent (VP8/VP9 without config, legacy files).
+    pub codec_private: Option<Bytes>,
     /// Video width in pixels (`0` for non-video tracks or if absent).
     pub width: u32,
     /// Video height in pixels (`0` for non-video tracks or if absent).

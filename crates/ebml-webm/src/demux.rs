@@ -31,6 +31,7 @@ struct TrackScratch {
     track_number: Option<u64>,
     track_type: Option<u8>,
     codec_id: Option<String>,
+    codec_private: Option<Bytes>,
     width: u32,
     height: u32,
     sample_rate: Option<f64>,
@@ -45,6 +46,7 @@ impl TrackScratch {
             track_number: self.track_number?,
             track_type: self.track_type.unwrap_or(0),
             codec_id: self.codec_id?,
+            codec_private: self.codec_private,
             width: self.width,
             height: self.height,
             sample_rate: self.sample_rate.unwrap_or(DEFAULT_SAMPLE_RATE_HZ),
@@ -350,6 +352,13 @@ impl Demuxer {
                 let codec_id = String::from_utf8(self.buffer[start..end].to_vec()).ok();
                 if let Some(scratch) = self.building_track.as_mut() {
                     scratch.codec_id = codec_id;
+                }
+            }
+            ids::CODEC_PRIVATE => {
+                // clone: bytes live in the shared parse buffer; TrackInfo needs an owned copy.
+                let cp = Bytes::copy_from_slice(&self.buffer[start..end]);
+                if let Some(scratch) = self.building_track.as_mut() {
+                    scratch.codec_private = Some(cp);
                 }
             }
             ids::PIXEL_WIDTH if self.top_is(ids::VIDEO) => {

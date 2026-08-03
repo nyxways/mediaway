@@ -149,7 +149,7 @@ fn to_stream_info(t: &CoreTrackInfo, time_base: MwRational) -> Option<StreamInfo
                 width: t.width,
                 height: t.height,
             },
-            extra_data: Bytes::new(),
+            extra_data: t.codec_private.clone().unwrap_or_default(),
         })
     } else {
         Some(StreamInfo::Audio {
@@ -287,17 +287,40 @@ impl Muxer<Open> {
     ///
     /// # Errors
     ///
+    /// Register a track (video or audio) for muxing, returning its track
+    /// number. The stream's `extra_data` (e.g. `OpusHead`) becomes the
+    /// `CodecPrivate` element of the track entry.
+    ///
+    /// # Errors
+    ///
     /// [`Error::UnsupportedCodec`] if `WebM` has no `CodecID` for this
     /// track's codec; [`Error::Mux`] for an invalid/duplicate track number.
     pub fn add_track(&mut self, track: StreamInfo) -> Result<u32, Error> {
+        /// `CodecPrivate` payload for a track (`OpusHead` etc.), when the
+        /// caller supplied one via `extra_data`.
+        fn track_extra(track: &StreamInfo) -> Option<Bytes> {
+            match track {
+                StreamInfo::Video { extra_data, .. } | StreamInfo::Audio { extra_data, .. }
+                    if !extra_data.is_empty() =>
+                {
+                    Some(extra_data.clone())
+                }
+                _ => None,
+            }
+        }
         let codec_id =
             webm_codec_id(track.codec()).ok_or_else(|| Error::UnsupportedCodec(track.codec()))?;
         let id = track.id();
         let core_track = match &track {
-            StreamInfo::Video { geometry, .. } => CoreTrackInfo {
+            StreamInfo::Video {
+                geometry,
+                extra_data,
+                ..
+            } => CoreTrackInfo {
                 track_number: u64::from(id),
                 track_type: 1,
                 codec_id: codec_id.to_string(),
+                codec_private: (!extra_data.is_empty()).then(|| extra_data.clone()),
                 width: geometry.width,
                 height: geometry.height,
                 sample_rate: 8000.0,
@@ -311,6 +334,7 @@ impl Muxer<Open> {
                 track_number: u64::from(id),
                 track_type: 2,
                 codec_id: codec_id.to_string(),
+                codec_private: track_extra(&track),
                 width: 0,
                 height: 0,
                 sample_rate: f64::from(*sample_rate),

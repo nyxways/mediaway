@@ -277,6 +277,9 @@ fn write_track_entry(out: &mut Vec<u8>, t: &TrackInfo) {
     write_uint_elem(&mut body, ids::TRACK_NUMBER, t.track_number);
     write_uint_elem(&mut body, ids::TRACK_TYPE, u64::from(t.track_type));
     write_string_elem(&mut body, ids::CODEC_ID, &t.codec_id);
+    if let Some(cp) = &t.codec_private {
+        write_binary_elem(&mut body, ids::CODEC_PRIVATE, cp);
+    }
     if t.is_video() {
         let mut video = Vec::new();
         write_uint_elem(&mut video, ids::PIXEL_WIDTH, u64::from(t.width));
@@ -342,6 +345,12 @@ fn write_float_elem(out: &mut Vec<u8>, id: u32, value: f64) {
 /// Write an ASCII `String` master element (`CodecID`, `DocType`) — content
 /// bytes as-is, no null terminator (EBML strings are length-prefixed, not
 /// C-style).
+fn write_binary_elem(out: &mut Vec<u8>, id: u32, value: &[u8]) {
+    write_id(out, id);
+    vint::encode_size(value.len() as u64, out);
+    out.extend_from_slice(value);
+}
+
 fn write_string_elem(out: &mut Vec<u8>, id: u32, value: &str) {
     write_id(out, id);
     vint::encode_size(value.len() as u64, out);

@@ -112,3 +112,6 @@ pub const fn is_descend_master(id: u32) -> bool {
             | SEEK
     )
 }
+/// `TrackEntry\CodecPrivate` (codec-specific config: `OpusHead` for Opus, the
+/// VP9 uncompressed-header config for VP9, …).
+pub const CODEC_PRIVATE: u32 = 0x63A2;

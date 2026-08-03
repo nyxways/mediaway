@@ -1,7 +1,7 @@
 namespace Mediaway.Pipeline;
 
 /// <summary>
-/// C ABI status code returned by fallible <c>mediaway-pipeline-ffi</c> functions —
+/// C ABI status code returned by fallible <c>mediaway-ffi</c> functions —
 /// mirrors <c>mediaway_pipeline_status_t</c>. A distinct, independently-numbered enum
 /// from <see cref="Mediaway.Container.MediawayContainerStatus"/> — the two ABIs are not
 /// unified.

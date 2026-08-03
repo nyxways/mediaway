@@ -3,7 +3,7 @@
  * Mirrors: examples/container/mux_demux_mp4.rs
  *
  * Status: ✅ real ABI under it.
- * The C ABI's container capability (mux fMP4 + demux, mediaway_container_ffi) is
+ * The C ABI's container capability (mux fMP4 + demux, mediaway_ffi) is
  * fully implemented; this file is the DX contract the @mediaway/container package
  * targets. The muxer is sans-io: it never touches files, the caller owns byte I/O.
  *

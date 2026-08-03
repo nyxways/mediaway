@@ -3,7 +3,7 @@
  *
  * Status: ✅ real ABI under it.
  * The C ABI's audio encode capability (ABI v2, adr/0003-auto-audio-encode-c-abi.md)
- * is implemented in mediaway_pipeline_ffi: `AudioEncoder.open()` returns the
+ * is implemented in mediaway_ffi: `AudioEncoder.open()` returns the
  * encode session directly (single step — no intermediate handle, no consumption
  * trap). PCM is pushed as borrowed views, encoded packets are polled back, and
  * an audio track registered with the encoder's AudioSpecificConfig

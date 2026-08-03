@@ -1,8 +1,8 @@
-# mediaway-container-ffi — MP4 mux/demux C ABI
+# mediaway-ffi — MP4 mux/demux C ABI
 
 First `mediaway-*-ffi` crate in the workspace. Wraps `mediaway-container::mp4`
 (`Muxer<Open|Live>`, `Demuxer`) over a hand-written C ABI. Full design:
-[`crates/mediaway-container-ffi/adr/0001-mp4-mux-demux-c-abi.md`](../../../../crates/mediaway-container-ffi/adr/0001-mp4-mux-demux-c-abi.md).
+[`crates/mediaway-ffi/adr/0001-mp4-mux-demux-c-abi.md`](../../../../crates/mediaway-ffi/adr/0001-mp4-mux-demux-c-abi.md).
 
 ## Shape
 
@@ -78,7 +78,7 @@ check (matches `iso_bmff::Demuxer`'s real shape). Decrypt runs synchronously ins
 packets already queued. `mediaway_muxer_create_with_fragment_batch(batch)` mirrors
 `mediaway_muxer_create` exactly but calls `Muxer::with_fragment_batch`; `batch == 0` is
 passed through uncorrected (the core clamps to `1`). Full design:
-[`adr/0002-clearkey-decrypt-and-fragment-batch-c-abi.md`](../../../../crates/mediaway-container-ffi/adr/0002-clearkey-decrypt-and-fragment-batch-c-abi.md).
+[`adr/0002-clearkey-decrypt-and-fragment-batch-c-abi.md`](../../../../crates/mediaway-ffi/adr/0002-clearkey-decrypt-and-fragment-batch-c-abi.md).
 
 ## Building the C example on Windows
 
@@ -87,12 +87,12 @@ cannot link against. Build the crate for the GNU target instead — no install n
 present via `rustup target list --installed`:
 
 ```
-cargo build -p mediaway-container-ffi --target x86_64-pc-windows-gnu
-gcc -Icrates/mediaway-container-ffi/include bindings/c/examples/mux_roundtrip.c \
+cargo build -p mediaway-ffi --target x86_64-pc-windows-gnu
+gcc -Icrates/mediaway-ffi/include bindings/c/examples/mux_roundtrip.c \
     -Ltarget/x86_64-pc-windows-gnu/debug -lmediaway_container_ffi -o mux_roundtrip.exe
 ```
 
 `gcc` picks `libmediaway_container_ffi.dll.a` (import lib) over the staticlib, so
-`mediaway_container_ffi.dll` must sit next to the `.exe` at run time. Verified end-to-end
+`mediaway_ffi.dll` must sit next to the `.exe` at run time. Verified end-to-end
 (90 pushed / 90 recovered video+audio packets) with no Windows system libs needed beyond
 what the DLL already links in.

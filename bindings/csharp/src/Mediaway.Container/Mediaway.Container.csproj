@@ -10,7 +10,7 @@
     <RootNamespace>Mediaway.Container</RootNamespace>
     <AssemblyName>Mediaway.Container</AssemblyName>
     <NeedsNativeRuntime>true</NeedsNativeRuntime>
-    <Description>Idiomatic C# binding over mediaway-container-ffi (fragmented-MP4 mux/demux).</Description>
+    <Description>Idiomatic C# binding over mediaway-ffi (fragmented-MP4 mux/demux).</Description>
   </PropertyGroup>
 
   <ItemGroup>

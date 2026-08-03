@@ -4,7 +4,7 @@ using Xunit;
 namespace Mediaway.Container.Tests;
 
 /// <summary>
-/// Exercises the real native <c>mediaway_container_ffi</c> library end-to-end — mirrors
+/// Exercises the real native <c>mediaway_ffi</c> library end-to-end — mirrors
 /// <c>bindings/csharp/examples/MuxRoundtrip.cs</c>'s scenario (mux one H.264 video + one AAC
 /// audio track, demux the result back) to verify the P/Invoke layer against the actual ABI,
 /// not just that it compiles.

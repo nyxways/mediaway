@@ -4,7 +4,7 @@ using Xunit;
 namespace Mediaway.Pipeline.Tests;
 
 /// <summary>
-/// Exercises the real native <c>mediaway_pipeline_ffi</c> library end-to-end — mirrors
+/// Exercises the real native <c>mediaway_ffi</c> library end-to-end — mirrors
 /// <c>bindings/csharp/examples/EncodeToMp4.cs</c>'s scenario (pick the best available H.264
 /// encoder, feed it synthetic NV12 frames, flush to a fragmented MP4) to verify the P/Invoke
 /// layer against the actual ABI, not just that it compiles. This machine has a

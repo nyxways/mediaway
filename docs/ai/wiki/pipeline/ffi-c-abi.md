@@ -1,12 +1,12 @@
-# mediaway-pipeline-ffi — auto-encode → fMP4 C ABI
+# mediaway-ffi — auto-encode → fMP4 C ABI
 
-Second `mediaway-*-ffi` crate, after `mediaway-container-ffi`. Wraps
+Second `mediaway-*-ffi` crate, after `mediaway-ffi`. Wraps
 `mediaway_pipeline::platform::AutoEncoder` + `EncodeSession` (auto OS/GPU
 video encoder wired straight into a single-track fMP4 muxer) over a C ABI.
 Full design:
-[`crates/mediaway-pipeline-ffi/adr/0001-auto-encode-c-abi.md`](../../../../crates/mediaway-pipeline-ffi/adr/0001-auto-encode-c-abi.md),
+[`crates/mediaway-ffi/adr/0001-auto-encode-c-abi.md`](../../../../crates/mediaway-ffi/adr/0001-auto-encode-c-abi.md),
 GPU input:
-[`adr/0002-gpu-frame-input-c-abi.md`](../../../../crates/mediaway-pipeline-ffi/adr/0002-gpu-frame-input-c-abi.md).
+[`adr/0002-gpu-frame-input-c-abi.md`](../../../../crates/mediaway-ffi/adr/0002-gpu-frame-input-c-abi.md).
 
 ## Shape
 
@@ -26,11 +26,11 @@ GPU input:
 - `mediaway_video_frame_t` (write_frame input) carries `storage_kind`
   (`CPU`/`GPU`) deciding whether `raw_bytes`/`raw_bytes_len` or `gpu_buffer`
   is read — same flat-struct-plus-discriminant idiom
-  `mediaway-device-ffi`'s `MediawayDesktopFrame` uses, opposite ownership
+  `mediaway-ffi`'s `MediawayDesktopFrame` uses, opposite ownership
   direction (borrowed *input* here vs. borrowed *output* there). See
   [zero-copy/gpu-interop.md](../zero-copy/gpu-interop.md).
 - Fresh `mediaway_pipeline_status_t` (13 values, own numbering) — **not**
-  named or numbered like `mediaway-container-ffi`'s `mediaway_status_t`: a
+  named or numbered like `mediaway-ffi`'s `mediaway_status_t`: a
   reused typedef name with a different enumerator set is a real C
   redefinition hazard if a consumer ever includes both headers.
   `mediaway_pipeline_codec_kind_t`, however, **does** mirror
@@ -49,7 +49,7 @@ GPU input:
 ## Panic safety
 
 Same `catch_unwind` + per-handle `poisoned` pattern as
-`mediaway-container-ffi` (see that crate's wiki page). `AutoEncoderHandle` is
+`mediaway-ffi` (see that crate's wiki page). `AutoEncoderHandle` is
 the one deliberate exception — no `poisoned` field, justified above.
 
 ## Deferred (see ADR-0001 § Deferred, ADR-0002 § Negative)
@@ -60,7 +60,7 @@ the one deliberate exception — no `poisoned` field, justified above.
 gap as `mediaway-container`'s unconditional format-core deps); screen/camera
 capture and decode C surfaces.
 
-`mediaway-common-ffi` unification — **resolved** by
+`mediaway-ffi` unification — **resolved** by
 [ADR-0015](../../../../docs/adr/0015-common-ffi-unification.md): an
 `rlib`-only internal crate now shares the `Rational`/`CodecKind` value-type
 mirrors and the buffer leak/reclaim helper *implementation* between

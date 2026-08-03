@@ -1,0 +1,11 @@
+{
+  "crate": "mediaway-ffi",
+  "dir": "crates/mediaway-ffi",
+  "description": "Single C ABI facade over Mediaway container/device/pipeline — merged from the four mediaway-*-ffi crates per ADR-0021",
+  "children": [
+    { "name": "mediaway-common-ffi", "dir": "crates/mediaway-common-ffi", "module": "common" },
+    { "name": "mediaway-container-ffi", "dir": "crates/mediaway-container-ffi", "module": "container" },
+    { "name": "mediaway-device-ffi", "dir": "crates/mediaway-device-ffi", "module": "device" },
+    { "name": "mediaway-pipeline-ffi", "dir": "crates/mediaway-pipeline-ffi", "module": "pipeline" }
+  ]
+}

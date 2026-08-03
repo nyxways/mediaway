@@ -20,9 +20,9 @@ cmake_minimum_required(VERSION 3.20)
 project(mediaway-bindings VERSION 0.1.0 LANGUAGES C CXX)
 
 set(MEDIAWAY_HEADERS
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../crates/mediaway-container-ffi/include/mediaway/container.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../crates/mediaway-pipeline-ffi/include/mediaway/pipeline.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../crates/mediaway-device-ffi/include/mediaway/device.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../crates/mediaway-ffi/include/mediaway/container.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../crates/mediaway-ffi/include/mediaway/pipeline.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../crates/mediaway-ffi/include/mediaway/device.h
 )
 set(MEDIAWAY_CPP_HEADER ${CMAKE_CURRENT_SOURCE_DIR}/include/mediaway/mediaway.hpp)
 set(MEDIAWAY_NATIVE_DIR ${MEDIAWAY_NATIVE_DIR_OVERRIDE})
@@ -44,7 +44,7 @@ target_link_directories(mediaway INTERFACE
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_PREFIX}/lib>
 )
 target_link_libraries(mediaway INTERFACE
-  mediaway_container_ffi mediaway_pipeline_ffi mediaway_device_ffi)
+  mediaway_ffi)
 target_compile_definitions(mediaway INTERFACE MEDIAWAY_STATIC=1)
 
 install(FILES ${MEDIAWAY_HEADERS} ${MEDIAWAY_CPP_HEADER} DESTINATION include/mediaway)
@@ -85,7 +85,7 @@ file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/mediaway.pc
 "Description: Mediaway C ABI — fragmented-MP4 mux/demux, hardware video/audio encode, camera/mic capture\n"
 "Version: ${PROJECT_VERSION}\n"
 "Cflags: -I\${includedir}\n"
-"Libs: -L\${libdir} -lmediaway_container_ffi -lmediaway_pipeline_ffi -lmediaway_device_ffi\n")
+"Libs: -L\${libdir} -lmediaway_ffi\n")
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/mediaway.pc
   DESTINATION lib/pkgconfig)
 

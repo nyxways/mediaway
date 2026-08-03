@@ -52,7 +52,7 @@ classes wrapped in idiomatic JS (`packages/browser/`, built with
 - **Codec config arrives late**: WebCodecs exposes avcC/AudioSpecificConfig only in
   the first output's metadata, so `EncodeSession` defers `begin()` until every planned
   track has its config — the browser analog of the C ABI's push → stream_info → mux
-  order (`mediaway-pipeline-ffi/adr/0003`).
+  order (`mediaway-ffi/adr/0003`).
 - `EncodeSession` terminal `finish(): Uint8Array` (flush encoders + muxer).
   Capture feeds frames in via a canvas bridge (`VideoFrame(canvas)` — universal,
   no Insertable-Streams flag needed).

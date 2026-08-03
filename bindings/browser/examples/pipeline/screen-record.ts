@@ -6,7 +6,7 @@
  * canvas bridge; WebCodecs VideoEncoder does the codec work; the WASM module
  * muxes. The browser is AHEAD of the native stack here: the C ABI hosts cannot
  * screen-capture from C at all today (a live GPU device handle with no CPU
- * fallback, mediaway-device-ffi adr/0001 § Deferred) — this example is the
+ * fallback, mediaway-ffi adr/0001 § Deferred) — this example is the
  * working browser path for the same scenario.
  *
  * Mic path: requested but drained, not muxed — see device/camera-record.ts for

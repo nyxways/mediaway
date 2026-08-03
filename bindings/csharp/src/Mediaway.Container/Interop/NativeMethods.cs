@@ -2,7 +2,7 @@ namespace Mediaway.Container.Interop;
 
 /// <summary>
 /// Raw P/Invoke declarations, 1:1 with
-/// <c>crates/mediaway-container-ffi/include/mediaway/container.h</c>. Never public — every
+/// <c>crates/mediaway-ffi/include/mediaway/container.h</c>. Never public — every
 /// call is wrapped by <see cref="Container.Muxer"/>/<see cref="Container.MuxerSession"/>/
 /// <see cref="Container.Demuxer"/> into a safe, idiomatic surface.
 ///
@@ -13,5 +13,5 @@ namespace Mediaway.Container.Interop;
 /// </summary>
 internal static unsafe partial class NativeMethods
 {
-    private const string LibraryName = "mediaway_container_ffi";
+    private const string LibraryName = "mediaway_ffi";
 }

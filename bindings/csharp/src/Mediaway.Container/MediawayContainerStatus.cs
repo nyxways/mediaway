@@ -1,7 +1,7 @@
 namespace Mediaway.Container;
 
 /// <summary>
-/// C ABI status code returned by fallible <c>mediaway-container-ffi</c> functions —
+/// C ABI status code returned by fallible <c>mediaway-ffi</c> functions —
 /// mirrors <c>mediaway_status_t</c>.
 /// </summary>
 public enum MediawayContainerStatus

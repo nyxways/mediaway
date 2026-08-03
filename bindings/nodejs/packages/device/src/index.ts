@@ -2,7 +2,7 @@
  * @mediaway/device — device capability: camera / screen / microphone capture.
  *
  * Implements the DX contract in bindings/nodejs/README.md over the
- * mediaway-device-ffi C ABI (via @mediaway/ffi). The ABI is domain-split
+ * mediaway-ffi C ABI (via @mediaway/ffi). The ABI is domain-split
  * (`adr/0004-domain-feature-split.md`): this package folds it back into the
  * three DX functions. CPU-storage only: Camera delivers CPU frames; Screen
  * capture raises CaptureUnavailableError from the C ABI today (it needs a
@@ -187,7 +187,7 @@ export async function openMicrophone(options: { sampleRate: number; channels?: n
 /**
  * A Screen capture session — NOT available from the C ABI today. Screen needs
  * a live GPU device handle (ID3D11Device*) with no CPU fallback, and its C
- * representation is deferred (crates/mediaway-device-ffi/adr/0001 § Deferred),
+ * representation is deferred (crates/mediaway-ffi/adr/0001 § Deferred),
  * so openScreenCapture always throws CaptureUnavailableError. The ideal DX
  * (BGRA8 CPU frames at the display's native geometry) is what the aspirational
  * screen-record example targets.

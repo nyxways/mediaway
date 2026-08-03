@@ -22,12 +22,12 @@ Facades (`mediaway-encoder`, `decoder`, `device`) list platform-backend crates i
 | Crate | Roadmap |
 |-------|---------|
 | `mediaway-common` | [`crates/mediaway-common/docs/roadmap.md`](../crates/mediaway-common/docs/roadmap.md) |
-| `mediaway-common-ffi` (shared internal helper, rlib-only, no C ABI) | [`crates/mediaway-common-ffi/docs/roadmap.md`](../crates/mediaway-common-ffi/docs/roadmap.md) |
+| `mediaway-ffi` (shared internal helper, rlib-only, no C ABI) | [`crates/mediaway-ffi/docs/roadmap.md`](../crates/mediaway-ffi/docs/roadmap.md) |
 | `iso-cenc` (unprefixed ClearKey CENC) | [`crates/iso-cenc/docs/roadmap.md`](../crates/iso-cenc/docs/roadmap.md) |
 | `mediaway-container` (facade) | [`crates/mediaway-container/docs/roadmap.md`](../crates/mediaway-container/docs/roadmap.md) |
-| `mediaway-container-ffi` (C ABI, first `*-ffi` crate) | [`crates/mediaway-container-ffi/docs/roadmap.md`](../crates/mediaway-container-ffi/docs/roadmap.md) |
+| `mediaway-ffi` (C ABI, first `*-ffi` crate) | [`crates/mediaway-ffi/docs/roadmap.md`](../crates/mediaway-ffi/docs/roadmap.md) |
 | `mediaway-pipeline` (facade-of-facades) | [`crates/mediaway-pipeline/docs/roadmap.md`](../crates/mediaway-pipeline/docs/roadmap.md) |
-| `mediaway-pipeline-ffi` (C ABI, second `*-ffi` crate) | [`crates/mediaway-pipeline-ffi/docs/roadmap.md`](../crates/mediaway-pipeline-ffi/docs/roadmap.md) |
+| `mediaway-ffi` (C ABI, second `*-ffi` crate) | [`crates/mediaway-ffi/docs/roadmap.md`](../crates/mediaway-ffi/docs/roadmap.md) |
 | `iso-bmff` (unprefixed ISOBMFF/MP4) | [`crates/iso-bmff/docs/roadmap.md`](../crates/iso-bmff/docs/roadmap.md) |
 | `ebml-webm` (unprefixed EBML/WebM+Matroska demux) | [`crates/ebml-webm/docs/roadmap.md`](../crates/ebml-webm/docs/roadmap.md) |
 | `riff-wave` (unprefixed WAV/PCM) | [`crates/riff-wave/docs/roadmap.md`](../crates/riff-wave/docs/roadmap.md) |
@@ -52,7 +52,7 @@ Facades (`mediaway-encoder`, `decoder`, `device`) list platform-backend crates i
 | `mediaway-device` (facade) | [`crates/mediaway-device/docs/roadmap.md`](../crates/mediaway-device/docs/roadmap.md) |
 | `mediaway-device-windows` | [`crates/mediaway-device-windows/docs/roadmap.md`](../crates/mediaway-device-windows/docs/roadmap.md) |
 | `mediaway-device-linux` | [`crates/mediaway-device-linux/docs/roadmap.md`](../crates/mediaway-device-linux/docs/roadmap.md) |
-| `mediaway-device-ffi` (C ABI, third `*-ffi` crate) | [`crates/mediaway-device-ffi/docs/roadmap.md`](../crates/mediaway-device-ffi/docs/roadmap.md) |
+| `mediaway-ffi` (C ABI, third `*-ffi` crate) | [`crates/mediaway-ffi/docs/roadmap.md`](../crates/mediaway-ffi/docs/roadmap.md) |
 | `iso-bmff-wasm` | [`crates/iso-bmff-wasm/README.md`](../crates/iso-bmff-wasm/README.md) |
 | `mediaway-encoder-web` | [`crates/mediaway-encoder-web/README.md`](../crates/mediaway-encoder-web/README.md) |
 | `mediaway-device-web` | [`crates/mediaway-device-web/README.md`](../crates/mediaway-device-web/README.md) |
@@ -69,7 +69,7 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
 
 ### 1. High-Level Pipeline & FFI Bindings
 - [ ] **Multi-track `EncodeSession`**: Extend `EncodeSession` in `mediaway-pipeline` to support multi-track (video + audio) muxing natively (currently single-track video; two-track is test-level).
-- [ ] **Per-capability C-FFI crates**: Complete implementation of `mediaway-pipeline-ffi`, `mediaway-container-ffi`, and `mediaway-device-ffi`.
+- [ ] **Per-capability C-FFI crates**: Complete implementation of `mediaway-ffi`, `mediaway-ffi`, and `mediaway-ffi`.
 - [ ] **Game Engine & Seamless DX Wrappers**: First-class Zero-Copy wrappers for `wgpu`, `Three.js` (WebGPU), `Unity`, and `Godot` (passing native `GpuBufferHandle` / D3D11 / D3D12 / Vulkan pointers without CPU readback).
 - [ ] **Multi-language binding wrappers**: Idiomatic bindings for C++, C# (.NET / Unity), Python, Go, Swift, Kotlin, and Node.js.
 
@@ -88,7 +88,7 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
 ### 4. Device Capture & Audio DSP
 - [ ] **Windows Camera Public Integration**: Wire `IMFSourceReader` camera capture into `mediaway-device` facade traits.
 - [ ] **Single-Shot Zero-Copy Capture (`capture_once`)**: Implement `capture_video_once` blocking zero-copy frame retrieval (ADR-0006).
-- [ ] **Windows Hotplug Fix**: Resolve crash during `close()` in `mediaway-device-ffi` hotplug monitoring.
+- [ ] **Windows Hotplug Fix**: Resolve crash during `close()` in `mediaway-ffi` hotplug monitoring.
 - [ ] **Linux Capture Hardware Verification**: Test `xdg-desktop-portal` ScreenCast, PipeWire mic, and V4L2 camera capture on real Linux installations.
 
 ## Workspace bootstrap

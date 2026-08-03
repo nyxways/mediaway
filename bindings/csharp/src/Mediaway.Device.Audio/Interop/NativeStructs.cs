@@ -3,7 +3,7 @@ using Mediaway.Common;
 
 namespace Mediaway.Device.Audio.Interop;
 
-// Field order/sizes mirror crates/mediaway-device-ffi/src/audio.rs + types.rs exactly
+// Field order/sizes mirror crates/mediaway-ffi/src/audio.rs + types.rs exactly
 // (LayoutKind.Sequential preserves declaration order); native `bool` (1 byte) is a `byte`
 // field here, not C# `bool` (4 bytes), so every struct stays fully blittable.
 

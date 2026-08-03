@@ -1,0 +1,80 @@
+[package]
+name = "mediaway-ffi"
+description = "Single C ABI facade over Mediaway container/device/pipeline — merged from the four mediaway-*-ffi crates per ADR-0021"
+version.workspace = true
+publish = false # no header/ABI has shipped yet — see docs/roadmap.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+crate-type = ["rlib", "cdylib", "staticlib"]
+
+[dependencies]
+mediaway-common = { workspace = true }
+
+# Pinned explicitly rather than inheriting mediaway-container's own `default = ["full"]` —
+# `audio`+`video` are both required for H.264/AAC sample-entry support (verified in
+# iso-bmff/Cargo.toml). See adr/0001-mp4-mux-demux-c-abi.md §9 for the documented gap this
+# does not fix (mediaway-container's other format cores are not feature-gated yet).
+# Not `workspace = true`: Cargo forbids a member from setting `default-features = false`
+# on an inherited dependency whose workspace entry doesn't already say so, so this crate's
+# explicit feature pin is spelled out directly (same path/version as the workspace entry).
+mediaway-container = { path = "../mediaway-container", version = "0.1.0", default-features = false, features = [
+    "mux",
+    "demux",
+    "audio",
+    "video",
+] }
+
+mediaway-device = { workspace = true }
+mediaway-device-camera = { workspace = true, optional = true }
+mediaway-device-desktop = { workspace = true, optional = true }
+mediaway-device-audio = { workspace = true, optional = true }
+
+# Needed to match `mp4::Error` variants when converting `PipelineError::Mux` to a
+# status code (status.rs) — `mediaway-pipeline` already pulls this in transitively
+# with the same default ("full") features, so this adds no new feature surface.
+mediaway-encoder = { workspace = true }
+mediaway-encoder-windows = { workspace = true, features = ["audio"] }
+mediaway-pipeline = { workspace = true }
+
+
+[dev-dependencies]
+mediaway-device = { workspace = true }
+mediaway-device-desktop = { workspace = true }
+
+
+[target.'cfg(windows)'.dependencies]
+mediaway-device-windows-camera = { workspace = true, optional = true }
+mediaway-device-windows-desktop = { workspace = true, optional = true }
+mediaway-device-windows-audio = { workspace = true, optional = true }
+mediaway-device-windows = { workspace = true, optional = true }
+
+
+[target.'cfg(windows)'.dev-dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+
+[target.'cfg(target_os = "linux")'.dependencies]
+mediaway-device-linux = { workspace = true }
+
+
+[features]
+default = ["mux", "demux", "camera", "desktop", "audio", "hotplug"]
+mux = []
+demux = []
+camera = ["dep:mediaway-device-camera", "dep:mediaway-device-windows-camera"]
+desktop = ["dep:mediaway-device-desktop", "dep:mediaway-device-windows-desktop"]
+audio = ["dep:mediaway-device-audio", "dep:mediaway-device-windows-audio"]
+hotplug = ["dep:mediaway-device-windows"]
+
+[lints]
+workspace = true

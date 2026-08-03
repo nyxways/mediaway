@@ -4,7 +4,7 @@
  * STATUS: NOT AVAILABLE FROM C — this file demonstrates the REAL gap, like
  * pipeline/screen_record.c but capture-only. Screen capture needs a live GPU
  * device handle (ID3D11Device*) with no CPU fallback
- * (crates/mediaway-device-ffi/adr/0003-gpu-handle-c-abi.md); a C caller
+ * (crates/mediaway-ffi/adr/0003-gpu-handle-c-abi.md); a C caller
  * cannot construct or own one, so:
  *   - Screen config with the only C-constructible gpu_device (NONE)
  *     -> MEDIAWAY_DEVICE_STATUS_INVALID_INPUT (a NONE handle is rejected,

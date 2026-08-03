@@ -2,7 +2,7 @@
 then demux the result and count what comes back.
 
 ✅ REAL — the container mux/demux capability is fully implemented in the
-native C ABI (`mediaway_container_ffi`); this example runs against it. Only
+native C ABI (`mediaway_ffi`); this example runs against it. Only
 the packets themselves are synthetic.
 
 The muxer is sans-io: it never touches the filesystem. The caller owns byte

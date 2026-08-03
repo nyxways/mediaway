@@ -22,7 +22,7 @@ bindings were then implemented to satisfy those examples. Examples mirror the Ru
 ## Capability truth (as of 2026-08)
 
 - mux/demux fMP4, auto video encode → fMP4, camera + mic capture: **real** through the C ABI.
-- **Audio encode: real** (ABI v2, `mediaway-pipeline-ffi/adr/0003-auto-audio-encode-c-abi.md`):
+- **Audio encode: real** (ABI v2, `mediaway-ffi/adr/0003-auto-audio-encode-c-abi.md`):
   `mediaway_audio_encoder_open` is single-step (the session IS the encoder — no intermediate
   handle, no consumption trap); `push_pcm`/`poll_packet` stream AAC; `stream_info` exposes the
   AudioSpecificConfig (materialized after the first pushed frame — the muxer track needs it).

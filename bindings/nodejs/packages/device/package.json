@@ -1,7 +1,7 @@
 {
   "name": "@mediaway/device",
   "version": "0.1.0",
-  "description": "Mediaway camera/mic/screen capture over the C ABI (mediaway-device-ffi)",
+  "description": "Mediaway camera/mic/screen capture over the C ABI (mediaway-ffi)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

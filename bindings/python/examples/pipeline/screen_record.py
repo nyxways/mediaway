@@ -82,7 +82,7 @@ def main() -> None:
 
             # Audio note: the screen path is blocked before audio matters —
             # Screen capture needs a live GPU device handle from C
-            # (mediaway-device-ffi/adr/0001, § Deferred), so the mic PCM is
+            # (mediaway-ffi/adr/0001, § Deferred), so the mic PCM is
             # drained, not muxed.
             mp4 = session.finish()  # terminal: consumes the session
 

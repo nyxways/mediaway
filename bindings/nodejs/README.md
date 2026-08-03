@@ -30,7 +30,7 @@ detail in [`../c/README.md`](../c/README.md)):
 
 ## The real ABI beneath (what the wrapper wraps)
 
-DLLs: `mediaway_container_ffi`, `mediaway_pipeline_ffi`, `mediaway_device_ffi` (built
+DLLs: `mediaway_ffi`, `mediaway_ffi`, `mediaway_ffi` (built
 for `x86_64-pc-windows-gnu`; see the C README's build recipe). Headers
 `crates/mediaway-*-ffi/include/mediaway/{container,pipeline,device}.h` are the
 authoritative layout.

@@ -43,6 +43,6 @@ public class MediawayPipelineException : MediawayException
         MediawayPipelineStatus.MuxInvalidData => "Malformed container data.",
         MediawayPipelineStatus.InternalPanic =>
             "The native call caught a Rust panic; this handle is now poisoned.",
-        _ => $"Unknown mediaway-pipeline-ffi status ({(int)status}).",
+        _ => $"Unknown mediaway-ffi status ({(int)status}).",
     };
 }

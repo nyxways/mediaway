@@ -2,7 +2,7 @@
 frames through it, and write the resulting fragmented MP4 to out.mp4.
 
 ✅ REAL — the auto video encode -> fMP4 pipeline is implemented in the native
-C ABI (`mediaway_pipeline_ffi`); this example runs against it. Only the frames
+C ABI (`mediaway_ffi`); this example runs against it. Only the frames
 themselves are synthetic (flat grey, NV12).
 
 The encoder is chosen for us by AutoVideoEncoder.pick(). EncodeSession takes

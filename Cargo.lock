@@ -1385,13 +1385,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mediaway-common-ffi"
-version = "0.1.0"
-dependencies = [
- "mediaway-common",
-]
-
-[[package]]
 name = "mediaway-container"
 version = "0.1.0"
 dependencies = [
@@ -1405,15 +1398,6 @@ dependencies = [
  "ogg",
  "riff-wave",
  "thiserror 2.0.19",
-]
-
-[[package]]
-name = "mediaway-container-ffi"
-version = "0.1.0"
-dependencies = [
- "mediaway-common",
- "mediaway-common-ffi",
- "mediaway-container",
 ]
 
 [[package]]
@@ -1504,23 +1488,6 @@ version = "0.1.0"
 dependencies = [
  "mediaway-common",
  "mediaway-device",
-]
-
-[[package]]
-name = "mediaway-device-ffi"
-version = "0.1.0"
-dependencies = [
- "mediaway-common",
- "mediaway-common-ffi",
- "mediaway-device",
- "mediaway-device-audio",
- "mediaway-device-camera",
- "mediaway-device-desktop",
- "mediaway-device-linux",
- "mediaway-device-windows",
- "mediaway-device-windows-audio",
- "mediaway-device-windows-camera",
- "mediaway-device-windows-desktop",
 ]
 
 [[package]]
@@ -1688,6 +1655,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "mediaway-ffi"
+version = "0.1.0"
+dependencies = [
+ "mediaway-common",
+ "mediaway-container",
+ "mediaway-device",
+ "mediaway-device-audio",
+ "mediaway-device-camera",
+ "mediaway-device-desktop",
+ "mediaway-device-linux",
+ "mediaway-device-windows",
+ "mediaway-device-windows-audio",
+ "mediaway-device-windows-camera",
+ "mediaway-device-windows-desktop",
+ "mediaway-encoder",
+ "mediaway-encoder-windows",
+ "mediaway-pipeline",
+ "windows 0.62.2",
+]
+
+[[package]]
 name = "mediaway-pipeline"
 version = "0.1.0"
 dependencies = [
@@ -1710,21 +1698,6 @@ dependencies = [
  "mediaway-test-media",
  "smallvec",
  "thiserror 2.0.19",
- "windows 0.62.2",
-]
-
-[[package]]
-name = "mediaway-pipeline-ffi"
-version = "0.1.0"
-dependencies = [
- "mediaway-common",
- "mediaway-common-ffi",
- "mediaway-container",
- "mediaway-device",
- "mediaway-device-desktop",
- "mediaway-encoder",
- "mediaway-encoder-windows",
- "mediaway-pipeline",
  "windows 0.62.2",
 ]
 

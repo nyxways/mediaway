@@ -67,8 +67,8 @@ default method, `capture_video_once` facade function
 (`crates/mediaway-device/src/video.rs`, `video_tests.rs`). Window/Camera get the same
 shape via the default method but remain unverified, per Scope above.
 
-**Correction found while exposing this via `mediaway-device-ffi`
-([`adr/0003-gpu-handle-c-abi.md`](../../../../crates/mediaway-device-ffi/adr/0003-gpu-handle-c-abi.md)):**
+**Correction found while exposing this via `mediaway-ffi`
+([`adr/0003-gpu-handle-c-abi.md`](../../../../crates/mediaway-ffi/adr/0003-gpu-handle-c-abi.md)):**
 `capture_video_once` closed the session *before* returning the captured frame — for a
 GPU-backed frame (Screen) this could dangle the just-captured handle once a solo/last
 shared session's `close()` tore down the texture. Fixed: `capture_video_once` now
@@ -76,7 +76,7 @@ returns `Err(CaptureError::Unsupported)` instead of a `VideoFrameStorage::Gpu` f
 GPU-backed capture must use an explicitly-managed session (`poll_frame`/
 `capture_next_frame_blocking`) instead. Hardware-verified against the real DXGI backend
 both ways: `capture_video_once_screen_is_unsupported_for_gpu_storage_or_skip` (this
-crate) confirms the refusal; `mediaway-device-ffi`'s
+crate) confirms the refusal; `mediaway-ffi`'s
 `mediaway_video_capture_poll_frame_blocking` is the C-ABI-facing replacement for
 Screen's single-frame capture.
 

@@ -1,6 +1,6 @@
 /*
  * encode_audio.c — AAC audio encode of 96 synthetic F32 stereo frames → audio-only
- * fragmented MP4 (mediaway-pipeline-ffi ABI v2 + mediaway-container-ffi).
+ * fragmented MP4 (mediaway-ffi ABI v2 + mediaway-ffi).
  *
  * STATUS: REAL (link+run verified). The scenario table in bindings/c/README.md
  * marks encode_audio "✅ link+run verified" — this file calls only the shipped
@@ -20,9 +20,9 @@
  * (adr/0003-auto-audio-encode-c-abi.md).
  *
  * Build (see bindings/c/README.md "Building & verifying on Windows"):
- *   gcc -Icrates/mediaway-pipeline-ffi/include -Icrates/mediaway-container-ffi/include \
+ *   gcc -Icrates/mediaway-ffi/include -Icrates/mediaway-ffi/include \
  *       bindings/c/examples/pipeline/encode_audio.c \
- *       -Ltarget/x86_64-pc-windows-gnu/debug -lmediaway_pipeline_ffi -lmediaway_container_ffi \
+ *       -Ltarget/x86_64-pc-windows-gnu/debug -lmediaway_ffi -lmediaway_ffi \
  *       -o encode_audio.exe
  */
 

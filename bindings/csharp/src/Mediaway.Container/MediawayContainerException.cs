@@ -37,6 +37,6 @@ public sealed class MediawayContainerException : MediawayException
         MediawayContainerStatus.InternalPanic =>
             "The native call caught a Rust panic; this handle is now poisoned.",
         MediawayContainerStatus.HandlePoisoned => "A previous call already poisoned this handle.",
-        _ => $"Unknown mediaway-container-ffi status ({(int)status}).",
+        _ => $"Unknown mediaway-ffi status ({(int)status}).",
     };
 }

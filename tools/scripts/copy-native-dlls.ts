@@ -29,8 +29,8 @@ const target = "x86_64-pc-windows-gnu";
 const cargoTargetDir = join(root, "target");
 process.env.CARGO_TARGET_DIR = cargoTargetDir;
 
-const crates = ["mediaway-container-ffi", "mediaway-pipeline-ffi", "mediaway-device-ffi"];
-const dlls = ["mediaway_container_ffi.dll", "mediaway_pipeline_ffi.dll", "mediaway_device_ffi.dll"];
+const crates = ["mediaway-ffi"];
+const dlls = ["mediaway_ffi.dll"];
 
 // Both npm and PyPI distributions bundle the DLLs next to their loader:
 //   @mediaway/ffi/native/              (node, koffi absolute-path load)
@@ -68,7 +68,7 @@ for (const dll of dlls) {
 
 // Import libs (lib*.dll.a) for C/C++ static linking — staged next to the C/C++
 // DLLs only; the node/python loaders never link.
-for (const name of ["mediaway_container_ffi", "mediaway_pipeline_ffi", "mediaway_device_ffi"]) {
+for (const name of ["mediaway_ffi"]) {
   const src = join(cargoTargetDir, target, profile, `lib${name}.dll.a`);
   if (existsSync(src)) {
     copyFileSync(src, join(nativeDirs[3], `lib${name}.dll.a`));

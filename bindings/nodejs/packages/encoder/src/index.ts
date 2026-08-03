@@ -2,7 +2,7 @@
  * @mediaway/encoder — pipeline capability: auto video encode -> fragmented MP4.
  *
  * Implements the DX contract in bindings/nodejs/README.md over the
- * mediaway-pipeline-ffi C ABI (via @mediaway/ffi). `openAutoEncoder()` picks
+ * mediaway-ffi C ABI (via @mediaway/ffi). `openAutoEncoder()` picks
  * the best available OS/GPU encoder for the config and returns an
  * `EncodeSession` directly; `finish()` is terminal. Video only — there is no
  * audio encoder in the ABI.

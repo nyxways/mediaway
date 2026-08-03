@@ -24,7 +24,7 @@ concurrent sessions on the same output both receive independent frames.
 
 Every COM/D3D11 object this module touches is constructed and used only on
 the driver thread that owns it — never moved across threads — mirroring the
-fix `mediaway-device-ffi` ADR-0002 landed for `WindowsDeviceHotplug: Send`.
+fix `mediaway-ffi` ADR-0002 landed for `WindowsDeviceHotplug: Send`.
 ADR: [0006](../../../crates/mediaway-device-windows/adr/0006-shared-desktop-duplication.md).
 
 ## Single-shot capture (`capture_video_once` / `capture_next_frame_blocking`)

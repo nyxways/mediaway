@@ -15,8 +15,8 @@
 | [linux-window](linux-window.md) | Portal `SourceType::Window` capture (shares screen-capture plumbing, unverified) |
 | [linux-mic](linux-mic.md) | Direct PipeWire microphone capture (no portal, unverified this session) |
 | [capabilities](capabilities.md) | `DeviceKind`/`Support`/`PermissionState` — live capability + OS permission probe, separate from opening a session |
-| [ffi-c-abi](ffi-c-abi.md) | `mediaway-device-ffi` — C ABI over Camera + Screen (GPU handle, ADR-0003) video + Microphone/Loopback/ProcessLoopback audio; Window deferred |
-| [hotplug-ffi](hotplug-ffi.md) | `mediaway-device-ffi` hotplug — callback + poll event delivery (ADR-0002, Accepted; real Windows `open`/`poll_event` wired in and hardware-confirmed; `close()` has an unresolved real-hardware crash, `mediaway-device-windows` follow-up) |
+| [ffi-c-abi](ffi-c-abi.md) | `mediaway-ffi` — C ABI over Camera + Screen (GPU handle, ADR-0003) video + Microphone/Loopback/ProcessLoopback audio; Window deferred |
+| [hotplug-ffi](hotplug-ffi.md) | `mediaway-ffi` hotplug — callback + poll event delivery (ADR-0002, Accepted; real Windows `open`/`poll_event` wired in and hardware-confirmed; `close()` has an unresolved real-hardware crash, `mediaway-device-windows` follow-up) |
 
 Support matrix: root [README § Device](../../../../README.md#device).
 

@@ -1,6 +1,6 @@
 """Container capability: sans-io fragmented-MP4 mux + demux.
 
-Wraps the `mediaway-container-ffi` C ABI (see `_ffi.py` for the raw layer and
+Wraps the `mediaway-ffi` C ABI (see `_ffi.py` for the raw layer and
 `../README.md` for the DX contract). Typestate is two classes: `Muxer` (Open —
 tracks can be registered) and `LiveMuxer` (streaming — packets can be pushed),
 returned by `Muxer.begin()`. The muxer never touches files or sockets: the

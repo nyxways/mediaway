@@ -40,8 +40,8 @@
       sequence step 5). Points straight at the workspace's cargo output so this test
       exercises the real native library, not a mock.
     -->
-    <None Include="..\..\..\..\target\debug\mediaway_device_ffi.dll"
-          Link="mediaway_device_ffi.dll"
+    <None Include="..\..\..\..\target\debug\mediaway_ffi.dll"
+          Link="mediaway_ffi.dll"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

@@ -2,7 +2,7 @@ namespace Mediaway.Device.Camera.Interop;
 
 /// <summary>
 /// Raw P/Invoke declarations, 1:1 with <c>mediaway_camera_capture_*</c> in
-/// <c>crates/mediaway-device-ffi/src/camera.rs</c> (feature <c>"camera"</c> —
+/// <c>crates/mediaway-ffi/src/camera.rs</c> (feature <c>"camera"</c> —
 /// <c>adr/0004-domain-feature-split.md</c>). Never public — every call is wrapped by
 /// <see cref="Device.Camera"/> into a safe, idiomatic surface.
 ///
@@ -13,5 +13,5 @@ namespace Mediaway.Device.Camera.Interop;
 /// </summary>
 internal static unsafe partial class NativeMethods
 {
-    private const string LibraryName = "mediaway_device_ffi";
+    private const string LibraryName = "mediaway_ffi";
 }

@@ -1,7 +1,7 @@
 {
   "name": "@mediaway/encoder",
   "version": "0.1.0",
-  "description": "Mediaway auto video/audio encode to fMP4 over the C ABI (mediaway-pipeline-ffi)",
+  "description": "Mediaway auto video/audio encode to fMP4 over the C ABI (mediaway-ffi)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

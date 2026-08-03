@@ -6,7 +6,7 @@
  * C": Screen capture needs a live GPU device handle (ID3D11Device*) with no
  * CPU fallback (adr/0003-gpu-handle-c-abi.md), and there is no C representation
  * for the caller to construct or own one. Concretely, the real
- * mediaway-device-ffi ABI (post adr/0004-domain-feature-split) behaves like
+ * mediaway-ffi ABI (post adr/0004-domain-feature-split) behaves like
  * this:
  *   - Screen config with the only C-constructible gpu_device
  *     (MEDIAWAY_GPU_DEVICE_NONE) -> MEDIAWAY_DEVICE_STATUS_INVALID_INPUT
@@ -17,8 +17,8 @@
  * other status means the ABI changed — we fail loudly instead of guessing.
  *
  * Build (see bindings/c/README.md "Building & verifying on Windows"):
- *   gcc -Icrates/mediaway-device-ffi/include bindings/c/examples/screen_record.c \
- *       -Ltarget/x86_64-pc-windows-gnu/debug -lmediaway_device_ffi -o screen_record.exe
+ *   gcc -Icrates/mediaway-ffi/include bindings/c/examples/screen_record.c \
+ *       -Ltarget/x86_64-pc-windows-gnu/debug -lmediaway_ffi -o screen_record.exe
  */
 
 #include <mediaway/device.h>
@@ -31,7 +31,7 @@ int main(void) {
     if (mediaway_device_ffi_abi_version() != MEDIAWAY_DEVICE_FFI_ABI_VERSION) {
         fprintf(stderr,
                 "ABI version mismatch: header %d, library %u — rebuild against "
-                "the same mediaway-device-ffi\n",
+                "the same mediaway-ffi\n",
                 MEDIAWAY_DEVICE_FFI_ABI_VERSION,
                 mediaway_device_ffi_abi_version());
         return EXIT_FAILURE;

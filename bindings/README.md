@@ -33,7 +33,7 @@ What each scenario can actually do through the real ABI — a binding README tha
 |---|---|---|---|---|
 | `mux_roundtrip` | mux fMP4 + demux | — | — | ✅ yes |
 | `encode_to_mp4` | — | auto video encode → fMP4 | — | ✅ yes |
-| `encode_audio` | — | auto AAC encode → audio-only fMP4 | — | ✅ yes (ABI v2, `adr/0003` in mediaway-pipeline-ffi) |
+| `encode_audio` | — | auto AAC encode → audio-only fMP4 | — | ✅ yes (ABI v2, `adr/0003` in mediaway-ffi) |
 | `camera_record` | — | video + audio encode | camera + mic capture | ✅ **two-track MP4** (H.264 + AAC, remuxed; hardware-verified). Video-only fallback without mic/audio backend |
 | `screen_record` | — | video encode | screen capture | 🚧 **not from C** — Screen needs a live GPU device handle (`ID3D11Device*`) with no CPU fallback and no C representation yet: Screen + `NONE` gpu → `INVALID_INPUT`, Window → `UNSUPPORTED` (verified) |
 

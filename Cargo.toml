@@ -13,11 +13,10 @@ members = [
     "crates/mpeg-ts",
     "crates/rtmp",
     "crates/mediaway-container",
-    "crates/mediaway-container-ffi",
-    "crates/mediaway-common-ffi",
+    "crates/mediaway-ffi",
     "crates/mediaway-pipeline",
-    "crates/mediaway-pipeline-ffi",
-    "crates/mediaway-device-ffi",
+
+
     "crates/mediaway-encoder",
     "crates/mediaway-encoder-nvenc",
     "crates/mediaway-encoder-windows",
@@ -78,10 +77,10 @@ flv = { path = "crates/flv", version = "0.1.0" }
 mpeg-ts = { path = "crates/mpeg-ts", version = "0.1.0" }
 rtmp = { path = "crates/rtmp", version = "0.1.0" }
 mediaway-container = { path = "crates/mediaway-container", version = "0.1.0" }
-mediaway-container-ffi = { path = "crates/mediaway-container-ffi", version = "0.1.0" }
-mediaway-common-ffi = { path = "crates/mediaway-common-ffi", version = "0.1.0" }
+mediaway-ffi = { path = "crates/mediaway-ffi", version = "0.1.0" }
+
 mediaway-pipeline = { path = "crates/mediaway-pipeline", version = "0.1.0" }
-mediaway-pipeline-ffi = { path = "crates/mediaway-pipeline-ffi", version = "0.1.0" }
+
 mediaway-encoder = { path = "crates/mediaway-encoder", version = "0.1.0" }
 mediaway-encoder-nvenc = { path = "crates/mediaway-encoder-nvenc", version = "0.1.0" }
 mediaway-encoder-windows = { path = "crates/mediaway-encoder-windows", version = "0.1.0" }
@@ -102,7 +101,7 @@ mediaway-device-windows-camera = { path = "crates/mediaway-device-windows-camera
 mediaway-device-windows-desktop = { path = "crates/mediaway-device-windows-desktop", version = "0.1.0" }
 mediaway-device-windows-audio = { path = "crates/mediaway-device-windows-audio", version = "0.1.0" }
 mediaway-device-linux = { path = "crates/mediaway-device-linux", version = "0.1.0" }
-mediaway-device-ffi = { path = "crates/mediaway-device-ffi", version = "0.1.0" }
+
 iso-bmff-wasm = { path = "crates/iso-bmff-wasm", version = "0.1.0" }
 mediaway-encoder-web = { path = "crates/mediaway-encoder-web", version = "0.1.0" }
 mediaway-decoder-web = { path = "crates/mediaway-decoder-web", version = "0.1.0" }

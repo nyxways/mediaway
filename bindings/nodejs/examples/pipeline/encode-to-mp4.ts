@@ -3,7 +3,7 @@
  * Mirrors: examples/pipeline/encode_to_mp4.rs
  *
  * Status: ✅ real ABI under it.
- * The C ABI's pipeline capability (auto video encode → fMP4, mediaway_pipeline_ffi)
+ * The C ABI's pipeline capability (auto video encode → fMP4, mediaway_ffi)
  * is implemented: one call picks the best available OS/GPU encoder for the config and
  * wires it into an internal MP4 muxer. Video only — no audio encoder in the ABI.
  *

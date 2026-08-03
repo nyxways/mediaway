@@ -1,6 +1,6 @@
 """Pipeline capability: auto video/audio encode -> fragmented MP4.
 
-Wraps the `mediaway-pipeline-ffi` C ABI (see `_ffi.py` for the raw layer and
+Wraps the `mediaway-ffi` C ABI (see `_ffi.py` for the raw layer and
 `../README.md` for the DX contract). `EncodeSession(encoder)` takes ownership
 of the encoder object; `finish()` is terminal (it consumes the session — no
 `close()` after it). The audio encoder (ABI v2, adr/0003) is single-step:

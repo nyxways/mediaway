@@ -1,7 +1,7 @@
 namespace Mediaway.Device;
 
 /// <summary>
-/// C ABI status code returned by fallible <c>mediaway-device-ffi</c> functions — mirrors
+/// C ABI status code returned by fallible <c>mediaway-ffi</c> functions — mirrors
 /// <c>mediaway_device_status_t</c>. A distinct, independently-numbered enum from
 /// <see cref="Mediaway.Container.MediawayContainerStatus"/>/<see cref="Mediaway.Pipeline.MediawayPipelineStatus"/>.
 /// </summary>

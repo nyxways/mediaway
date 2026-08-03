@@ -9,7 +9,7 @@ using Xunit.Abstractions;
 namespace MediawayDeviceIntegrationTests;
 
 /// <summary>
-/// Exercises the real native <c>mediaway_device_ffi</c> library end-to-end — mirrors
+/// Exercises the real native <c>mediaway_ffi</c> library end-to-end — mirrors
 /// <c>bindings/csharp/examples/CameraRecord.cs</c>'s capture-side scenario (open the
 /// default camera + default microphone, read real frames) to verify the P/Invoke layer
 /// against the actual ABI, not just that it compiles. This machine has a real, previously

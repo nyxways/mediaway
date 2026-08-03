@@ -4,7 +4,7 @@
  *
  * Status: 🚧 ASPIRATIONAL — the native C ABI returns UNSUPPORTED for screen capture
  * today. Screen needs a live GPU device handle (ID3D11Device*) with no CPU fallback,
- * and its C representation is deferred (crates/mediaway-device-ffi/adr/0001, §
+ * and its C representation is deferred (crates/mediaway-ffi/adr/0001, §
  * Deferred) — an honest gap, not a bug. The flow below is the ideal DX the
  * @mediaway/device + @mediaway/encoder packages target; run against the current ABI,
  * openScreenCapture() throws CaptureUnavailableError with status UNSUPPORTED and the
@@ -97,7 +97,7 @@ async function main(): Promise<void> {
         recorded++;
 
         // Audio note: the screen path is blocked before audio matters — Screen
-        // capture needs a live GPU device handle from C (mediaway-device-ffi
+        // capture needs a live GPU device handle from C (mediaway-ffi
         // adr/0001, § Deferred), so the mic PCM is drained, not muxed.
         while (mic !== undefined) {
           const audio = mic.pollFrame();

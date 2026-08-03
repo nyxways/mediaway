@@ -7,9 +7,9 @@
 Mediaway exposes a hand-written C ABI (`*-ffi` crates) so non-Rust languages can call
 the stack. For C, **the ABI itself is the binding** — there is no wrapper layer. See
 [`docs/spec/c-ffi.md`](../../docs/spec/c-ffi.md) (ADR-0004) and
-[`crates/mediaway-container-ffi/`](../../crates/mediaway-container-ffi/),
-[`crates/mediaway-pipeline-ffi/`](../../crates/mediaway-pipeline-ffi/),
-[`crates/mediaway-device-ffi/`](../../crates/mediaway-device-ffi/) for the sources.
+[`crates/mediaway-ffi/`](../../crates/mediaway-ffi/),
+[`crates/mediaway-ffi/`](../../crates/mediaway-ffi/),
+[`crates/mediaway-ffi/`](../../crates/mediaway-ffi/) for the sources.
 
 ## What Mediaway is (the capabilities)
 
@@ -110,10 +110,10 @@ file must state what is real vs. aspirational.
 ## Building & verifying on Windows
 
 ```
-cargo build -p mediaway-container-ffi -p mediaway-pipeline-ffi -p mediaway-device-ffi \
+cargo build -p mediaway-ffi -p mediaway-ffi -p mediaway-ffi \
     --target x86_64-pc-windows-gnu
-gcc -Icrates/mediaway-container-ffi/include bindings/c/examples/container/mux_roundtrip.c \
-    -Ltarget/x86_64-pc-windows-gnu/debug -lmediaway_container_ffi -o mux_roundtrip.exe
+gcc -Icrates/mediaway-ffi/include bindings/c/examples/container/mux_roundtrip.c \
+    -Ltarget/x86_64-pc-windows-gnu/debug -lmediaway_ffi -o mux_roundtrip.exe
 ```
 
 The DLLs must sit next to the `.exe` when running (MinGW cannot link MSVC output).

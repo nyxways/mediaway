@@ -1,7 +1,7 @@
-# `mediaway-device-ffi` hotplug — callback event delivery over the C ABI
+# `mediaway-ffi` hotplug — callback event delivery over the C ABI
 
 **Status: implemented, real Windows backend wired in, `close()` crash root-caused and
-fixed.** [`adr/0002-callback-event-delivery.md`](../../../../crates/mediaway-device-ffi/adr/0002-callback-event-delivery.md)
+fixed.** [`adr/0002-callback-event-delivery.md`](../../../../crates/mediaway-ffi/adr/0002-callback-event-delivery.md)
 (Accepted, plus a "lazy, thread-owned construction" revision and three implementation
 addenda). `HotplugHandle` and the six `mediaway_device_hotplug_*` symbols exist
 (`src/hotplug.rs`), default-on `hotplug` feature, header addition. `open` ->
@@ -13,11 +13,11 @@ addenda). `HotplugHandle` and the six `mediaway_device_hotplug_*` symbols exist
 Ship **both** poll and callback registration on one `mediaway_device_hotplug_t`
 handle, **mutually exclusive per handle** (switching modes means unregister
 then re-register). `DeviceHotplug` at the Rust level stays sync-poll — the
-push mechanism lives entirely inside `mediaway-device-ffi`.
+push mechanism lives entirely inside `mediaway-ffi`.
 
 ## The callback is not the real OS thread
 
-The C callback is invoked from a **separate, `mediaway-device-ffi`-owned
+The C callback is invoked from a **separate, `mediaway-ffi`-owned
 bridging thread** (`hotplug.rs::bridging_loop`) that polls `poll_event()`
 every 50ms (`HOTPLUG_CALLBACK_POLL_INTERVAL`) and invokes the caller's
 function pointer per drained event — push from the caller's point of view,

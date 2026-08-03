@@ -51,9 +51,9 @@ function load(name: string) {
   return koffi.load(findLibrary(name));
 }
 
-export const containerLib = load("mediaway_container_ffi.dll");
-export const pipelineLib = load("mediaway_pipeline_ffi.dll");
-export const deviceLib = load("mediaway_device_ffi.dll");
+export const containerLib = load("mediaway_ffi.dll");
+export const pipelineLib = load("mediaway_ffi.dll");
+export const deviceLib = load("mediaway_ffi.dll");
 
 // ── Structs (layouts mirror the headers exactly) ───────────────────────────────
 

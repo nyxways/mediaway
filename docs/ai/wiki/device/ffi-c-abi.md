@@ -1,10 +1,10 @@
-# mediaway-device-ffi — Camera + Screen video, microphone audio C ABI
+# mediaway-ffi — Camera + Screen video, microphone audio C ABI
 
-Third `mediaway-*-ffi` crate in the workspace, after `mediaway-container-ffi` and
-`mediaway-pipeline-ffi`. Wraps `mediaway_device::{VideoCapture, AudioCapture}` over a
+Third `mediaway-*-ffi` crate in the workspace, after `mediaway-ffi` and
+`mediaway-ffi`. Wraps `mediaway_device::{VideoCapture, AudioCapture}` over a
 hand-written C ABI. Full design:
-[`crates/mediaway-device-ffi/adr/0001-capture-c-abi.md`](../../../../crates/mediaway-device-ffi/adr/0001-capture-c-abi.md),
-GPU handles: [`adr/0003-gpu-handle-c-abi.md`](../../../../crates/mediaway-device-ffi/adr/0003-gpu-handle-c-abi.md).
+[`crates/mediaway-ffi/adr/0001-capture-c-abi.md`](../../../../crates/mediaway-ffi/adr/0001-capture-c-abi.md),
+GPU handles: [`adr/0003-gpu-handle-c-abi.md`](../../../../crates/mediaway-ffi/adr/0003-gpu-handle-c-abi.md).
 
 ## Scope
 
@@ -32,9 +32,9 @@ just-captured GPU handle — a real bug found and fixed in the wrapped
 
 - Opaque handles: `VideoCaptureHandle { poisoned: bool, inner: Box<dyn VideoCapture> }`,
   `AudioCaptureHandle { poisoned: bool, inner: Box<dyn AudioCapture> }` — trait objects
-  (not a closed backend enum). Both need `poisoned` (unlike `mediaway-pipeline-ffi`'s
+  (not a closed backend enum). Both need `poisoned` (unlike `mediaway-ffi`'s
   `AutoEncoderHandle`): `poll_frame`/`release_frame` are repeated-call APIs, same shape
-  as `mediaway-container-ffi`'s `MuxerHandle`/`DemuxerHandle`.
+  as `mediaway-ffi`'s `MuxerHandle`/`DemuxerHandle`.
 - `MediawayDeviceStatus` (`#[repr(C)]`, 13 values, `Ok = 0`): fresh, distinctly-named
   from `MediawayStatus`/`MediawayPipelineStatus` — see the ADR §3. `CallbackAlreadyRegistered`/
   `CallbackModeActive` were added by `adr/0002-callback-event-delivery.md` §7.
@@ -46,16 +46,16 @@ just-captured GPU handle — a real bug found and fixed in the wrapped
 
 ## Type reuse vs. new types
 
-`mediaway_rational_t` re-exports `mediaway-common-ffi::types::Rational`;
-`mediaway_pixel_format_t` stays copy-pasted from `mediaway-pipeline-ffi` (out of
+`mediaway_rational_t` re-exports `mediaway-ffi::types::Rational`;
+`mediaway_pixel_format_t` stays copy-pasted from `mediaway-ffi` (out of
 ADR-0015's scope). `mediaway_gpu_device_handle_t`/`mediaway_gpu_buffer_handle_t` are
-`mediaway-common-ffi`'s **second** shared type family (`adr/0003` §1) — the stated
-future second consumer is now real, [`mediaway-pipeline-ffi/adr/0002`](../../../../crates/mediaway-pipeline-ffi/adr/0002-gpu-frame-input-c-abi.md),
+`mediaway-ffi`'s **second** shared type family (`adr/0003` §1) — the stated
+future second consumer is now real, [`mediaway-ffi/adr/0002`](../../../../crates/mediaway-ffi/adr/0002-gpu-frame-input-c-abi.md),
 adding the shared type's first **reverse** (C→Rust) `GpuBufferHandle::to_common()` (this
 crate only ever produces `GpuBufferHandle` as poll output).
 `mediaway_device_video_frame_t`/`_audio_frame_t` stay **new, crate-scoped** names, not
-reused from `mediaway-pipeline-ffi`'s `mediaway_video_frame_t` (borrowed input there vs.
-owned output here — same collision class `mediaway-container-ffi/adr/0001` §4c fixed
+reused from `mediaway-ffi`'s `mediaway_video_frame_t` (borrowed input there vs.
+owned output here — same collision class `mediaway-ffi/adr/0001` §4c fixed
 for packets).
 
 ## Panic safety, ownership, header
@@ -83,12 +83,12 @@ Hotplug (`DeviceHotplug`) C ABI is implemented (ADR-0002) but blocked on
 
 ## Building the C examples on Windows
 
-Same GNU-target route as `mediaway-container-ffi`: `gcc`/MinGW can't link the default
+Same GNU-target route as `mediaway-ffi`: `gcc`/MinGW can't link the default
 MSVC output, so build for `x86_64-pc-windows-gnu` instead:
 
 ```
-cargo build -p mediaway-device-ffi --target x86_64-pc-windows-gnu
-gcc -Icrates/mediaway-device-ffi/include bindings/c/examples/camera_record.c \
+cargo build -p mediaway-ffi --target x86_64-pc-windows-gnu
+gcc -Icrates/mediaway-ffi/include bindings/c/examples/camera_record.c \
     -Ltarget/x86_64-pc-windows-gnu/debug -lmediaway_device_ffi -lmediaway_pipeline_ffi \
     -o camera_record.exe
 ```

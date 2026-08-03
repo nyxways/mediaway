@@ -2,7 +2,7 @@ namespace Mediaway.Device.Audio.Interop;
 
 /// <summary>
 /// Raw P/Invoke declarations, 1:1 with <c>mediaway_audio_capture_*</c> in
-/// <c>crates/mediaway-device-ffi/src/audio.rs</c> (feature <c>"audio"</c> —
+/// <c>crates/mediaway-ffi/src/audio.rs</c> (feature <c>"audio"</c> —
 /// <c>adr/0004-domain-feature-split.md</c>). Never public — every call is wrapped by
 /// <see cref="Device.Microphone"/> into a safe, idiomatic surface.
 ///
@@ -13,5 +13,5 @@ namespace Mediaway.Device.Audio.Interop;
 /// </summary>
 internal static unsafe partial class NativeMethods
 {
-    private const string LibraryName = "mediaway_device_ffi";
+    private const string LibraryName = "mediaway_ffi";
 }

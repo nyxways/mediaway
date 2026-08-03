@@ -1,7 +1,7 @@
 {
   "name": "@mediaway/container",
   "version": "0.1.0",
-  "description": "Mediaway fMP4 mux/demux over the C ABI (mediaway-container-ffi)",
+  "description": "Mediaway fMP4 mux/demux over the C ABI (mediaway-ffi)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

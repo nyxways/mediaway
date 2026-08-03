@@ -3,7 +3,7 @@ using Mediaway.Common;
 
 namespace Mediaway.Pipeline.Interop;
 
-// Field order/sizes mirror crates/mediaway-pipeline-ffi/include/mediaway/pipeline.h exactly
+// Field order/sizes mirror crates/mediaway-ffi/include/mediaway/pipeline.h exactly
 // (LayoutKind.Sequential preserves declaration order).
 
 [StructLayout(LayoutKind.Sequential)]

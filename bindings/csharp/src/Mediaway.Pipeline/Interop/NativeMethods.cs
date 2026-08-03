@@ -2,7 +2,7 @@ namespace Mediaway.Pipeline.Interop;
 
 /// <summary>
 /// Raw P/Invoke declarations, 1:1 with
-/// <c>crates/mediaway-pipeline-ffi/include/mediaway/pipeline.h</c>. Never public — every
+/// <c>crates/mediaway-ffi/include/mediaway/pipeline.h</c>. Never public — every
 /// call is wrapped by <see cref="Pipeline.AutoVideoEncoder"/>/<see cref="Pipeline.EncodeSession"/>
 /// into a safe, idiomatic surface.
 ///
@@ -13,5 +13,5 @@ namespace Mediaway.Pipeline.Interop;
 /// </summary>
 internal static unsafe partial class NativeMethods
 {
-    private const string LibraryName = "mediaway_pipeline_ffi";
+    private const string LibraryName = "mediaway_ffi";
 }

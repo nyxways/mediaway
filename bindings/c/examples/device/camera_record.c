@@ -1,7 +1,7 @@
 /*
  * camera_record.c — camera + mic capture → auto H.264 + AAC encode → single
- * two-track fragmented MP4 (mediaway-device-ffi + mediaway-pipeline-ffi ABI v2
- * + mediaway-container-ffi).
+ * two-track fragmented MP4 (mediaway-ffi + mediaway-ffi ABI v2
+ * + mediaway-ffi).
  *
  * STATUS: REAL (link+run verified). The scenario table in bindings/c/README.md
  * marks camera_record "✅ link+run verified" — this file calls only the shipped
@@ -20,10 +20,10 @@
  * outcomes — a missing mic degrades to video-only, never a crash.
  *
  * Build (see bindings/c/README.md "Building & verifying on Windows"):
- *   gcc -Icrates/mediaway-device-ffi/include -Icrates/mediaway-pipeline-ffi/include \
- *       -Icrates/mediaway-container-ffi/include bindings/c/examples/device/camera_record.c \
- *       -Ltarget/x86_64-pc-windows-gnu/debug -lmediaway_device_ffi -lmediaway_pipeline_ffi \
- *       -lmediaway_container_ffi -o camera_record.exe
+ *   gcc -Icrates/mediaway-ffi/include -Icrates/mediaway-ffi/include \
+ *       -Icrates/mediaway-ffi/include bindings/c/examples/device/camera_record.c \
+ *       -Ltarget/x86_64-pc-windows-gnu/debug -lmediaway_ffi -lmediaway_ffi \
+ *       -lmediaway_ffi -o camera_record.exe
  */
 
 #include <mediaway/container.h>

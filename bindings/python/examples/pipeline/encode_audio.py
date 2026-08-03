@@ -2,7 +2,7 @@
 into an audio-only fragmented MP4.
 
 ✅ REAL — the audio encode ABI (v2, adr/0003) is implemented in the native C
-ABI (`mediaway_pipeline_ffi`); this example runs against it. Only the PCM
+ABI (`mediaway_ffi`); this example runs against it. Only the PCM
 itself is synthetic (deterministic sine, no microphone needed).
 
 Flow: AudioEncoder.open() returns the encode session directly (single step —

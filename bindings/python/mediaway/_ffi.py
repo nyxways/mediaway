@@ -96,9 +96,9 @@ class _Library:
         return self._dll
 
 
-container = _Library("mediaway_container_ffi.dll")
-pipeline = _Library("mediaway_pipeline_ffi.dll")
-device = _Library("mediaway_device_ffi.dll")
+container = _Library("mediaway_ffi.dll")
+pipeline = _Library("mediaway_ffi.dll")
+device = _Library("mediaway_ffi.dll")
 
 
 # ── Shared value types (identical layout across the three headers) ──────────

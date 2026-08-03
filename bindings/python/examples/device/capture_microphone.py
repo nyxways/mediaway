@@ -1,7 +1,7 @@
 """Microphone capture quick start — raw PCM.
 
 ✅ REAL — the microphone capture capability is implemented in the native C ABI
-(`mediaway_device_ffi`, `mediaway_audio_capture_*`); this example runs against
+(`mediaway_ffi`, `mediaway_audio_capture_*`); this example runs against
 it. Mirrors `examples/device/capture_microphone.rs`: open the default mic,
 poll ~2 seconds of raw interleaved f32le PCM frames, print the negotiated
 format, close. No encoding — there is no audio encoder in the ABI.

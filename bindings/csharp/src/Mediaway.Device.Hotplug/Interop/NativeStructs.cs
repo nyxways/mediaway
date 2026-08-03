@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 
 namespace Mediaway.Device.Hotplug.Interop;
 
-// Field order/sizes mirror crates/mediaway-device-ffi/src/types.rs (hotplug section)
+// Field order/sizes mirror crates/mediaway-ffi/src/types.rs (hotplug section)
 // exactly (LayoutKind.Sequential preserves declaration order).
 
 [StructLayout(LayoutKind.Sequential)]

@@ -3,7 +3,7 @@
  *
  * STATUS: REAL (link+run verified). The scenario table in bindings/c/README.md
  * marks mux_roundtrip "✅ link+run verified" — this file calls only the shipped
- * mediaway-container-ffi ABI, exactly as <mediaway/container.h> declares it.
+ * mediaway-ffi ABI, exactly as <mediaway/container.h> declares it.
  * Nothing here is aspirational.
  *
  * Flow: register an H.264 video track (id 0, time base 1/30 s) and an AAC
@@ -13,8 +13,8 @@
  * 1:1 (90 video, 90 audio).
  *
  * Build (see bindings/c/README.md "Building & verifying on Windows"):
- *   gcc -Icrates/mediaway-container-ffi/include bindings/c/examples/mux_roundtrip.c \
- *       -Ltarget/x86_64-pc-windows-gnu/debug -lmediaway_container_ffi -o mux_roundtrip.exe
+ *   gcc -Icrates/mediaway-ffi/include bindings/c/examples/mux_roundtrip.c \
+ *       -Ltarget/x86_64-pc-windows-gnu/debug -lmediaway_ffi -o mux_roundtrip.exe
  */
 
 #include <mediaway/container.h>
@@ -52,7 +52,7 @@ int main(void) {
     if (mediaway_container_ffi_abi_version() != MEDIAWAY_CONTAINER_FFI_ABI_VERSION) {
         fprintf(stderr,
                 "ABI version mismatch: header %d, library %u — rebuild against "
-                "the same mediaway-container-ffi\n",
+                "the same mediaway-ffi\n",
                 MEDIAWAY_CONTAINER_FFI_ABI_VERSION,
                 mediaway_container_ffi_abi_version());
         return EXIT_FAILURE;

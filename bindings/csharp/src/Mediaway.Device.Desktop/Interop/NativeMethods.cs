@@ -2,9 +2,9 @@ namespace Mediaway.Device.Desktop.Interop;
 
 /// <summary>
 /// Raw P/Invoke declarations, 1:1 with <c>mediaway_desktop_capture_*</c> (Screen video,
-/// <c>crates/mediaway-device-ffi/src/desktop_video.rs</c>) and
+/// <c>crates/mediaway-ffi/src/desktop_video.rs</c>) and
 /// <c>mediaway_desktop_audio_capture_*</c> (Loopback/ProcessLoopback,
-/// <c>crates/mediaway-device-ffi/src/desktop_audio.rs</c>) — both under the native
+/// <c>crates/mediaway-ffi/src/desktop_audio.rs</c>) — both under the native
 /// crate's <c>"desktop"</c> feature (<c>adr/0004-domain-feature-split.md</c>). Never
 /// public — every call is wrapped by <see cref="Device.DesktopScreenCapture"/>/
 /// <see cref="Device.DesktopAudioCapture"/> into a safe, idiomatic surface.
@@ -16,5 +16,5 @@ namespace Mediaway.Device.Desktop.Interop;
 /// </summary>
 internal static unsafe partial class NativeMethods
 {
-    private const string LibraryName = "mediaway_device_ffi";
+    private const string LibraryName = "mediaway_ffi";
 }

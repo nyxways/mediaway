@@ -3,8 +3,8 @@
 Root [`bindings/`](../../../../bindings/README.md) holds per-language folders
 for the languages planned in [`docs/spec/c-ffi.md`](../../../spec/c-ffi.md)
 (Tier B via C ABI, Tier C browser via WASM). The C ABI itself is real and
-hardware-verified: `mediaway-common-ffi`, `mediaway-container-ffi`,
-`mediaway-pipeline-ffi`, `mediaway-device-ffi`. `bindings/README.md` is the
+hardware-verified: `mediaway-ffi`, `mediaway-ffi`,
+`mediaway-ffi`, `mediaway-ffi`. `bindings/README.md` is the
 hub: per-language status legend, capability truth table, and scenario map.
 
 ## Status per language
@@ -18,7 +18,7 @@ hub: per-language status legend, capability truth table, and scenario map.
   became a second real consumer), `Mediaway.Container` (`Muxer`/
   `MuxerSession`/`Demuxer`), `Mediaway.Pipeline` (`AutoVideoEncoder`/
   `EncodeSession` — `WriteFrame` CPU-only, `WriteGpuFrame` Zero-Copy/GPU-copy
-  via `VideoEncodeConfig.GpuDevice`, mirroring `mediaway-pipeline-ffi`
+  via `VideoEncodeConfig.GpuDevice`, mirroring `mediaway-ffi`
   ADR-0002), and the `Mediaway.Device.*` package family (ADR-0019, mirroring
   Rust FFI ADR-0004): `Mediaway.Device` (shared), `Mediaway.Device.Camera`,
   `Mediaway.Device.Audio` (Microphone/Loopback/ProcessLoopback),

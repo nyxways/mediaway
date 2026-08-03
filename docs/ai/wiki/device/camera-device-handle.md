@@ -36,7 +36,7 @@ flagged as follow-ups against their own crates (not fixed here).
 
 Not yet wired: cross-platform dispatch (`mediaway_pipeline::platform`) has no `Camera`
 entry point — only the direct `mediaway-device-windows::WindowsCameraCapture` API and
-`mediaway-device-ffi`'s own local `#[cfg]` dispatch (see
+`mediaway-ffi`'s own local `#[cfg]` dispatch (see
 [`ffi-c-abi.md`](ffi-c-abi.md)) reach it today.
 
 ## Superseded (2026-07-31)

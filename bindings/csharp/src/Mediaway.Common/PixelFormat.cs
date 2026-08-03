@@ -5,7 +5,7 @@ namespace Mediaway.Common;
 /// deals with raw frames (<c>Mediaway.Pipeline</c>, <c>Mediaway.Device</c>), even though
 /// the Rust C ABI still defines it separately per header
 /// (<c>mediaway_pixel_format_t</c> in both <c>pipeline.h</c> and <c>device.h</c>, not yet
-/// unified into <c>mediaway-common-ffi</c>). Values are numerically identical to both.
+/// unified into <c>mediaway-ffi</c>). Values are numerically identical to both.
 /// </summary>
 public enum PixelFormat
 {

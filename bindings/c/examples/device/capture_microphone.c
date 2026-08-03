@@ -2,7 +2,7 @@
  * capture_microphone.c — microphone capture quick start (raw PCM).
  *
  * ✅ REAL — the microphone capture capability is implemented in the native C
- * ABI (`mediaway-device-ffi`, `mediaway_audio_capture_*`); this example runs
+ * ABI (`mediaway-ffi`, `mediaway_audio_capture_*`); this example runs
  * against it. Mirrors examples/device/capture_microphone.rs.
  *
  * Opens the default microphone, polls ~2 seconds of raw interleaved PCM
@@ -11,8 +11,8 @@
  * No mic on this machine → exit gracefully.
  *
  * Build (see bindings/c/README.md "Building & verifying on Windows"):
- *   gcc -Icrates/mediaway-device-ffi/include bindings/c/examples/device/capture_microphone.c \
- *       -Ltarget/x86_64-pc-windows-gnu/debug -lmediaway_device_ffi -o capture_microphone.exe
+ *   gcc -Icrates/mediaway-ffi/include bindings/c/examples/device/capture_microphone.c \
+ *       -Ltarget/x86_64-pc-windows-gnu/debug -lmediaway_ffi -o capture_microphone.exe
  */
 
 #include <mediaway/device.h>

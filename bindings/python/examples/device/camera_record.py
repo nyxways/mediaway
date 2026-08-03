@@ -3,7 +3,7 @@ AAC, and remux both into one two-track MP4 (out.mp4).
 
 ✅ REAL — camera capture, auto H.264 encode, audio encode (ABI v2, adr/0003)
 and the container remux are all implemented in the native C ABI
-(`mediaway_device_ffi` + `mediaway_pipeline_ffi` + `mediaway_container_ffi`);
+(`mediaway_ffi` + `mediaway_ffi` + `mediaway_ffi`);
 this example runs against them. The old "drained, not muxed" gap is gone.
 
 Flow: camera frames go through the auto video encoder's internal MP4 session

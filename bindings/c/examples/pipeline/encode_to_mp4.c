@@ -3,7 +3,7 @@
  *
  * STATUS: REAL (link+run verified). The scenario table in bindings/c/README.md
  * marks encode_to_mp4 "✅ link+run verified" — this file calls only the shipped
- * mediaway-pipeline-ffi ABI, exactly as <mediaway/pipeline.h> declares it.
+ * mediaway-ffi ABI, exactly as <mediaway/pipeline.h> declares it.
  * Nothing here is aspirational.
  *
  * Flow: build an H.264 640x480 @ 1/30 s config, open the best available
@@ -13,8 +13,8 @@
  * bug.
  *
  * Build (see bindings/c/README.md "Building & verifying on Windows"):
- *   gcc -Icrates/mediaway-pipeline-ffi/include bindings/c/examples/encode_to_mp4.c \
- *       -Ltarget/x86_64-pc-windows-gnu/debug -lmediaway_pipeline_ffi -o encode_to_mp4.exe
+ *   gcc -Icrates/mediaway-ffi/include bindings/c/examples/encode_to_mp4.c \
+ *       -Ltarget/x86_64-pc-windows-gnu/debug -lmediaway_ffi -o encode_to_mp4.exe
  */
 
 #include <mediaway/pipeline.h>
@@ -45,7 +45,7 @@ int main(void) {
     if (mediaway_pipeline_ffi_abi_version() != MEDIAWAY_PIPELINE_FFI_ABI_VERSION) {
         fprintf(stderr,
                 "ABI version mismatch: header %d, library %u — rebuild against "
-                "the same mediaway-pipeline-ffi\n",
+                "the same mediaway-ffi\n",
                 MEDIAWAY_PIPELINE_FFI_ABI_VERSION,
                 mediaway_pipeline_ffi_abi_version());
         return EXIT_FAILURE;

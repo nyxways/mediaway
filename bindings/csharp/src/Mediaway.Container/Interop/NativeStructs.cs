@@ -3,7 +3,7 @@ using Mediaway.Common;
 
 namespace Mediaway.Container.Interop;
 
-// Field order/sizes below mirror crates/mediaway-container-ffi/include/mediaway/container.h
+// Field order/sizes below mirror crates/mediaway-ffi/include/mediaway/container.h
 // exactly (LayoutKind.Sequential preserves declaration order); native `bool` (1 byte, per
 // Rust's `#[repr(C)] bool`) is represented as `byte` here rather than C# `bool` (4 bytes by
 // default) so every struct stays fully blittable — no per-field MarshalAs needed.

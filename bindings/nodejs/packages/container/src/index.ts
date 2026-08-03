@@ -2,7 +2,7 @@
  * @mediaway/container — container capability: sans-io fragmented-MP4 mux + demux.
  *
  * Implements the DX contract in bindings/nodejs/README.md over the
- * mediaway-container-ffi C ABI (via @mediaway/ffi). Typed structs in, typed
+ * mediaway-ffi C ABI (via @mediaway/ffi). Typed structs in, typed
  * structs out; the muxer never touches files — the caller owns byte I/O.
  * `pts`/`duration` are integer ticks of each track's `timeBase`.
  */
@@ -68,7 +68,7 @@ export interface Packet {
   key?: boolean;
 }
 
-/** Raw per-crate ABI status from mediaway-container-ffi (mediaway_status_t). */
+/** Raw per-crate ABI status from mediaway-ffi (mediaway_status_t). */
 export class MediawayError extends Error {
   readonly status: number;
   constructor(status: number, message?: string) {

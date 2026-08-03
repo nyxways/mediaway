@@ -50,6 +50,6 @@ public class MediawayDeviceException : MediawayException
         MediawayDeviceStatus.CallbackModeActive =>
             "PollEvent() was called while a hotplug callback is registered on this handle.",
         MediawayDeviceStatus.Timeout => "The capture deadline elapsed with no frame.",
-        _ => $"Unknown mediaway-device-ffi status ({(int)status}).",
+        _ => $"Unknown mediaway-ffi status ({(int)status}).",
     };
 }

@@ -1,6 +1,6 @@
 """Device capability: camera / screen / microphone capture.
 
-Wraps the `mediaway-device-ffi` C ABI (see `_ffi.py` for the raw layer and
+Wraps the `mediaway-ffi` C ABI (see `_ffi.py` for the raw layer and
 `../README.md` for the DX contract). The ABI is domain-split
 (`adr/0004-domain-feature-split.md`): Camera (`mediaway_camera_capture_*`),
 Desktop/Screen (`mediaway_desktop_capture_*`), Microphone

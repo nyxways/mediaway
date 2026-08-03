@@ -388,6 +388,10 @@ jobs:
         with:
           packages-dir: dist
           attestations: true
+        env:
+          # Skip versions already uploaded (PyPI rejects 409); first publish
+          # of a version happens once per release run.
+          TWINE_SKIP_EXISTING: "true"
 
   crates:
     name: crates.io
@@ -468,6 +472,9 @@ jobs:
     environment: release
     if: ${{ github.event.inputs.dry_run != 'true' }}
     steps:
+      - uses: actions/checkout@v4
+        # gh release needs a git repo to identify the remote + target ref
+
       - uses: actions/download-artifact@v4
         with:
           name: cpack-archives

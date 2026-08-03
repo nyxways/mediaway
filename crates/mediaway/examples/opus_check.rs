@@ -23,6 +23,7 @@
 
 use mediaway_common::{AudioFrame, CodecKind, Packet, Rational, SampleFormat, StreamInfo};
 use mediaway_container::ogg;
+#[cfg(windows)]
 use mediaway_decoder::windows::{OpusDecoderConfig, WmfOpusDecoder};
 use mediaway_encoder::windows::WindowsAudioEncoder;
 use mediaway_encoder::{AudioEncoder, AudioEncoderConfig};
@@ -115,6 +116,7 @@ fn encode(path: &str) {
     println!("wrote {path} ({} bytes)", out.len());
 }
 
+#[cfg(windows)]
 fn decode(path: &str) {
     let bytes = std::fs::read(path).expect("read input");
     let mut d = ogg::Demuxer::new();

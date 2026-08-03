@@ -1,7 +1,7 @@
 <Project>
   <!-- Shared NuGet package metadata for all Mediaway.* packages (ADR-0017/0018). -->
   <PropertyGroup>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <Authors>Mediaway contributors</Authors>
     <Company>Mediaway</Company>
     <LicenseExpression>MIT OR Apache-2.0</LicenseExpression>
@@ -9,5 +9,12 @@
     <PackageTags>media;video;audio;mp4;h264;aac;capture;mediaway</PackageTags>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- One shared README for the whole Mediaway.* family (packed at the
+         nupkg root; PackageReadmeFile above). -->
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 </Project>

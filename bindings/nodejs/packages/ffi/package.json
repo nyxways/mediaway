@@ -1,7 +1,7 @@
 {
   "name": "@mediaway/ffi",
-  "version": "0.1.0",
-  "description": "Internal koffi glue over Mediaway's C ABI (container/pipeline/device)",
+  "version": "0.1.1",
+  "description": "Mediaway native C ABI bindings for Node.js — the shared DLL behind the @mediaway packages",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

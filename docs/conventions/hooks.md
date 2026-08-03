@@ -17,7 +17,9 @@ cargo install cargo-nextest
 ### pre-commit
 
 - `cargo fmt` auto-apply + restage
-- `cargo clippy --fix` + `-D warnings`
+- `cargo clippy --fix` + `-D warnings` — **scoped** to the staged crates' affected
+  closure ([`ci-affected.ts`](../../tools/scripts/ci-affected.ts), dependency-tree
+  reachability: one crate lints itself + its transitive dependents; NONE skips)
 - secrets (`gitleaks` if installed, else warn-skip)
 - block files >1MB
 - block bare TODOs
@@ -31,8 +33,12 @@ Conventional Commits **format** only ([commits.md](commits.md)). English for com
 
 ### pre-push
 
-- `clippy --workspace --all-targets --all-features -D warnings`
-- `cargo nextest` or `cargo test`
+- `clippy --all-targets --all-features -D warnings` + `cargo nextest`/`cargo test`
+  on the **affected set** (ci-affected.ts vs `origin/main`; NONE skips both,
+  ALL runs the workspace) — a non-Rust push gates in ~2s instead of ~40s
+- the test-media fixture cache (`local/.cache/test-media`) is **cleared** before
+  tests: a cached fixture whose BLAKE3 still matches an outdated constant would
+  pass locally and break CI — every push regenerates and re-verifies fixtures
 - `cargo deny check advisories licenses bans sources`
 
 ## CI (GitHub Actions)

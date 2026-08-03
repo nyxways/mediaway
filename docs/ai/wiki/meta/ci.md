@@ -2,12 +2,20 @@
 
 Canonical: [`docs/conventions/hooks.md`](../../../conventions/hooks.md) § CI · workflow [`.github/workflows/ci.yml`](../../../../.github/workflows/ci.yml).
 
-- `rust` job: Windows + Ubuntu — fmt, clippy, test, source ≤1000 lines
-- `deny` job: Ubuntu — `cargo deny`
-- `wasm` job: Ubuntu — builds `iso-bmff-wasm` / `mediaway-encoder-web` / `mediaway-device-web` for `wasm32-unknown-unknown`
+- `affected` job: computes the dependency-tree reachability of the pushed/PR diff
+  (`tools/scripts/ci-affected.ts`, bun + `cargo metadata` reverse graph) — outputs
+  `NONE` / `ALL` / space-separated crate set. Every Rust-consuming job gates on it:
+  docs-only commits skip the expensive matrix entirely.
+- `rust` job: Windows + Ubuntu — fmt, clippy, test, source ≤1000 lines, scoped to
+  the affected set (`ALL` → full workspace; `NONE` → fmt/policy only)
+- `deny` job: Ubuntu — `cargo deny` (always; policy gate)
+- `wasm` job: Ubuntu — builds `iso-bmff-wasm` / `mediaway-encoder` / `mediaway-decoder`
+  / `mediaway-device` for `wasm32-unknown-unknown`; runs on `ALL` or any wasm crate in
+  the set
+- `e2e-web` job: optional (continue-on-error); cascades from `wasm`
 - No GPU / system FFmpeg in default CI
 
-## Lessons from the first push (2026-08-02)
+## Lessons from the first pushes (2026-08-02/03)
 
 - **wasm needs `--cfg=web_sys_unstable_apis`**: the WebCodecs/WebGPU web-sys bindings
   (`AudioEncoder`, `VideoEncoder`, `Gpu*`, …) are cfg-gated; without it every import in
@@ -19,3 +27,13 @@ Canonical: [`docs/conventions/hooks.md`](../../../conventions/hooks.md) § CI ·
 - **NVENC tests panic without the driver**: the `nvenc` crate unwraps its DLL load, so
   `_or_skip_without_hw` tests panicked on runners without NVENC. `NvencSession::open` now
   probes `nvEncodeAPI64.dll` first and returns `Err` (see `mediaway-encoder-nvenc`).
+- **Stale fixture cache hides broken BLAKE3 constants**: a locally cached test-media
+  fixture whose bytes still match an outdated constant passes pre-push and fails CI
+  (which regenerates from scratch). Pre-push now clears `local/.cache/test-media`
+  first; the avprobe fixture constant was recomputed after the MP4 mux fixes.
+- **Hook scripts must be BusyBox-ash safe**: the scoop-shimmed `bash` on Windows
+  rejects arrays (`PKGS=()`) and `${BASH_SOURCE[0]}` — hooks stay POSIX (`$0`, word
+  splitting).
+- **e2e-web wasm build**: `mediaway-device` is rlib-only (no cdylib → no `.wasm`
+  artifact) — building it in the e2e `build-wasm.ts` list always threw "Missing wasm
+  artifact". Dropped from the list; the CI wasm job still compile-gates it.

@@ -8,7 +8,7 @@
 )]
 
 use bytes::Bytes;
-use flv::{Demuxer, Muxer, Tag, TagType};
+use flv_core::{Demuxer, Muxer, Tag, TagType};
 
 #[test]
 fn multi_tag_roundtrip_via_public_api() {

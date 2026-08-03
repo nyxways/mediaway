@@ -6,14 +6,14 @@ audio-only containers ([audio-containers](audio-containers.md)).
 
 Both crates below also have a real FATE `fate_manifest.txt`/`demux_exceptions.rs`
 (2026-07-29) — see [testing.md § FATE corpus](../../../conventions/testing.md).
-`flv` counts only `Audio`/`Video` tags (excludes `ScriptData`) to match
+`flv-core` counts only `Audio`/`Video` tags (excludes `ScriptData`) to match
 ffprobe's semantics. `mpeg-ts-core` oracle rows need ffprobe's CSV de-duplicated —
 `-count_packets` prints every MPEG-TS stream twice (program-grouped view +
 flat view), confirmed via `-of json`; a real ffprobe quirk, not a bug here.
 
-## `flv` (Flash Video) — added 2026-07-29
+## `flv-core` (Flash Video) — added 2026-07-29
 
-Crate-local [ADR-0001](../../../crates/flv/adr/0001-flv-freestanding-core.md).
+Crate-local [ADR-0001](../../../crates/flv-core/adr/0001-flv-freestanding-core.md).
 
 - Scope: the FLV **container** structure only (file header, tag header,
   `PreviousTagSize` trailer) — `Tag::data` is opaque already-formatted payload;

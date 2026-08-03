@@ -9,7 +9,7 @@ members = [
     "crates/adts-core",
     "crates/mpeg-audio",
     "crates/ogg",
-    "crates/flv",
+    "crates/flv-core",
     "crates/mpeg-ts-core",
     "crates/rtmp",
     "crates/mediaway-container",
@@ -65,7 +65,7 @@ riff-wave-core = { path = "crates/riff-wave-core", version = "0.1.0" }
 adts-core = { path = "crates/adts-core", version = "0.1.0" }
 mpeg-audio = { path = "crates/mpeg-audio", version = "0.1.0" }
 ogg = { path = "crates/ogg", version = "0.1.0" }
-flv = { path = "crates/flv", version = "0.1.0" }
+flv-core = { path = "crates/flv-core", version = "0.1.0" }
 mpeg-ts-core = { path = "crates/mpeg-ts-core", version = "0.1.0" }
 rtmp = { path = "crates/rtmp", version = "0.1.0" }
 mediaway-container = { path = "crates/mediaway-container", version = "0.1.0" }

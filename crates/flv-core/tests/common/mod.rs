@@ -10,7 +10,7 @@
     reason = "test helpers shared across integration binaries"
 )]
 
-use flv::{Demuxer, TagType};
+use flv_core::{Demuxer, TagType};
 
 /// Feed all bytes then drain tags, counting only Audio/Video (exclude `ScriptData`).
 /// Returns the audio+video tag count.

@@ -7,7 +7,7 @@
 //! `push_bytes`/`poll_access_unit` reader that tracks PAT/PMT and reassembles
 //! PES packets per PID.
 //!
-//! Like `adts-core`/`mpeg-audio`/`ogg`/`flv`, this crate frames already-encoded
+//! Like `adts-core`/`mpeg-audio`/`ogg`/`flv-core`, this crate frames already-encoded
 //! elementary-stream access units — it does not encode/decode H.264, HEVC, AAC,
 //! or MP3 payloads.
 

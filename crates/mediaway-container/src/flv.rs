@@ -1,6 +1,6 @@
-//! Mediaway-typed FLV (Flash Video) mux + demux over [`flv`].
+//! Mediaway-typed FLV (Flash Video) mux + demux over [`flv_core`].
 //!
-//! [`flv`] frames tags only — it does not interpret the codec-specific
+//! [`flv_core`] frames tags only — it does not interpret the codec-specific
 //! `AudioTagHeader`/`VideoTagHeader` sub-byte(s) inside a tag's `data`. This
 //! module reads/builds those bytes on both sides (the same "read/build a
 //! codec's declared sub-header, don't decode audio/video" boundary
@@ -32,21 +32,21 @@
 #![forbid(unsafe_code)]
 
 use crate::Demux;
-use flv::{Demuxer as CoreDemuxer, Muxer as CoreMuxer, Tag, TagType};
+use flv_core::{Demuxer as CoreDemuxer, Muxer as CoreMuxer, Tag, TagType};
 use mediaway_common::{Bytes, CodecKind, Packet, Rational, StreamInfo};
 
 /// FLV facade mux/demux error.
 ///
-/// Wraps [`flv::Error`] (tag framing) plus the track-registration/codec-
-/// mapping errors specific to this codec-aware facade — the [`flv`] core
+/// Wraps [`flv_core::Error`] (tag framing) plus the track-registration/codec-
+/// mapping errors specific to this codec-aware facade — the [`flv_core`] core
 /// itself has no concept of "track" or "codec" (see module docs).
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
-    /// Tag framing error from the underlying [`flv`] core (bad signature,
+    /// Tag framing error from the underlying [`flv_core`] core (bad signature,
     /// oversized tag data, a tag written before the file header, ...).
     #[error(transparent)]
-    Tag(#[from] flv::Error),
+    Tag(#[from] flv_core::Error),
     /// [`Muxer::add_track`] was given a codec with no FLV tag-header mapping
     /// (see module docs on codec coverage).
     #[error("FLV mux has no tag encoding for codec {0:?}")]
@@ -237,8 +237,8 @@ impl Muxer {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Tag`] wrapping [`flv::Error::HeaderNotWritten`] if
-    /// called before [`Self::write_header`], or [`flv::Error::TagDataTooLarge`].
+    /// Returns [`Error::Tag`] wrapping [`flv_core::Error::HeaderNotWritten`] if
+    /// called before [`Self::write_header`], or [`flv_core::Error::TagDataTooLarge`].
     pub fn write_tag(&self, tag: &Tag, out: &mut Vec<u8>) -> Result<(), Error> {
         self.inner.write_tag(tag, out)?;
         Ok(())
@@ -317,7 +317,7 @@ fn mp3_data(frame: &Bytes) -> Bytes {
     Bytes::from(data)
 }
 
-/// Demuxer wrapping [`flv::Demuxer`] with a Mediaway stream cache.
+/// Demuxer wrapping [`flv_core::Demuxer`] with a Mediaway stream cache.
 #[derive(Debug, Default)]
 pub struct Demuxer {
     inner: CoreDemuxer,

@@ -40,6 +40,7 @@ interface CargoDep {
 }
 interface CargoPackage {
   name: string;
+  version: string;
   source: string | null;
   publish: string[] | null;
   dependencies: CargoDep[];
@@ -65,8 +66,7 @@ const pubSet = new Set(pub);
 
 // 2. Topological sort (Kahn) on edges between publishable crates.
 const depsOf = (name: string) =>
-  byName.get(name)!.dependencies.filter((d) => pubSet.has(d.name)).map((d) => d.name);
-const indegree = new Map(pub.map((n) => [n, depsOf(n).length]));
+  byName.get(name)!.dependencies.filter((d) => pubSet.has(d.name)).map((d) => d.name);const indegree = new Map(pub.map((n) => [n, depsOf(n).length]));
 const dependents = new Map(pub.map((n) => [n, [] as string[]]));
 for (const n of pub) {
   for (const d of depsOf(n)) dependents.get(d)!.push(n);
@@ -90,9 +90,33 @@ if (order.length !== pub.length) {
 console.log(`crates.io set (${order.length}): ${order.join(" ")}`);
 if (listOnly) process.exit(0);
 
+// 2b. Already-uploaded check: the sparse index is the ground truth for what
+// exists on the registry (the crates.io API returns null for deleted-crate
+// names, which the publish endpoint still reserves — see the owner-error
+// handling below).
+function indexPath(name: string): string {
+  if (name.length === 1) return `1/${name}`;
+  if (name.length === 2) return `2/${name}`;
+  if (name.length === 3) return `3/${name[0]}/${name}`;
+  return `${name.slice(0, 2)}/${name.slice(2, 4)}/${name}`;
+}
+async function uploaded(name: string, version: string): Promise<boolean> {
+  const res = await fetch(`https://index.crates.io/${indexPath(name)}`);
+  if (!res.ok) return false;
+  const text = await res.text();
+  return text.split("\n").some((line) => line.includes(`"name":"${name}"`) && line.includes(`"vers":"${version}"`));
+}
+
 // 3. Publish in order.
 const dryRunPassed = new Set<string>();
+const blocked: string[] = [];
 for (const name of order) {
+  const pkg = byName.get(name)!;
+  // Skip versions already on the registry (re-runs after a partial publish).
+  if (!dryRun && (await uploaded(name, pkg.version))) {
+    console.log(`already uploaded: ${name} ${pkg.version} — skip`);
+    continue;
+  }
   const cmd = dryRun ? ["publish", "-p", name, "--dry-run", "--allow-dirty"] : ["publish", "-p", name, "--allow-dirty"];
   console.log(`\n=== ${dryRun ? "checking" : "publishing"} ${name} ===`);
   const res = await $`cargo ${cmd}`.cwd(root).nothrow();
@@ -108,11 +132,23 @@ for (const name of order) {
       dryRunPassed.add(name);
       continue;
     }
+    // A name reserved by a deleted crate (visible neither in the index nor
+    // the API) fails with the owner error — record and keep going so one
+    // blocked name does not stall the whole batch.
+    if (!dryRun && out.includes("this crate exists but you don't seem to be an owner")) {
+      console.error(`BLOCKED: ${name} — name reserved on crates.io (deleted crate); rename and re-run`);
+      blocked.push(name);
+      continue;
+    }
     console.error(`FAILED: ${name} (exit ${res.exitCode}) — bump the workspace version and re-run; half-published sets must be cleaned manually`);
     console.error(out.slice(-1500));
     process.exit(1);
   }
   dryRunPassed.add(name);
   console.log(`ok: ${name}`);
+}
+if (blocked.length > 0) {
+  console.error(`\nblocked by reserved names: ${blocked.join(", ")} — rename these (collision policy) and re-run`);
+  process.exit(1);
 }
 console.log(`\n${dryRun ? "dry-run" : "publish"} complete: ${order.length} crates`);

@@ -22,7 +22,7 @@
 mod common;
 
 use common::demux_all;
-use flv::{Demuxer, TagType};
+use flv_core::{Demuxer, TagType};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;

@@ -18,7 +18,7 @@ riff-wave-core = { workspace = true }
 adts-core = { workspace = true }
 mpeg-audio = { workspace = true }
 ogg = { workspace = true }
-flv = { workspace = true }
+flv-core = { workspace = true }
 mpeg-ts-core = { workspace = true }
 
 [features]

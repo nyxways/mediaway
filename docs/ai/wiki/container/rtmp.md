@@ -35,7 +35,7 @@ low-level APIs stay usable per `docs/spec/api-layers.md`.
 `Handshake::feed_recv_bytes` and `Demuxer::poll_message` return `Result<_, Error>` rather
 than the ADR's bare `()`/`Option<_>` — both can genuinely fail on malformed/adversarial input
 (bad `S0` version, undecodable `S1` digest, a type-3 chunk with no cached header, an invalid
-`Set Chunk Size`), and this workspace's own `flv::Demuxer::poll_tag` already uses the same
+`Set Chunk Size`), and this workspace's own `flv-core::Demuxer::poll_tag` already uses the same
 `Result<Option<T>, Error>` idiom rather than silently swallowing a real parse error. Documented
 in each module's rustdoc.
 
@@ -67,7 +67,7 @@ the same named risk in `adr/0001` § Consequences, not resolved by this implemen
 `push_video_data`/`push_audio_data` take already-built FLV-tag-body bytes
 (`VideoTagHeader`+NALU, `AudioTagHeader`+AAC/MP3) — the same shapes
 `mediaway-container::flv`'s private builder functions produce, but this crate does not depend
-on `flv` or any `mediaway-*` type (freestanding core boundary). A future Mediaway-typed
+on `flv-core` or any `mediaway-*` type (freestanding core boundary). A future Mediaway-typed
 adapter (`Packet` → these bytes) is out of scope here — see `adr/0001` § 5.
 
 ## Chunk stream assumptions worth knowing

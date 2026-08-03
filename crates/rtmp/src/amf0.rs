@@ -4,7 +4,7 @@
 //! No decoder: a publish-only RTMP client does not need to parse `_result`/`onStatus`
 //! command *contents* to make progress (see `adr/0001` § 3).
 //!
-//! Push-append-to-`&mut Vec<u8>` shape, same idiom as `flv::Muxer`. Object/ECMA-Array values
+//! Push-append-to-`&mut Vec<u8>` shape, same idiom as `flv-core`'s Muxer. Object/ECMA-Array values
 //! are written as a sequence of calls — [`write_object_start`], then per property
 //! [`write_property_name`] + one value writer, then [`write_object_end`] — rather than a
 //! value-tree type, since this crate's actual need (command args, `onMetaData`) is a small,

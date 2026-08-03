@@ -62,7 +62,7 @@ fn mp3_tag(ts: u32, frame: &[u8]) -> Tag {
 }
 
 fn build_flv(tags: &[Tag]) -> Vec<u8> {
-    let mut mux = flv::Muxer::new();
+    let mut mux = flv_core::Muxer::new();
     let mut out = Vec::new();
     mux.write_header(true, true, &mut out);
     for tag in tags {
@@ -192,7 +192,7 @@ fn push_packet_writes_sequence_header_before_first_data_tag() {
     // Read raw tags via the core demuxer to assert exact ordering/count: the
     // sequence header (AVCPacketType=0) is written once, before any data tag
     // (AVCPacketType=1) — not re-emitted on the second `push_packet` call.
-    let mut core_demux = flv::Demuxer::new();
+    let mut core_demux = flv_core::Demuxer::new();
     core_demux.push_bytes(&out);
     let tag1 = core_demux.poll_tag().expect("poll").expect("tag1");
     assert_eq!(tag1.data[1], 0); // AVCPacketType = 0 (sequence header)

@@ -196,7 +196,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: native-dlls
-          path: .
+          path: bindings
 
       - name: Install node deps (workspace root)
         run: bun install
@@ -288,7 +288,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: native-dlls
-          path: .
+          path: bindings
 
       - name: Stamp NuGet version
         shell: bash
@@ -346,7 +346,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: native-dlls
-          path: .
+          path: bindings
 
       - name: Stamp PyPI version
         shell: bash
@@ -417,7 +417,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: native-dlls
-          path: .
+          path: bindings
 
       - name: Stamp CPack version
         shell: bash

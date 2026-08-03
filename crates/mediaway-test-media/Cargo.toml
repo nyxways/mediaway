@@ -2,7 +2,7 @@
 name = "mediaway-test-media"
 description = "Deterministic Rust generators for test media; local cache only (gitignored)"
 version.workspace = true
-publish.workspace = true # not yet hardware-verified — see docs/roadmap.md
+publish = true # test-media generators — required by avprobe/avcli dev-deps
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

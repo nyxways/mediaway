@@ -60,7 +60,7 @@ publish = false # early development — see docs/spec/status.md
 mediaway-common = { path = "crates/mediaway-common", version = "0.1.0" }
 iso-cenc = { path = "crates/iso-cenc", version = "0.1.0" }
 iso-bmff = { path = "crates/iso-bmff", version = "0.1.0" }
-ebml-webm = { path = "crates/ebml-webm", version = "0.1.0" }
+ebml-webm = { path = "crates/ebml-webm", version = "0.2.0" }
 riff-wave-core = { path = "crates/riff-wave-core", version = "0.1.0" }
 adts-core = { path = "crates/adts-core", version = "0.1.0" }
 mpeg-audio = { path = "crates/mpeg-audio", version = "0.1.0" }

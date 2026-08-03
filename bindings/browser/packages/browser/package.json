@@ -19,7 +19,7 @@
   "license": "MIT OR Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nyxways/mediaway"
+    "url": "git+https://github.com/nyxways/mediaway.git"
   },
   "keywords": [
     "media",
@@ -36,7 +36,7 @@
   "scripts": {
     "build:wasm": "wasm-pack build ../../../../crates/iso-bmff-wasm --target web --out-dir pkg --release",
     "build": "npm run build:wasm && tsc -p tsconfig.json",
-    "prepack": "npm run build",
+    "prepack": "npm run build && node -e \"require('node:fs').rmSync('pkg/.gitignore',{force:true})\"",
     "test": "npm run build && npx tsx ../../examples/container/mux-roundtrip.ts"
   },
   "devDependencies": {

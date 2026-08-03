@@ -1,6 +1,27 @@
+# Cargo build configuration (committed — CI and fresh clones need the same
+# wasm cfg flags; see the comment below).
+
 # wasm32: enable web-sys unstable APIs (WebCodecs: AudioEncoder/VideoEncoder/AudioData/…,
 # WebGPU: Gpu*) — required by mediaway-encoder-web / mediaway-decoder-web / iso-bmff-wasm.
 # Committed (un-ignored in .gitignore) so CI and fresh clones build wasm targets the same
 # way local dev machines do; was the cause of the first CI wasm failure.
 [target.wasm32-unknown-unknown]
 rustflags = ["--cfg=web_sys_unstable_apis"]
+
+# Windows GNU target (local dev loop: the bindings' native DLLs are built with
+# `--target x86_64-pc-windows-gnu`) — link through the mingw gcc driver but with
+# LLVM's lld instead of GNU ld. GNU ld is a serial, notoriously slow linker; lld
+# is a drop-in replacement that typically cuts link time by 5-20x on this
+# workspace's `-ffi` cdylibs. Requires lld on PATH (e.g. `scoop install llvm`);
+# CI never builds this target, so the config cannot break CI.
+#
+# mold does NOT support Windows (ELF-only) — lld is the Windows answer.
+# The MSVC host target is deliberately left at the default `link.exe` so CI
+# (windows-latest, msvc) needs no extra tooling; locally you can opt in with
+# `RUSTFLAGS="-Clinker=lld-link"`.
+#
+# The gcc driver (not a raw `ld.lld`) so it supplies its own mingw sysroot
+# search paths — rustc does not pass them to a custom linker.
+[target.x86_64-pc-windows-gnu]
+linker = "x86_64-w64-mingw32-gcc"
+rustflags = ["-Clink-arg=-fuse-ld=lld"]

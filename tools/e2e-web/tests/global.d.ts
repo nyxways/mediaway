@@ -15,6 +15,12 @@ interface DecodedVideoFramesHandle {
 declare global {
   interface Window {
     mediawayE2e: {
+      browserPkg: {
+        error?: string;
+        mux: { bytes: number; recovered: number; streams: string[] };
+        video: { bytes?: number; packets?: number; codecs?: string[]; skipped?: string; error?: string };
+        audio: { bytes?: number; packets?: number; codecs?: string[]; skipped?: string; error?: string };
+      };
       iso: {
         wasm_mux_demux_smoke: () => number;
         wasm_mux_av_bytes: () => Uint8Array;

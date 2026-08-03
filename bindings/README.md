@@ -21,7 +21,7 @@ Each language folder is self-contained: its own `README.md` is the entry point. 
 | C# | [`csharp/`](csharp/) | P/Invoke over the C ABI (net8.0 + netstandard2.0) | ✅ verified | [src](csharp/src/) · [unity UPM](csharp/unity/com.mediaway.unity/README.md) (🔷) |
 | Python | [`python/`](python/) | `ctypes` over the C ABI | ✅ verified | [README](python/README.md) |
 | Node.js | [`nodejs/`](nodejs/) | FFI over the C ABI (`koffi`; napi-rs is the eventual official path) | ✅ verified | [README](nodejs/README.md) |
-| Browser | [`browser/`](browser/) | WASM (`wasm-bindgen`) + Web APIs — **not** the C ABI | 📐 design | [README](browser/README.md) |
+| Browser | [`browser/`](browser/) | WASM (`wasm-bindgen`) + WebCodecs — **not** the C ABI | ✅ verified (mux/demux + WebCodecs encode) | [README](browser/README.md) |
 
 Node.js and the browser are **two distinct hosts** for JS/TS with two distinct interop paths — see `docs/spec/c-ffi.md` § Tier C. Do not collapse them.
 
@@ -57,5 +57,26 @@ sector subfolders (`container/`, `pipeline/`, `device/`), one file per scenario:
 - English comments only, per [`AGENTS.md`](../AGENTS.md) language policy.
 - Map existing Rust surfaces; do not invent capabilities the Rust side doesn't have.
 - Opaque handles + error codes at the raw C ABI layer; each language wrapper translates that into its own idiomatic error handling (exceptions, `Result`, error unions, ...).
-- Not part of the Cargo workspace: not built, linted, or tested by CI.
-- Durable changes to the *real* API surface still require an ADR ([`docs/adr/0004-c-ffi.md`](../docs/adr/0004-c-ffi.md)); this folder is exploratory input to that process, not a substitute for it.
+- Not part of the Cargo workspace: not built, linted, or tested by CI (except the browser E2E specs under `tools/e2e-web`, which drive the built `@mediaway/browser` package).
+- Durable changes to the *real* API surface still require an ADR
+  ([`docs/adr/0004-c-ffi.md`](../docs/adr/0004-c-ffi.md), [`docs/adr/0020-browser-wasm-npm-package.md`](../docs/adr/0020-browser-wasm-npm-package.md));
+  this folder is exploratory input to that process, not a substitute for it.
+
+## Publishing
+
+Each binding is set up to publish to its package manager (build artifacts are
+produced by Bun scripts under `tools/scripts/`, then `npm publish` / `twine
+upload` / `dotnet pack`+push / release-archive as usual):
+
+| Binding | Package | Build | Contents |
+|---|---|---|---|
+| C / C++ | CMake package + CPack ZIP/TGZ, `mediaway.pc` | `bun tools/scripts/copy-native-dlls.ts` | 3 FFI headers + `mediaway.hpp` + win-x64 DLLs + import libs + CMake config (`find_package(mediaway)`) |
+| C# | 8 `Mediaway.*` nupkgs | `bun tools/scripts/package-csharp.ts` | managed assemblies + `runtimes/win-x64/native` DLLs + build targets |
+| Python | `mediaway` wheel (`py3-none-win_amd64`) | `bun tools/scripts/build-python-package.ts` | `mediaway/` + bundled `_native/` DLLs + `py.typed` |
+| Node.js | `@mediaway/{ffi,container,device,encoder}` | `bun tools/scripts/build-node-packages.ts` | `dist/` + `@mediaway/ffi` ships `native/` DLLs |
+| Browser | `@mediaway/browser` | `npm run build` in `packages/browser` (wasm-pack + tsc) | `dist/` + wasm `pkg/` |
+
+`@mediaway/ffi` and the Python loader look for the DLLs in the packaged
+`native/` / `_native/` directories first (env var / repo build dirs after), so a
+published package works without PATH games. The DLLs are Windows x64 GNU
+builds today; multi-platform native assets are the remaining packaging gap.

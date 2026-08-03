@@ -12,6 +12,10 @@ authors.workspace = true
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+# wasm-opt (binaryen) is flaky on Windows; the wasm is small — skip it.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
 [dependencies]
 iso-bmff = { workspace = true, features = ["full"] }
 bytes = { workspace = true }

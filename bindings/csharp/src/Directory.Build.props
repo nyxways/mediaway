@@ -1,0 +1,13 @@
+<Project>
+  <!-- Shared NuGet package metadata for all Mediaway.* packages (ADR-0017/0018). -->
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+    <Authors>Mediaway contributors</Authors>
+    <Company>Mediaway</Company>
+    <LicenseExpression>MIT OR Apache-2.0</LicenseExpression>
+    <RepositoryUrl>https://github.com/nyxways/mediaway</RepositoryUrl>
+    <PackageTags>media;video;audio;mp4;h264;aac;capture;mediaway</PackageTags>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+  </PropertyGroup>
+</Project>

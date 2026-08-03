@@ -1,0 +1,25 @@
+<Project>
+  <!--
+    Native runtime bundling for packages that P/Invoke the C ABI (ADR-0017:
+    NuGet packaging, deferred until now).
+
+    Packages set <NeedsNativeRuntime>true</NeedsNativeRuntime> to opt in. When
+    MediawayNativeDir points at staged DLLs (default: bindings/csharp/runtime/
+    win-x64/native, populated by tools/scripts/copy-native-dlls.ts), the nupkg
+    carries:
+      - runtimes/win-x64/native/*.dll   (standard RID-resolvable layout)
+      - build/<AssemblyName>.targets    (copies the DLLs to the consumer's
+        output dir so plain `dotnet run` works too, not just RID-published apps)
+
+    The condition keeps plain `dotnet build`/`dotnet pack` working with no
+    native artifacts present (CI, non-Windows hosts).
+  -->
+  <PropertyGroup>
+    <MediawayNativeDir Condition="'$(MediawayNativeDir)' == ''">$(MSBuildThisFileDirectory)..\runtime\win-x64\native</MediawayNativeDir>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(NeedsNativeRuntime)' == 'true' and Exists('$(MediawayNativeDir)')">
+    <None Include="$(MediawayNativeDir)\**\*.dll" Pack="true" PackagePath="runtimes/win-x64/native" />
+    <None Include="$(MSBuildThisFileDirectory)build\Mediaway.Native.targets" Pack="true" PackagePath="build/$(AssemblyName).targets" />
+  </ItemGroup>
+</Project>

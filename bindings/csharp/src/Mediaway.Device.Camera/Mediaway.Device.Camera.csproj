@@ -9,6 +9,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>Mediaway.Device.Camera</RootNamespace>
     <AssemblyName>Mediaway.Device.Camera</AssemblyName>
+    <NeedsNativeRuntime>true</NeedsNativeRuntime>
     <Description>Idiomatic C# binding over mediaway-device-ffi's "camera" feature (Camera video capture only) — see adr/0004-domain-feature-split.md.</Description>
   </PropertyGroup>
 

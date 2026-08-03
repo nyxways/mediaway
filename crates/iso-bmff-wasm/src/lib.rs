@@ -1,9 +1,17 @@
-//! WASM exports for [`iso_bmff`] mux/demux smoke tests in the browser.
+//! WASM exports for [`iso_bmff`] mux/demux — real browser API (`mod api`, ADR-0020)
+//! plus the original smoke-test exports (`tools/e2e-web` still calls them).
 
 #![forbid(unsafe_code)]
+// wasm-bindgen rejects `const fn` on exported methods ("can only #[wasm_bindgen]
+// non-const functions"), so the scalar getters below stay non-const.
+#![allow(clippy::missing_const_for_fn)]
+
+mod api;
+
+pub use api::{Demuxer, JsSample, JsTrack, Muxer};
 
 use bytes::Bytes;
-use iso_bmff::{Codec, Demuxer, Error, Muxer, Rational, Sample, Track};
+use iso_bmff::{Codec, Demuxer as CoreDemuxer, Error, Muxer as CoreMuxer, Rational, Sample, Track};
 use wasm_bindgen::prelude::*;
 
 const AVC_C: &[u8] = &[
@@ -48,7 +56,7 @@ fn bmff_err(error: &Error) -> JsValue {
 }
 
 fn mux_minimal_av_bytes() -> Result<Vec<u8>, JsValue> {
-    let mut open = Muxer::with_fragment_batch(1);
+    let mut open = CoreMuxer::with_fragment_batch(1);
     open.add_track(h264_track()).map_err(|e| bmff_err(&e))?;
     open.add_track(aac_track()).map_err(|e| bmff_err(&e))?;
     let mut mux = open.begin();
@@ -85,7 +93,7 @@ fn mux_minimal_av_bytes() -> Result<Vec<u8>, JsValue> {
 #[wasm_bindgen]
 pub fn wasm_mux_demux_smoke() -> Result<u32, JsValue> {
     let bytes = mux_minimal_av_bytes()?;
-    let mut demux = Demuxer::new();
+    let mut demux = CoreDemuxer::new();
     demux.push_bytes(&bytes);
     let mut count = 0u32;
     while demux.poll_packet().is_some() {
@@ -101,7 +109,7 @@ pub fn wasm_mux_av_bytes() -> Result<Vec<u8>, JsValue> {
 }
 
 fn mux_minimal_vp9_bytes() -> Result<Vec<u8>, JsValue> {
-    let mut open = Muxer::with_fragment_batch(1);
+    let mut open = CoreMuxer::with_fragment_batch(1);
     open.add_track(vp9_track()).map_err(|e| bmff_err(&e))?;
     let mut mux = open.begin();
     mux.push_packet(&Sample {
@@ -135,7 +143,7 @@ pub fn wasm_mux_vp9_bytes() -> Result<Vec<u8>, JsValue> {
 #[wasm_bindgen]
 pub fn wasm_mux_vp9_demux_smoke() -> Result<String, JsValue> {
     let bytes = mux_minimal_vp9_bytes()?;
-    let mut demux = Demuxer::new();
+    let mut demux = CoreDemuxer::new();
     demux.push_bytes(&bytes);
     let codec = demux
         .streams()

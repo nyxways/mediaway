@@ -70,8 +70,12 @@ hub: per-language status legend, capability truth table, and scenario map.
   run; encode output byte-identical to C/C++/Node.
 - **Node.js** — real under `bindings/nodejs/packages/@mediaway/*` (koffi
   FFI); napi-rs is the eventual official path.
-- **Browser** — 📐 design: README brief + example code only (WASM path, not
-  the C ABI); no `@mediaway/browser` package yet (needs an ADR).
+- **Browser** — ✅ verified (ADR-0020): `@mediaway/browser` npm package — wasm
+  mux/demux (`iso-bmff-wasm` promoted to real `Muxer`/`Demuxer` classes) +
+  WebCodecs encode-to-MP4 (`EncodeSession`; avcC/ASC pulled from the first
+  output's metadata, the browser analog of push → stream_info → mux). Capture is
+  native Web APIs (getUserMedia/getDisplayMedia), canvas-bridged into the encode
+  session. E2E: `tools/e2e-web/browser-package.spec.ts` (Chromium + real Edge).
 - **Zig / Go / Swift / Kotlin** — not in the supported set; folders removed
   2026-08. Revisit per `docs/spec/c-ffi.md` Tier B when a concrete consumer
   appears.

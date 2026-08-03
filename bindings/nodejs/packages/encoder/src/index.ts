@@ -17,6 +17,12 @@ import {
   MwRational,
   pipeline,
   copyBytes,
+  type RawAudioEncodeConfig,
+  type RawAudioFrameView,
+  type RawAudioPacket,
+  type RawAudioStreamInfo,
+  type RawPipelineFrame,
+  type RawRational,
 } from "@mediaway/ffi";
 import { MediawayError, type Rational } from "@mediaway/container";
 
@@ -60,7 +66,7 @@ export class AutoVideoEncodeConfig {
     return new AutoVideoEncodeConfig(codec, width, height, timeBase);
   }
 
-  toAbi(): typeof MwRational {
+  toAbi(): RawRational {
     const codecMap: Record<string, number> = { h264: 0, hevc: 1, av1: 2, vp9: 3 };
     const raw = pipeline.encConfigNew(
       codecMap[this.codec] ?? 0,
@@ -69,7 +75,7 @@ export class AutoVideoEncodeConfig {
       { num: BigInt(this.timeBase.num), den: this.timeBase.den }
     );
     if (this.bitrateBps !== undefined) raw.bitrate_bps = this.bitrateBps;
-    const fmtMap: Record<string, number> = { nv12: 0, i420: 1, bgra8: 2, rgba8: 3, yuyv: 4 };
+    const fmtMap: Record<string, number> = { nv12: 0, i420: 1, bgra8: 2, rgba8: 3, yuy2: 4 };
     if (this.pixelFormat !== undefined) raw.pixel_format = fmtMap[this.pixelFormat] ?? 0;
     return raw;
   }
@@ -120,12 +126,12 @@ export class EncodeSession {
   }
 
   async writeFrame(frame: VideoFrame): Promise<void> {
-    const raw: typeof MwPipelineFrame = {
+    const raw: RawPipelineFrame = {
       pts: BigInt(frame.pts),
       duration: BigInt(frame.duration),
       width: frame.width,
       height: frame.height,
-      pixel_format: { nv12: 0, i420: 1, bgra8: 2, rgba8: 3, yuyv: 4 }[frame.pixelFormat] ?? 0,
+      pixel_format: { nv12: 0, i420: 1, bgra8: 2, rgba8: 3, yuy2: 4 }[frame.pixelFormat] ?? 0,
       storage_kind: 0, // CPU
       raw_bytes: frame.data,
       raw_bytes_len: frame.data.length,
@@ -238,7 +244,7 @@ export class AudioEncoder {
    * when no audio backend exists on this machine. */
   static async open(config: AudioEncodeConfig): Promise<AudioEncoder> {
     const tb = config.timeBase ?? { num: 1, den: config.sampleRate };
-    const raw: typeof MwAudioEncodeConfig = {
+    const raw: RawAudioEncodeConfig = {
       codec: { aac: 4 }[config.codec ?? "aac"] ?? 4,
       sample_rate: config.sampleRate,
       channels: config.channels,
@@ -255,7 +261,7 @@ export class AudioEncoder {
   /** Push one interleaved f32le PCM chunk (borrowed — copied synchronously). */
   async pushPcm(frame: AudioPcmFrame): Promise<void> {
     const samples = frame.duration ?? frame.data.length / 4 / this.channels;
-    const raw: typeof MwAudioFrameView = {
+    const raw: RawAudioFrameView = {
       pts: BigInt(frame.pts),
       duration: BigInt(Math.round(samples)),
       sample_rate: this.sampleRate,
@@ -270,7 +276,7 @@ export class AudioEncoder {
   /** Pull the next encoded packet, if one is ready. null is a valid "nothing
    * ready" result, not an error. */
   async pollPacket(): Promise<EncodedAudioPacket | null> {
-    const raw: typeof MwAudioPacket = {};
+    const raw = {} as RawAudioPacket;
     const has: [boolean] = [false];
     checkPipeline(pipeline.audioPollPacket(this.handle, raw, has));
     if (!has[0]) return null;
@@ -294,7 +300,7 @@ export class AudioEncoder {
    * the first pushed frame (adr/0003 call order: push, then streamInfo, then
    * mux). */
   async streamInfo(): Promise<AudioStreamInfo> {
-    const raw: typeof MwAudioStreamInfo = {};
+    const raw = {} as RawAudioStreamInfo;
     checkPipeline(pipeline.audioStreamInfo(this.handle, raw));
     const extraData = copyBytes(raw.extra_data, raw.extra_data_len);
     pipeline.pipelineStreamInfoFree(raw);

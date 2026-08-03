@@ -46,9 +46,10 @@ __all__ = [
 # The cdylibs are Rust build artifacts, not installed system libraries. We look
 # in, in order:
 #   1. $MEDIAWAY_FFI_DIR
-#   2. <repo root>/target/x86_64-pc-windows-gnu/debug   (GNU toolchain, C examples)
-#   3. <repo root>/target/debug                          (host/MSVC toolchain, C# tests)
-#   4. the current working directory
+#   2. <package>/_native/                          (DLLs bundled in the wheel — the PyPI distribution)
+#   3. <repo root>/target/x86_64-pc-windows-gnu/debug   (GNU toolchain, C examples)
+#   4. <repo root>/target/debug                          (host/MSVC toolchain, C# tests)
+#   5. the current working directory
 # <repo root> is derived from this file's location (bindings/python/mediaway/).
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -56,6 +57,7 @@ _REPO_ROOT = os.path.abspath(os.path.join(_THIS_DIR, "..", "..", ".."))
 
 _SEARCH_DIRS = [
     os.environ.get("MEDIAWAY_FFI_DIR", ""),
+    os.path.join(_THIS_DIR, "_native"),
     os.path.join(_REPO_ROOT, "target", "x86_64-pc-windows-gnu", "debug"),
     os.path.join(_REPO_ROOT, "target", "debug"),
     os.getcwd(),

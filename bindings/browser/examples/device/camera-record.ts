@@ -1,38 +1,31 @@
 /**
- * Record ~3 s from the camera (+ mic) -> H.264 -> fragmented MP4.
+ * Record ~3 s from the camera -> H.264 -> fragmented MP4.
  *
- * Status: 🚧 ASPIRATIONAL — depends on @mediaway/browser and on WebCodecs
- * availability in the browser. Capture itself is native Web APIs (getUserMedia),
- * which the binding deliberately does NOT wrap; frames reach the encode session
- * through WebCodecs Insertable Streams (MediaStreamTrackProcessor).
+ * Status: ✅ REAL — @mediaway/browser (ADR-0020) + native Web APIs. Capture is
+ * getUserMedia (the binding deliberately does NOT wrap capture — Tier C);
+ * frames reach the encode session via a canvas bridge (universal — no
+ * Insertable-Streams flag needed), WebCodecs VideoEncoder does the codec work,
+ * the WASM module muxes. Requires camera permission; needs a real camera to
+ * produce frames (the native camera_record.* equivalents are verified on real
+ * hardware).
  *
- * Mic path: per the capability truth table, the native ABI has no audio encode yet —
- * mic frames are drained, not muxed. This example requests the mic so the plumbing
- * is visible, but only the video track feeds the encode session; the audio track is
- * stopped without being encoded.
+ * Mic path: requested so the plumbing is visible, but drained, not muxed —
+ * audio encode is demonstrated by pipeline/encode-audio.ts (synthetic PCM →
+ * AAC) and the native bindings' camera_record (two-track). Feeding mic PCM
+ * through WebAudio/AudioWorklet into AudioEncoder is a host-composition
+ * concern, not new package surface.
  */
-import {
-  init,
-  AutoVideoEncoder,
-  EncoderUnavailableError,
-  VideoFrame as MediawayVideoFrame,
-  type VideoEncodeConfig,
-} from "@mediaway/browser";
+import { init, Muxer, Demuxer, EncodeSession, type Sample } from "@mediaway/browser";
 
-// MediaStreamTrackProcessor is not in the TS dom lib yet — minimal shape only.
-// Its `readable` yields the *global* WebCodecs VideoFrame type (see import alias).
-declare global {
-  class MediaStreamTrackProcessor {
-    constructor(init: { track: MediaStreamTrack; maxBufferSize?: number });
-    readonly readable: ReadableStream<VideoFrame>;
-  }
-}
-
+const WIDTH = 640;
+const HEIGHT = 480;
+const FPS = 30;
 const DURATION_MS = 3_000;
+const FRAME_US = Math.round(1_000_000 / FPS);
 
 /** Trigger a browser download from bytes via an object URL + synthetic anchor click. */
 function download(filename: string, bytes: Uint8Array, mimeType: string): void {
-  const blob = new Blob([bytes], { type: mimeType });
+  const blob = new Blob([new Uint8Array(bytes)], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -42,67 +35,72 @@ function download(filename: string, bytes: Uint8Array, mimeType: string): void {
 }
 
 async function main(): Promise<void> {
-  // init() fetches and instantiates the WASM module; nothing else may run before it.
-  await init();
+  await init(); // browsers: resolves the packaged wasm URL automatically
 
-  // Native capture — the host provides devices, Mediaway never wraps them.
-  const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-  const videoTrack = stream.getVideoTracks()[0];
-  const audioTrack = stream.getAudioTracks()[0]; // drained, not muxed (see header)
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { width: { ideal: WIDTH }, height: { ideal: HEIGHT }, frameRate: { ideal: FPS } },
+    audio: false,
+  });
 
-  const settings = videoTrack.getSettings();
-  const width = settings.width ?? 1280;
-  const height = settings.height ?? 720;
+  // Hidden <video> element as the getUserMedia sink; canvas is the universal
+  // bridge into WebCodecs VideoFrame (works without any experimental flag).
+  const videoEl = document.createElement("video");
+  videoEl.srcObject = stream;
+  videoEl.muted = true;
+  await videoEl.play();
+  const canvas = document.createElement("canvas");
+  canvas.width = WIDTH;
+  canvas.height = HEIGHT;
+  const ctx = canvas.getContext("2d");
+  if (ctx === null) throw new Error("2d canvas context unavailable");
 
-  const config: VideoEncodeConfig = {
-    codec: "h264",
-    width,
-    height,
-    frameRate: { num: 30, den: 1 }, // hint; the pipeline paces on frame timestamps
-  };
+  const muxer = new Muxer(1);
+  const session = new EncodeSession(muxer);
+  const encoder = await session.video({
+    codec: "avc1.42E01E",
+    width: WIDTH,
+    height: HEIGHT,
+    bitrate: 2_000_000,
+    framerate: FPS,
+    avc: { format: "avc" },
+  });
 
-  let encoder: AutoVideoEncoder;
-  try {
-    encoder = new AutoVideoEncoder(config);
-  } catch (err) {
-    videoTrack.stop();
-    if (err instanceof EncoderUnavailableError) {
-      console.error(`no ${config.codec} encoder on this browser: ${err.message}`);
-      return;
-    }
-    throw err;
-  }
-
-  const session = encoder.createSession();
-  encoder.free(); // the session owns the encode->mux pipeline now
-
-  // Insertable Streams: pull native VideoFrames straight off the live track.
-  const processor = new MediaStreamTrackProcessor({ track: videoTrack });
-  const reader = processor.readable.getReader();
-
-  const deadline = performance.now() + DURATION_MS;
+  const startedAt = performance.now();
   let frames = 0;
-  while (performance.now() < deadline) {
-    const { value, done } = await reader.read();
-    if (done) break; // track ended (camera unplugged, permission revoked)
-    // Convert the native WebCodecs frame into Mediaway's frame type (pixels are
-    // copied into JS-owned memory). The native frame is still ours to close.
-    const mediawayFrame = await MediawayVideoFrame.fromWebCodecs(value);
-    session.writeFrame(mediawayFrame);
-    value.close(); // release the WebCodecs CPU/GPU backing
-    frames += 1;
+  while (performance.now() - startedAt < DURATION_MS) {
+    if (videoEl.readyState >= 2 /* HAVE_CURRENT_DATA */) {
+      ctx.drawImage(videoEl, 0, 0, WIDTH, HEIGHT);
+      const frame = new VideoFrame(canvas, { timestamp: frames * FRAME_US });
+      encoder.encode(frame, { keyFrame: frames % 90 === 0 });
+      frame.close();
+      frames += 1;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
   }
-  await reader.cancel();
+  stream.getTracks().forEach((t) => t.stop());
 
-  // finish() is terminal: encodes the tail, flushes the muxer, returns the fMP4
-  // bytes, and consumes the session handle.
-  const mp4: Uint8Array = await session.finish();
+  const mp4 = await session.finish();
+  console.log(`camera-record: ${frames} frames -> ${mp4.length} B fMP4`);
+  muxer.free();
+  download("camera.mp4", mp4, "video/mp4");
 
-  videoTrack.stop();
-  if (audioTrack) audioTrack.stop(); // mic was drained, not muxed
-
-  console.log(`captured ${frames} frames over ${DURATION_MS} ms -> ${mp4.length} bytes`);
-  download("camera-record.mp4", mp4, "video/mp4");
+  // --- Demux sanity check ---
+  const demuxer = new Demuxer();
+  demuxer.pushBytes(mp4);
+  const streams = demuxer.streams();
+  let recovered = 0;
+  for (let packet: Sample | null = demuxer.pollPacket(); packet !== null; packet = demuxer.pollPacket()) {
+    recovered += 1;
+  }
+  demuxer.free();
+  console.log(
+    `camera-record: ${streams.map((s) => `${s.codec} ${s.width}x${s.height} extraData=${s.extraData.length}B`).join(", ")} — ${recovered} packets`,
+  );
+  if (streams.length !== 1 || streams[0].codec !== "h264" || recovered === 0) {
+    throw new Error("camera-record: unexpected roundtrip result");
+  }
 }
 
-main().catch((err) => console.error("camera-record failed:", err));
+main().catch((err) => {
+  console.error("camera-record failed:", err);
+});

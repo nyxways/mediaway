@@ -1,9 +1,10 @@
 # Browser binding (Web / WASM)
 
-> **Status: 📐 design** — aspirational example code only; no `@mediaway/browser`
-> package exists yet (the `crates/iso-bmff-wasm` smoke exports are test-only, not this
-> package). This README is the **DX contract**: the ergonomics a future browser/WASM
-> binding should aim for, and what its examples demonstrate.
+> **Status: ✅ verified** — real `@mediaway/browser` npm package (ADR-0020,
+> [`docs/adr/0020-browser-wasm-npm-package.md`](../../docs/adr/0020-browser-wasm-npm-package.md)):
+> WASM fMP4 mux/demux + WebCodecs encode-to-MP4, verified in real Chromium/Edge
+> (E2E specs under `tools/e2e-web`, `browser-package.spec.ts`). This README is
+> the **DX contract** the package implements, and what its examples demonstrate.
 
 The browser is a **Tier C host**: it reaches Mediaway through **WASM (`wasm-bindgen`)
 + native Web APIs, never the C ABI** (`docs/spec/c-ffi.md` § Tier C). This is the
@@ -32,25 +33,29 @@ Note: the browser track's video encode/decode goes through WebCodecs — the cod
 whatever the user's browser ships (typically H.264/VP8/VP9/AV1). The truth table below
 applies to the *native* stack; the browser's own limits are the browser's.
 
-## Ideal API — the DX contract
+## The API — the DX contract (implemented)
 
 A single `@mediaway/browser` package, TypeScript-first, `wasm-bindgen`-generated
-classes wrapped in idiomatic JS.
+classes wrapped in idiomatic JS (`packages/browser/`, built with
+`npm run build` → `dist/` + wasm-pack `pkg/`).
 
 - **One `init()` before anything else**: `await init()` fetches + instantiates the WASM
-  module; every call after it resolves is synchronous-feeling.
-- **Explicit `.free()` for WASM-side objects** (`Muxer`, `Demuxer`, encoder/session
-  handles): JS GC cannot see into WASM memory, so examples release handles when done —
-  that is the browser analog of the native stack's `close()`.
+  module; every call after it resolves is synchronous-feeling. In Node (dev runs) pass
+  the wasm bytes explicitly.
+- **Explicit `.free()` for WASM-side objects** (`Muxer`, `Demuxer`): JS GC cannot see
+  into WASM memory, so examples release handles when done — the browser analog of the
+  native stack's `close()`.
 - **`Uint8Array` for byte buffers**: `pollBytes(): Uint8Array`, `pushBytes(bytes)`,
-  `frame.data: Uint8Array` (NV12/BGRA8). Bytes are copied into JS-owned memory.
-- Typed config objects (`VideoTrackInfo`, `AudioTrackInfo`, `Rational = { num, den }`),
-  `Error` subclasses (`EncoderUnavailableError`) for expected failures.
-- **Name collision**: WebCodecs already has a global `VideoFrame` type; Mediaway's
-  frame type must be imported under an alias in examples (`MediawayVideoFrame`) or the
-  types must be distinct.
-- `EncodeSession` terminal `finish(): Uint8Array`; `MediaStreamTrackProcessor` feeds
-  native `VideoFrame`s from a captured track into `writeFrame`.
+  `sample.payload: Uint8Array`. Bytes are copied at the boundary.
+- Typed config objects (`Track`, `Sample`, `Rational = { num, den }`), `Error`
+  subclass `EncoderUnavailableError` for expected failures.
+- **Codec config arrives late**: WebCodecs exposes avcC/AudioSpecificConfig only in
+  the first output's metadata, so `EncodeSession` defers `begin()` until every planned
+  track has its config — the browser analog of the C ABI's push → stream_info → mux
+  order (`mediaway-pipeline-ffi/adr/0003`).
+- `EncodeSession` terminal `finish(): Uint8Array` (flush encoders + muxer).
+  Capture feeds frames in via a canvas bridge (`VideoFrame(canvas)` — universal,
+  no Insertable-Streams flag needed).
 
 ## Example scenarios
 
@@ -60,13 +65,13 @@ aspirational):
 
 | File | Capability | Real today? |
 |---|---|---|
-| `container/mux-roundtrip.ts` | mux 90 fake video + audio packets → fMP4 → demux back, count packets | ✅ core proven in-WASM (`iso-bmff-wasm`) |
-| `pipeline/encode-to-mp4.ts` | WebCodecs H.264 encode of 90 synthetic NV12 frames → fMP4 | 🚧 depends on the package + WebCodecs availability |
-| `pipeline/encode-audio.ts` | mic PCM → AAC → audio-only fMP4 | 🚧 aspirational — audio encode is real in the C ABI (v2) but `@mediaway/browser` has no wasm-bindgen AAC surface yet; capture is native `getUserMedia` |
-| `device/camera-record.ts` | `getUserMedia` camera → WebCodecs encode → fMP4 | 🚧 aspirational |
+| `container/mux-roundtrip.ts` | mux 90 fake video + audio packets → fMP4 → demux back, count packets | ✅ WASM mux/demux (also runs under Node — `npx tsx`) |
+| `pipeline/encode-to-mp4.ts` | WebCodecs H.264 encode of 90 synthetic NV12 frames → fMP4 | ✅ WebCodecs-dependent (E2E-verified; bundled Chromium may skip H.264 — msedge-real covers it) |
+| `pipeline/encode-audio.ts` | synthetic PCM → WebCodecs AAC → audio-only fMP4 | ✅ WebCodecs-dependent (E2E-verified; ASC pulled from the encoder's first-output description) |
+| `device/camera-record.ts` | `getUserMedia` camera → canvas bridge → WebCodecs encode → fMP4 | ✅ needs a real camera (native camera_record.* verified on hardware) |
 | `device/capture-microphone.ts` | `getUserMedia` microphone, level capture | ✅ native Web API |
-| `pipeline/screen-record.ts` | `getDisplayMedia` + mic → WebCodecs encode → fMP4 | 🚧 aspirational (Chromium Insertable-Streams flag) |
-| `device/capture-screen.ts` | `getDisplayMedia` screen capture, frame count | ✅ native Web API (Chromium Insertable-Streams flag) |
+| `pipeline/screen-record.ts` | `getDisplayMedia` + canvas bridge → WebCodecs encode → fMP4 | ✅ browser — the C-ABI hosts cannot screen-capture from C at all (device-ffi adr/0001 § Deferred) |
+| `device/capture-screen.ts` | `getDisplayMedia` screen capture, frame count | ✅ native Web API |
 
 ## Rules
 
@@ -75,4 +80,7 @@ aspirational):
   but note the browser's capture is *native Web APIs*, which is a host capability, not
   an invention.
 - No C ABI in this host, ever: no `ctypes`, no ffi, no pointers in examples.
-- Not part of the Cargo workspace; durable API changes require an ADR (ADR-0004).
+- Not part of the Cargo workspace; durable API changes require an ADR
+  ([`docs/adr/0020-browser-wasm-npm-package.md`](../../docs/adr/0020-browser-wasm-npm-package.md)).
+- E2E: `tools/e2e-web` Playwright suite — `browser-package.spec.ts` drives the built
+  package in Chromium + real Edge.

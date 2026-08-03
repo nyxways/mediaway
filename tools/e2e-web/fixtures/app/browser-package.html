@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>@mediaway/browser E2E</title>
+  </head>
+  <body>
+    <h1>@mediaway/browser</h1>
+    <p id="status">running…</p>
+    <script type="module">
+      // Exercises the real npm package surface (dist + pkg served from
+      // bindings/browser/packages/browser): wasm mux/demux roundtrip, then —
+      // when the browser ships usable WebCodecs codecs — H.264 + AAC encode to
+      // fMP4 through EncodeSession. Results are published to window.mediawayE2e.browserPkg
+      // for the Playwright spec.
+      import { init, Muxer, Demuxer, EncodeSession } from "/mediaway-browser/dist/index.js";
+
+      window.mediawayE2e = window.mediawayE2e ?? {};
+      const result = {};
+
+      try {
+        await init();
+
+        // ── 1. Wasm mux/demux roundtrip (always available) ────────────────
+        {
+          const muxer = new Muxer(1);
+          muxer.addTrack({
+            id: 0,
+            codec: "h264",
+            timeBase: { num: 1, den: 30 },
+            width: 64,
+            height: 64,
+            extraData: new Uint8Array([1, 0x42, 0, 0x1e, 0xff, 0xe1, 0, 4, 0x67, 0x42, 0x00, 0x1e, 1, 0, 4, 0x68, 0xce, 0x06, 0xe2]),
+          });
+          muxer.addTrack({
+            id: 1,
+            codec: "aac",
+            timeBase: { num: 1, den: 48000 },
+            width: 0,
+            height: 0,
+            extraData: new Uint8Array([0x11, 0x90]),
+          });
+          muxer.begin();
+          for (let i = 0; i < 90; i += 1) {
+            muxer.pushPacket({
+              streamId: 0,
+              pts: i,
+              dts: i,
+              duration: 1,
+              isKeyframe: i % 30 === 0,
+              isDiscard: false,
+              payload: new Uint8Array([0, 2, 0x65, 0x88]),
+            });
+          }
+          for (let i = 0; i < 90; i += 1) {
+            muxer.pushPacket({
+              streamId: 1,
+              pts: i * 1024,
+              dts: i * 1024,
+              duration: 1024,
+              isKeyframe: true,
+              isDiscard: false,
+              payload: new Uint8Array([0x21, 0x10, 0x04, 0x60, 0x8c, 0x1c]),
+            });
+          }
+          muxer.flush();
+          const bytes = muxer.pollBytes();
+          const demuxer = new Demuxer();
+          demuxer.pushBytes(bytes);
+          let recovered = 0;
+          while (demuxer.pollPacket() !== null) recovered += 1;
+          const streams = demuxer.streams().map((s) => s.codec);
+          demuxer.free();
+          muxer.free();
+          result.mux = { bytes: bytes.length, recovered, streams };
+        }
+
+        // ── 2. WebCodecs H.264 encode -> fMP4 (codec-dependent) ───────────
+        try {
+          const supported = await VideoEncoder.isConfigSupported({
+            codec: "avc1.42E01E",
+            width: 64,
+            height: 64,
+          });
+          if (!supported.supported) {
+            result.video = { skipped: "avc1.42E01E unsupported" };
+          } else {
+            const muxer = new Muxer(1);
+            const session = new EncodeSession(muxer);
+            const encoder = await session.video({
+              codec: "avc1.42E01E",
+              width: 64,
+              height: 64,
+              bitrate: 500_000,
+              framerate: 30,
+              avc: { format: "avc" },
+            });
+            const yLen = 64 * 64;
+            const data = new Uint8Array(yLen + yLen / 2);
+            for (let i = 0; i < 90; i += 1) {
+              data.fill(64 + ((i * 7) % 64), 0, yLen);
+              const frame = new VideoFrame(data, {
+                format: "NV12",
+                codedWidth: 64,
+                codedHeight: 64,
+                timestamp: Math.round((i * 1_000_000) / 30),
+              });
+              encoder.encode(frame, { keyFrame: i % 30 === 0 });
+              frame.close();
+            }
+            const bytes = await session.finish();
+            const demuxer = new Demuxer();
+            demuxer.pushBytes(bytes);
+            let packets = 0;
+            while (demuxer.pollPacket() !== null) packets += 1;
+            const codecs = demuxer.streams().map((s) => s.codec);
+            demuxer.free();
+            muxer.free();
+            result.video = { bytes: bytes.length, packets, codecs };
+          }
+        } catch (err) {
+          // Codec claimed support but this Chromium build cannot actually encode
+          // (e.g. bundled-Chromium H.264: "OperationError: Encoding error.") —
+          // same honest-skip class as an unsupported codec; real codecs run on
+          // the msedge-real project.
+          if (err.name === "EncoderUnavailableError" || (err instanceof DOMException && err.name === "OperationError")) {
+            result.video = { skipped: String(err.message) };
+          } else {
+            result.video = { error: String(err) };
+          }
+        }
+
+        // ── 3. WebCodecs AAC encode -> fMP4 (codec-dependent) ─────────────
+        try {
+          const supported = await AudioEncoder.isConfigSupported({
+            codec: "mp4a.40.2",
+            sampleRate: 48000,
+            numberOfChannels: 1,
+          });
+          if (!supported.supported) {
+            result.audio = { skipped: "mp4a.40.2 unsupported" };
+          } else {
+            const muxer = new Muxer(1);
+            const session = new EncodeSession(muxer);
+            const encoder = await session.audio({
+              codec: "mp4a.40.2",
+              sampleRate: 48000,
+              numberOfChannels: 1,
+              bitrate: 128_000,
+            });
+            const chunks = 94; // 2 s at 1024-frame chunks / 48 kHz
+            for (let c = 0; c < chunks; c += 1) {
+              const pcm = new Float32Array(1024);
+              for (let s = 0; s < 1024; s += 1) {
+                const t = (c * 1024 + s) / 48000;
+                pcm[s] = 0.5 * Math.sin(2 * Math.PI * 440 * t);
+              }
+              const ad = new AudioData({
+                format: "f32-planar",
+                sampleRate: 48000,
+                numberOfFrames: 1024,
+                numberOfChannels: 1,
+                timestamp: Math.round((c * 1024 * 1_000_000) / 48000),
+                data: pcm,
+              });
+              encoder.encode(ad);
+              ad.close();
+            }
+            const bytes = await session.finish();
+            const demuxer = new Demuxer();
+            demuxer.pushBytes(bytes);
+            let packets = 0;
+            while (demuxer.pollPacket() !== null) packets += 1;
+            const codecs = demuxer.streams().map((s) => s.codec);
+            demuxer.free();
+            muxer.free();
+            result.audio = { bytes: bytes.length, packets, codecs };
+          }
+        } catch (err) {
+          // See the video section: OperationError = codec-class skip, not a bug.
+          if (err.name === "EncoderUnavailableError" || (err instanceof DOMException && err.name === "OperationError")) {
+            result.audio = { skipped: String(err.message) };
+          } else {
+            result.audio = { error: String(err) };
+          }
+        }
+
+        window.mediawayE2e.browserPkg = result;
+        document.getElementById("status").textContent = JSON.stringify(result);
+      } catch (err) {
+        result.error = String(err);
+        window.mediawayE2e.browserPkg = result;
+        document.getElementById("status").textContent = "failed: " + String(err);
+      }
+    </script>
+  </body>
+</html>

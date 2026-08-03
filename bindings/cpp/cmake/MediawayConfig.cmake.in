@@ -1,0 +1,8 @@
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/MediawayTargets.cmake")
+
+# mediaway::mediaway — C ABI headers + C++ RAII wrapper (header-only).
+# The native DLLs install to <prefix>/bin; add it to PATH (or LoadLibrary the
+# three mediaway_*_ffi.dll explicitly) before calling into the ABI.
+check_required_components(mediaway)

@@ -9,6 +9,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>Mediaway.Device.Desktop</RootNamespace>
     <AssemblyName>Mediaway.Device.Desktop</AssemblyName>
+    <NeedsNativeRuntime>true</NeedsNativeRuntime>
     <Description>Idiomatic C# binding over mediaway-device-ffi's "desktop" feature (Screen video Zero-Copy capture + Loopback/ProcessLoopback audio capture) — see adr/0004-domain-feature-split.md.</Description>
   </PropertyGroup>
 

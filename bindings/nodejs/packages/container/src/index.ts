@@ -7,7 +7,21 @@
  * `pts`/`duration` are integer ticks of each track's `timeBase`.
  */
 
-import { MwPacket, MwPacketView, MwRational, MwStreamInfo, MwVideoTrackInfo, MwAudioTrackInfo, container, copyBytes } from "@mediaway/ffi";
+import {
+  MwPacket,
+  MwPacketView,
+  MwRational,
+  MwStreamInfo,
+  MwVideoTrackInfo,
+  MwAudioTrackInfo,
+  container,
+  copyBytes,
+  type RawAudioTrackInfo,
+  type RawPacket,
+  type RawPacketView,
+  type RawStreamInfo,
+  type RawVideoTrackInfo,
+} from "@mediaway/ffi";
 
 export interface Rational {
   num: number;
@@ -101,7 +115,7 @@ export class Muxer {
 
   addVideoTrack(info: VideoTrackInfo): number {
     const index = this.nextIndex++;
-    const raw: typeof MwVideoTrackInfo = {
+    const raw: RawVideoTrackInfo = {
       id: index,
       codec: CODEC_TO_ABI[info.codec] ?? 0,
       time_base: { num: BigInt(info.timeBase.num), den: info.timeBase.den },
@@ -116,7 +130,7 @@ export class Muxer {
 
   addAudioTrack(info: AudioTrackInfo): number {
     const index = this.nextIndex++;
-    const raw: typeof MwAudioTrackInfo = {
+    const raw: RawAudioTrackInfo = {
       id: index,
       codec: CODEC_TO_ABI[info.codec] ?? 4,
       time_base: { num: BigInt(info.timeBase.num), den: info.timeBase.den },
@@ -141,7 +155,7 @@ export class Muxer {
 
   /** Push one packet (sync; the muxer never blocks on I/O). */
   push(packet: Packet): void {
-    const raw: typeof MwPacketView = {
+    const raw: RawPacketView = {
       stream_id: packet.trackIndex,
       pts: BigInt(packet.pts),
       dts: BigInt(packet.pts), // dts defaults to pts (no B-frames in the DX contract)
@@ -202,7 +216,7 @@ export class Demuxer {
     const out: TrackInfo[] = [];
     this.streamIndexById.clear();
     for (let i = 0; i < count; i++) {
-      const raw: typeof MwStreamInfo = {};
+      const raw = {} as RawStreamInfo;
       check(container.demuxerStreamAt(this.handle, i, raw));
       const extra = copyBytes(raw.extra_data, raw.extra_data_len);
       container.streamInfoFree(raw);
@@ -235,7 +249,7 @@ export class Demuxer {
 
   /** The next demuxed packet, or null when the stream is exhausted. */
   pollPacket(): Packet | null {
-    const raw: typeof MwPacket = {};
+    const raw = {} as RawPacket;
     const has: [boolean] = [false];
     check(container.demuxerPollPacket(this.handle, raw, has));
     if (!has[0]) return null;

@@ -9,6 +9,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>Mediaway.Device.Hotplug</RootNamespace>
     <AssemblyName>Mediaway.Device.Hotplug</AssemblyName>
+    <NeedsNativeRuntime>true</NeedsNativeRuntime>
     <Description>Idiomatic C# binding over mediaway-device-ffi's "hotplug" feature — poll mode plus a real native push-mode callback (mediaway_device_hotplug_register_callback), see adr/0002-callback-event-delivery.md.</Description>
   </PropertyGroup>
 

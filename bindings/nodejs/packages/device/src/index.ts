@@ -10,7 +10,16 @@
  * interleaved f32le PCM — there is no audio encoder in the ABI.
  */
 
-import { MwAudioFrame, MwAudioConfig, MwCameraConfig, MwCameraFrame, device, copyBytes } from "@mediaway/ffi";
+import {
+  MwAudioFrame,
+  MwAudioConfig,
+  MwCameraConfig,
+  MwCameraFrame,
+  device,
+  copyBytes,
+  type RawAudioFrame,
+  type RawCameraFrame,
+} from "@mediaway/ffi";
 import { MediawayError, type Rational } from "@mediaway/container";
 
 export type { Rational } from "@mediaway/container";
@@ -72,7 +81,8 @@ export class CameraSession {
 
   private handle: unknown;
 
-  private constructor(handle: unknown, width: number, height: number, timeBase: Rational) {
+  /** Wrap a native camera capture handle. Prefer the openCamera() factory. */
+  constructor(handle: unknown, width: number, height: number, timeBase: Rational) {
     this.handle = handle;
     this.width = width;
     this.height = height;
@@ -82,7 +92,7 @@ export class CameraSession {
 
   /** Poll the next frame; null when nothing is ready yet. Sync, never blocks. */
   pollFrame(): VideoFrame | null {
-    const raw: typeof MwCameraFrame = {};
+    const raw = {} as RawCameraFrame;
     const has: [boolean] = [false];
     checkDevice(device.cameraPollFrame(this.handle, raw, has));
     if (!has[0]) return null;
@@ -132,7 +142,8 @@ export class MicSession {
 
   private handle: unknown;
 
-  private constructor(handle: unknown, sampleRate: number, channels: number) {
+  /** Wrap a native mic capture handle. Prefer the openMicrophone() factory. */
+  constructor(handle: unknown, sampleRate: number, channels: number) {
     this.handle = handle;
     this.sampleRate = sampleRate;
     this.channels = channels;
@@ -140,7 +151,7 @@ export class MicSession {
 
   /** Poll the next PCM chunk; null when nothing is ready yet. */
   pollFrame(): AudioFrame | null {
-    const raw: typeof MwAudioFrame = {};
+    const raw = {} as RawAudioFrame;
     const has: [boolean] = [false];
     checkDevice(device.audioPollFrame(this.handle, raw, has));
     if (!has[0]) return null;
@@ -187,7 +198,8 @@ export class ScreenSession {
   readonly pixelFormat = "bgra8" as const;
   readonly timeBase: Rational;
 
-  private constructor(timeBase: Rational) {
+  /** Screen session (always throws — no C-ABI screen path yet). */
+  constructor(timeBase: Rational) {
     this.timeBase = timeBase;
   }
 

@@ -9,6 +9,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>Mediaway.Pipeline</RootNamespace>
     <AssemblyName>Mediaway.Pipeline</AssemblyName>
+    <NeedsNativeRuntime>true</NeedsNativeRuntime>
     <Description>Idiomatic C# binding over mediaway-pipeline-ffi (auto video encode -> fragmented MP4).</Description>
   </PropertyGroup>
 

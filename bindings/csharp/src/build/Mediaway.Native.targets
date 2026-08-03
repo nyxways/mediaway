@@ -1,0 +1,15 @@
+<Project>
+  <!--
+    Mediaway native runtime: copy the bundled win-x64 DLLs into the consumer's
+    output directory after build. The DLLs ship in this package under
+    runtimes/win-x64/native (standard RID layout); this target makes them
+    available for plain `dotnet run`/`dotnet build` too, where no
+    RuntimeIdentifier exists to trigger NuGet's automatic RID resolution.
+  -->
+  <Target Name="MediawayNativeCopy" AfterTargets="Build" Condition="Exists('$(MSBuildThisFileDirectory)..\runtimes\win-x64\native')">
+    <ItemGroup>
+      <_MediawayNativeDll Include="$(MSBuildThisFileDirectory)..\runtimes\win-x64\native\*.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_MediawayNativeDll)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

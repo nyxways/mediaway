@@ -9,6 +9,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>Mediaway.Device</RootNamespace>
     <AssemblyName>Mediaway.Device</AssemblyName>
+    <NeedsNativeRuntime>true</NeedsNativeRuntime>
     <Description>Shared base for the Mediaway.Device.* packages (Camera/Desktop/Audio/Hotplug): device kind, status codes, exception types.</Description>
   </PropertyGroup>
 

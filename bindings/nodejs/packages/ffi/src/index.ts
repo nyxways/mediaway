@@ -22,13 +22,15 @@ import { fileURLToPath } from "node:url";
 // ── Library discovery ──────────────────────────────────────────────────────────
 // The cdylibs are Rust build artifacts, not installed system libraries. Search:
 //   1. $MEDIAWAY_FFI_DIR
-//   2. <repo root>/target/x86_64-pc-windows-gnu/debug   (GNU toolchain)
-//   3. <repo root>/target/debug                          (host/MSVC toolchain)
-//   4. cwd
+//   2. <this package>/native        (DLLs bundled at pack time — the npm distribution)
+//   3. <repo root>/target/x86_64-pc-windows-gnu/debug   (GNU toolchain, dev runs)
+//   4. <repo root>/target/debug                          (host/MSVC toolchain)
+//   5. cwd
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..", "..", "..", "..", "..");
 const searchDirs = [
   process.env.MEDIAWAY_FFI_DIR ?? "",
+  path.resolve(here, "..", "native"),
   path.join(repoRoot, "target", "x86_64-pc-windows-gnu", "debug"),
   path.join(repoRoot, "target", "debug"),
   process.cwd(),
@@ -390,4 +392,160 @@ export const device = {
 export function copyBytes(ptr: unknown, len: number): Buffer {
   if (!ptr || len <= 0) return Buffer.alloc(0);
   return Buffer.from(koffi.decode(ptr, "uint8_t", len));
+}
+
+// ── ABI mirror types ───────────────────────────────────────────────────────────
+// TypeScript mirrors of the koffi structs above (fields match the C headers
+// verbatim). koffi populates/reads plain JS objects with these shapes; the
+// mirror types keep call sites type-safe without depending on koffi's own
+// struct typing.
+
+/** `mediaway_rational_t` (u64 num / u32 den). */
+export interface RawRational {
+  num: bigint | number;
+  den: number;
+}
+
+/** `mediaway_video_track_info_t` / `mediaway_audio_track_info_t`. */
+export interface RawVideoTrackInfo {
+  id: number;
+  codec: number;
+  time_base: RawRational;
+  width: number;
+  height: number;
+  extra_data: unknown;
+  extra_data_len: number;
+}
+
+export interface RawAudioTrackInfo {
+  id: number;
+  codec: number;
+  time_base: RawRational;
+  sample_rate: number;
+  channels: number;
+  extra_data: unknown;
+  extra_data_len: number;
+}
+
+/** `mediaway_packet_view_t` (muxer input). */
+export interface RawPacketView {
+  stream_id: number;
+  pts: bigint | number;
+  dts: bigint | number;
+  duration: bigint | number;
+  is_keyframe: boolean;
+  is_discard: boolean;
+  payload: unknown;
+  payload_len: number;
+}
+
+/** `mediaway_stream_info_t` (demuxer output; geometry vs. audio via has_geometry). */
+export interface RawStreamInfo {
+  id: number;
+  codec: number;
+  time_base: RawRational;
+  has_geometry: boolean;
+  width: number;
+  height: number;
+  sample_rate: number;
+  channels: number;
+  extra_data: unknown;
+  extra_data_len: number;
+}
+
+/** `mediaway_packet_t` (demuxer output). */
+export interface RawPacket {
+  stream_id: number;
+  pts: bigint | number;
+  duration: bigint | number;
+  is_keyframe: boolean;
+  is_discard: boolean;
+  payload: unknown;
+  payload_len: number;
+}
+
+/** ABI output structs — fields are filled by the ABI call; callers construct
+ * them empty (`{} as RawX`) and read the fields after the call. */
+
+/** `mediaway_camera_frame_t` / `mediaway_audio_frame_t` (device outputs). */
+export interface RawCameraFrame {
+  pts: bigint | number;
+  duration: bigint | number;
+  width: number;
+  height: number;
+  pixel_format: number;
+  data: unknown;
+  data_len: number;
+}
+
+export interface RawAudioFrame {
+  pts: bigint | number;
+  duration: bigint | number;
+  sample_rate: number;
+  channels: number;
+  sample_format: number;
+  data: unknown;
+  data_len: number;
+}
+
+/** `mediaway_pipeline_frame_t` (encode session input). */
+export interface RawPipelineFrame {
+  pts: bigint | number;
+  duration: bigint | number;
+  width: number;
+  height: number;
+  pixel_format: number;
+  storage_kind: number;
+  raw_bytes: unknown;
+  raw_bytes_len: number;
+  gpu_buffer: RawGpuBufferHandle;
+}
+
+/** `mediaway_gpu_buffer_handle_t`. */
+export interface RawGpuBufferHandle {
+  kind: number;
+  native_a: number | bigint;
+  native_b: number | bigint;
+  subresource: number;
+  webgpu_texture_id: number | bigint;
+}
+
+/** Audio ABI v2 config / frame view / packet (ADR-0003). */
+export interface RawAudioEncodeConfig {
+  codec: number;
+  sample_rate: number;
+  channels: number;
+  sample_format: number;
+  time_base: RawRational;
+  bitrate_bps: number;
+}
+
+/** `mediaway_audio_stream_info_t` (encoder output). */
+export interface RawAudioStreamInfo {
+  codec: number;
+  time_base: RawRational;
+  sample_rate: number;
+  channels: number;
+  extra_data: unknown;
+  extra_data_len: number;
+}
+
+export interface RawAudioFrameView {
+  pts: bigint | number;
+  duration: bigint | number;
+  sample_rate: number;
+  channels: number;
+  sample_format: number;
+  data: unknown;
+  data_len: number;
+}
+
+export interface RawAudioPacket {
+  pts: bigint | number;
+  dts: bigint | number;
+  duration: bigint | number;
+  is_keyframe: boolean;
+  is_discard: boolean;
+  payload: unknown;
+  payload_len: number;
 }

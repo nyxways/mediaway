@@ -182,7 +182,7 @@ architected with **selective linking**:
 | **C# (.NET)** | P/Invoke | ✅ verified | Windows desktop, WPF/WinUI, Unity native plugins | [`bindings/csharp/`](bindings/csharp/) |
 | **Python** | `ctypes` / `cffi` | ✅ verified | Data processing pipelines, ML model input/output streams | [`bindings/python/examples/`](bindings/python/examples/) |
 | **Node.js (TS)** | Native Addon / N-API (koffi FFI today) | ✅ verified | Node.js server-side video processing and CLI tools | [`bindings/nodejs/examples/`](bindings/nodejs/examples/) |
-| **Browser (TS)** | WASM + WebCodecs | 📐 design | Browser-native high-performance video apps (no C FFI) | [`bindings/browser/examples/`](bindings/browser/examples/) |
+| **Browser (TS)** | WASM + WebCodecs | ✅ verified | Browser-native high-performance video apps (no C FFI) | [`bindings/browser/`](bindings/browser/) |
 | **Unity / Godot** | Native GPU Plugin | Planned | Seamless Zero-Copy GPU texture sharing & camera/screen record | — |
 
 Status legend: ✅ verified = real binding source built and run against the native

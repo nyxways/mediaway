@@ -29,6 +29,22 @@ node_modules/
 __pycache__/
 *.exe
 *.mp4
+# Python packaging artifacts + bundled native DLLs (built by tools/scripts)
+bindings/python/dist/
+bindings/python/build/
+bindings/python/*.egg-info/
+bindings/python/mediaway/_native/
+bindings/csharp/runtime/
+bindings/csharp/dist/
+bindings/native/runtime/
+bindings/cpp/build/
+# Node packaging artifacts (built by tools/scripts)
+bindings/nodejs/packages/ffi/native/
+bindings/nodejs/packages/*/dist/
+# Browser package artifacts (wasm-pack + tsc output)
+bindings/browser/packages/browser/pkg/
+bindings/browser/packages/browser/dist/
+bindings/browser/node_modules/
 
 # mdBook build output (deployed via CI, not committed)
 /docs/book/book/

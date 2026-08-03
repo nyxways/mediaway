@@ -1,0 +1,45 @@
+{
+  "name": "@mediaway/browser",
+  "version": "0.1.0",
+  "description": "Browser binding for Mediaway — fMP4 mux/demux (WASM) + WebCodecs encode-to-MP4 (ADR-0020)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./wasm": "./pkg/iso_bmff_wasm_bg.wasm"
+  },
+  "files": [
+    "dist",
+    "pkg"
+  ],
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nyxways/mediaway"
+  },
+  "keywords": [
+    "media",
+    "mp4",
+    "webcodecs",
+    "wasm",
+    "mediaway",
+    "mux",
+    "demux"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build:wasm": "wasm-pack build ../../../../crates/iso-bmff-wasm --target web --out-dir pkg --release",
+    "build": "npm run build:wasm && tsc -p tsconfig.json",
+    "prepack": "npm run build",
+    "test": "npm run build && npx tsx ../../examples/container/mux-roundtrip.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}

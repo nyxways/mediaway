@@ -10,6 +10,9 @@ function resolvePath(pathname: string): string | null {
   if (pathname === "/" || pathname === "/index.html") {
     return join(root, "fixtures/app/index.html");
   }
+  if (pathname === "/browser-package.html") {
+    return join(root, "fixtures/app/browser-package.html");
+  }
   for (const crate of [
     "iso-bmff-wasm",
     "mediaway-encoder-web",
@@ -20,6 +23,22 @@ function resolvePath(pathname: string): string | null {
     if (pathname.startsWith(prefix)) {
       return join(root, "pkg", crate, pathname.slice(prefix.length));
     }
+  }
+  // @mediaway/browser package (dist + wasm pkg) — the bindings/browser package
+  // under test, built by `npm run build` in bindings/browser/packages/browser.
+  const browserPkgPrefix = "/mediaway-browser/";
+  if (pathname.startsWith(browserPkgPrefix)) {
+    const rel = pathname.slice(browserPkgPrefix.length);
+    return join(
+      root,
+      "..",
+      "..",
+      "bindings",
+      "browser",
+      "packages",
+      "browser",
+      rel,
+    );
   }
   return null;
 }

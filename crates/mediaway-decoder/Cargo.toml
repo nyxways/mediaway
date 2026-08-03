@@ -23,11 +23,13 @@ smallvec = { workspace = true }
 # Vulkan bindings, same crate/version already reviewed for
 # mediaway-encoder-vulkan (Apache-2.0, workspace-pinned). `libloading`
 # dynamically resolves the system Vulkan loader at runtime — never a
-# build-time link requirement. See adr/0001.
-vulkanalia = { workspace = true }
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+# Vulkan Video bindings — desktop only; libloading is not wasm32-compatible.
+vulkanalia = { workspace = true }
 
 [lints]
 workspace = true

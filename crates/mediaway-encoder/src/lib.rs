@@ -39,6 +39,7 @@ pub use video::{VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 pub mod linux;
 pub mod nvenc;
 pub mod quicksync;
+#[cfg(not(target_family = "wasm"))] // Vulkan Video — desktop only (vulkanalia/libloading)
 pub mod vulkan;
 pub mod web;
 pub mod windows;

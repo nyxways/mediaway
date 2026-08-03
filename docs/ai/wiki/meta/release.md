@@ -29,8 +29,10 @@ runbook: [`docs/contributing/repo-operations.md`](../../../contributing/repo-ope
   1-hour API key — only the nuget.org username is stored. `GITHUB_TOKEN` is
   automatic.
 - **Crates set — deferred**: no crates.io job in the first release (npm /
-  NuGet / PyPI / CPack only). The 39-crate `publish = true` set + dependency-
-  order publish logic exist in git history for when crates.io returns.
+  NuGet / PyPI / CPack only). After the ADR-0021 consolidation the publishable
+  set is **17 crates** (9 freestanding cores with independent versions + 8
+  `mediaway-*` family crates sharing the workspace version) — a crates.io job
+  becomes viable whenever it is un-deferred.
 - **Failure = partial release**: registries are one-shot per version; bump the
   workspace version and re-run (or delete half-published packages manually).
   The GitHub release is created only when every registry job succeeded.

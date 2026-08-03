@@ -63,13 +63,44 @@ jobs:
         with:
           tool: cargo-nextest
 
+      - name: Setup Bun (dependency-impact analysis)
+        uses: oven-sh/setup-bun@v2
+
+      - name: Compute affected crates (PR only)
+        if: github.event_name == 'pull_request'
+        id: affected
+        shell: bash
+        run: |
+          base="$(git merge-base origin/${{ github.base_ref }} HEAD)"
+          echo "affected=$(bun tools/scripts/ci-affected.ts --base "$base")" >> "$GITHUB_OUTPUT"
+
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
 
-      - name: cargo clippy
+      - name: cargo clippy (affected)
+        if: github.event_name == 'pull_request' && steps.affected.outputs.affected != 'ALL'
+        shell: bash
+        run: |
+          affected="${{ steps.affected.outputs.affected }}"
+          if [ "$affected" = "NONE" ]; then echo "no affected crates — skip"; exit 0; fi
+          # shellcheck disable=SC2046
+          cargo clippy --all-targets --all-features -p $(echo "$affected" | tr ' ' ' -p ') -- -D warnings
+
+      - name: cargo clippy (full)
+        if: github.event_name != 'pull_request' || steps.affected.outputs.affected == 'ALL'
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-      - name: cargo nextest test
+      - name: cargo nextest test (affected)
+        if: github.event_name == 'pull_request' && steps.affected.outputs.affected != 'ALL'
+        shell: bash
+        run: |
+          affected="${{ steps.affected.outputs.affected }}"
+          if [ "$affected" = "NONE" ]; then echo "no affected crates — skip"; exit 0; fi
+          # shellcheck disable=SC2046
+          cargo nextest run --all-features -p $(echo "$affected" | tr ' ' ' -p ')
+
+      - name: cargo nextest test (full)
+        if: github.event_name != 'pull_request' || steps.affected.outputs.affected == 'ALL'
         run: cargo nextest run --workspace --all-features
 
       - name: sccache stats

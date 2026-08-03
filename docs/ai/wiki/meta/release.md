@@ -11,15 +11,19 @@ runbook: [`docs/contributing/repo-operations.md`](../../../contributing/repo-ope
 - **Jobs**: `version` gate (semver + refuses existing `v<version>`) → `crates`
   (metadata pre-flight: publishable-set closure; publish in dependency order
   via retry rounds) + `native-assets` (win64 GNU cdylibs, MinGW-w64) → `npm` /
-  `nuget` / `pypi` / `native` (CPack) in parallel → `release` (tag
-  `v<version>` + `--generate-notes` + CPack assets). The `npm` job
-  self-updates npm to >= 11.5.1 (required for OIDC trusted publishing).
-- **Environment**: all publishing jobs run under the GitHub **`release`
-  environment** (Settings → Environments → release); protection rules there
+  `nuget` / `pypi` (wheel build on Windows) + `pypi-publish` (Linux: OIDC +
+  PEP 740 attestations — `gh-action-pypi-publish`'s container cannot run on
+  Windows runners) + `native` (CPack) in parallel → `release` (tag
+  `v<version>` + RELEASE_NOTES.md + CPack assets). The `npm` job self-updates
+  npm to >= 11.5.1 (required for OIDC trusted publishing).
+- **Environment**: all publishing jobs run under the GitHub **`release`**
+  environment (Settings → Environments → release); protection rules there
   gate every publish. NuGet policy / npm trusted-publisher Environment fields
-  are set to `release` to match.
-- **Secrets** (repo Actions secrets): `CARGO_REGISTRY_TOKEN` · `NUGET_USER` —
-  set with
+  are set to `release` to match. Manual approval via the API:
+  `POST /repos/{owner}/{repo}/actions/runs/{run}/pending_deployments` with
+  `{"environment_ids":[<id>],"state":"approved"}`.
+- **Secrets** (repo Actions secrets): `CARGO_REGISTRY_TOKEN` (fallback only;
+  crates.io uses OIDC trusted publishing) · `NUGET_USER` — set with
   `bun tools/scripts/release-secrets.ts` (interactive TUI, prints each token's
   source URL; `--list` / `--set` / `--delete` for scripting). npm, NuGet, and
   PyPI need **no long-lived tokens**: npm via OIDC **Trusted Publishing**
@@ -30,15 +34,21 @@ runbook: [`docs/contributing/repo-operations.md`](../../../contributing/repo-ope
   Publishing** (pypi.org → Pending publishers: repo `nyxways/mediaway`, workflow
   `release.yml`, environment `release`) + `pypa/gh-action-pypi-publish` with
   PEP 740 attestations. `GITHUB_TOKEN` is automatic.
-- **Crates set — deferred**: no crates.io job in the first release (npm /
-  NuGet / PyPI / CPack only). After the ADR-0021 consolidation the publishable
-  set is **19 crates** (9 freestanding cores with independent versions + 8
+- **Crates set**: publishable set is **20 crates** (10 freestanding cores with
+  independent versions — `-core`-suffixed where the bare name is taken:
+  adts-core, mpeg-ts-core, riff-wave-core, flv-core, ogg-core — + 8
   `mediaway-*` family crates sharing the workspace version + avcli/avprobe +
-  vpl-sys; rtmp and mediaway-ffi stay `publish = false`) — published in
-  dependency order by `tools/scripts/publish-crates.ts`.
+  vpl-sys + mediaway-test-media; rtmp and mediaway-ffi stay `publish = false`)
+  — published in dependency order by `tools/scripts/publish-crates.ts`
+  (skips versions already on the index; 429 auto-waits the 5-new-crates/10-min
+  window; per-crate OIDC trusted publishing registered via
+  `POST /api/v1/trusted_publishing/github_configs`).
 - **Failure = partial release**: registries are one-shot per version; bump the
   workspace version and re-run (or delete half-published packages manually).
   The GitHub release is created only when every registry job succeeded.
 - **Native DLLs**: the three `-ffi` cdylibs are built once by `native-assets`
   and downloaded as an artifact; `MEDIAWAY_SKIP_CARGO_BUILD=1` makes
   `tools/scripts/copy-native-dlls.ts` stage prebuilt DLLs without rebuilding.
+  Gotcha: `upload-artifact@v4` strips the common ancestor of multi-path
+  uploads, so the `native-dlls` artifact lacks the `bindings/` prefix and the
+  download steps must use `path: bindings` to restore it.

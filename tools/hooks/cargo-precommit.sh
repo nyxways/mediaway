@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 # tools/hooks/cargo-precommit.sh — sequential fmt + clippy (Windows cargo lock safety)
+#
+# clippy is scoped to the staged crates' affected closure (the same
+# dependency-tree analysis as ci.yml / pre-push): a commit touching one crate
+# lints only that crate and its transitive dependents.
+#
+# POSIX-only (no arrays): the scoop-shimmed `bash` on Windows is BusyBox.
 set -euo pipefail
 
 _ms() {
@@ -34,20 +40,42 @@ if [[ -n "${_staged_before}" ]]; then
 fi
 ok
 
-# 2. clippy --fix + strict verify (workspace; slim — no crate scoping yet)
-step "cargo clippy --fix + -D warnings"
+# 2. clippy --fix + strict verify — scoped to the staged crates' affected
+# closure (same dependency-tree analysis as ci.yml / pre-push).
+step "cargo clippy --fix + -D warnings (scoped)"
 _staged_rs=$(git diff --cached --name-only --diff-filter=ACM -- '*.rs' || true)
 if [[ -z "${_staged_rs}" ]]; then
     echo "skip (no staged .rs)"
 else
-    cargo clippy --workspace --all-targets --fix --allow-dirty --allow-staged
-    _staged_after=$(git diff --cached --name-only --diff-filter=ACM -- '*.rs' || true)
-    while IFS= read -r f; do
-        [[ -z "$f" ]] && continue
-        if ! git diff --quiet -- "$f"; then
-            git add -- "$f"
+    _files=$(git diff --cached --name-only --diff-filter=ACMRT | tr '\n' ' ')
+    if ! AFFECTED="$(bun tools/scripts/ci-affected.ts --files "$_files" 2>/dev/null)"; then
+        AFFECTED="ALL"
+    fi
+    echo "affected: $AFFECTED"
+    if [ "$AFFECTED" = "NONE" ]; then
+        echo "skip (no Rust package affected)"
+    else
+        PKGS=""
+        for p in $AFFECTED; do PKGS="$PKGS -p $p"; done
+        if [ "$AFFECTED" = "ALL" ]; then
+            cargo clippy --workspace --all-targets --fix --allow-dirty --allow-staged
+        else
+            # shellcheck disable=SC2086
+            cargo clippy --all-targets --fix --allow-dirty --allow-staged $PKGS
         fi
-    done <<< "${_staged_after}"
-    cargo clippy --workspace --all-targets -- -D warnings
-    ok
+        _staged_after=$(git diff --cached --name-only --diff-filter=ACM -- '*.rs' || true)
+        while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
+            if ! git diff --quiet -- "$f"; then
+                git add -- "$f"
+            fi
+        done <<< "${_staged_after}"
+        if [ "$AFFECTED" = "ALL" ]; then
+            cargo clippy --workspace --all-targets -- -D warnings
+        else
+            # shellcheck disable=SC2086
+            cargo clippy --all-targets $PKGS -- -D warnings
+        fi
+        ok
+    fi
 fi

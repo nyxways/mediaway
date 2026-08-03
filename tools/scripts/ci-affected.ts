@@ -43,7 +43,7 @@ interface Metadata {
   packages: Package[];
 }
 
-const ALL_TRIGGERS = [/^Cargo\.toml$/, /^Cargo\.lock$/, /^\.cargo\//, /^rust-toolchain(\.toml)?$/];
+const ALL_TRIGGERS = [/^Cargo\.toml$/, /^Cargo\.lock$/, /\.cargo\//, /^rust-toolchain(\.toml)?$/, /^\.github\//];
 
 function usage(): never {
   console.error(`Usage: bun tools/scripts/ci-affected.ts [--base <ref> | --files "a b c"] [--one-line|--names|--json]

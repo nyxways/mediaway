@@ -8,8 +8,8 @@
 
 use super::*;
 use mediaway_common::{Bytes, CodecKind, Rational, VideoFrameStorage};
+use mediaway_encoder::windows::WindowsVideoEncoder;
 use mediaway_encoder::{VideoEncoder, VideoEncoderConfig, VideoInputPreference};
-use mediaway_encoder_windows::WindowsVideoEncoder;
 use windows::Win32::Media::MediaFoundation::{
     IMFActivate, MFMediaType_Video, MFT_CATEGORY_VIDEO_DECODER, MFT_ENUM_FLAG,
     MFT_ENUM_FLAG_SORTANDFILTER, MFT_ENUM_FLAG_SYNCMFT, MFT_FRIENDLY_NAME_Attribute,

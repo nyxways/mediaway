@@ -29,8 +29,8 @@ use mediaway_common::{
 use mediaway_container::mp4::{Demuxer, Muxer};
 use mediaway_decoder::{VideoDecoder, VideoDecoderConfig, VideoOutputPreference};
 use mediaway_decoder_linux::LinuxVideoDecoder;
+use mediaway_encoder::linux::LinuxVideoEncoder;
 use mediaway_encoder::{VideoEncoder, VideoEncoderConfig, VideoInputPreference};
-use mediaway_encoder_linux::LinuxVideoEncoder;
 use mediaway_test_media::solid_nv12_bytes;
 
 const WIDTH: u32 = 64;

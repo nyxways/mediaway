@@ -35,7 +35,7 @@ impl AutoEncoder {
     pub fn open(config: &AutoVideoEncodeConfig) -> Result<Box<dyn VideoEncoder>, EncodeError> {
         #[cfg(windows)]
         {
-            use mediaway_encoder_windows::auto::AutoVideoEncoder;
+            use mediaway_encoder::windows::auto::AutoVideoEncoder;
             let enc = AutoVideoEncoder::open(config)?;
             Ok(Box::new(enc))
         }
@@ -46,7 +46,7 @@ impl AutoEncoder {
             // backend only implements `VideoInputPreference::CpuUploadOk` today (see
             // that crate's ADR-0001), so there is no path selection to do here.
             use mediaway_encoder::VideoInputPreference;
-            use mediaway_encoder_linux::LinuxVideoEncoder;
+            use mediaway_encoder::linux::LinuxVideoEncoder;
             let low_level =
                 config.to_low_level(VideoInputPreference::CpuUploadOk, config.gpu_device);
             let enc = LinuxVideoEncoder::open(&low_level)?;
@@ -65,7 +65,7 @@ impl AutoEncoder {
 /// platform (see [`mediaway_encoder::capability`]).
 ///
 /// **Windows:** a real, live (costly) probe — see
-/// `mediaway_encoder_windows::auto::support`.
+/// `mediaway_encoder::windows::auto::support`.
 ///
 /// **Other platforms:** empty — `mediaway-encoder-linux`/other platform crates have no
 /// per-backend selection surface yet (`AutoEncoder::open` always resolves to their one
@@ -80,7 +80,7 @@ impl AutoEncoder {
 pub fn encoder_support(codec: CodecKind) -> Vec<EncoderCapability> {
     #[cfg(windows)]
     {
-        mediaway_encoder_windows::auto::support(codec)
+        mediaway_encoder::windows::auto::support(codec)
     }
 
     #[cfg(not(windows))]

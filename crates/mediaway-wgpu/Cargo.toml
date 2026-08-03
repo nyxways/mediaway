@@ -21,7 +21,6 @@ wgpu = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 mediaway-decoder-windows = { workspace = true, features = ["video"] }
-mediaway-encoder-windows = { workspace = true, features = ["video"] }
 windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Graphics_Direct3D12",

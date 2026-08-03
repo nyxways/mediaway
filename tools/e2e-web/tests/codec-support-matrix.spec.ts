@@ -13,7 +13,7 @@ import { expect, test } from "@playwright/test";
 // `docs/ai/wiki/decode/web-video-decode.md` for known-good candidate codec strings and prior
 // findings this spec extends.
 //
-// `is_webcodecs_video_codec_supported` (mediaway-encoder-web) does not trust
+// `is_webcodecs_video_codec_supported` (mediaway-encoder) does not trust
 // `isConfigSupported` alone — it also runs one real throwaway encode (see wasm.rs's
 // `video_codec_supported` doc comment), so a `true` result here already reflects a real
 // encoder round trip, not just a capability query. This spec goes one step further per
@@ -23,7 +23,7 @@ import { expect, test } from "@playwright/test";
 
 const WIDTH = 64;
 const HEIGHT = 64;
-const FRAME_DURATION_US = 33_333; // ~30fps, matches mediaway-encoder-web's smoke framerate.
+const FRAME_DURATION_US = 33_333; // ~30fps, matches mediaway-encoder's smoke framerate.
 const BITRATE_BPS = 500_000;
 const LUMA_TOLERANCE = 20; // Same tolerance as the Rust reference test's `mean_luma` check.
 const LUMAS = [10, 30, 50, 70, 90, 110];

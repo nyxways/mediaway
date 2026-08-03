@@ -13,8 +13,8 @@
 use mediaway_common::{Bytes, CodecKind, PixelFormat, Rational, VideoFrame, VideoFrameStorage};
 use mediaway_decoder::{VideoDecoder, VideoDecoderConfig, VideoOutputPreference};
 use mediaway_decoder_windows::WindowsVideoDecoder;
+use mediaway_encoder::windows::WindowsVideoEncoder;
 use mediaway_encoder::{VideoEncoder, VideoEncoderConfig, VideoInputPreference};
-use mediaway_encoder_windows::WindowsVideoEncoder;
 
 const WIDTH: u32 = 64;
 const HEIGHT: u32 = 64;

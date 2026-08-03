@@ -47,8 +47,8 @@
 use mediaway_common::{Bytes, CodecKind, PixelFormat, Rational, VideoFrame, VideoFrameStorage};
 use mediaway_decoder::{VideoDecoder, VideoDecoderConfig, VideoOutputPreference};
 use mediaway_decoder_vulkan::VulkanVideoDecoder;
+use mediaway_encoder::vulkan::VulkanVideoEncoder;
 use mediaway_encoder::{VideoEncoder, VideoEncoderConfig, VideoInputPreference};
-use mediaway_encoder_vulkan::VulkanVideoEncoder;
 
 // Matches `mediaway-encoder-vulkan::encoder_tests`'s own `WIDTH_HEVC`/
 // `HEIGHT_HEVC` — already known to clear this crate's reference hardware's

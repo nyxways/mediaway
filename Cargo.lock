@@ -1425,7 +1425,6 @@ dependencies = [
  "mediaway-common",
  "mediaway-decoder",
  "mediaway-encoder",
- "mediaway-encoder-vulkan",
  "mediaway-sw",
  "smallvec",
  "thiserror 2.0.19",
@@ -1451,7 +1450,6 @@ dependencies = [
  "mediaway-common",
  "mediaway-decoder",
  "mediaway-encoder",
- "mediaway-encoder-windows",
  "mediaway-sw",
  "smallvec",
  "windows 0.62.2",
@@ -1478,73 +1476,21 @@ dependencies = [
 name = "mediaway-encoder"
 version = "0.1.0"
 dependencies = [
- "mediaway-common",
- "thiserror 2.0.19",
-]
-
-[[package]]
-name = "mediaway-encoder-linux"
-version = "0.1.0"
-dependencies = [
- "cros-libva",
- "mediaway-common",
- "mediaway-encoder",
-]
-
-[[package]]
-name = "mediaway-encoder-nvenc"
-version = "0.1.0"
-dependencies = [
- "mediaway-common",
- "mediaway-encoder",
- "nvenc",
- "windows 0.62.2",
-]
-
-[[package]]
-name = "mediaway-encoder-quicksync"
-version = "0.1.0"
-dependencies = [
- "mediaway-common",
- "mediaway-encoder",
- "vpl-sys",
-]
-
-[[package]]
-name = "mediaway-encoder-vulkan"
-version = "0.1.0"
-dependencies = [
- "mediaway-common",
- "mediaway-encoder",
- "thiserror 2.0.19",
- "vulkanalia",
-]
-
-[[package]]
-name = "mediaway-encoder-web"
-version = "0.1.0"
-dependencies = [
  "bytes",
+ "criterion",
+ "cros-libva",
  "iso-bmff",
  "js-sys",
  "mediaway-common",
- "mediaway-encoder",
+ "mediaway-container",
+ "mediaway-sw",
+ "nvenc",
+ "thiserror 2.0.19",
+ "vpl-sys",
+ "vulkanalia",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
-]
-
-[[package]]
-name = "mediaway-encoder-windows"
-version = "0.1.0"
-dependencies = [
- "criterion",
- "mediaway-common",
- "mediaway-container",
- "mediaway-encoder",
- "mediaway-encoder-nvenc",
- "mediaway-encoder-quicksync",
- "mediaway-sw",
  "windows 0.62.2",
 ]
 
@@ -1557,7 +1503,6 @@ dependencies = [
  "mediaway-decoder",
  "mediaway-device",
  "mediaway-encoder",
- "mediaway-encoder-windows",
  "mediaway-pipeline",
 ]
 
@@ -1569,7 +1514,6 @@ dependencies = [
  "mediaway-container",
  "mediaway-device",
  "mediaway-encoder",
- "mediaway-encoder-windows",
  "mediaway-pipeline",
  "windows 0.62.2",
 ]
@@ -1586,8 +1530,6 @@ dependencies = [
  "mediaway-decoder-windows",
  "mediaway-device",
  "mediaway-encoder",
- "mediaway-encoder-linux",
- "mediaway-encoder-windows",
  "mediaway-test-media",
  "smallvec",
  "thiserror 2.0.19",
@@ -1628,7 +1570,6 @@ dependencies = [
  "mediaway-decoder",
  "mediaway-decoder-windows",
  "mediaway-encoder",
- "mediaway-encoder-windows",
  "pollster",
  "thiserror 2.0.19",
  "wgpu",

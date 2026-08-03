@@ -136,7 +136,7 @@ jobs:
 
       - name: Build wasm crates
         run: |
-          cargo build -p iso-bmff-wasm -p mediaway-encoder-web -p mediaway-device-web \
+          cargo build -p iso-bmff-wasm -p mediaway-encoder -p mediaway-decoder -p mediaway-device \
             --target wasm32-unknown-unknown --release
 
   e2e-web:

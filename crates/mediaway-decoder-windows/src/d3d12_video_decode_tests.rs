@@ -24,8 +24,8 @@ use mediaway_common::{
     VideoFrameStorage,
 };
 use mediaway_decoder::{VideoDecoderConfig, VideoOutputPreference};
+use mediaway_encoder::windows::WindowsVideoEncoder;
 use mediaway_encoder::{VideoEncoder, VideoEncoderConfig, VideoInputPreference};
-use mediaway_encoder_windows::WindowsVideoEncoder;
 
 // CIF (352x288) — deliberately *not* the 64x64 this crate's other D3D12 tests use.
 // `mediaway-encoder-windows`'s ADR-0007 found a real minimum-resolution floor for

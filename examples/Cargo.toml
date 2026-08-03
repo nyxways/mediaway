@@ -67,7 +67,6 @@ mediaway-pipeline = { workspace = true }
 # Both compile on every platform (real backend on Windows, `Unsupported`-returning
 # stubs elsewhere) — used directly by device/capture_window.rs, device/capture_camera.rs,
 # and pipeline/screen_record.rs, none of which `mediaway_pipeline::platform` dispatches yet.
-mediaway-encoder-windows = { workspace = true }
 
 [lints]
 workspace = true

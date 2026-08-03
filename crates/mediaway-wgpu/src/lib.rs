@@ -21,7 +21,7 @@
 //! `wgpu` has no D3D11 backend (removed upstream years ago); DX12 is its only
 //! Windows-native backend. Windows Media Foundation hardware encoder MFTs
 //! reject `D3D11On12`-wrapped textures, so this bridges through
-//! [`mediaway_encoder_windows::D3d12SharedEncodeBridge`] — the same
+//! [`mediaway_encoder::windows::D3d12SharedEncodeBridge`] — the same
 //! `EncodePathClass::GpuCopy` (one GPU→GPU copy per frame, plus a documented
 //! CPU↔GPU sync stall) path native D3D12 apps already use. **Not Zero-Copy** —
 //! see [ADR-0001](https://github.com/nyxways/mediaway/blob/main/crates/mediaway-wgpu/adr/0001-dx12-hal-gpucopy-bridge.md)

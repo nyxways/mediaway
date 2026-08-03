@@ -44,8 +44,8 @@ mod imp {
     };
     use mediaway_decoder::{VideoDecoder, VideoDecoderConfig, VideoOutputPreference};
     use mediaway_decoder_windows::WindowsVideoDecoder;
+    use mediaway_encoder::windows::WindowsVideoEncoder;
     use mediaway_encoder::{VideoEncoder, VideoEncoderConfig, VideoInputPreference};
-    use mediaway_encoder_windows::WindowsVideoEncoder;
     use std::hint::black_box;
 
     const WIDTH: u32 = 640;

@@ -15,9 +15,9 @@ process.env.CARGO_TARGET_DIR = cargoTargetDir;
 
 const crates = [
   "iso-bmff-wasm",
-  "mediaway-encoder-web",
-  "mediaway-decoder-web",
-  "mediaway-device-web",
+  "mediaway-encoder",
+  "mediaway-decoder",
+  "mediaway-device",
 ] as const;
 
 mkdirSync(pkgRoot, { recursive: true });

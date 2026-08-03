@@ -9,15 +9,117 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
+
 [dependencies]
 mediaway-common = { workspace = true }
 thiserror = { workspace = true }
 
-[features]
-default = ["full"]
-audio = []
-video = []
-full = ["audio", "video"]
+
+mediaway-sw = { workspace = true }
+
+
+# Vulkan bindings. `libloading` dynamically resolves the system Vulkan loader at
+# runtime — never a build-time link requirement. See adr/0001 (2026-07-29
+# addendum: migrated from `ash` for `VK_KHR_video_encode_av1` bindings).
+vulkanalia = { workspace = true }
+
+
+# oneVPL bindings only on Windows this stage: this crate must stay buildable
+# (as an honest `Unsupported` stub) on non-Windows hosts running
+# `cargo check --workspace` without pulling in `vpl-sys`'s `bindgen`/`libclang`
+# build step. Mirrors `mediaway-encoder-linux`'s `[target.'cfg(target_os = "linux")'.dependencies]`.
+iso-bmff = { workspace = true, features = ["full"] }
+bytes = { workspace = true }
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+
 
 [lints]
 workspace = true
+
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dev-dependencies]
+mediaway-container = { workspace = true, features = ["full"] }
+criterion = { workspace = true }
+
+
+[target.'cfg(windows)'.dependencies]
+nvenc = { workspace = true }
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Direct3D12",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Media_MediaFoundation",
+    "Win32_Security",
+    "Win32_System_Com",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Threading",
+] }
+vpl-sys = { workspace = true }
+
+
+[target.'cfg(target_os = "linux")'.dependencies]
+cros-libva = { version = "0.0.13" }
+
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = { workspace = true }
+js-sys = { workspace = true }
+web-sys = { workspace = true, features = [
+    "AudioData",
+    "AudioDataInit",
+    "AudioSampleFormat",
+    "AudioEncoder",
+    "AudioEncoderConfig",
+    "AudioEncoderInit",
+    "AudioEncoderSupport",
+    "EncodedAudioChunk",
+    "EncodedVideoChunk",
+    "EncodedVideoChunkType",
+    "EncodedVideoChunkMetadata",
+    "VideoDecoderConfig",
+    "VideoEncoder",
+    "VideoEncoderConfig",
+    "VideoEncoderInit",
+    "VideoEncoderSupport",
+    "VideoFrame",
+    "VideoFrameBufferInit",
+    "VideoFrameInit",
+    "VideoPixelFormat",
+    "Window",
+    "Navigator",
+    # WebGPU — GPUTexture-backed canvas source for `VideoFrame` (Stage 2 GPU path).
+    # `web_sys_unstable_apis` is already set for wasm32 in `.cargo/config.toml`.
+    "Gpu",
+    "GpuAdapter",
+    "GpuDevice",
+    "GpuQueue",
+    "GpuCanvasContext",
+    "GpuCanvasConfiguration",
+    "GpuCanvasAlphaMode",
+    "GpuTextureFormat",
+    "GpuTexture",
+    "GpuTextureView",
+    "GpuCommandEncoder",
+    "GpuCommandBuffer",
+    "GpuRenderPassEncoder",
+    "GpuRenderPassDescriptor",
+    "GpuRenderPassColorAttachment",
+    "GpuColorDict",
+    "GpuLoadOp",
+    "GpuStoreOp",
+    "OffscreenCanvas",
+] }
+
+
+[features]
+default = ["full", "video"]
+audio = []
+video = []
+full = ["audio", "video"]

@@ -39,8 +39,8 @@ use mediaway_device::desktop::{
     CaptureOutputPreference, DesktopCaptureSource, DesktopVideoCapture, DesktopVideoCaptureConfig,
 };
 use mediaway_encoder::auto::{AutoVideoEncodeConfig, EncodePathClass};
+use mediaway_encoder::windows::WindowsAudioEncoder;
 use mediaway_encoder::{AudioEncoder, AudioEncoderConfig, VideoEncoder};
-use mediaway_encoder_windows::WindowsAudioEncoder;
 use mediaway_pipeline::platform;
 use windows::Win32::Foundation::{HMODULE, POINT};
 use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;

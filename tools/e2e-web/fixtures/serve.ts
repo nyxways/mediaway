@@ -15,9 +15,9 @@ function resolvePath(pathname: string): string | null {
   }
   for (const crate of [
     "iso-bmff-wasm",
-    "mediaway-encoder-web",
-    "mediaway-decoder-web",
-    "mediaway-device-web",
+    "mediaway-encoder",
+    "mediaway-decoder",
+    "mediaway-device",
   ]) {
     const prefix = `/${crate}/`;
     if (pathname.startsWith(prefix)) {

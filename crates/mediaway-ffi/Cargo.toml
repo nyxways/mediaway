@@ -35,7 +35,6 @@ mediaway-device = { workspace = true }
 # status code (status.rs) — `mediaway-pipeline` already pulls this in transitively
 # with the same default ("full") features, so this adds no new feature surface.
 mediaway-encoder = { workspace = true }
-mediaway-encoder-windows = { workspace = true, features = ["audio"] }
 mediaway-pipeline = { workspace = true }
 
 

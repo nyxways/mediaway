@@ -325,11 +325,18 @@ function childToml(child) {
 }
 function mergeDepLines(depLines, table, t, childNames) {
   const bucket = depLines.get(table) ?? [];
+  let inSkipped = false;
   for (const line of t[table] ?? []) {
     const name = line.match(/^([A-Za-z0-9_-]+)\s*=/)?.[1];
-    if (!name) { if (bucket.length) bucket[bucket.length - 1] += "\n" + line; continue; }
-    if (childNames.includes(name) || name === spec.crate) continue;
-    if (!bucket.some((l) => l.startsWith(name + " = "))) bucket.push(line);
+    if (!name) {
+      // continuation line of a multi-line inline table
+      if (!inSkipped && bucket.length) bucket[bucket.length - 1] += "\n" + line;
+      continue;
+    }
+    inSkipped = false;
+    if (childNames.includes(name) || name === spec.crate) { inSkipped = true; continue; }
+    if (bucket.some((l) => l.startsWith(name + " = "))) { inSkipped = true; continue; }
+    bucket.push(line);
   }
   if (bucket.length) depLines.set(table, bucket);
 }
@@ -356,6 +363,28 @@ function mergeDepLines(depLines, table, t, childNames) {
       const h = line.match(/^\[(.+)\]\s*$/);
       if (h) { cur = h[1]; sections[cur] = sections[cur] ?? []; continue; }
       if (cur) sections[cur].push(line);
+    }
+    // [lib] crate-type union (web modules need cdylib for wasm-bindgen)
+    const crateTypes = new Set();
+    for (const line of sections["lib"] ?? []) {
+      const ct = line.match(/crate-type\s*=\s*\[([^\]]+)\]/);
+      if (ct) ct[1].split(",").map((x) => x.trim().replace(/["']/g, "")).filter(Boolean).forEach((x) => crateTypes.add(x));
+    }
+    for (const t of childTomls) {
+      const lib = (t["lib"] ?? []).join("\n");
+      const ct = lib.match(/crate-type\s*=\s*\[([^\]]+)\]/);
+      if (ct) ct[1].split(",").map((x) => x.trim().replace(/["']/g, "")).filter(Boolean).forEach((x) => crateTypes.add(x));
+    }
+    if (crateTypes.size) {
+      const libLines = (sections["lib"] ?? []).slice();
+      const hasCt = libLines.some((l) => l.includes("crate-type"));
+      if (hasCt) {
+        libLines.splice(libLines.findIndex((l) => l.includes("crate-type")), 1,
+          `crate-type = [${[...crateTypes].map((x) => `"${x}"`).join(", ")}]`);
+      } else {
+        libLines.push(`crate-type = [${[...crateTypes].map((x) => `"${x}"`).join(", ")}]`);
+      }
+      sections["lib"] = libLines;
     }
     const depLines = new Map();
     for (const t of depTables) depLines.set(t, [...(sections[t] ?? [])]);

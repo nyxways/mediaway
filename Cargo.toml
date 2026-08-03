@@ -18,12 +18,12 @@ members = [
 
 
     "crates/mediaway-encoder",
-    "crates/mediaway-encoder-nvenc",
-    "crates/mediaway-encoder-windows",
-    "crates/mediaway-encoder-linux",
-    "crates/mediaway-encoder-vulkan",
+
+
+
+
     "crates/vpl-sys",
-    "crates/mediaway-encoder-quicksync",
+
     "crates/mediaway-decoder-windows",
     "crates/mediaway-decoder-linux",
     "crates/mediaway-decoder-vulkan",
@@ -33,7 +33,7 @@ members = [
 
 
     "crates/iso-bmff-wasm",
-    "crates/mediaway-encoder-web",
+
     "crates/mediaway-decoder-web",
 
     "crates/mediaway-decoder",
@@ -82,12 +82,12 @@ mediaway-ffi = { path = "crates/mediaway-ffi", version = "0.1.0" }
 mediaway-pipeline = { path = "crates/mediaway-pipeline", version = "0.1.0" }
 
 mediaway-encoder = { path = "crates/mediaway-encoder", version = "0.1.0" }
-mediaway-encoder-nvenc = { path = "crates/mediaway-encoder-nvenc", version = "0.1.0" }
-mediaway-encoder-windows = { path = "crates/mediaway-encoder-windows", version = "0.1.0" }
-mediaway-encoder-linux = { path = "crates/mediaway-encoder-linux", version = "0.1.0" }
-mediaway-encoder-vulkan = { path = "crates/mediaway-encoder-vulkan", version = "0.1.0" }
+
+
+
+
 vpl-sys = { path = "crates/vpl-sys", version = "0.1.0" }
-mediaway-encoder-quicksync = { path = "crates/mediaway-encoder-quicksync", version = "0.1.0" }
+
 mediaway-decoder = { path = "crates/mediaway-decoder", version = "0.1.0" }
 mediaway-decoder-windows = { path = "crates/mediaway-decoder-windows", version = "0.1.0" }
 mediaway-decoder-linux = { path = "crates/mediaway-decoder-linux", version = "0.1.0" }
@@ -102,7 +102,7 @@ mediaway-device = { path = "crates/mediaway-device", version = "0.1.0" }
 
 
 iso-bmff-wasm = { path = "crates/iso-bmff-wasm", version = "0.1.0" }
-mediaway-encoder-web = { path = "crates/mediaway-encoder-web", version = "0.1.0" }
+
 mediaway-decoder-web = { path = "crates/mediaway-decoder-web", version = "0.1.0" }
 
 mediaway-sw = { path = "crates/mediaway-sw", version = "0.1.0" }

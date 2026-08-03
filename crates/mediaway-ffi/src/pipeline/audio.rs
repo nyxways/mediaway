@@ -62,7 +62,7 @@ fn open_audio_encoder(config: &AudioEncoderConfig) -> Result<Box<dyn AudioEncode
     #[cfg(windows)]
     {
         Ok(Box::new(
-            mediaway_encoder_windows::WindowsAudioEncoder::open(config)?,
+            mediaway_encoder::windows::WindowsAudioEncoder::open(config)?,
         ))
     }
     #[cfg(not(windows))]

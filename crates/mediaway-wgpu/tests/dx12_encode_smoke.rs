@@ -26,8 +26,8 @@
 )]
 
 use mediaway_common::{CodecKind, PixelFormat, Rational, VideoFrame, VideoFrameStorage};
+use mediaway_encoder::windows::WindowsVideoEncoder;
 use mediaway_encoder::{VideoEncoder, VideoEncoderConfig, VideoInputPreference};
-use mediaway_encoder_windows::WindowsVideoEncoder;
 use mediaway_wgpu::WgpuDx12Bridge;
 
 /// `true` if `payload` contains an Annex-B NAL unit (00 00 01 / 00 00 00 01

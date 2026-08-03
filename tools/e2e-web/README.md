@@ -13,8 +13,8 @@ bun run install-browsers
 bun test
 ```
 
-`build:wasm` compiles `iso-bmff-wasm`, `mediaway-encoder-web`, `mediaway-decoder-web`, and
-`mediaway-device-web` for `wasm32-unknown-unknown` and runs `wasm-bindgen` into `pkg/`.
+`build:wasm` compiles `iso-bmff-wasm`, `mediaway-encoder`, `mediaway-decoder`, and
+`mediaway-device` for `wasm32-unknown-unknown` and runs `wasm-bindgen` into `pkg/`.
 
 ## Projects: bundled Chromium vs. real Edge
 

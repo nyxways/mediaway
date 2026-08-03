@@ -30,7 +30,6 @@ smallvec = { workspace = true }
 # instead of hand-writing a CABAC-coded Annex-B stream by hand (unlike H.264,
 # HEVC has no CAVLC/I_PCM escape that bypasses entropy coding entirely — see
 # adr/0001's HEVC addendum for why hand-construction was not chosen here).
-mediaway-encoder-vulkan = { workspace = true }
 mediaway-encoder = { workspace = true }
 
 [lints]

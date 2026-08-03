@@ -1,0 +1,30 @@
+{
+  "crate": "mediaway-encoder",
+  "dir": "crates/mediaway-encoder",
+  "rootUnsafe": "allow",
+  "children": [
+    { "name": "mediaway-encoder-nvenc", "dir": "crates/mediaway-encoder-nvenc", "module": "nvenc" },
+    { "name": "mediaway-encoder-windows", "dir": "crates/mediaway-encoder-windows", "module": "windows" },
+    { "name": "mediaway-encoder-linux", "dir": "crates/mediaway-encoder-linux", "module": "linux" },
+    { "name": "mediaway-encoder-vulkan", "dir": "crates/mediaway-encoder-vulkan", "module": "vulkan" },
+    { "name": "mediaway-encoder-quicksync", "dir": "crates/mediaway-encoder-quicksync", "module": "quicksync" },
+    { "name": "mediaway-encoder-web", "dir": "crates/mediaway-encoder-web", "module": "web" }
+  ],
+  "renames": [
+    ["mediaway_encoder_nvenc", "crate::nvenc::"],
+    ["mediaway_encoder_quicksync", "crate::quicksync::"],
+    ["mediaway_encoder_windows", "crate::windows::"],
+    ["mediaway_encoder_linux", "crate::linux::"],
+    ["mediaway_encoder_vulkan", "crate::vulkan::"],
+    ["mediaway_encoder_web", "crate::web::"],
+    ["mediaway_encoder", "crate::"]
+  ],
+  "depSweep": [
+    ["mediaway_encoder_nvenc", "mediaway_encoder::nvenc::"],
+    ["mediaway_encoder_quicksync", "mediaway_encoder::quicksync::"],
+    ["mediaway_encoder_windows", "mediaway_encoder::windows::"],
+    ["mediaway_encoder_linux", "mediaway_encoder::linux::"],
+    ["mediaway_encoder_vulkan", "mediaway_encoder::vulkan::"],
+    ["mediaway_encoder_web", "mediaway_encoder::web::"]
+  ]
+}

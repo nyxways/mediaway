@@ -13,7 +13,7 @@
 //! A future `mediaway-codec` umbrella may re-export this crate + `mediaway-decoder`.
 //! Backends (planned): WMF, `VideoToolbox`, `MediaCodec`, `WebCodecs`, Vulkan Video.
 
-#![forbid(unsafe_code)]
+#![allow(unsafe_code)]
 
 #[cfg(all(not(feature = "audio"), not(feature = "video")))]
 compile_error!("enable at least one of `audio` or `video` features on mediaway-encoder");
@@ -34,3 +34,11 @@ pub use audio::{AudioEncoder, AudioEncoderConfig};
 pub use error::EncodeError;
 #[cfg(feature = "video")]
 pub use video::{VideoEncoder, VideoEncoderConfig, VideoInputPreference};
+
+// ── merged platform/domain modules (ADR-0021) ──
+pub mod linux;
+pub mod nvenc;
+pub mod quicksync;
+pub mod vulkan;
+pub mod web;
+pub mod windows;

@@ -5,7 +5,7 @@
 //! `wgpu::Device::create_texture_from_hal`) to recover the *native*
 //! `ID3D12Device` / `ID3D12Resource` wgpu's DX12 backend already holds, then
 //! hands that native device to the existing
-//! [`mediaway_encoder_windows::D3d12SharedEncodeBridge`] (D3D12 shared heap →
+//! [`mediaway_encoder::windows::D3d12SharedEncodeBridge`] (D3D12 shared heap →
 //! native D3D11), so an app already rendering/compositing with wgpu can
 //! encode through `mediaway-encoder-windows`'s WMF hardware encoder without a
 //! GPU→CPU readback.
@@ -37,7 +37,7 @@ use crate::error::WgpuInteropError;
 
 /// Fixed pixel format the bridge's shared D3D12 texture is allocated in.
 ///
-/// Matches [`mediaway_encoder_windows::D3d12SharedEncodeBridge`]'s own
+/// Matches [`mediaway_encoder::windows::D3d12SharedEncodeBridge`]'s own
 /// `DXGI_FORMAT_B8G8R8A8_UNORM` allocation and `PixelFormat::Bgra8`'s
 /// Zero-Copy DX11 input path (`mediaway-encoder-windows` ADR-0005). Callers
 /// must render/hold `source` textures in this format.
@@ -52,7 +52,7 @@ pub const BRIDGE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
 /// `ID3D12Device` the bridge opened on) are tied to that specific `wgpu`
 /// device instance.
 pub struct WgpuDx12Bridge {
-    bridge: mediaway_encoder_windows::D3d12SharedEncodeBridge,
+    bridge: mediaway_encoder::windows::D3d12SharedEncodeBridge,
     /// The bridge's own shared D3D12 resource, re-wrapped as a `wgpu::Texture`
     /// once so [`Self::copy_frame`] can record an ordinary
     /// `copy_texture_to_texture` instead of hand-rolled HAL command recording.
@@ -63,7 +63,7 @@ pub struct WgpuDx12Bridge {
 
 impl WgpuDx12Bridge {
     /// Extract the native `ID3D12Device*` behind `device` (must be wgpu's DX12
-    /// backend) and open a [`mediaway_encoder_windows::D3d12SharedEncodeBridge`]
+    /// backend) and open a [`mediaway_encoder::windows::D3d12SharedEncodeBridge`]
     /// sized `width`x`height` on it.
     ///
     /// # Errors
@@ -73,7 +73,7 @@ impl WgpuDx12Bridge {
     /// build without the `dx12` wgpu feature). [`WgpuInteropError::InvalidInput`]
     /// for zero size or a null device pointer. [`WgpuInteropError::Bridge`]
     /// when the underlying D3D12/D3D11 bridge fails to open — see
-    /// [`D3d12SharedEncodeBridge::open`](mediaway_encoder_windows::D3d12SharedEncodeBridge::open).
+    /// [`D3d12SharedEncodeBridge::open`](mediaway_encoder::windows::D3d12SharedEncodeBridge::open).
     pub fn new(device: &wgpu::Device, width: u32, height: u32) -> Result<Self, WgpuInteropError> {
         if width == 0 || height == 0 {
             return Err(WgpuInteropError::InvalidInput);
@@ -91,7 +91,7 @@ impl WgpuDx12Bridge {
         drop(native_device);
 
         let bridge =
-            mediaway_encoder_windows::D3d12SharedEncodeBridge::open(device_handle, width, height)?;
+            mediaway_encoder::windows::D3d12SharedEncodeBridge::open(device_handle, width, height)?;
         let dest = wrap_bridge_resource(device, &bridge, width, height)?;
 
         Ok(Self {
@@ -187,7 +187,7 @@ impl WgpuDx12Bridge {
 /// by hand every frame.
 fn wrap_bridge_resource(
     device: &wgpu::Device,
-    bridge: &mediaway_encoder_windows::D3d12SharedEncodeBridge,
+    bridge: &mediaway_encoder::windows::D3d12SharedEncodeBridge,
     width: u32,
     height: u32,
 ) -> Result<wgpu::Texture, WgpuInteropError> {

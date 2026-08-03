@@ -4,7 +4,7 @@
 //! `platform::ScreenCapture` / `platform::Microphone` / `platform::AutoEncoder`
 //! handle OS dispatch internally — no `#[cfg(…)]` in this file for those.
 //! Audio encode has no cross-platform dispatcher yet, so this reaches for
-//! `mediaway_encoder_windows::WindowsAudioEncoder` directly; it compiles and
+//! `mediaway_encoder::windows::WindowsAudioEncoder` directly; it compiles and
 //! degrades gracefully (`EncodeError::Unsupported`) on every platform, same
 //! as the video/capture backends' own `NoBackend`/`Unsupported` paths.
 //!
@@ -51,8 +51,8 @@ use mediaway_device::Select;
 use mediaway_device::audio::{AudioCapture, AudioCaptureConfig};
 use mediaway_device::desktop::{DesktopVideoCapture, DesktopVideoCaptureConfig};
 use mediaway_encoder::auto::AutoVideoEncodeConfig;
+use mediaway_encoder::windows::WindowsAudioEncoder;
 use mediaway_encoder::{AudioEncoder, AudioEncoderConfig, VideoEncoder};
-use mediaway_encoder_windows::WindowsAudioEncoder;
 use mediaway_pipeline::platform;
 use std::fs::File;
 use std::io::Write as _;

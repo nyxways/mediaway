@@ -24,11 +24,9 @@ smallvec = { workspace = true }
 thiserror = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-mediaway-encoder-windows = { workspace = true }
 mediaway-decoder-windows = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-mediaway-encoder-linux = { workspace = true }
 mediaway-decoder-linux = { workspace = true }
 
 [dev-dependencies]

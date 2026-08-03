@@ -8,7 +8,7 @@ import { expect, test } from "@playwright/test";
 //
 // Difference from the Rust/Windows test: no fMP4 mux/demux round trip here. This test proves
 // the encode/decode/trim/splice leg directly at the `EncodedVideoChunk` level
-// (`mediaway-encoder-web` + `mediaway-decoder-web`), which is the leg that previously had zero
+// (`mediaway-encoder` + `mediaway-decoder`), which is the leg that previously had zero
 // decode-side coverage. `iso-bmff` now writes a real `vp09`/`vpcC` sample entry for VP9
 // (crate-local ADR-0002) — see `wasm-mux-roundtrip.spec.ts`'s "vp09 sample entry" test for the
 // container-level proof; it isn't combined with this WebCodecs-level test because
@@ -26,7 +26,7 @@ import { expect, test } from "@playwright/test";
 
 const WIDTH = 64;
 const HEIGHT = 64;
-const FRAME_DURATION_US = 33_333; // ~30fps, matches mediaway-encoder-web's smoke framerate.
+const FRAME_DURATION_US = 33_333; // ~30fps, matches mediaway-encoder's smoke framerate.
 const BITRATE_BPS = 500_000;
 const LUMA_TOLERANCE = 20; // Same tolerance as the Rust reference test's `mean_luma` check.
 const CANDIDATE_CODECS = ["vp09.00.10.08", "vp8", "av01.0.04M.08", "avc1.42E01E"];

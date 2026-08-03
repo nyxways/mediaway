@@ -32,10 +32,10 @@ mediaway-container = { path = "../mediaway-container", version = "0.1.0", defaul
 mediaway-device = { workspace = true }
 
 # Needed to match `mp4::Error` variants when converting `PipelineError::Mux` to a
-# status code (status.rs) — `mediaway-pipeline` already pulls this in transitively
+# status code (status.rs) — `mediaway` already pulls this in transitively
 # with the same default ("full") features, so this adds no new feature surface.
 mediaway-encoder = { workspace = true }
-mediaway-pipeline = { workspace = true }
+mediaway = { workspace = true }
 
 
 [dev-dependencies]

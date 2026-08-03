@@ -6,6 +6,6 @@
     { "name": "mediaway-common-ffi", "dir": "crates/mediaway-common-ffi", "module": "common" },
     { "name": "mediaway-container-ffi", "dir": "crates/mediaway-container-ffi", "module": "container" },
     { "name": "mediaway-device-ffi", "dir": "crates/mediaway-device-ffi", "module": "device" },
-    { "name": "mediaway-pipeline-ffi", "dir": "crates/mediaway-pipeline-ffi", "module": "pipeline" }
+    { "name": "mediaway-ffi", "dir": "crates/mediaway-ffi", "module": "pipeline" }
   ]
 }

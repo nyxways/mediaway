@@ -1,12 +1,12 @@
 //! Integration: DXGI Zero-Copy screen capture pushed through
-//! `mediaway-pipeline-ffi`'s C ABI (`mediaway_encode_session_write_frame` with
+//! `mediaway-ffi`'s C ABI (`mediaway_encode_session_write_frame` with
 //! `storage_kind == Gpu`) — proves the GPU frame input path added by
 //! `adr/0002-gpu-frame-input-c-abi.md` actually reaches a real H.264 hardware
 //! encoder and round-trips through fMP4, not just the pure-logic conversion
 //! tests in `mediaway-common-ffi::gpu`.
 //!
 //! Captures screen frames the same way
-//! `mediaway-pipeline/tests/screen_mic_av_smoke.rs` does (own shared D3D11
+//! `mediaway/tests/screen_mic_av_smoke.rs` does (own shared D3D11
 //! device, cursor nudge for deterministic DXGI delivery), but pushes them
 //! through the raw `#[unsafe(no_mangle)]` C ABI functions instead of the
 //! Rust-level `EncodeSession` API directly — this is the actual C surface a
@@ -24,6 +24,7 @@
 
 use std::time::{Duration, Instant};
 
+use mediaway::platform;
 use mediaway_common::{GpuDeviceHandle, NativeHandle, Rational, VideoFrameStorage};
 use mediaway_container::mp4::Demuxer;
 use mediaway_device::Select;
@@ -37,7 +38,6 @@ use mediaway_ffi::pipeline::{
     mediaway_encode_session_close, mediaway_encode_session_finish, mediaway_encode_session_open,
     mediaway_encode_session_write_frame, mediaway_pipeline_ffi_buffer_free,
 };
-use mediaway_pipeline::platform;
 use windows::Win32::Foundation::{HMODULE, POINT};
 use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
 use windows::Win32::Graphics::Direct3D11::{

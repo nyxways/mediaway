@@ -5,8 +5,8 @@
 //!
 //! `MediawayRational` is re-exported from `mediaway-common-ffi` rather than defined
 //! locally (`docs/adr/0015-common-ffi-unification.md`) — confirmed field-identical to
-//! `mediaway-container-ffi`'s/`mediaway-pipeline-ffi`'s independent copies before this
-//! migration. `MediawayPixelFormat` stays a local copy of `mediaway-pipeline-ffi`'s:
+//! `mediaway-container-ffi`'s/`mediaway-ffi`'s independent copies before this
+//! migration. `MediawayPixelFormat` stays a local copy of `mediaway-ffi`'s:
 //! `PixelFormat` mirroring is out of ADR-0015's decided scope (Rational/CodecKind only)
 //! — a natural follow-up, not done here. `MediawaySampleFormat` and the
 //! frame-direction-specific structs below are new, crate-scoped types — see
@@ -64,7 +64,7 @@ pub use crate::common::gpu::GpuDeviceKind as MediawayGpuDeviceKind;
 
 /// Pixel layout — mirrors `mediaway_common::PixelFormat`'s 5 variants.
 ///
-/// Reused verbatim from `mediaway-pipeline-ffi`'s `MediawayPixelFormat` — both wrap the
+/// Reused verbatim from `mediaway-ffi`'s `MediawayPixelFormat` — both wrap the
 /// identical shared `PixelFormat` (`adr/0001-capture-c-abi.md` §7). Only `Nv12`/`Bgra8`
 /// are exercised by the current Windows Camera backend today (an existing Rust-level
 /// limitation, not a new FFI one).
@@ -218,7 +218,7 @@ pub enum MediawayVideoFrameStorageKind {
 /// Output of [`crate::device::desktop_video::mediaway_desktop_capture_poll_frame`] — release
 /// with [`crate::device::desktop_video::mediaway_desktop_frame_free`].
 ///
-/// Distinct name and ownership direction from `mediaway-pipeline-ffi`'s
+/// Distinct name and ownership direction from `mediaway-ffi`'s
 /// `mediaway_video_frame_t` (a **borrowed input** there; this is an **owned output**
 /// here — `adr/0001-capture-c-abi.md` §7). Does not derive `Copy`/`Clone`: a CPU frame
 /// owns a raw pointer, and duplicating the struct would invite a double-free — holds

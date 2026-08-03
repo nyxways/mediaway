@@ -1,7 +1,7 @@
 //! C ABI status codes (`mediaway_device_status_t`).
 //!
 //! Fresh, distinctly-named type — not shared or numerically mirrored with
-//! `mediaway-container-ffi`'s `MediawayStatus` or `mediaway-pipeline-ffi`'s
+//! `mediaway-container-ffi`'s `MediawayStatus` or `mediaway-ffi`'s
 //! `MediawayPipelineStatus`. See `adr/0001-capture-c-abi.md` §3 for why.
 
 use mediaway_device::CaptureError;

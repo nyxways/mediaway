@@ -26,7 +26,7 @@
   <ItemGroup>
     <!-- adr/0004-domain-feature-split.md mirrored at the C# layer — this project now
          exercises Camera/Audio/Hotplug together as a cross-package integration suite
-         (same spirit as mediaway-pipeline's Rust screen_mic_av_smoke.rs), not one package. -->
+         (same spirit as mediaway's Rust screen_mic_av_smoke.rs), not one package. -->
     <ProjectReference Include="..\..\src\Mediaway.Common\Mediaway.Common.csproj" />
     <ProjectReference Include="..\..\src\Mediaway.Device\Mediaway.Device.csproj" />
     <ProjectReference Include="..\..\src\Mediaway.Device.Camera\Mediaway.Device.Camera.csproj" />

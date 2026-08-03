@@ -1,6 +1,6 @@
-# mediaway-pipeline-ffi
+# mediaway-ffi
 
-C ABI facade over [`mediaway-pipeline`](../mediaway-pipeline/README.md) (auto video encode -> fragmented MP4). Second `*-ffi` crate in the workspace, after [`mediaway-container-ffi`](../mediaway-container-ffi/README.md).
+C ABI facade over [`mediaway`](../mediaway/README.md) (auto video encode -> fragmented MP4). Second `*-ffi` crate in the workspace, after [`mediaway-container-ffi`](../mediaway-container-ffi/README.md).
 
 **Status:** scaffold only — no exported functions, no header, no ABI has shipped yet.
 

@@ -16,7 +16,7 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 - [x] [ADR-0001](../adr/0001-sonora-audio-processing-adoption.md) (**Accepted**):
       license verdict (BSD-3-Clause, already on `deny.toml`'s allow-list),
       crate placement (new facade, not folded into `mediaway-device` /
-      `mediaway-common` / `mediaway-pipeline`), `AudioProcessor` /
+      `mediaway-common` / `mediaway`), `AudioProcessor` /
       `VoiceActivityDetector` API shape (push/poll, render+capture split —
       **not** a `FrameFilter`-parallel `AudioFilter` trait), panic-safety
       posture (catch-and-disable, not FFI-driven), VAD i16-scale gotcha.
@@ -72,9 +72,9 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 - [ ] Example: `mediaway-device` `AudioCapture::poll_frame()` →
       `AudioProcessor::push_capture_frame` → `poll_processed_frame` →
       `mediaway-encoder` `AudioEncoder::push_frame`, entirely at the caller
-      level (mirrors how `mediaway-pipeline`'s screen-record smoke test
+      level (mirrors how `mediaway`'s screen-record smoke test
       composes audio manually today — see that crate's roadmap § 1b)
-- [ ] Revisit `mediaway-pipeline::EncodeSession` integration only once that
+- [ ] Revisit `mediaway::EncodeSession` integration only once that
       crate's own Stage 1b (audio/multi-track `EncodeSession`) is scoped —
       separate ADR, not this one
 

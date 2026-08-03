@@ -1,7 +1,7 @@
 //! Video encode in isolation — no muxing, no capture, no OS file output.
 //!
 //! Pushes synthetic NV12 frames straight into the best available H.264
-//! encoder on this platform (`mediaway_pipeline::platform::AutoEncoder`) and
+//! encoder on this platform (`mediaway::platform::AutoEncoder`) and
 //! reports the compressed packets it produces. For turning that packet
 //! stream into a playable file, see `pipeline/encode_to_mp4.rs`.
 //!
@@ -17,10 +17,10 @@
     reason = "example demonstrates the happy path with console output"
 )]
 
+use mediaway::platform;
 use mediaway_common::{Bytes, CodecKind, PixelFormat, Rational, VideoFrame, VideoFrameStorage};
 use mediaway_encoder::VideoEncoder;
 use mediaway_encoder::auto::AutoVideoEncodeConfig;
-use mediaway_pipeline::platform;
 
 const WIDTH: u32 = 320;
 const HEIGHT: u32 = 240;

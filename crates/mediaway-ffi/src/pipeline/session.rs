@@ -4,8 +4,8 @@
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
+use mediaway::EncodeSession;
 use mediaway_common::{Bytes, VideoFrame, VideoFrameStorage};
-use mediaway_pipeline::EncodeSession;
 
 use crate::pipeline::buffer::{borrow_slice, leak_boxed_slice};
 use crate::pipeline::encoder::AutoEncoderHandle;

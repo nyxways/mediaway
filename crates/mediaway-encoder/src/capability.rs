@@ -5,7 +5,7 @@
 //! "would this backend work" without the app having to interpret an [`crate::EncodeError`]
 //! from a real `AutoVideoEncoder` (`mediaway-encoder-windows/src/auto.rs`) open.
 //! Platform crates implement `support(codec) -> Vec<EncoderCapability>`
-//! (`mediaway_encoder_windows::auto::support` today); `mediaway-pipeline::platform`
+//! (`mediaway_encoder_windows::auto::support` today); `mediaway::platform`
 //! dispatches it the same way it dispatches `AutoEncoder::open`.
 
 #![forbid(unsafe_code)]

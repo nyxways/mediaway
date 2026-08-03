@@ -17,7 +17,7 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
       `Support` / `Unavailable` / `PermissionState` — live capability + OS
       permission probing, separate from opening a session. Backends:
       `mediaway-device-windows`/`-linux` `capabilities.rs`; dispatch:
-      `mediaway-pipeline::platform::{device_support, request_device_permission}`.
+      `mediaway::platform::{device_support, request_device_permission}`.
 - [x] [ADR-0004](../adr/0004-audio-playback-traits.md): `AudioPlayback` /
       `AudioPlaybackConfig` / `PlaybackError` — push-model playback trait
       (`write_frame`), mirroring `AudioCapture` in the opposite data

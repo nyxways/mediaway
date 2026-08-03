@@ -76,7 +76,7 @@ ADR fills, at crate scope per `docs/conventions/docs-layout.md` ("crate
 decisions → that crate's `adr/`"), written so a later `mediaway-*-ffi` crate can
 cite it directly rather than re-deriving the same reasoning (see § General
 principle) — the same "decide once locally, let siblings cite it" precedent
-`mediaway-pipeline-ffi/adr/0001` and `mediaway-device-ffi/adr/0001` already set
+`mediaway-ffi/adr/0001` and `mediaway-device-ffi/adr/0001` already set
 for handle/status-enum shape.
 
 ## Decision

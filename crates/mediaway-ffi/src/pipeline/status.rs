@@ -4,11 +4,11 @@
 //! `mediaway-container-ffi`'s `MediawayStatus`. See
 //! `adr/0001-auto-encode-c-abi.md` §2 for why.
 
+use mediaway::PipelineError;
 use mediaway_container::mp4;
 use mediaway_encoder::EncodeError;
-use mediaway_pipeline::PipelineError;
 
-/// C ABI status code returned by fallible `mediaway-pipeline-ffi` functions.
+/// C ABI status code returned by fallible `mediaway-ffi` functions.
 ///
 /// `InvalidArgument`/`HandlePoisoned`/`InternalPanic` are FFI-layer inventions.
 /// Everything else maps onto [`EncodeError`] or [`PipelineError`] (both

@@ -6,7 +6,7 @@
 //! these, keeping its own name/signature unchanged
 //! (`docs/adr/0015-common-ffi-unification.md`).
 //!
-//! Moved here verbatim from `mediaway-container-ffi`/`mediaway-pipeline-ffi` (byte-for-byte
+//! Moved here verbatim from `mediaway-container-ffi`/`mediaway-ffi` (byte-for-byte
 //! identical private helpers in both). `mediaway-device-ffi` only uses
 //! [`leak_boxed_slice`]/[`reclaim_boxed_slice`] — it has no borrowed-input parameters, so it
 //! never needed [`borrow_slice`].

@@ -8,7 +8,7 @@
 ## Context
 
 `mediaway-device-ffi` is the **third** `mediaway-*-ffi` crate in the workspace,
-after `mediaway-container-ffi` (mux/demux) and `mediaway-pipeline-ffi` (auto
+after `mediaway-container-ffi` (mux/demux) and `mediaway-ffi` (auto
 encode). It wraps the real capture surface in
 [`crates/mediaway-device/src/{video.rs,audio.rs,error.rs}`](../../mediaway-device/src)
 (`VideoCapture`/`AudioCapture` traits, `VideoCaptureConfig`/`AudioCaptureConfig`,
@@ -65,7 +65,7 @@ Zero-Copy screen/window capture (per
 [`windows-window.md`](../../../docs/ai/wiki/device/windows-window.md)) — but
 neither can be reached from C in this pass, because handing a live GPU device
 pointer across the C boundary is the same unsolved problem
-`mediaway-pipeline-ffi/adr/0001` §1 already deferred for
+`mediaway-ffi/adr/0001` §1 already deferred for
 `AutoVideoEncodeConfig::gpu_device` ([`docs/spec/gpu-interop.md`](../../../docs/spec/gpu-interop.md)),
 and here it blocks the *entire* capability, not just its fastest path.
 
@@ -79,24 +79,24 @@ Window (also real, but GPU-handle-gated with no fallback) are deferred.
 1. **Dependency shape.** `mediaway-device` (the facade) intentionally carries
    no platform dependency ([ADR-0002](../../mediaway-device/adr/0002-facade-platform-boundary.md)).
    Cross-platform dispatch for capture exists today only inside
-   `mediaway-pipeline::platform::{ScreenCapture, Microphone}` — and that
+   `mediaway::platform::{ScreenCapture, Microphone}` — and that
    module has **no** `Camera` or `Window` dispatcher at all. Whether this
-   crate reuses `mediaway-pipeline`'s dispatch or writes its own.
+   crate reuses `mediaway`'s dispatch or writes its own.
 2. **A second, structurally different "frame" struct is needed** —
-   `mediaway-pipeline-ffi` already shipped `mediaway_video_frame_t` as a
+   `mediaway-ffi` already shipped `mediaway_video_frame_t` as a
    **borrowed input** (`const uint8_t *raw_bytes`) for `write_frame`; this
    crate's `poll_frame` output is the opposite direction, an **owned** buffer
    that needs a matching free function. Reusing the same struct name for a
    different ownership contract is a real collision, not a hypothetical one.
 3. **`PixelFormat`/`Rational` already have one canonical C definition**
    (`mediaway_pixel_format_t`, `mediaway_rational_t`, both defined in
-   `mediaway-pipeline-ffi` wrapping the exact same shared
+   `mediaway-ffi` wrapping the exact same shared
    `mediaway_common` Rust types) — whether to reuse those names verbatim or
    mint crate-scoped duplicates, given the same-name-different-shape hazard
    just found in point 2 above cuts the other way for value-identical enums.
 
 This ADR reuses `mediaway-container-ffi/adr/0001`'s and
-`mediaway-pipeline-ffi/adr/0001`'s established patterns (single-`Box` opaque
+`mediaway-ffi/adr/0001`'s established patterns (single-`Box` opaque
 handles, `catch_unwind` + per-handle `poisoned` flag, hand-written header,
 borrowed-input/owned-output+`_free` memory rule, crate-scoped status enum)
 and states plainly where it deviates.
@@ -110,14 +110,14 @@ and states plainly where it deviates.
 > design this pass does not attempt. This crate depends directly on
 > `mediaway-device` + `#[cfg(windows)] mediaway-device-windows` (+
 > `#[cfg(target_os = "linux")] mediaway-device-linux` for the same shape,
-> unverified this pass), **not** on `mediaway-pipeline`, to avoid that
+> unverified this pass), **not** on `mediaway`, to avoid that
 > crate's documented unconditional decode/encode/device dependency graph.
 > New, crate-scoped names for owned-output frame structs and the status
 > enum; verbatim reuse of `mediaway_rational_t`/`mediaway_pixel_format_t`
-> from `mediaway-pipeline-ffi` since both wrap the identical shared Rust
+> from `mediaway-ffi` since both wrap the identical shared Rust
 > type. Hand-write the header.
 
-### 1. Dependency shape — thin local dispatch, not `mediaway-pipeline`
+### 1. Dependency shape — thin local dispatch, not `mediaway`
 
 ```toml
 [dependencies]
@@ -141,12 +141,12 @@ otherwise) — the same shape `mediaway_pipeline::platform::ScreenCapture`/
 `mediaway_pipeline::platform::{ScreenCapture, Microphone}` directly, reusing
 the dispatch that already exists. Rejected for two independent reasons:
 
-- `mediaway-pipeline-ffi/adr/0001` §9 already documents that
-  `mediaway-pipeline`'s `Cargo.toml` depends **unconditionally** on
+- `mediaway-ffi/adr/0001` §9 already documents that
+  `mediaway`'s `Cargo.toml` depends **unconditionally** on
   `mediaway-decoder`, `mediaway-device`, and their Windows/Linux platform
   backends, with no Cargo feature to select against — a capture-only FFI
   crate would compile and link WMF video decode plus every other
-  `mediaway-pipeline` capability it never calls, purely to reach two
+  `mediaway` capability it never calls, purely to reach two
   dispatch functions. This is exactly the "one fat link graph" the C-FFI
   design rules (`docs/spec/c-ffi.md`, AGENTS.md § C-FFI) say to avoid.
 - `mediaway_pipeline::platform` has **no** `Camera` dispatcher at all today —
@@ -175,7 +175,7 @@ struct AudioCaptureHandle {
 ```
 
 Unlike `mediaway-container-ffi`'s `MuxerState` (a closed enum of concrete
-typestate variants) or `mediaway-pipeline-ffi`'s `AutoEncoderHandle` (a bare
+typestate variants) or `mediaway-ffi`'s `AutoEncoderHandle` (a bare
 `Box<dyn VideoEncoder>` with **no** wrapper struct), both handles here need
 **both** a trait object *and* a `poisoned` flag:
 
@@ -312,7 +312,7 @@ doesn't need it).
 ### 5. Struct layouts
 
 ```c
-/* Reused verbatim from mediaway-pipeline-ffi — both wrap mediaway_common::Rational /
+/* Reused verbatim from mediaway-ffi — both wrap mediaway_common::Rational /
  * mediaway_common::PixelFormat identically; see §7 for the reuse-vs-mint reasoning. */
 typedef struct mediaway_rational {
     uint64_t num;
@@ -349,7 +349,7 @@ typedef struct mediaway_video_capture_config {
      * internally in this pass (the only mode it accepts), and Screen/Window
      * cannot accept any gpu_device value this ABI could construct yet (§ Deferred) —
      * exposing unusable knobs would invite a config that looks configurable but
-     * can never do anything different, the same reasoning mediaway-pipeline-ffi/adr/0001
+     * can never do anything different, the same reasoning mediaway-ffi/adr/0001
      * §1 used to hardcode max_path_class/backend rather than exposing them inertly. */
 } mediaway_video_capture_config_t; /* plain value type; no free function */
 
@@ -369,7 +369,7 @@ typedef struct mediaway_audio_capture_config {
 } mediaway_audio_capture_config_t; /* plain value type; no free function */
 
 /* Output of mediaway_video_capture_poll_frame — owned; release with
- * mediaway_device_video_frame_free. Distinct name from mediaway-pipeline-ffi's
+ * mediaway_device_video_frame_free. Distinct name from mediaway-ffi's
  * mediaway_video_frame_t (borrowed input there, owned output here — see §7). */
 typedef struct mediaway_device_video_frame {
     int64_t pts;
@@ -400,7 +400,7 @@ typedef struct mediaway_device_audio_frame {
 - **`poll_frame` (video/audio, output):** `VideoFrame.storage.Cpu.data` and
   `AudioFrame.data` are both `bytes::Bytes` on the Rust side — refcounted,
   cheap to clone *within* Rust. Same as `mediaway-container-ffi`'s
-  `Packet.payload` and `mediaway-pipeline-ffi`'s frame handling, C has no
+  `Packet.payload` and `mediaway-ffi`'s frame handling, C has no
   refcounted-buffer concept to hand across without inventing one, so the FFI
   layer copies once (`Bytes::to_vec()` → `into_boxed_slice()` →
   `Box::into_raw()`) into a fresh owned allocation, freed via the matching
@@ -430,9 +430,9 @@ ways:
 
 | Type | Decision | Why |
 |------|----------|-----|
-| `mediaway_rational_t` | **Reuse verbatim** (same name, same fields) from `mediaway-pipeline-ffi` | Identical shape, wrapping the identical shared `mediaway_common::Rational`; `mediaway-pipeline-ffi/adr/0001` §5 already reused this same definition from `mediaway-container-ffi` without renaming — this is the second reuse of an already-established precedent, not a new one. |
-| `mediaway_pixel_format_t` | **Reuse verbatim** from `mediaway-pipeline-ffi` | Same reasoning; `mediaway-pipeline-ffi/adr/0001` §5 explicitly called this "the first definition of this enum in the workspace's C headers — no mirroring precedent to reconcile against," i.e. it was written expecting reuse, not per-crate redefinition. |
-| `mediaway_video_frame_t` (already shipped by `mediaway-pipeline-ffi`) | **Do not reuse** — mint `mediaway_device_video_frame_t` | Same struct *name* would be reused for a **different ownership direction** (borrowed `const uint8_t *raw_bytes` input there vs. owned `uint8_t *data` output here) — a genuine field-shape collision, not merely a duplicate-typedef risk. `mediaway-container-ffi/adr/0001` §4c hit exactly this problem for muxer/demuxer packets and split into two differently-named/shaped structs; the same fix applies across crates here. |
+| `mediaway_rational_t` | **Reuse verbatim** (same name, same fields) from `mediaway-ffi` | Identical shape, wrapping the identical shared `mediaway_common::Rational`; `mediaway-ffi/adr/0001` §5 already reused this same definition from `mediaway-container-ffi` without renaming — this is the second reuse of an already-established precedent, not a new one. |
+| `mediaway_pixel_format_t` | **Reuse verbatim** from `mediaway-ffi` | Same reasoning; `mediaway-ffi/adr/0001` §5 explicitly called this "the first definition of this enum in the workspace's C headers — no mirroring precedent to reconcile against," i.e. it was written expecting reuse, not per-crate redefinition. |
+| `mediaway_video_frame_t` (already shipped by `mediaway-ffi`) | **Do not reuse** — mint `mediaway_device_video_frame_t` | Same struct *name* would be reused for a **different ownership direction** (borrowed `const uint8_t *raw_bytes` input there vs. owned `uint8_t *data` output here) — a genuine field-shape collision, not merely a duplicate-typedef risk. `mediaway-container-ffi/adr/0001` §4c hit exactly this problem for muxer/demuxer packets and split into two differently-named/shaped structs; the same fix applies across crates here. |
 
 **Open risk not resolved by this ADR — confirmed worse than assumed above.**
 This ADR originally claimed reusing `mediaway_pixel_format_t`/`mediaway_rational_t`
@@ -496,7 +496,7 @@ ADRs (opaque handles, a struct split a mechanical translation wouldn't infer,
 `cbindgen` still not justified for one more evolving header). This is now
 the **third** hand-written header in the workspace; both sibling ADRs
 deferred a `cbindgen` evaluation "once ≥2 headers exist" — that condition
-has been true since `mediaway-pipeline-ffi`, and is now true a second time
+has been true since `mediaway-ffi`, and is now true a second time
 over. Not decided in this ADR (still someone else's call to make
 unilaterally for three sibling crates at once), but flagged as increasingly
 overdue.
@@ -512,8 +512,8 @@ Same version-macro + runtime-accessor convention:
 `mediaway_audio_capture_*` symbols independently behind
 `#[cfg(feature = "video")]`/`#[cfg(feature = "audio")]` — a genuinely useful
 split here (e.g. a mic-only voice-note tool never needs camera code, or vice
-versa), unlike `mediaway-pipeline-ffi`'s single always-on surface. This
-crate's own dependency shape (§1, no `mediaway-pipeline`) also means there is
+versa), unlike `mediaway-ffi`'s single always-on surface. This
+crate's own dependency shape (§1, no `mediaway`) also means there is
 no unconditional-transitive-dependency gap analogous to the ones both prior
 ADRs flagged against their own facade crates' `Cargo.toml`s — the dependency
 graph this crate adds is already minimal by construction.
@@ -530,7 +530,7 @@ before this ADR — consumer-side input, not a binding decision, same status
 | b | `mediaway_video_capture_config_screen(0, tb)` shown as if it opens successfully with no GPU device supplied | `WindowsScreenCapture::open` requires `Some(GpuDeviceHandle::DirectX11(...))` and rejects `CpuFramesOk` outright — no code path produces a usable session from this call today | `mediaway_video_capture_open` on a Screen-kind config deterministically returns `MEDIAWAY_DEVICE_STATUS_UNSUPPORTED` in this pass (§ Finding 2, § Deferred) — not silently "successful but broken" |
 | c | Same missing-accessor problem as (a), for `mediaway_audio_capture_poll_frame(mic)` — the loop drains poll results but never reads PCM bytes (`TODO(#issue): push to an audio encoder` in both example files) | Same root cause as (a) | Same fix as (a): `mediaway_audio_capture_poll_frame(capture, out_frame, out_has_frame) -> status` |
 | d | Neither example queries the real negotiated sample rate/channel count for the opened microphone | `WindowsWasapiCapture` negotiates its actual sample rate/channels from `IAudioClient::GetMixFormat` — not something the caller's config dictates, the same "don't assume, query it" principle the examples already apply to video geometry | Add `mediaway_audio_capture_format` (§4) — an addition, not a correction of something the sketch got wrong, since the sketch simply never attempted this |
-| e | `.den = (int32_t)fps` literal (same file `screen_record.c`/`camera_record.c` reuse from `encode_to_mp4.c`) | Already found and fixed twice (`mediaway-container-ffi/adr/0001` §4d, `mediaway-pipeline-ffi/adr/0001` §4c) — `mediaway_common::Rational` is `{num: u64, den: u32}` | Reuse the already-corrected `mediaway_rational_t` verbatim (§7); no new finding here |
+| e | `.den = (int32_t)fps` literal (same file `screen_record.c`/`camera_record.c` reuse from `encode_to_mp4.c`) | Already found and fixed twice (`mediaway-container-ffi/adr/0001` §4d, `mediaway-ffi/adr/0001` §4c) — `mediaway_common::Rational` is `{num: u64, den: u32}` | Reuse the already-corrected `mediaway_rational_t` verbatim (§7); no new finding here |
 
 Everything else — the config → open → poll/release loop → close lifecycle
 shape, `mediaway_video_capture_geometry`, mic-may-be-`NULL`-and-recording-
@@ -542,12 +542,12 @@ directly.
 
 | Alternative | Why not |
 |-------------|---------|
-| Ship Screen/Window capture in v1 with a raw `void *` GPU device pointer field | Would informally solve the exact GPU-handle-crossing-C-ABI problem both this ADR and `mediaway-pipeline-ffi/adr/0001` say is unsolved, without the design rigor (ownership, lifetime, device-vs-buffer distinction, multi-backend `GpuDeviceHandle` variants) that problem deserves — a shortcut that would need to be redone properly later anyway |
-| Depend on `mediaway-pipeline::platform::{ScreenCapture, Microphone}` for cross-platform dispatch | Pulls in `mediaway-pipeline`'s documented unconditional decode/encode/device/platform-backend dependency graph for a capture-only crate (§1); also has no `Camera` dispatcher to reuse in the first place |
+| Ship Screen/Window capture in v1 with a raw `void *` GPU device pointer field | Would informally solve the exact GPU-handle-crossing-C-ABI problem both this ADR and `mediaway-ffi/adr/0001` say is unsolved, without the design rigor (ownership, lifetime, device-vs-buffer distinction, multi-backend `GpuDeviceHandle` variants) that problem deserves — a shortcut that would need to be redone properly later anyway |
+| Depend on `mediaway::platform::{ScreenCapture, Microphone}` for cross-platform dispatch | Pulls in `mediaway`'s documented unconditional decode/encode/device/platform-backend dependency graph for a capture-only crate (§1); also has no `Camera` dispatcher to reuse in the first place |
 | Reuse `mediaway_video_frame_t`'s name for this crate's poll output | Real field-shape collision: borrowed `const uint8_t*` (pipeline-ffi, input) vs. owned `uint8_t*` (this crate, output) under the same type name — same class of bug `mediaway-container-ffi/adr/0001` §4c already found and fixed for packets |
-| Mint a fresh, crate-scoped `mediaway_device_pixel_format_t`/`mediaway_device_rational_t` instead of reusing pipeline-ffi's | Both wrap the identical shared `mediaway_common` Rust type end-to-end with identical shape; `mediaway-pipeline-ffi/adr/0001` explicitly wrote `mediaway_pixel_format_t` expecting reuse, not per-crate redefinition — minting a duplicate would fragment the one case where cross-crate sharing was already the stated intent |
+| Mint a fresh, crate-scoped `mediaway_device_pixel_format_t`/`mediaway_device_rational_t` instead of reusing pipeline-ffi's | Both wrap the identical shared `mediaway_common` Rust type end-to-end with identical shape; `mediaway-ffi/adr/0001` explicitly wrote `mediaway_pixel_format_t` expecting reuse, not per-crate redefinition — minting a duplicate would fragment the one case where cross-crate sharing was already the stated intent |
 | `cbindgen`-generated header | Same reasoning as both sibling ADRs — this pass's struct-split/config-hardcoding decisions are not a mechanical translation; revisit once a dedicated shared-tooling ADR exists |
-| Expose `output`/`gpu_device` fields on `mediaway_video_capture_config_t` even though unusable this pass | Would present a config knob that looks meaningful but can never select a working path yet — same reasoning `mediaway-pipeline-ffi/adr/0001` §1 used to hardcode rather than inertly expose `max_path_class`/`backend` |
+| Expose `output`/`gpu_device` fields on `mediaway_video_capture_config_t` even though unusable this pass | Would present a config knob that looks meaningful but can never select a working path yet — same reasoning `mediaway-ffi/adr/0001` §1 used to hardcode rather than inertly expose `max_path_class`/`backend` |
 
 ## Consequences
 
@@ -596,7 +596,7 @@ directly.
   capture** — real, hardware-verified, Zero-Copy Rust backends with no C ABI
   path yet; blocked on a `GpuDeviceHandle` C representation
   (`docs/spec/gpu-interop.md`), the same open problem
-  `mediaway-pipeline-ffi/adr/0001` deferred for `AutoVideoEncodeConfig::gpu_device`.
+  `mediaway-ffi/adr/0001` deferred for `AutoVideoEncodeConfig::gpu_device`.
   A `Window`-specific follow-up also needs an `HWND`/`NativeHandle` C input
   shape not designed here.
 - ~~**`mediaway-common-ffi`**~~ — resolved by
@@ -649,8 +649,8 @@ directly.
 - [`crates/mediaway-device-windows/src/wasapi.rs`](../../mediaway-device-windows/src/wasapi.rs) — real Microphone/Loopback/ProcessLoopback backend
 - [`crates/mediaway-device-windows/docs/roadmap.md`](../../mediaway-device-windows/docs/roadmap.md) — Stage 4 stale-wiring note (§ Context, § Deferred)
 - [`crates/mediaway-common/src/{frame.rs,formats.rs,gpu.rs,lib.rs}`](../../mediaway-common/src) — `VideoFrame`/`AudioFrame`/`VideoFrameStorage`, `PixelFormat`/`SampleFormat`, `GpuBufferHandle`/`GpuDeviceHandle`, `StreamInfo`/`VideoGeometry`/`Rational` field types (verified)
-- [`crates/mediaway-pipeline/src/platform.rs`](../../mediaway-pipeline/src/platform.rs) — existing `ScreenCapture`/`Microphone` dispatch shape this crate's own dispatch (§1) mirrors without importing
-- [`crates/mediaway-container-ffi/adr/0001-mp4-mux-demux-c-abi.md`](../../mediaway-container-ffi/adr/0001-mp4-mux-demux-c-abi.md), [`crates/mediaway-pipeline-ffi/adr/0001-auto-encode-c-abi.md`](../../mediaway-pipeline-ffi/adr/0001-auto-encode-c-abi.md) — precedent this ADR reuses/deviates from (handle shape, status enums, `Rational`/`PixelFormat` reuse, frame-struct collision)
+- [`crates/mediaway/src/platform.rs`](../../mediaway/src/platform.rs) — existing `ScreenCapture`/`Microphone` dispatch shape this crate's own dispatch (§1) mirrors without importing
+- [`crates/mediaway-container-ffi/adr/0001-mp4-mux-demux-c-abi.md`](../../mediaway-container-ffi/adr/0001-mp4-mux-demux-c-abi.md), [`crates/mediaway-ffi/adr/0001-auto-encode-c-abi.md`](../../mediaway-ffi/adr/0001-auto-encode-c-abi.md) — precedent this ADR reuses/deviates from (handle shape, status enums, `Rational`/`PixelFormat` reuse, frame-struct collision)
 - [`bindings/c/examples/screen_record.c`](../../../bindings/c/examples/screen_record.c), [`camera_record.c`](../../../bindings/c/examples/camera_record.c) — aspirational naming input (non-binding)
 - [`docs/spec/c-ffi.md`](../../../docs/spec/c-ffi.md), [`docs/adr/0004-c-ffi.md`](../../../docs/adr/0004-c-ffi.md) — workspace policy this ADR concretizes
 - [`docs/spec/gpu-interop.md`](../../../docs/spec/gpu-interop.md) — why Screen/Window are deferred

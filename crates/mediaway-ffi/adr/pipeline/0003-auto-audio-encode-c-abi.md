@@ -3,7 +3,7 @@
 - **Status**: Accepted
 - **Date**: 2026-08-03
 - **Deciders**: @dev-nyxie (+ agent)
-- **Crate**: `mediaway-pipeline-ffi`
+- **Crate**: `mediaway-ffi`
 
 ## Context
 
@@ -19,12 +19,12 @@ audio track belongs.
 The Rust side already solves this: `mediaway_encoder::AudioEncoder` is a streaming
 trait (`push_frame` / `poll_packet` / `flush`, ADR-tracked design in
 `mediaway-encoder`), and `mediaway_encoder_windows::WindowsAudioEncoder` wraps the
-WMF AAC encoder — **hardware-verified** in `crates/mediaway-pipeline/tests/screen_mic_av_smoke.rs`
+WMF AAC encoder — **hardware-verified** in `crates/mediaway/tests/screen_mic_av_smoke.rs`
 (real microphone signal → real AAC). It is only unreachable from C.
 
 ## Decision
 
-Add an auto audio-encode surface to `mediaway-pipeline-ffi` (pipeline.h ABI v2),
+Add an auto audio-encode surface to `mediaway-ffi` (pipeline.h ABI v2),
 mirroring the video surface's shapes but **single-step**:
 
 - `mediaway_audio_encode_config_t` — plain value struct `{codec, sample_rate,
@@ -74,7 +74,7 @@ borrowed PCM once into the frame — the same cost class as the video CPU-upload
 No other allocation churn: `poll_packet` moves the encoded payload into one owned
 allocation owned by the caller.
 
-**Why `mediaway-pipeline-ffi`, not a new crate**: the video auto-encoder already
+**Why `mediaway-ffi`, not a new crate**: the video auto-encoder already
 lives here with the status enum, error mapping, and `catch_unwind` scaffolding; audio
 encode is the same "pick the best backend, stream packets out" shape. A separate
 `mediaway-audio-ffi` would duplicate all of it (crate-packaging ADR-0003 allows

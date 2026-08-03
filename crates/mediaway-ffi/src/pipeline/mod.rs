@@ -1,4 +1,4 @@
-//! C ABI facade over [`mediaway_pipeline`] (auto video encode -> fragmented MP4).
+//! C ABI facade over [`mediaway`] (auto video encode -> fragmented MP4).
 //!
 //! Design: `adr/0001-auto-encode-c-abi.md` — opaque handles (`AutoEncoderHandle`
 //! needs no `poisoned` flag; `EncodeSessionHandle` does), a 13-value
@@ -8,7 +8,7 @@
 //!
 //! Second `mediaway-*-ffi` crate in the workspace, after `mediaway-container-ffi`
 //! ([`docs/spec/crate-packaging.md`](../../../../docs/spec/crate-packaging.md)). Wraps
-//! `mediaway-pipeline`'s `platform::AutoEncoder` + `EncodeSession` (auto-selected OS/GPU
+//! `mediaway`'s `platform::AutoEncoder` + `EncodeSession` (auto-selected OS/GPU
 //! encoder wired straight into a fragmented-MP4 muxer) over a C ABI: opaque handles +
 //! integer error codes, no panics/unwinding across the boundary.
 //!

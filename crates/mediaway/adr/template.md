@@ -3,7 +3,7 @@
 - **Status**: Proposed | Accepted | Deprecated | Superseded by ADR-XXXX
 - **Date**: YYYY-MM-DD
 - **Deciders**: @dev-nyxie (+ agent)
-- **Crate**: mediaway-pipeline
+- **Crate**: mediaway
 
 ## Context
 

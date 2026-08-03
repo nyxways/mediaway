@@ -7,7 +7,7 @@
 //! interpret a [`crate::DecodeError`] from a real decoder open.
 //!
 //! Unlike encode, decode has exactly one implementation per platform today — no
-//! competing `Backend`s to enumerate (see `mediaway-pipeline::platform::decoder_support`'s
+//! competing `Backend`s to enumerate (see `mediaway::platform::decoder_support`'s
 //! doc comment) — so this reports a single [`DecodeSupport`] per codec, not a `Vec` of
 //! rows.
 

@@ -1,4 +1,4 @@
-# mediaway-pipeline — roadmap
+# mediaway — roadmap
 
 **Facade-of-facades** crate (composition only, no traits of its own).
 Packaging: [`docs/spec/crate-packaging.md`](../../../docs/spec/crate-packaging.md).
@@ -51,7 +51,7 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
       never added as a pipeline dependency nor wired into `platform.rs`'s
       `#[cfg(...)]` dispatch; this was a real, pre-existing gap (not a
       not-yet-landed backend) — fixed this session, verified via WSL2
-      (`cargo build`/`test`/`clippy -p mediaway-pipeline`, real Linux target)
+      (`cargo build`/`test`/`clippy -p mediaway`, real Linux target)
 - [ ] Extend `platform` dispatch as remaining backends (Web, camera, audio on
       Linux) land, following the workspace platform order
 

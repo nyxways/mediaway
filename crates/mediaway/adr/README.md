@@ -1,4 +1,4 @@
-# mediaway-pipeline — ADRs
+# mediaway — ADRs
 
 The crate's existence and initial shape (`EncodeSession`, platform dispatch
 migration, `PipelineError`) are covered by the workspace-level

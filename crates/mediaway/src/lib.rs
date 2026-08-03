@@ -22,3 +22,12 @@ mod session;
 pub use error::PipelineError;
 pub use filter::{FilterError, FrameFilter};
 pub use session::EncodeSession;
+
+// Umbrella re-exports (ADR-0021): consumers depend on `mediaway` alone and
+// reach every capability through these paths, e.g. `mediaway::device::DeviceKind`,
+// `mediaway::container::mp4::Demuxer`, `mediaway::encoder::VideoEncoder`.
+pub use mediaway_container;
+pub use mediaway_decoder;
+pub use mediaway_device;
+pub use mediaway_encoder;
+pub use mediaway_sw;

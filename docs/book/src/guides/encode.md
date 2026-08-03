@@ -1,7 +1,7 @@
 # Encode
 
 The low-level surface is the `VideoEncoder` trait: push frames in, poll
-packets out. `mediaway-pipeline`'s `platform::AutoEncoder` picks the best
+packets out. `mediaway`'s `platform::AutoEncoder` picks the best
 backend available on the current platform (Windows WMF today; VA-API on
 Linux) and hands you back something that implements it.
 

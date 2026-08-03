@@ -8,7 +8,7 @@ a pure-Rust, SIMD-accelerated port of Google's WebRTC AudioProcessing module
 
 Meant to sit right after microphone capture, before anything else touches the
 signal — see [`mediaway-device`](../mediaway-device)'s `AudioCapture` for the
-frames this crate consumes. Not (yet) wired into `mediaway-pipeline`'s
+frames this crate consumes. Not (yet) wired into `mediaway`'s
 `EncodeSession`, which is video-only today.
 
 **Status: Proposed, no implementation yet.** See

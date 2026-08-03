@@ -26,7 +26,7 @@ Facades (`mediaway-encoder`, `decoder`, `device`) list platform-backend crates i
 | `iso-cenc` (unprefixed ClearKey CENC) | [`crates/iso-cenc/docs/roadmap.md`](../crates/iso-cenc/docs/roadmap.md) |
 | `mediaway-container` (facade) | [`crates/mediaway-container/docs/roadmap.md`](../crates/mediaway-container/docs/roadmap.md) |
 | `mediaway-ffi` (C ABI, first `*-ffi` crate) | [`crates/mediaway-ffi/docs/roadmap.md`](../crates/mediaway-ffi/docs/roadmap.md) |
-| `mediaway-pipeline` (facade-of-facades) | [`crates/mediaway-pipeline/docs/roadmap.md`](../crates/mediaway-pipeline/docs/roadmap.md) |
+| `mediaway` (facade-of-facades) | [`crates/mediaway/docs/roadmap.md`](../crates/mediaway/docs/roadmap.md) |
 | `mediaway-ffi` (C ABI, second `*-ffi` crate) | [`crates/mediaway-ffi/docs/roadmap.md`](../crates/mediaway-ffi/docs/roadmap.md) |
 | `iso-bmff` (unprefixed ISOBMFF/MP4) | [`crates/iso-bmff/docs/roadmap.md`](../crates/iso-bmff/docs/roadmap.md) |
 | `ebml-webm` (unprefixed EBML/WebM+Matroska demux) | [`crates/ebml-webm/docs/roadmap.md`](../crates/ebml-webm/docs/roadmap.md) |
@@ -68,7 +68,7 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
 ## Active & Planned Work Items (Wiki & Architecture Backlog)
 
 ### 1. High-Level Pipeline & FFI Bindings
-- [ ] **Multi-track `EncodeSession`**: Extend `EncodeSession` in `mediaway-pipeline` to support multi-track (video + audio) muxing natively (currently single-track video; two-track is test-level).
+- [ ] **Multi-track `EncodeSession`**: Extend `EncodeSession` in `mediaway` to support multi-track (video + audio) muxing natively (currently single-track video; two-track is test-level).
 - [ ] **Per-capability C-FFI crates**: Complete implementation of `mediaway-ffi`, `mediaway-ffi`, and `mediaway-ffi`.
 - [ ] **Game Engine & Seamless DX Wrappers**: First-class Zero-Copy wrappers for `wgpu`, `Three.js` (WebGPU), `Unity`, and `Godot` (passing native `GpuBufferHandle` / D3D11 / D3D12 / Vulkan pointers without CPU readback).
 - [ ] **Multi-language binding wrappers**: Idiomatic bindings for C++, C# (.NET / Unity), Python, Go, Swift, Kotlin, and Node.js.

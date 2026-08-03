@@ -1,6 +1,6 @@
 # Audio track + `mediaway-audio-apm` integration on `EncodeSession`
 
-`mediaway-pipeline` ADR-0003 (crate-local) extends `EncodeSession` from
+`mediaway` ADR-0003 (crate-local) extends `EncodeSession` from
 video-only/single-track to an optional second (audio) track, with
 `mediaway-audio-apm`'s `AudioProcessor` (AEC3+NS+AGC2) and
 `VoiceActivityDetector` (RNN VAD) wired in transparently. **Implemented** —

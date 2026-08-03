@@ -20,9 +20,9 @@
 //! Microphone only.
 //!
 //! Third `mediaway-*-ffi` crate in the workspace, after `mediaway-container-ffi` and
-//! `mediaway-pipeline-ffi`
+//! `mediaway-ffi`
 //! ([`docs/spec/crate-packaging.md`](../../../../docs/spec/crate-packaging.md)). Depends
-//! directly on the per-domain facade/backend crates, **not** `mediaway-pipeline` or the
+//! directly on the per-domain facade/backend crates, **not** `mediaway` or the
 //! `mediaway-device-windows` orchestrator (`adr/0001-capture-c-abi.md` §1,
 //! `adr/0004-domain-feature-split.md`) — avoids pulling in every domain's backend for a
 //! caller that only wants one. The `hotplug` feature is the one exception: v1 hotplug

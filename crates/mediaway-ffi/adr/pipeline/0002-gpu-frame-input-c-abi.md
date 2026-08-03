@@ -3,16 +3,16 @@
 - **Status**: Accepted
 - **Date**: 2026-08-01
 - **Deciders**: @dev-nyxie (+ agent)
-- **Crate**: `mediaway-pipeline-ffi`
+- **Crate**: `mediaway-ffi`
 
 ## Context
 
 `adr/0001-auto-encode-c-abi.md` §1 deferred `gpu_device`/`max_path_class`/`backend`
 because "no `GpuBufferHandle`-equivalent C ABI type exists yet" — every session
 opened from C ran the CPU-upload path, never Zero-Copy, even on a machine where
-the Rust layer underneath (`mediaway-pipeline`, `mediaway-encoder`,
+the Rust layer underneath (`mediaway`, `mediaway-encoder`,
 `mediaway-encoder-windows`) already supports GPU input end-to-end
-(hardware-verified in `crates/mediaway-pipeline/tests/screen_mic_av_smoke.rs`).
+(hardware-verified in `crates/mediaway/tests/screen_mic_av_smoke.rs`).
 
 That C ABI type now exists: `mediaway-device-ffi/adr/0003-gpu-handle-c-abi.md`
 solved "a live GPU handle across a C ABI" for Screen capture's *output* (polled
@@ -54,7 +54,7 @@ Option<CommonGpuBufferHandle>`, mapping all 7 variants back, with the same
 already established. Round-trip unit tests mirror the existing `to_common_*`/
 `from_common_*` style in `gpu_tests.rs`.
 
-`mediaway-pipeline-ffi::types` re-exports `GpuDeviceKind`/`GpuDeviceHandle`/
+`mediaway-ffi::types` re-exports `GpuDeviceKind`/`GpuDeviceHandle`/
 `GpuBufferKind`/`GpuBufferHandle` from `mediaway-common-ffi::gpu` under the
 `Mediaway*` prefix, same as `mediaway-device-ffi` does — not redefined locally.
 The C header (`include/mediaway/pipeline.h`) declares the typedefs textually
@@ -170,7 +170,7 @@ config/frame struct growth.
   resolves.
 - [`docs/spec/gpu-interop.md`](../../../docs/spec/gpu-interop.md),
   [`docs/spec/zero-cost-abstractions.md`](../../../docs/spec/zero-cost-abstractions.md)
-- `crates/mediaway-pipeline/tests/screen_mic_av_smoke.rs` — the Rust-level
+- `crates/mediaway/tests/screen_mic_av_smoke.rs` — the Rust-level
   real-hardware proof this ADR's C surface now reaches.
 - `crates/mediaway-encoder/src/auto.rs` (`AutoVideoEncodeConfig`),
   `crates/mediaway-encoder-windows/src/auto.rs` (`AutoVideoEncoder::open`).

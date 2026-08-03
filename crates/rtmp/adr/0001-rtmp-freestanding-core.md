@@ -203,7 +203,7 @@ ADR — likely either a new small facade or an addition alongside `mediaway-cont
 existing builder functions) is responsible for turning a `mediaway_common::Packet` into the
 right FLV-tag-body bytes and calling `rtmp::Muxer::push_video_data`/`push_audio_data`. That
 adapter is genuinely Mediaway-typed glue, not a freestanding-core concern, and is deferred to
-its own follow-up ADR when RTMP egress is wired into `mediaway-pipeline` or a live-streaming
+its own follow-up ADR when RTMP egress is wired into `mediaway` or a live-streaming
 facade.
 
 ## Non-Goals (explicit v1 scope cuts)

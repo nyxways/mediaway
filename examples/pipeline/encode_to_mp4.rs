@@ -1,8 +1,8 @@
 //! High-level encode pipeline: frames → H.264 → fragmented MP4.
 //!
-//! No `#[cfg(…)]` here — platform selection (`mediaway_pipeline::platform`) and the
-//! encoder→muxer wiring (`mediaway_pipeline::EncodeSession`) are both handled by
-//! `mediaway-pipeline`; this file is just the per-frame loop.
+//! No `#[cfg(…)]` here — platform selection (`mediaway::platform`) and the
+//! encoder→muxer wiring (`mediaway::EncodeSession`) are both handled by
+//! `mediaway`; this file is just the per-frame loop.
 //!
 //! For the low-level path (manual poll loops, no convenience wrapper), see
 //! `mux_roundtrip.rs`.
@@ -20,9 +20,9 @@
     reason = "example demonstrates the happy path with console output"
 )]
 
+use mediaway::{EncodeSession, platform};
 use mediaway_common::{Bytes, CodecKind, PixelFormat, Rational, VideoFrame, VideoFrameStorage};
 use mediaway_encoder::auto::AutoVideoEncodeConfig;
-use mediaway_pipeline::{EncodeSession, platform};
 use std::fs::File;
 use std::io::Write as _;
 

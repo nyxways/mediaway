@@ -4,9 +4,9 @@
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
+use mediaway::platform::AutoEncoder;
 use mediaway_encoder::VideoEncoder;
 use mediaway_encoder::auto::AutoVideoEncodeConfig;
-use mediaway_pipeline::platform::AutoEncoder;
 
 use crate::pipeline::status::MediawayPipelineStatus;
 use crate::pipeline::types::MediawayAutoVideoEncodeConfig;

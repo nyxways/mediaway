@@ -90,7 +90,7 @@ BackendSelection: Auto | AutoHardwareOnly | Explicit(Backend)
   where this crate's backends are compile-time stubs.
 - Decode did **not** get the same `Backend`/`BackendSelection` treatment — it has only
   one real backend per OS today (no sibling vendor decode SDKs wired into
-  `mediaway-pipeline::platform` yet), so adding `Backend` variants there would be an
+  `mediaway::platform` yet), so adding `Backend` variants there would be an
   empty abstraction with nothing to select among.
 
 ## References

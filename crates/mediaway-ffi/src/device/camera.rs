@@ -151,7 +151,7 @@ fn camera_select(device_index: u32) -> Result<Select, CaptureError> {
 }
 
 /// Local `#[cfg(windows)]`/`#[cfg(target_os = "linux")]` Camera dispatch — the only
-/// `#[cfg(target_os = …)]` in this module, mirroring `mediaway_pipeline::platform`'s
+/// `#[cfg(target_os = …)]` in this module, mirroring `mediaway::platform`'s
 /// shape without importing that crate (`adr/0001-capture-c-abi.md` §1). Goes directly
 /// to `mediaway-device-windows-camera`, not the `mediaway-device-windows` orchestrator
 /// (`adr/0004-domain-feature-split.md`).

@@ -1,9 +1,9 @@
 //! Integration: screen (DXGI Zero-Copy) + mic (WASAPI) capture through
-//! `mediaway_pipeline::platform`, encoded (H.264 DX11 Zero-Copy + AAC) and
+//! `mediaway::platform`, encoded (H.264 DX11 Zero-Copy + AAC) and
 //! muxed into one two-track fMP4 — proves the Stage 1 roadmap item
 //! "Screen-record example composed through this crate end-to-end".
 //!
-//! [`mediaway_pipeline::EncodeSession`] stays video-only / single-track per
+//! [`mediaway::EncodeSession`] stays video-only / single-track per
 //! ADR-0014 ("extend … when a real caller needs it — new ADR at that point if
 //! the shape changes materially"); this test is that first real caller, but it
 //! composes the second (audio) track directly against a shared
@@ -41,7 +41,7 @@ use mediaway_device::desktop::{
 use mediaway_encoder::auto::{AutoVideoEncodeConfig, EncodePathClass};
 use mediaway_encoder::windows::WindowsAudioEncoder;
 use mediaway_encoder::{AudioEncoder, AudioEncoderConfig, VideoEncoder};
-use mediaway_pipeline::platform;
+use mediaway::platform;
 use windows::Win32::Foundation::{HMODULE, POINT};
 use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
 use windows::Win32::Graphics::Direct3D11::{

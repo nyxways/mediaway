@@ -150,7 +150,7 @@ typedef enum mediaway_pixel_format {
 } mediaway_pixel_format_t;
 #endif /* only NV12/BGRA8 exercised by the Windows backends today */
 
-/* Identical shape/values to mediaway-pipeline-ffi's mediaway_sample_format_t —
+/* Identical shape/values to mediaway-ffi's mediaway_sample_format_t —
  * reused, not re-derived, but a distinct header (no shared header exists yet).
  * Only F32 accepted by the real Windows WASAPI backend today. */
 #ifndef MEDIAWAY_SAMPLE_FORMAT_T_DEFINED

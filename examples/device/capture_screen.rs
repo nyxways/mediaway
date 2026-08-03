@@ -15,9 +15,9 @@
     reason = "example demonstrates the happy path with console output"
 )]
 
+use mediaway::platform;
 use mediaway_device::Select;
 use mediaway_device::desktop::DesktopVideoCaptureConfig;
-use mediaway_pipeline::platform;
 use std::time::{Duration, Instant};
 
 const CAPTURE_SECS: u64 = 2;

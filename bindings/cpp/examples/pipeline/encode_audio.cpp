@@ -12,7 +12,7 @@
 // F32) — no microphone needed. NO_BACKEND is graceful.
 //
 // Build:
-//   g++ -std=c++17 -Ibindings/cpp/include -Icrates/mediaway-pipeline-ffi/include
+//   g++ -std=c++17 -Ibindings/cpp/include -Icrates/mediaway-ffi/include
 //   -Icrates/mediaway-container-ffi/include bindings/cpp/examples/pipeline/encode_audio.cpp
 //   -Ltarget/x86_64-pc-windows-gnu/debug -lmediaway_pipeline_ffi -lmediaway_container_ffi -o encode_audio.exe
 

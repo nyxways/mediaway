@@ -78,4 +78,4 @@ round trip directly at the `EncodedVideoChunk` level (no container in between): 
 with a real fMP4 round trip would require this browser's WebCodecs to actually decode the
 codec `iso-bmff` also supports muxing (VP9), which is a separate, not-yet-attempted step, not
 a blocked one. Real fMP4 round-trip coverage for H.264 already exists on Windows
-(`mediaway-pipeline/tests/trim_and_splice_windows.rs`).
+(`mediaway/tests/trim_and_splice_windows.rs`).

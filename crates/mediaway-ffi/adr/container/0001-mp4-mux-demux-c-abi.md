@@ -442,7 +442,7 @@ not only in this ADR (ADR-0006 "code carries the contract").
   exists to model it explicitly (mirroring `GpuBufferHandle`, but CPU-side).
 - **`cbindgen` adoption** — revisit once ≥2 `-ffi` crates exist to justify the
   shared dev-dependency.
-- **`mediaway-common-ffi`** (whether/what to share with `mediaway-pipeline-ffi`)
+- **`mediaway-common-ffi`** (whether/what to share with `mediaway-ffi`)
   — resolved by
   [`docs/adr/0015-common-ffi-unification.md`](../../../docs/adr/0015-common-ffi-unification.md):
   the shared crate unifies the `MediawayRational`/`MediawayCodecKind`

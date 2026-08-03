@@ -26,7 +26,7 @@ Platform order: **Windows first**. Workspace index: [`docs/roadmap.md`](../../..
 ### 2 — Integration
 
 - [x] Demuxer → decode → encode smoke with `mediaway-container` — see
-      `mediaway-pipeline`'s `tests/trim_and_splice_windows.rs` (decode → trim → splice →
+      `mediaway`'s `tests/trim_and_splice_windows.rs` (decode → trim → splice →
       re-encode → mux → demux → decode round trip) and `examples/pipeline/trim_and_splice.rs`
 - [x] Annex-B vs AVCC extradata policy documented + tested — see ADR-0001; AVCC-framed
       demuxed `extra_data`/packets are converted to Annex-B before reaching the MFT

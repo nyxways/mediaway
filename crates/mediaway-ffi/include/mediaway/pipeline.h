@@ -1,6 +1,6 @@
 /*
- * pipeline.h — mediaway-pipeline-ffi: C ABI facade over Mediaway's auto video
- * encode -> fragmented MP4 convenience layer (mediaway-pipeline).
+ * pipeline.h — mediaway-ffi: C ABI facade over Mediaway's auto video
+ * encode -> fragmented MP4 convenience layer (mediaway).
  *
  * Hand-written (not cbindgen-generated) — see adr/0001-auto-encode-c-abi.md §8.
  * Design rules: docs/spec/c-ffi.md (ADR-0004).

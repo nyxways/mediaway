@@ -1,6 +1,6 @@
-# mediaway-pipeline-ffi — roadmap
+# mediaway-ffi — roadmap
 
-C ABI facade over `mediaway-pipeline`'s auto video encode -> fragmented MP4 convenience layer. Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
+C ABI facade over `mediaway`'s auto video encode -> fragmented MP4 convenience layer. Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 
 ## Stages
 

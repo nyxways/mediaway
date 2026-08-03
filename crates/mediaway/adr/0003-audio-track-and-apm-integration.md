@@ -3,7 +3,7 @@
 - **Status**: Accepted
 - **Date**: 2026-08-01
 - **Deciders**: @dev-nyxie (+ agent)
-- **Crate**: `mediaway-pipeline`
+- **Crate**: `mediaway`
 
 ## Context
 
@@ -18,7 +18,7 @@ that point.
 Separately, `mediaway-audio-apm` (echo cancellation AEC3, noise suppression NS, gain
 control AGC2 via `AudioProcessor`; RNN voice-activity detection via
 `VoiceActivityDetector`) already exists as a real, implemented, hardware-independent
-crate — but its own ADR-0001 explicitly deferred pipeline wiring: "`mediaway-pipeline`
+crate — but its own ADR-0001 explicitly deferred pipeline wiring: "`mediaway`
 may later *compose* `mediaway-audio-apm` once its Stage 1b (audio/multi-track
 `EncodeSession`) is scoped — that is a separate, future ADR." This is that ADR. The
 user's explicit ask driving this: audio track support exists specifically *so that*
@@ -189,7 +189,7 @@ gap in `mediaway-audio-apm` itself, not introduced by this ADR; named here per
 
 ### Dependency
 
-`mediaway-pipeline` adds `mediaway-audio-apm = { workspace = true, features = ["full"] }`
+`mediaway` adds `mediaway-audio-apm = { workspace = true, features = ["full"] }`
 **unconditionally** (not behind a new Cargo feature on this crate) — this crate is
 already "batteries included" (unconditional `mediaway-encoder`/`mediaway-container`/
 `mediaway-device-*` deps, no granular feature gating), unlike `mediaway-device-ffi`
@@ -214,7 +214,7 @@ Rust-only convenience facade.
 ### Positive
 
 - `mediaway-audio-apm`'s `AudioProcessor`/`VoiceActivityDetector` become usable from
-  `mediaway-pipeline` with zero caller-side push/poll bookkeeping — `write_audio_frame`
+  `mediaway` with zero caller-side push/poll bookkeeping — `write_audio_frame`
   absorbs it.
 - Fully additive: `open`/`write_frame`/`push_filter` signatures unchanged; existing
   video-only callers see no behavior change.
@@ -233,7 +233,7 @@ Rust-only convenience facade.
   only): `mediaway_audio_apm::ApmError` wraps `sonora::Error` (`#[source]`, no
   `Clone`/`PartialEq` on the external type) and cannot honestly support them either.
   Checked: no in-workspace caller compares or clones a `PipelineError` today (both
-  `mediaway-pipeline`'s own tests and `mediaway-pipeline-ffi`'s `From<PipelineError>`
+  `mediaway`'s own tests and `mediaway-ffi`'s `From<PipelineError>`
   conversion only pattern-match by value) — a real but so-far-inert breaking change to
   this type's trait surface.
 

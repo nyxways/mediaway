@@ -3,7 +3,7 @@
 - **Status**: Accepted — implemented 2026-07-31, see `src/filter.rs` + `src/session.rs`
 - **Date**: 2026-07-31
 - **Deciders**: @dev-nyxie (+ agent)
-- **Crate**: `mediaway-pipeline`
+- **Crate**: `mediaway`
 
 ## Context
 

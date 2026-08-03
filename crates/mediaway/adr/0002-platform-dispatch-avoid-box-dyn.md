@@ -3,7 +3,7 @@
 - **Status**: Proposed
 - **Date**: 2026-07-31
 - **Deciders**: @dev-nyxie (+ agent)
-- **Crate**: `mediaway-pipeline`
+- **Crate**: `mediaway`
 
 ## Context
 
@@ -160,11 +160,11 @@ are **out of scope** — none of them return `Box<dyn Trait>` today (`Vec<Encode
   `platform::AutoEncoder::open`'s result flows into `EncodeSession::open`, staying
   monomorphic/inlinable through `examples/pipeline/screen_record.rs`,
   `examples/pipeline/encode_to_mp4.rs`, `examples/pipeline/trim_and_splice.rs`, and
-  `crates/mediaway-pipeline/tests/screen_mic_av_smoke.rs` without those callers writing
+  `crates/mediaway/tests/screen_mic_av_smoke.rs` without those callers writing
   anything differently.
 - Pushes the one place type erasure is *actually* required — a C ABI opaque handle, which
   by construction needs one uniform pointer layout across platforms — down into
-  `mediaway-pipeline-ffi`, matching [`c-ffi.md`](../../../docs/spec/c-ffi.md) ("C ABI
+  `mediaway-ffi`, matching [`c-ffi.md`](../../../docs/spec/c-ffi.md) ("C ABI
   lives only in `mediaway-*-ffi`"). See Negative below for the one line that needs an
   explicit cast there.
 - Confirmed via `examples/pipeline/screen_record.rs` (`record_loop(cap: &mut dyn
@@ -187,7 +187,7 @@ are **out of scope** — none of them return `Box<dyn Trait>` today (`Vec<Encode
   (`push_frame`, `poll_packet`, …) is identical either way, so most call sites only need
   recompilation, not edits.
 - One real call site needs an actual code change:
-  [`crates/mediaway-pipeline-ffi/src/encoder.rs`](../../mediaway-pipeline-ffi/src/encoder.rs)
+  [`crates/mediaway-ffi/src/encoder.rs`](../../mediaway-ffi/src/encoder.rs)
   defines `pub type AutoEncoderHandle = Box<dyn VideoEncoder>;` and, at
   `mediaway_auto_encoder_open` (line 62), calls `AutoEncoder::open(&rust_config)` and
   relies on **type inference** to give `encoder: Box<dyn VideoEncoder>` so that
@@ -195,7 +195,7 @@ are **out of scope** — none of them return `Box<dyn Trait>` today (`Vec<Encode
   `Box<Box<dyn VideoEncoder>>`. After this ADR, `encoder` is a concrete
   `PlatformVideoEncoder`; that line needs an explicit
   `Box::new(Box::new(encoder) as Box<dyn VideoEncoder>)` (or equivalent) to keep
-  compiling. `crates/mediaway-pipeline-ffi/src/session.rs`'s `EncodeSessionHandle {
+  compiling. `crates/mediaway-ffi/src/session.rs`'s `EncodeSessionHandle {
   inner: EncodeSession<AutoEncoderHandle> }` is unaffected — `AutoEncoderHandle` itself
   keeps its `Box<dyn VideoEncoder>` definition; only how it gets constructed in
   `encoder.rs` changes. The public C ABI shape (`mediaway_auto_encoder_t*`, function
@@ -205,7 +205,7 @@ are **out of scope** — none of them return `Box<dyn Trait>` today (`Vec<Encode
   `examples/pipeline/screen_record.rs`, `examples/pipeline/encode_to_mp4.rs`,
   `examples/encode/encode_h264.rs`, `examples/decode/decode_h264.rs`,
   `examples/device/capture_screen.rs`, `examples/device/capture_microphone.rs`, and
-  `crates/mediaway-pipeline/tests/screen_mic_av_smoke.rs` all call `platform::*::open`
+  `crates/mediaway/tests/screen_mic_av_smoke.rs` all call `platform::*::open`
   through `let` bindings with inferred types (no explicit `Box<dyn Trait>` annotation
   found at any of these sites) — expected to keep compiling unchanged, verify at
   implementation time.
@@ -235,7 +235,7 @@ are **out of scope** — none of them return `Box<dyn Trait>` today (`Vec<Encode
 - `bindings/cpp/examples/*.cpp` (aspirational, does not compile today) call
   `AutoEncoder::open`/`ScreenCapture::open`/`Microphone::open` against a not-yet-existing
   C++ wrapper over the C ABI — unaffected, since the C ABI's own shape does not change
-  (see the `mediaway-pipeline-ffi` note above).
+  (see the `mediaway-ffi` note above).
 - The unsupported-platform (`not(any(windows, linux))`) arm has no concrete backend type
   to name; resolving it cleanly (e.g. `Infallible`) likely means `AutoEncoder::open`'s
   signature becomes `#[cfg]`-gated itself, not just the type alias behind it — a small
@@ -252,9 +252,9 @@ are **out of scope** — none of them return `Box<dyn Trait>` today (`Vec<Encode
   forwarding — see Context for the distinction from `EncoderImpl`)
 - [`crates/mediaway-encoder/adr/0001-encoder-traits.md`](../../mediaway-encoder/adr/0001-encoder-traits.md) —
   alternatives table already rejects "`Box<dyn VideoEncoder>` as the only API"
-- [`crates/mediaway-pipeline-ffi/src/encoder.rs`](../../mediaway-pipeline-ffi/src/encoder.rs) —
+- [`crates/mediaway-ffi/src/encoder.rs`](../../mediaway-ffi/src/encoder.rs) —
   `AutoEncoderHandle = Box<dyn VideoEncoder>`, the one real call site needing a code change
-- [`crates/mediaway-pipeline-ffi/src/session.rs`](../../mediaway-pipeline-ffi/src/session.rs) —
+- [`crates/mediaway-ffi/src/session.rs`](../../mediaway-ffi/src/session.rs) —
   `EncodeSessionHandle`, unaffected structurally
 - [`docs/spec/zero-cost-abstractions.md`](../../../docs/spec/zero-cost-abstractions.md) —
   ADR-0009, `Box` rules, "enum of known backends when the set is closed at compile time"

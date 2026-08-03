@@ -3,7 +3,7 @@
 Facade: [`mediaway-device`](../../../../crates/mediaway-device) —
 `DeviceKind` / `Support` / `Unavailable` / `PermissionState` ([ADR-0003](../../../../crates/mediaway-device/adr/0003-capability-and-permission-probe.md)).
 Backends: `mediaway-device-windows`/`-linux` `capabilities.rs`. Dispatch:
-`mediaway-pipeline::platform::{device_support, request_device_permission}`.
+`mediaway::platform::{device_support, request_device_permission}`.
 
 ## Two separate questions
 

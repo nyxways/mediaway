@@ -1,4 +1,4 @@
-# mediaway-pipeline — docs
+# mediaway — docs
 
 Convenience **pipeline facade**: composes `mediaway-encoder` + `mediaway-container`
 (+ `mediaway-device` for capture) into [`EncodeSession`] and platform auto-dispatch,

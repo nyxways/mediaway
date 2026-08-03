@@ -17,7 +17,7 @@
 
 Two prior ADRs deferred the same open problem, stated in almost identical words:
 
-- [`mediaway-pipeline-ffi/adr/0001`](../../mediaway-pipeline-ffi/adr/0001-auto-encode-c-abi.md)
+- [`mediaway-ffi/adr/0001`](../../mediaway-ffi/adr/0001-auto-encode-c-abi.md)
   §1: *"A GPU handle crossing a C boundary is its own unsolved design problem
   ... v1 always passes `None`, i.e. CPU-upload-only from C."*
 - [`mediaway-device-ffi/adr/0001`](0001-capture-c-abi.md) § Finding 2 / § Deferred:
@@ -165,7 +165,7 @@ typedef struct mediaway_gpu_buffer_handle {
 **Placement: `mediaway-common-ffi`, not crate-local.** Applying ADR-0015's own
 decision criterion directly: both types wrap the *identical* shared
 `mediaway_common::{GpuDeviceHandle, GpuBufferHandle}` end-to-end, and a second
-real consumer is already named and waiting (`mediaway-pipeline-ffi`'s
+real consumer is already named and waiting (`mediaway-ffi`'s
 twice-deferred `gpu_device`/`max_path_class`, § Deferred). ADR-0015 built
 `Rational`/`CodecKind` there only after two crates had *already* duplicated
 them; here we can skip ever creating a first crate-local copy that would need
@@ -497,7 +497,7 @@ Rust capability reachable from C.
 
 | Alternative | Why not |
 |-------------|---------|
-| Crate-local `mediaway_device_gpu_*` types instead of `mediaway-common-ffi` | Would create the exact "first independent copy that needs migrating later" situation ADR-0015 already had to clean up once for `Rational`/`CodecKind`, with `mediaway-pipeline-ffi`'s twice-deferred `gpu_device` already a known, named second consumer |
+| Crate-local `mediaway_device_gpu_*` types instead of `mediaway-common-ffi` | Would create the exact "first independent copy that needs migrating later" situation ADR-0015 already had to clean up once for `Rational`/`CodecKind`, with `mediaway-ffi`'s twice-deferred `gpu_device` already a known, named second consumer |
 | A C union (`union { dx11; dx12; vulkan; ... }`) for `gpu_buffer`/`gpu_device` | Breaks this workspace's own established "flat struct + discriminant, not a C union" convention (`mediaway_device_event_t`, `mediaway_video_capture_config_t`) with no offsetting benefit — the flat shape already handles per-kind field relevance elsewhere in this crate |
 | `gpu_device` as a nullable `const mediaway_gpu_device_handle_t *` pointer field | Would make the config struct the first pointer-bearing, lifetime-obligated field among this crate's otherwise plain-value "no heap, no free" config structs; a `NONE`-sentinel flat value keeps the exact same POD-by-value property every sibling config struct already has |
 | Expose `output: CaptureOutputPreference` as a C config field | No real backend today branches on it — Camera and Screen each hard-require exactly one value; would be the same "unusable knob" ADR-0001 §5 already rejected once, applied again |
@@ -511,11 +511,11 @@ Rust capability reachable from C.
 
 - Screen capture — a real, hardware-verified, GPU Zero-Copy-*capable* Rust
   backend that has been completely unreachable from C since ADR-0001 — becomes
-  reachable, closing the exact gap that ADR (and `mediaway-pipeline-ffi/adr/0001`
+  reachable, closing the exact gap that ADR (and `mediaway-ffi/adr/0001`
   §1) both named as "an unsolved design problem," with a concrete, reviewable
   C representation.
 - `mediaway-common-ffi` gains its second real type family with a stated,
-  named future second consumer (`mediaway-pipeline-ffi`) already in hand —
+  named future second consumer (`mediaway-ffi`) already in hand —
   the intended trajectory ADR-0015 set up, realized without ever creating a
   throwaway crate-local copy first.
 - A genuine Rust-level correctness bug in `capture_video_once` was found and
@@ -554,9 +554,9 @@ Rust capability reachable from C.
 
 ## Deferred to a later ADR / explicit open questions
 
-- **`mediaway-pipeline-ffi`'s `gpu_device`/`max_path_class`** — this ADR's
+- **`mediaway-ffi`'s `gpu_device`/`max_path_class`** — this ADR's
   `mediaway_gpu_device_handle_t`/`mediaway_gpu_buffer_handle_t` are the real,
-  intended future beneficiary named in `mediaway-pipeline-ffi/adr/0001` §1;
+  intended future beneficiary named in `mediaway-ffi/adr/0001` §1;
   designing that crate's own config/encode-path changes is explicitly out of
   scope here.
 - **`Window` capture (`WindowsWindowCapture`)** — still needs a native
@@ -595,7 +595,7 @@ Rust capability reachable from C.
 - [`crates/mediaway-device-windows/adr/0006-shared-desktop-duplication.md`](../../mediaway-device-windows/adr/0006-shared-desktop-duplication.md) — shared/refcounted session design this ADR's hazards (§8.2–8.3) build on
 - [`crates/mediaway-device-ffi/adr/0001-capture-c-abi.md`](0001-capture-c-abi.md) — first pass; Finding 2 / § Deferred this ADR resolves
 - [`crates/mediaway-device-ffi/adr/0002-callback-event-delivery.md`](0002-callback-event-delivery.md) — `mediaway_device_event_t`'s flat-struct-not-union precedent this ADR reuses
-- [`crates/mediaway-pipeline-ffi/adr/0001-auto-encode-c-abi.md`](../../mediaway-pipeline-ffi/adr/0001-auto-encode-c-abi.md) §1 — the sibling deferral this ADR's shared type is meant to eventually unblock (not designed here)
+- [`crates/mediaway-ffi/adr/0001-auto-encode-c-abi.md`](../../mediaway-ffi/adr/0001-auto-encode-c-abi.md) §1 — the sibling deferral this ADR's shared type is meant to eventually unblock (not designed here)
 - [`docs/adr/0015-common-ffi-unification.md`](../../../docs/adr/0015-common-ffi-unification.md) — `mediaway-common-ffi` placement precedent/criteria this ADR applies
 - [`crates/mediaway-common-ffi/src/{types.rs,buffer.rs,lib.rs}`](../../mediaway-common-ffi/src) — existing shared-type module shape the new `gpu.rs` module mirrors
 - [`docs/spec/gpu-interop.md`](../../../docs/spec/gpu-interop.md), [`docs/spec/c-ffi.md`](../../../docs/spec/c-ffi.md) — workspace policy this ADR concretizes

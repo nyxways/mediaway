@@ -1,11 +1,11 @@
 # Screen-record: video + mic → two-track fMP4
 
-Proves Stage 1 roadmap item: screen-record composed through `mediaway-pipeline`
+Proves Stage 1 roadmap item: screen-record composed through `mediaway`
 end-to-end, with mic → `AudioEncoder` wiring, on the Zero-Copy DX11 capture path.
 `examples/pipeline/screen_record.rs` now wires the same audio path too (CPU-upload
 video, not this test's Zero-Copy DX11 capture — see its own doc comment).
 
-Test: `crates/mediaway-pipeline/tests/screen_mic_av_smoke.rs`.
+Test: `crates/mediaway/tests/screen_mic_av_smoke.rs`.
 
 ## Composition — not an `EncodeSession` extension
 

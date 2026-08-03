@@ -43,7 +43,7 @@ f32 `[-1, 1]` signal fed unscaled reads as permanent silence.
 
 Two precedents from this workspace ground the shape decisions:
 
-- `mediaway-pipeline` ADR-0001 (`FrameFilter`) — the just-shipped mid-pipeline
+- `mediaway` ADR-0001 (`FrameFilter`) — the just-shipped mid-pipeline
   hook for **video**: a trait, an ordered `SmallVec<[Box<dyn FrameFilter>; 4]>`
   chain, `process(&mut self, frame: VideoFrame) -> Result<VideoFrame,
   FilterError>` — one input stream, one output frame, synchronous 1:1.
@@ -66,7 +66,7 @@ Two precedents from this workspace ground the shape decisions:
 > differences from a single-stream video filter, not cosmetic ones. Callers
 > wire it directly between `mediaway-device`'s `AudioCapture::poll_frame()`
 > output and whatever consumes the signal next (an `AudioEncoder`, a VAD
-> gate, app logic) — **not** through `mediaway-pipeline::EncodeSession`,
+> gate, app logic) — **not** through `mediaway::EncodeSession`,
 > which has no audio track support today (Stage 1b, "not yet scoped").
 > Adopt an explicit catch-and-disable panic-safety posture for the `sonora`/
 > `sonora-agc2` call sites specifically, deliberately narrower and less
@@ -131,11 +131,11 @@ core). **Not** folded into an existing crate:
   `crate-packaging.md` names for WMF/WebCodecs: "do not fold \[X\] into the
   facade as `cfg` modules" — same reasoning applies to folding a whole new,
   externally-dependency-heavy capability into an unrelated facade.
-- **`mediaway-pipeline`** — its own roadmap header states it is a
+- **`mediaway`** — its own roadmap header states it is a
   "facade-of-facades… composition only, no traits of its own." This crate
   needs to *own* a new low-level type surface (`AudioProcessor`,
   `VoiceActivityDetector`, `ApmError`), which contradicts that crate's
-  stated shape. `mediaway-pipeline` may later *compose* `mediaway-audio-apm`
+  stated shape. `mediaway` may later *compose* `mediaway-audio-apm`
   once its Stage 1b (audio/multi-track `EncodeSession`) is scoped — that is
   a separate, future ADR.
 
@@ -294,7 +294,7 @@ transpilation bug that surfaces as a Rust panic rather than a clean error
 return.
 
 This workspace already has a mechanically identical pattern for exactly this
-problem: `mediaway-pipeline-ffi` ADR-0001 §7 and `mediaway-container-ffi`
+problem: `mediaway-ffi` ADR-0001 §7 and `mediaway-container-ffi`
 ADR-0001 §7 both wrap every exported call in
 `catch_unwind(AssertUnwindSafe(...))` and set a `poisoned: bool` field on
 catch, after which further calls short-circuit
@@ -308,7 +308,7 @@ reuses the same `catch_unwind(AssertUnwindSafe(...))` mechanism — but
 | After a caught panic | Every subsequent call **errors** (`HANDLE_POISONED`) — an opaque handle's internal state after a mid-mutation panic is not verifiably safe to keep using | Every subsequent call **passes audio through unmodified** — the underlying signal (unprocessed PCM) is still perfectly usable; only the *enhancement* is lost |
 | Why the difference is correct, not an oversight | A corrupted `Muxer`/`EncodeSession` producing further output would be silently wrong (bad MP4 bytes) — erroring is the only safe option | A disabled `AudioProcessor` producing further **raw** output is not wrong, just unenhanced — silently *stopping the audio stream* (by erroring forever) is a strictly worse outcome for a live capture/voice pipeline than continuing without AEC/NS/AGC |
 
-This also deliberately departs from `mediaway-pipeline` ADR-0001
+This also deliberately departs from `mediaway` ADR-0001
 (`FrameFilter`)'s "no silent failure… this crate has no precedent for a soft
 fail and continue path" stance — named explicitly as a **considered, not
 accidental** divergence: `EncodeSession::write_frame` fails a batch/file
@@ -332,7 +332,7 @@ this workspace denies `print_stderr`/`print_stdout` (clippy) and
 
 No `unsafe` is required — `catch_unwind`/`AssertUnwindSafe` are safe Rust,
 already used at 3+ existing FFI call sites in this workspace
-(`mediaway-pipeline-ffi`, `mediaway-container-ffi`, `mediaway-device-ffi`),
+(`mediaway-ffi`, `mediaway-container-ffi`, `mediaway-device-ffi`),
 so this is not a novel Rust idiom for this codebase even though those are
 `extern "C"` boundaries and this crate is not. `mediaway-audio-apm` keeps
 `#![forbid(unsafe_code)]`.
@@ -366,7 +366,7 @@ must not rediscover this by shipping a VAD that always reports silence.
 | `AudioFilter` trait mirroring `FrameFilter` exactly | Cannot express the render/capture two-stream split without a side-channel setter or a shared tuple frame type every chain member would need to understand; cannot express fixed-10ms-block re-blocking through a synchronous 1:1 `process()` without lying about "one call in, one call out" |
 | Fold into `mediaway-device` as a processing option on `AudioCapture` | Forces `sonora` onto every caller who only wants raw capture; mixes an OS-session facade with a pure CPU DSP transform that has no OS handle at all — same anti-pattern `crate-packaging.md` names for folding WMF/WebCodecs into a facade as `cfg` modules |
 | Fold into `mediaway-common` | Would force a SIMD audio-DSP dependency onto every consumer of any Mediaway type; `mediaway-common` today depends on `bytes` only |
-| Fold into `mediaway-pipeline` | That crate's own roadmap states "composition only, no traits of its own" — this needs to own a new low-level type surface |
+| Fold into `mediaway` | That crate's own roadmap states "composition only, no traits of its own" — this needs to own a new low-level type surface |
 | `AudioProcessor` as a trait now, for a hypothetical second backend (e.g. WASAPI Voice Processing) | No second real backend exists today; an OS-native AEC path is a `mediaway-device-windows` **capture-level** concern (a different capability), not a second implementation of this crate's contract. Speculative trait abstraction for zero current callers — revisit via a new ADR if/when a second real backend caller appears, same "not adding it now is no abstractions for one-off code, not a permanent rejection" reasoning `FrameFilter`'s ADR already used for a bare-closure blanket impl |
 | Mirror nyxie_voice's fully silent `eprintln!` + `None`-forever fallback verbatim | This workspace denies `print_stdout`/`print_stderr` (clippy) and forbids silent degraded defaults (`caveats-and-clarity.md`); adapted instead to a typed one-shot error + queryable `is_disabled()` |
 | Poisoned-handle "error forever" after a caught panic (mirroring the `*-ffi` precedent exactly) | Correct for an opaque handle whose corrupted internal state cannot safely produce further output; wrong here — the underlying raw PCM is still perfectly valid, so erroring forever needlessly kills a live audio stream instead of degrading it |
@@ -382,7 +382,7 @@ must not rediscover this by shipping a VAD that always reports silence.
   the workspace's license boundary.
 - `AudioProcessor`/`VoiceActivityDetector` are usable standalone, satisfying
   `api-layers.md`'s "no opaque-only path" — no forced dependency on
-  `mediaway-pipeline` or `EncodeSession` to use enhancement at all.
+  `mediaway` or `EncodeSession` to use enhancement at all.
 - Panic-safety posture keeps a live capture/voice pipeline alive through a
   young dependency's internal fault, without hiding that fault from the
   caller (one typed error + a queryable flag, not silence).
@@ -417,7 +417,7 @@ must not rediscover this by shipping a VAD that always reports silence.
 
 - `E:\51P\Project-Eddy\Native\Cargo.toml`, `src/apm.rs` — real, shipped usage
   (sibling personal project, not part of this workspace)
-- [`mediaway-pipeline/adr/0001-frame-filter-hook.md`](../../mediaway-pipeline/adr/0001-frame-filter-hook.md) —
+- [`mediaway/adr/0001-frame-filter-hook.md`](../../mediaway/adr/0001-frame-filter-hook.md) —
   `FrameFilter` shape and "no silent failure" precedent, both explicitly
   diverged from here with reasons
 - [`docs/adr/0005-gpu-interop.md`](../../../docs/adr/0005-gpu-interop.md),
@@ -425,7 +425,7 @@ must not rediscover this by shipping a VAD that always reports silence.
   adapter, not a custom abstraction
 - [`mediaway-wgpu`](../../mediaway-wgpu) — structural precedent: one crate,
   no platform split, external framework adapter
-- [`mediaway-pipeline-ffi/adr/0001-auto-encode-c-abi.md`](../../mediaway-pipeline-ffi/adr/0001-auto-encode-c-abi.md) §7,
+- [`mediaway-ffi/adr/0001-auto-encode-c-abi.md`](../../mediaway-ffi/adr/0001-auto-encode-c-abi.md) §7,
   [`mediaway-container-ffi/adr/0001-mp4-mux-demux-c-abi.md`](../../mediaway-container-ffi/adr/0001-mp4-mux-demux-c-abi.md) §7 —
   `catch_unwind`/poisoned-handle precedent, diverged from on post-catch
   behavior (§ Panic-safety posture)

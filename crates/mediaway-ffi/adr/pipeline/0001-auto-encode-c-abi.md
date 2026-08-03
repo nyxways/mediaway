@@ -3,15 +3,15 @@
 - **Status**: Proposed
 - **Date**: 2026-07-31
 - **Deciders**: @dev-nyxie (+ agent)
-- **Crate**: `mediaway-pipeline-ffi`
+- **Crate**: `mediaway-ffi`
 
 ## Context
 
-`mediaway-pipeline-ffi` is the **second** `mediaway-*-ffi` crate in the
+`mediaway-ffi` is the **second** `mediaway-*-ffi` crate in the
 workspace, after `mediaway-container-ffi` (ADR-0004,
 [`docs/spec/c-ffi.md`](../../../docs/spec/c-ffi.md)). It wraps the real,
 working auto-encode convenience layer in
-[`crates/mediaway-pipeline/src/{session.rs,platform.rs,error.rs}`](../../mediaway-pipeline/src):
+[`crates/mediaway/src/{session.rs,platform.rs,error.rs}`](../../mediaway/src):
 `platform::AutoEncoder::open` (best-available OS/GPU `VideoEncoder` for a
 config, or `EncodeError::NoBackend`) feeding a single-track
 `EncodeSession<E: VideoEncoder>` that streams frames straight into a
@@ -387,7 +387,7 @@ consumers).
 ### 9. Feature flags
 
 **No `[features]` table** — a single always-on surface, unlike
-`mediaway-container-ffi`'s `mux`/`demux` split. `mediaway-pipeline` itself has
+`mediaway-container-ffi`'s `mux`/`demux` split. `mediaway` itself has
 no Cargo features; its Windows/Linux dispatch (`platform.rs`) is a runtime
 `#[cfg(target_os = …)]` concern inside one always-compiled crate, not a
 Cargo-feature-gated one, so there is no natural per-capability split to
@@ -395,16 +395,16 @@ mirror at this layer either. This crate's own exported function set (§4) is
 one coherent capability — auto video encode → fMP4 — with no sub-parts a
 slim build would plausibly want to drop.
 
-**Explicitly documented limitation, not fixed here:** `mediaway-pipeline`'s
+**Explicitly documented limitation, not fixed here:** `mediaway`'s
 `Cargo.toml` depends unconditionally on `mediaway-decoder`, `mediaway-device`,
 and their platform backends (`mediaway-decoder-windows`,
 `mediaway-device-windows`, and Linux equivalents) — none of which this v1
 FFI surface (`AutoEncoder` + `EncodeSession`, encode-only) calls. Building
-`mediaway-pipeline-ffi` today compiles and links WMF video decode, WASAPI
+`mediaway-ffi` today compiles and links WMF video decode, WASAPI
 capture, and screen-capture platform code no exported function here ever
-reaches, because `mediaway-pipeline` has no `[features]` table to select
+reaches, because `mediaway` has no `[features]` table to select
 against. Same class of gap as `mediaway-container-ffi/adr/0001` §9's
-unconditional format-core deps — a `mediaway-pipeline` Cargo.toml concern,
+unconditional format-core deps — a `mediaway` Cargo.toml concern,
 flagged as a follow-up against that crate's own roadmap, not this ADR's to
 fix.
 
@@ -457,7 +457,7 @@ without evidence.
   buffer-free functions across the workspace's two `-ffi` crates today — a
   real (if currently harmless) fragmentation that `mediaway-common-ffi` is
   meant to eventually resolve.
-- `mediaway-pipeline-ffi` cannot yet ship an encode-only compiled artifact
+- `mediaway-ffi` cannot yet ship an encode-only compiled artifact
   free of unrelated decode/device platform code, for the same structural
   reason `mediaway-container-ffi` cannot ship an MP4-only one (§9).
 
@@ -482,7 +482,7 @@ without evidence.
   now shared.
 - **`cbindgen` adoption** — revisit now that two hand-written headers exist
   (§8), as its own ADR, not decided unilaterally here.
-- **`mediaway-pipeline`'s unconditional decode/device/platform deps** (§9) —
+- **`mediaway`'s unconditional decode/device/platform deps** (§9) —
   a facade-level Cargo.toml fix, tracked against that crate's own roadmap.
 - ~~**Whether `UNSUPPORTED` should ever be treated as gracefully as
   `NO_BACKEND`** (§2)~~ — resolved: `bindings/c/examples/encode_to_mp4.c` now
@@ -500,8 +500,8 @@ without evidence.
 
 ## References
 
-- [`crates/mediaway-pipeline-ffi/README.md`](../README.md), [`docs/roadmap.md`](../docs/roadmap.md)
-- [`crates/mediaway-pipeline/src/session.rs`](../../mediaway-pipeline/src/session.rs), [`platform.rs`](../../mediaway-pipeline/src/platform.rs), [`error.rs`](../../mediaway-pipeline/src/error.rs) — wrapped Rust surface
+- [`crates/mediaway-ffi/README.md`](../README.md), [`docs/roadmap.md`](../docs/roadmap.md)
+- [`crates/mediaway/src/session.rs`](../../mediaway/src/session.rs), [`platform.rs`](../../mediaway/src/platform.rs), [`error.rs`](../../mediaway/src/error.rs) — wrapped Rust surface
 - [`crates/mediaway-encoder/src/auto.rs`](../../mediaway-encoder/src/auto.rs) — `AutoVideoEncodeConfig`, `EncodePathClass`, `BackendSelection`
 - [`crates/mediaway-encoder/src/error.rs`](../../mediaway-encoder/src/error.rs) — `EncodeError`'s 5 variants (verified)
 - [`crates/mediaway-common/src/frame.rs`](../../mediaway-common/src/frame.rs) — `VideoFrame`/`VideoFrameStorage` (verified)

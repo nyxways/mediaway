@@ -1,4 +1,4 @@
-# mediaway-pipeline-ffi ADRs
+# mediaway-ffi ADRs
 
 Crate-local C ABI surface decisions live here.
 

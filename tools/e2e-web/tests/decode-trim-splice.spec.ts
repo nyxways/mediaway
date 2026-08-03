@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-// Mirrors `crates/mediaway-pipeline/tests/trim_and_splice_windows.rs`: two synthetic clips
+// Mirrors `crates/mediaway/tests/trim_and_splice_windows.rs`: two synthetic clips
 // with distinct per-frame luma (so segment identity/order survives compression) are encoded,
 // decoded, trimmed (drop first/last frame), spliced (concat + renumber timestamps),
 // re-encoded, decoded again, and checked for frame count + monotonic timestamps + per-frame

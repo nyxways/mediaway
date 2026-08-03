@@ -2,7 +2,7 @@
 
 The guides so far cover one capability at a time. Real applications compose
 several — capture into encode, encode into mux, decode into edit into
-re-encode. `mediaway-pipeline` supplies `EncodeSession` for the common
+re-encode. `mediaway` supplies `EncodeSession` for the common
 encode→mux case; everything past that is the low-level traits from the
 earlier guides, wired together by your own code, exactly like the examples
 below do.

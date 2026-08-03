@@ -1,6 +1,6 @@
 # mediaway-device-ffi
 
-C ABI facade over [`mediaway-device`](../mediaway-device/README.md) (Camera video capture; Microphone/Loopback/ProcessLoopback audio capture). Third `*-ffi` crate in the workspace, after [`mediaway-container-ffi`](../mediaway-container-ffi/README.md) and [`mediaway-pipeline-ffi`](../mediaway-pipeline-ffi/README.md).
+C ABI facade over [`mediaway-device`](../mediaway-device/README.md) (Camera video capture; Microphone/Loopback/ProcessLoopback audio capture). Third `*-ffi` crate in the workspace, after [`mediaway-container-ffi`](../mediaway-container-ffi/README.md) and [`mediaway-ffi`](../mediaway-ffi/README.md).
 
 **Status:** scaffold only — no exported functions, no header, no ABI has shipped yet.
 

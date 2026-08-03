@@ -8,7 +8,7 @@
 //! `borrow_slice`/`leak_boxed_slice`/`reclaim_boxed_slice` buffer-ownership helper
 //! implementation.
 //!
-//! Each consuming crate (`mediaway-container-ffi`, `mediaway-pipeline-ffi`,
+//! Each consuming crate (`mediaway-container-ffi`, `mediaway-ffi`,
 //! `mediaway-device-ffi`) keeps its own status enum, its own exported `_free`
 //! function name(s), and its own hand-written header — this crate does not
 //! unify those. Design decision: [`docs/adr/0015-common-ffi-unification.md`](

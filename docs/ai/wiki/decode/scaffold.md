@@ -13,7 +13,7 @@
   `AVCDecoderConfigurationRecord` `extra_data`, but WMF's decoder MFTs expect Annex-B.
   `open_dx11`/`open_cpu` detect this (`iso_bmff::bitstream::avc::parse_avc_decoder_config`)
   and convert both `extra_data` and every packet payload before reaching the MFT — see
-  ADR-0001 and `mediaway-pipeline`'s `tests/trim_and_splice_windows.rs` for the real
+  ADR-0001 and `mediaway`'s `tests/trim_and_splice_windows.rs` for the real
   encode→mux→demux→decode proof that found this gap
 - README: OS · GPU / D3D11 decode 🆗; CPU path 🆗 (SW, no HW offload)
 - Windows HEVC/AV1/VP9 CPU decode: `wmf/video_cpu.rs`'s `WmfMultiCodecCpuDecoder` — real,

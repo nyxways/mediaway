@@ -18,13 +18,13 @@
     reason = "example demonstrates the happy path with console output"
 )]
 
+use mediaway::platform;
 use mediaway_common::{
     Bytes, CodecKind, PixelFormat, Rational, StreamInfo, VideoFrame, VideoFrameStorage,
 };
 use mediaway_decoder::{VideoDecoderConfig, VideoOutputPreference};
 use mediaway_encoder::VideoEncoder;
 use mediaway_encoder::auto::AutoVideoEncodeConfig;
-use mediaway_pipeline::platform;
 
 const WIDTH: u32 = 320;
 const HEIGHT: u32 = 240;

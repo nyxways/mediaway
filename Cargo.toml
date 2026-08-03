@@ -14,7 +14,7 @@ members = [
     "crates/rtmp",
     "crates/mediaway-container",
     "crates/mediaway-ffi",
-    "crates/mediaway-pipeline",
+    "crates/mediaway",
 
 
     "crates/mediaway-encoder",
@@ -71,7 +71,7 @@ rtmp = { path = "crates/rtmp", version = "0.1.0" }
 mediaway-container = { path = "crates/mediaway-container", version = "0.1.0" }
 mediaway-ffi = { path = "crates/mediaway-ffi", version = "0.1.0" }
 
-mediaway-pipeline = { path = "crates/mediaway-pipeline", version = "0.1.0" }
+mediaway = { path = "crates/mediaway", version = "0.1.0" }
 
 mediaway-encoder = { path = "crates/mediaway-encoder", version = "0.1.0" }
 

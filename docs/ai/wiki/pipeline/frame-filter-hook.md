@@ -1,6 +1,6 @@
 # Frame filter hook
 
-`mediaway-pipeline` ADR-0001 (crate-local) adds a mid-pipeline hook on
+`mediaway` ADR-0001 (crate-local) adds a mid-pipeline hook on
 `EncodeSession::write_frame`, between the caller's frame and
 `encoder.push_frame`. **Implemented** — `FrameFilter`/`FilterError` live in
 `src/filter.rs`, the chain + `push_filter` in `src/session.rs`; see
@@ -36,5 +36,5 @@ caller → write_frame(&VideoFrame)
 render-graph framework at this same seam. Would need its own future ADR if revisited —
 do not fold it into `FrameFilter` retroactively.
 
-See [ADR-0001](../../../../crates/mediaway-pipeline/adr/0001-frame-filter-hook.md) for
+See [ADR-0001](../../../../crates/mediaway/adr/0001-frame-filter-hook.md) for
 the full trait/error shapes and reasoning.

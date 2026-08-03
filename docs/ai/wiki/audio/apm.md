@@ -12,7 +12,7 @@
   usable standalone.
 - **Where in the pipeline:** right after mic capture
   (`mediaway_device_audio::AudioCapture::poll_frame`), before anything else
-  touches the signal. As of `mediaway-pipeline` ADR-0003, `EncodeSession`
+  touches the signal. As of `mediaway` ADR-0003, `EncodeSession`
   wires this in transparently (`attach_audio_processor`/`attach_vad`,
   called from inside `write_audio_frame`) — see
   [pipeline/audio-track-and-apm](../pipeline/audio-track-and-apm.md). This

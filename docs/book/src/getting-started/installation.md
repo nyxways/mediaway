@@ -8,7 +8,7 @@ surprise you with breakage:
 [dependencies]
 mediaway-common = { git = "https://github.com/nyxways/mediaway", rev = "<commit-sha>" }
 mediaway-container = { git = "https://github.com/nyxways/mediaway", rev = "<commit-sha>" }
-# add mediaway-encoder / mediaway-decoder / mediaway-device / mediaway-pipeline as needed
+# add mediaway-encoder / mediaway-decoder / mediaway-device / mediaway as needed
 ```
 
 Pin the same `rev` across every `mediaway-*` crate you depend on — the

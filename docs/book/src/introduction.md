@@ -14,7 +14,7 @@ Three ideas run through the whole stack:
   file handles or sockets inside the core, so the same logic runs unchanged on
   native hosts and in WASM.
 - **Low-level APIs stay public.** `VideoEncoder`, `VideoDecoder`, `Muxer`,
-  `Demuxer`, and friends are the real surface. `mediaway-pipeline`'s
+  `Demuxer`, and friends are the real surface. `mediaway`'s
   `EncodeSession` and `platform::Auto*` helpers are convenience wrappers over
   them, not a gate you have to go around.
 

@@ -26,7 +26,7 @@ different, real answer to "is this granted":
   dialog. There is no cheaper way to ask "is this granted" than doing the real
   handshake once.
 
-A shared vocabulary lets `mediaway-pipeline::platform` dispatch this the same
+A shared vocabulary lets `mediaway::platform` dispatch this the same
 way it already dispatches `ScreenCapture::open`/`Microphone::open`, without each
 call site re-deriving platform-specific meaning from `CaptureError`.
 
@@ -37,7 +37,7 @@ call site re-deriving platform-specific meaning from `CaptureError`.
 > `support(kind) -> Support` / `request_permission(kind) -> Result<PermissionState, CaptureError>`
 > free functions (mirroring `WindowsScreenCapture::open` et al.), matching
 > ADR-0002: the facade holds shared vocabulary only, platform crates hold the
-> real logic, and `mediaway-pipeline::platform` is the one place that `cfg`-dispatches
+> real logic, and `mediaway::platform` is the one place that `cfg`-dispatches
 > between them.
 
 - `Support` is a **live** probe, not just "was a backend compiled for this
@@ -74,7 +74,7 @@ call site re-deriving platform-specific meaning from `CaptureError`.
 
 ### Positive
 
-- `mediaway-pipeline` apps can show "camera: not supported yet" instead of
+- `mediaway` apps can show "camera: not supported yet" instead of
   only discovering it via a failed `open`.
 - The one real proactive OS consent trigger this workspace has (Linux portal)
   gets a documented, callable entrypoint.

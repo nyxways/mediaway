@@ -4,7 +4,7 @@
 //!
 //! Meant to sit right after microphone capture
 //! (`mediaway_device::AudioCapture::poll_frame`), before anything else
-//! touches the signal — **not** a hook on `mediaway_pipeline::EncodeSession`,
+//! touches the signal — **not** a hook on `mediaway::EncodeSession`,
 //! which has no audio track support today. See
 //! `adr/0001-sonora-audio-processing-adoption.md` for the full design
 //! rationale: license verdict, crate placement, the `AudioProcessor` /

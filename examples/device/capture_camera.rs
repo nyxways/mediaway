@@ -1,7 +1,7 @@
 //! Camera capture in isolation — no encoding, no muxing.
 //!
 //! Opens the default camera and polls a couple of seconds of frames. Not yet
-//! wired into `mediaway_pipeline::platform` (see the crate's roadmap), so
+//! wired into `mediaway::platform` (see the crate's roadmap), so
 //! this reaches for the Windows backend directly — on every other platform
 //! `mediaway-device-windows-camera` ships a stub that returns
 //! `CaptureError::Unsupported`, which this example reports the same way it

@@ -11,13 +11,13 @@
 //! Screen, mic, and both encoders are all **required** — if any one of them
 //! is unavailable, the example skips with an honest message rather than
 //! silently downgrading to video-only. That mirrors
-//! `crates/mediaway-pipeline/tests/screen_mic_av_smoke.rs`, the tested
+//! `crates/mediaway/tests/screen_mic_av_smoke.rs`, the tested
 //! reference this example's mux shape is based on: `Option<&mut dyn Trait>`
 //! plumbing for an optional participant makes the borrow checker (and the
 //! reader) work much harder than a plain `&mut dyn Trait` does, for a
 //! fallback mode nothing here actually exercises.
 //!
-//! [`mediaway_pipeline::EncodeSession`] stays video-only/single-track by
+//! [`mediaway::EncodeSession`] stays video-only/single-track by
 //! design ([ADR-0014](../../docs/adr/0014-pipeline-convenience-crate.md)) —
 //! rather than extend it, this composes the second (audio) track directly
 //! against a shared `mp4::Muxer`, the same multi-track pattern the smoke
@@ -42,6 +42,7 @@
     reason = "example demonstrates the happy path with console output"
 )]
 
+use mediaway::platform;
 use mediaway_common::{
     Bytes, CodecKind, PixelFormat, Rational, SampleFormat, VideoFrame, VideoFrameStorage,
     VideoGeometry,
@@ -53,7 +54,6 @@ use mediaway_device::desktop::{DesktopVideoCapture, DesktopVideoCaptureConfig};
 use mediaway_encoder::auto::AutoVideoEncodeConfig;
 use mediaway_encoder::windows::WindowsAudioEncoder;
 use mediaway_encoder::{AudioEncoder, AudioEncoderConfig, VideoEncoder};
-use mediaway_pipeline::platform;
 use std::fs::File;
 use std::io::Write as _;
 use std::time::{Duration, Instant};

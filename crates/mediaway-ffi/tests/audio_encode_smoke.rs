@@ -1,11 +1,11 @@
-//! Integration: real AAC audio encoding through `mediaway-pipeline-ffi`'s C ABI
+//! Integration: real AAC audio encoding through `mediaway-ffi`'s C ABI
 //! (`adr/0003-auto-audio-encode-c-abi.md`) — synthetic F32 sine PCM pushed
 //! through `mediaway_audio_encode_session_push_pcm`, encoded packets polled
 //! back, muxed into a playable audio-only fMP4 with the stream-info
 //! `extra_data` (`AudioSpecificConfig`), then demuxed again to prove the AAC
 //! samples round-trip.
 //!
-//! Mirrors `mediaway-pipeline/tests/screen_mic_av_smoke.rs`'s audio half, but
+//! Mirrors `mediaway/tests/screen_mic_av_smoke.rs`'s audio half, but
 //! exercises the raw `#[unsafe(no_mangle)]` C surface a language binding calls
 //! — the same entry points the C/Python/Node/C++ wrappers use.
 

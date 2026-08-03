@@ -11,7 +11,7 @@
 | `rtmp` | unprefixed RTMP publish client | Sans-io handshake (HMAC-SHA256 digest) + chunk stream + AMF0 command encode, raw `&[u8]` video/audio payloads (zero `mediaway-*` dep). **Implemented** — handshake digest-offset formula cross-checked against 3 independent implementations, not yet verified against a real server ([ADR-0001](../../../../crates/rtmp/adr/0001-rtmp-freestanding-core.md)) |
 | `mediaway-container` | facade | traits + `mp4` over `iso-bmff` |
 | `mediaway-ffi` | C ABI | first `*-ffi` crate; mux+demux, real-link-verified ([ADR](../../../../crates/mediaway-ffi/adr/0001-mp4-mux-demux-c-abi.md)) |
-| `mediaway-pipeline` | facade-of-facades | `EncodeSession` + platform auto-dispatch ([ADR-0014](../../../adr/0014-pipeline-convenience-crate.md)) |
+| `mediaway` | facade-of-facades | `EncodeSession` + platform auto-dispatch ([ADR-0014](../../../adr/0014-pipeline-convenience-crate.md)) |
 | `mediaway-ffi` | C ABI | second `*-ffi` crate; auto encode, real-link-verified ([ADR](../../../../crates/mediaway-ffi/adr/0001-auto-encode-c-abi.md)) |
 | `mediaway-encoder` | facade | traits + `auto` types ([ADR-0003](../../../crates/mediaway-encoder/adr/0003-auto-encode.md)) |
 | `mediaway-encoder-windows` | platform | WMF/DX11 encode + AutoVideoEncoder |

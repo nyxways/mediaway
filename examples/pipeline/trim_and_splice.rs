@@ -17,13 +17,13 @@
     reason = "example demonstrates the happy path with console output"
 )]
 
+use mediaway::platform;
 use mediaway_common::{
     Bytes, CodecKind, PixelFormat, Rational, StreamInfo, VideoFrame, VideoFrameStorage,
 };
 use mediaway_container::mp4::{Demuxer, Muxer};
 use mediaway_decoder::{VideoDecoderConfig, VideoOutputPreference};
 use mediaway_encoder::{VideoEncoder, VideoEncoderConfig, VideoInputPreference};
-use mediaway_pipeline::platform;
 use std::fs::File;
 use std::io::Write as _;
 

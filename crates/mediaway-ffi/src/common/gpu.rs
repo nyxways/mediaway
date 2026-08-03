@@ -4,8 +4,8 @@
 //! First consumer: `mediaway-device-ffi`
 //! ([`adr/0003-gpu-handle-c-abi.md`](../../mediaway-device-ffi/adr/0003-gpu-handle-c-abi.md)),
 //! output-only (`GpuBufferHandle` poll results never round-trip back to Rust).
-//! Second consumer: `mediaway-pipeline-ffi`
-//! ([`adr/0002-gpu-frame-input-c-abi.md`](../../mediaway-pipeline-ffi/adr/0002-gpu-frame-input-c-abi.md)),
+//! Second consumer: `mediaway-ffi`
+//! ([`adr/0002-gpu-frame-input-c-abi.md`](../../mediaway-ffi/adr/0002-gpu-frame-input-c-abi.md)),
 //! which needed the input direction too (`GpuBufferHandle::to_common`) — its previously
 //! twice-deferred `gpu_device`/`max_path_class` (`adr/0001-auto-encode-c-abi.md` §1) is
 //! now partially resolved (`gpu_device` only; `max_path_class` stays deferred).
@@ -207,7 +207,7 @@ impl From<CommonGpuBufferHandle> for GpuBufferHandle {
 
 impl GpuBufferHandle {
     /// Reverse of [`From<CommonGpuBufferHandle>`] — needed by consumers that accept a GPU
-    /// buffer handle as *input* (e.g. `mediaway-pipeline-ffi`'s `write_frame`), unlike
+    /// buffer handle as *input* (e.g. `mediaway-ffi`'s `write_frame`), unlike
     /// `mediaway-device-ffi`, which only ever produces one as poll output.
     ///
     /// `None` for [`GpuBufferKind::Unknown`], or when a pointer-bearing field is `0` for a

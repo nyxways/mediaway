@@ -7,7 +7,7 @@
 //! C-facing type name at each crate's ABI boundary is unaffected by this crate existing.
 //!
 //! Moved here from `mediaway-container-ffi` (the first `-ffi` crate; taken as the source of
-//! truth) after confirming `mediaway-pipeline-ffi`'s independently-transcribed copy was
+//! truth) after confirming `mediaway-ffi`'s independently-transcribed copy was
 //! field-identical (`docs/adr/0015-common-ffi-unification.md`). `mediaway-device-ffi` never
 //! defined a codec-kind enum (no codec concept), and re-exports only [`Rational`] from here.
 

@@ -56,7 +56,7 @@ the one deliberate exception — no `poisoned` field, justified above.
 
 `backend`/`max_path_class` config fields (no way to force `Readback`/
 `Software` or pin a vendor SDK from C yet); `cbindgen` adoption;
-`mediaway-pipeline`'s unconditional decode/device Cargo deps (same class of
+`mediaway`'s unconditional decode/device Cargo deps (same class of
 gap as `mediaway-container`'s unconditional format-core deps); screen/camera
 capture and decode C surfaces.
 

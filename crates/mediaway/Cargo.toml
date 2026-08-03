@@ -1,5 +1,5 @@
 [package]
-name = "mediaway-pipeline"
+name = "mediaway"
 description = "Convenience pipeline layer — composes encoder + container (+ device capture)"
 version.workspace = true
 publish = true # hardware-verified — see docs/roadmap.md

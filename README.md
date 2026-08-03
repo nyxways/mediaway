@@ -45,7 +45,7 @@ Mediaway resolves the fundamental trade-offs and fragmentation in modern multime
 - **Zero-Copy Engine & Framework Interop (Seamless DX)**: Designed for zero-copy integration with graphics frameworks and game engines (`wgpu`, `Three.js` / WebGPU, `Unity`, `Godot`). Passes native GPU surface handles (`GpuBufferHandle` / D3D11, D3D12, Vulkan, Metal pointers) directly across capture, processing, encoding, and rendering without CPU readback stalls.
 - **Permissive & GPL-Free (MIT OR Apache-2.0)**: Shipped under MIT OR Apache-2.0 with zero LGPL/GPL dependencies (no linking to FFmpeg/`libav*`), eliminating licensing risks for commercial and proprietary applications.
 - **Unified & Composable Stack**: Integrates device capture (camera, mic, screen, window), hardware video/audio/image codecs, and container muxing/demuxing into a single cohesive pipeline.
-- **Uncompromised Freedom + High-Level Ergonomics**: Provides clean end-to-end abstractions (`mediaway-pipeline`) while keeping raw GPU handles, **sans-io** state machines, and bitstream timebase controls 100% public and unblocked.
+- **Uncompromised Freedom + High-Level Ergonomics**: Provides clean end-to-end abstractions (`mediaway`) while keeping raw GPU handles, **sans-io** state machines, and bitstream timebase controls 100% public and unblocked.
 
 ## Quick start
 
@@ -94,14 +94,14 @@ Full runnable example: [`examples/container/mux_demux_mp4.rs`](examples/containe
 
 ### Auto encode to MP4 — high-level (Windows WMF backend shown)
 
-`mediaway-pipeline` composes the low-level `VideoEncoder` trait + `mp4::Muxer` for
+`mediaway` composes the low-level `VideoEncoder` trait + `mp4::Muxer` for
 you: `platform::AutoEncoder::open` selects the best available path (Zero-Copy GPU →
 CPU upload → …), and `EncodeSession` handles the poll-loop → mux wiring so callers
 just push frames.
 
 ```rust
 use mediaway_encoder::auto::AutoVideoEncodeConfig;
-use mediaway_pipeline::{platform, EncodeSession};
+use mediaway::{platform, EncodeSession};
 
 let config = AutoVideoEncodeConfig {
     bitrate_bps: 8_000_000,
@@ -130,12 +130,12 @@ Full runnable example: [`examples/pipeline/encode_to_mp4.rs`](examples/pipeline/
 `platform::ScreenCapture` / `platform::Microphone` / `platform::AutoEncoder` are typed
 against **facade traits** (`&mut dyn VideoCapture` / `&mut dyn AudioCapture` / `&mut dyn
 VideoEncoder`); platform-specific construction is the only OS-specific code, and it
-lives entirely in `mediaway_pipeline::platform`.
+lives entirely in `mediaway::platform`.
 
 ```rust
 use mediaway_common::Rational;
 use mediaway_device::{Select, VideoCaptureConfig, AudioCaptureConfig};
-use mediaway_pipeline::{platform, EncodeSession};
+use mediaway::{platform, EncodeSession};
 
 let tb = Rational::new(1, 30);
 let mut cap = platform::ScreenCapture::open(&VideoCaptureConfig::screen(Select::Default, tb))?;
@@ -168,7 +168,7 @@ two synthetic clips, decodes each back, drops the first/last frame of each (**tr
 concatenates what's left with renumbered contiguous timestamps (**splice**), and re-encodes.
 
 ```rust
-use mediaway_pipeline::platform;
+use mediaway::platform;
 
 let encoder = platform::AutoEncoder::open(&enc_config)?;
 let decoder = platform::AutoDecoder::open(&dec_config)?; // dispatches per-OS under the hood
@@ -361,7 +361,7 @@ What `mediaway-device` backends target (camera, mic, **screen**, **window**). Sa
 | `iso-cenc`                 | Freestanding ClearKey CENC                                  |
 | `ebml-webm`                | Freestanding EBML/WebM mux + demux                          |
 | `mediaway-container`       | Container facade + Mediaway-typed MP4 + WebM (mux + demux)  |
-| `mediaway-pipeline`        | Convenience pipeline (`EncodeSession` + platform dispatch)  |
+| `mediaway`        | Convenience pipeline (`EncodeSession` + platform dispatch)  |
 | `mediaway-encoder`         | Encode facade / traits                                      |
 | `mediaway-encoder-windows` | Windows WMF / DX11 encode backend                           |
 | `mediaway-decoder`         | Decode facade / traits                                      |

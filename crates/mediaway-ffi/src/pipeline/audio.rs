@@ -54,7 +54,7 @@ fn rust_config(
 }
 
 /// Open the best available audio encoder on the current platform. Mirrors
-/// `mediaway_pipeline::platform::AutoEncoder`'s dispatch shape: Windows reaches
+/// `mediaway::platform::AutoEncoder`'s dispatch shape: Windows reaches
 /// the real WMF AAC backend; every other platform returns
 /// `EncodeError::NoBackend` (graceful, not an error the caller must treat as a
 /// bug).

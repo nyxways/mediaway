@@ -1,16 +1,13 @@
 # Security Policy
 
 Mediaway is **pre-1.0 early development** ([`docs/spec/status.md`](docs/spec/status.md))
-— not production-ready. Report security issues the same way regardless of
-maturity.
+— not production-ready. Report security issues the same way regardless of maturity.
 
 ## Reporting a vulnerability
 
 **Do not open a public issue.** Report privately:
 
-- Open a private advisory: GitHub → **Security → Report a vulnerability**
-  (available once the repo is public; before that, contact the maintainers
-  directly via the channels on the repository page).
+- Open a private advisory: GitHub → **Security → Report a vulnerability**.
 - Include: crate/area, affected version (or commit), minimal repro, impact.
 
 Expected handling:

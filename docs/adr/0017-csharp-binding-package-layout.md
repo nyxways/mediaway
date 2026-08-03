@@ -43,6 +43,11 @@ thin P/Invoke passthrough with syntax sugar. C# is first in the agreed
 sequence (C# → Python → Node → rest), acting as the reference quality bar the
 other languages are held to.
 
+> **Superseded 2026-08-03**: the binding sequence completed — C, C++, C#,
+> Python, Node.js are verified and npm/NuGet/PyPI-publishable, the browser
+> package shipped (ADR-0020), and the repository is public. The quality bar
+> this paragraph set still stands; the "hold off" condition is resolved.
+
 This decision spans all three existing `-ffi` crates (not just one), and sets
 precedent the Python/Node bindings will also follow — so it is a workspace-wide
 ADR (`docs/adr/`), not a crate-local one.

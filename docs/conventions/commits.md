@@ -93,4 +93,4 @@ The `-ffi` crates stay under their core/backend scopes
 - Issues: `.github/ISSUE_TEMPLATE/` forms.
 - Labels: [`docs/conventions/issues.md`](issues.md) § Labels, applied by
   `bun tools/scripts/sync-labels.ts`.
-- Going public: [`docs/contributing/public-launch.md`](../contributing/public-launch.md).
+- Repo operations (public): [`docs/contributing/repo-operations.md`](../contributing/repo-operations.md).

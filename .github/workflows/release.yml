@@ -122,7 +122,7 @@ jobs:
     # verification builds); the native binding build and everything after it
     # waits for that gate so a registry failure aborts the whole pipeline
     # before any binding artifacts are produced.
-    needs: [version, crates.io]
+    needs: [version, crates]
     steps:
       - uses: actions/checkout@v4
 

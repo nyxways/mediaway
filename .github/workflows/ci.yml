@@ -199,6 +199,17 @@ jobs:
       - name: Add wasm32 target
         run: rustup target add wasm32-unknown-unknown
 
+      - name: sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Enable sccache (namespaced)
+        shell: bash
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          # Different SCCACHE_GHA_VERSION ⇒ isolated GHA blob namespace (docs: mozilla/sccache GHA.md)
+          echo "SCCACHE_GHA_VERSION=mediaway-${MEDIAWAY_CACHE_NS}-v1" >> "$GITHUB_ENV"
+
       - name: Build wasm crates
         run: |
           cargo build -p iso-bmff-wasm -p mediaway-encoder -p mediaway-decoder -p mediaway-device \
@@ -218,6 +229,17 @@ jobs:
 
       - name: Add wasm32 target
         run: rustup target add wasm32-unknown-unknown
+
+      - name: sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Enable sccache (namespaced)
+        shell: bash
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          # Different SCCACHE_GHA_VERSION ⇒ isolated GHA blob namespace (docs: mozilla/sccache GHA.md)
+          echo "SCCACHE_GHA_VERSION=mediaway-${MEDIAWAY_CACHE_NS}-v1" >> "$GITHUB_ENV"
 
       - name: Install wasm-bindgen-cli (prebuilt binary)
         uses: taiki-e/install-action@v2

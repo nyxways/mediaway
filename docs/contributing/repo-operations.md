@@ -50,12 +50,19 @@ via [`.github/workflows/release.yml`](../../.github/workflows/release.yml):
    versions are stamped from it at publish time) and refuses to re-release an
    existing `v<version>`; a `release/vX.Y.Z` branch must match the workspace
    version.
-2. `native-assets` — builds the three `-ffi` win64 cdylibs
-   (`x86_64-pc-windows-gnu`, MinGW-w64) and stages them for the binding jobs.
-3. `npm` / `nuget` / `pypi` / `native` / `crates` — publish `@mediaway/*` (5 packages),
+2. `crates` — publishes the crates.io set in dependency order with per-crate
+   `cargo package` verification via `tools/scripts/publish-crates.ts` (skips
+   versions already on the index). This is the pipeline gate: every later job
+   waits for it, so a registry failure aborts before any binding artifacts
+   are built.
+3. `native-assets` — builds the win64 `mediaway-ffi` cdylib
+   (`x86_64-pc-windows-gnu`, MinGW-w64) and stages it for the binding jobs.
+4. `bindings-tests` — RC gate: C#/Python/Node/C/Browser round-trips against
+   the staged DLL.
+5. `npm` / `nuget` / `pypi` / `native` — publish `@mediaway/*` (5 packages),
    `Mediaway.*` (8 NuGet packages), the `mediaway` wheel, and the C/C++ CPack
    archives (`Mediaway-<version>-win64.zip/.tgz`).
-4. `release` — creates the `v<version>` tag and the GitHub release
+6. `release` — creates the `v<version>` tag and the GitHub release
    (prefers `RELEASE_NOTES.md`, falls back to generated notes) and attaches
    the CPack archives — only after every registry job succeeded.
 

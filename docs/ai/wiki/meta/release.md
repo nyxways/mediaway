@@ -10,12 +10,13 @@ runbook: [`docs/contributing/repo-operations.md`](../../../contributing/repo-ope
   (`pyproject.toml`), and CPack (`CMakeLists.txt`) from it.
 - **Jobs**: `version` gate (semver + refuses existing `v<version>`) → `crates`
   (metadata pre-flight: publishable-set closure; publish in dependency order
-  via retry rounds) + `native-assets` (win64 GNU cdylibs, MinGW-w64) →
-  `bindings-tests` (RC gate — C#/Python/Node/C/Browser round-trips run
-  against the staged DLL; every publish job waits on it) → `npm` /
-  `nuget` / `pypi` (wheel build on Windows) + `pypi-publish` (Linux: OIDC +
-  PEP 740 attestations — `gh-action-pypi-publish`'s container cannot run on
-  Windows runners) + `native` (CPack) in parallel → `release` (tag
+  via retry rounds — per-crate verification needs libpipewire on the runner;
+  **the pipeline gate**, every later job waits on it) → `native-assets` (win64
+  GNU cdylib, MinGW-w64) → `bindings-tests` (RC gate — C#/Python/Node/C/Browser
+  round-trips run against the staged DLL; every publish job waits on it) →
+  `npm` / `nuget` / `pypi` (wheel build on Windows) + `pypi-publish` (Linux:
+  OIDC + PEP 740 attestations — `gh-action-pypi-publish`'s container cannot
+  run on Windows runners) + `native` (CPack) in parallel → `release` (tag
   `v<version>` + RELEASE_NOTES.md + CPack assets). The `npm` job self-updates
   npm to >= 11.5.1 (required for OIDC trusted publishing).
 - **Environment**: all publishing jobs run under the GitHub **`release`**
@@ -48,7 +49,7 @@ runbook: [`docs/contributing/repo-operations.md`](../../../contributing/repo-ope
 - **Failure = partial release**: registries are one-shot per version; bump the
   workspace version and re-run (or delete half-published packages manually).
   The GitHub release is created only when every registry job succeeded.
-- **Native DLLs**: the three `-ffi` cdylibs are built once by `native-assets`
+- **Native DLLs**: the `mediaway-ffi` cdylib is built once by `native-assets`
   and downloaded as an artifact; `MEDIAWAY_SKIP_CARGO_BUILD=1` makes
   `tools/scripts/copy-native-dlls.ts` stage prebuilt DLLs without rebuilding.
   Gotcha: `upload-artifact@v4` strips the common ancestor of multi-path

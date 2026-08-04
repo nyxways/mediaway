@@ -19,9 +19,10 @@
 # PyPI needs NO token: Trusted Publishing (OIDC) is configured on pypi.org
 # for nyxways/mediaway@release.yml (environment: release) — see the pypi job.
 #
-# crates.io: dependency-ordered publish of the 19-crate set (9 freestanding
-# cores + the mediaway-* family + avcli/avprobe + vpl-sys; rtmp and
-# mediaway-ffi stay `publish = false`) via tools/scripts/publish-crates.ts.
+# crates.io: dependency-ordered publish of the 20-crate set (9 freestanding
+# cores + the mediaway-* family incl. avcli/avprobe + vpl-sys +
+# mediaway-test-media; rtmp, mediaway-ffi and iso-bmff-wasm stay
+# `publish = false`) via tools/scripts/publish-crates.ts.
 #
 # npm and NuGet need NO long-lived tokens: the @mediaway org uses npm OIDC
 # Trusted Publishing (npmjs.com → org Settings → Trusted Publishing), and
@@ -117,6 +118,11 @@ jobs:
   native-assets:
     name: native assets (win64 DLLs)
     runs-on: windows-latest
+    # crates.io publishes first (dependency-ordered, with per-crate
+    # verification builds); the native binding build and everything after it
+    # waits for that gate so a registry failure aborts the whole pipeline
+    # before any binding artifacts are produced.
+    needs: [version, crates.io]
     steps:
       - uses: actions/checkout@v4
 
@@ -475,7 +481,14 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
-      # Dependency-ordered publish of the 19-crate set (see
+      # mediaway-device's Linux backend depends on pipewire; `cargo package`'s
+      # verification build compiles it on this ubuntu runner, so the dev
+      # headers (pipewire-0.3.pc + spa) must be installed.
+      - name: Install system deps (libpipewire for verification builds)
+        shell: bash
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpipewire-0.3-dev
+
+      # Dependency-ordered publish of the 20-crate set (see
       # tools/scripts/publish-crates.ts). The gate also runs on dry runs so
       # `cargo package` validation happens for every crate before any real
       # upload.

@@ -120,12 +120,18 @@ manually). Never re-run a release without bumping.
    promises change. Do **not** hand-bump the npm / NuGet / PyPI / CPack
    manifests — the workflow stamps them from the workspace version.
 2. Create a **release branch** `release/vX.Y.Z` (version must match the
-   workspace version — the workflow refuses a mismatch), fill
-   [`RELEASE_NOTES.md`](../../RELEASE_NOTES.md) (template in the file), and
-   push. The workflow publishes everything and opens the GitHub release
-   (prefers `RELEASE_NOTES.md`, falls back to generated notes). When in
-   doubt, run `workflow_dispatch` with `dry_run=true` first.
+   workspace version — the workflow refuses a mismatch), finalize
+   [`RELEASE_NOTES.md`](../../RELEASE_NOTES.md) from its `## Unreleased`
+   section (development changes accumulate there via `AGENTS.md` § 10;
+   finalize with `/release-notes <version>` or by hand), and push. The
+   workflow publishes everything and opens the GitHub release (prefers
+   `RELEASE_NOTES.md`, falls back to generated notes). When in doubt, run
+   `workflow_dispatch` with `dry_run=true` first.
 3. Wiki: note the new package versions under `docs/ai/wiki/bindings/`.
 
 Release notes should cover platforms (Windows-first), codecs (H.264/AAC/…),
 bindings (C/C++/C#/Python/Node/Browser), and the honest maturity bar.
+
+Version history accumulates in [`CHANGELOG.md`](../../CHANGELOG.md). After the
+GitHub release ships, restore the Unreleased template on `main`
+(`/release-notes reset`).

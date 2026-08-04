@@ -192,6 +192,17 @@ Do not write `implementation_plan.md` or wait for Proceed. Exception: the 1–2 
 
 Same quality, shorter path: read only what you need; avoid re-fetching known facts. Cut waste, not verification / tests / license gates.
 
+### 10. Release notes
+
+When you make release-note-worthy changes — user-visible features, fixes,
+behavior changes, deprecations, breaking changes, or new platform/codec/
+binding support — add a concise English bullet to the `## Unreleased` section
+of [`RELEASE_NOTES.md`](RELEASE_NOTES.md) under the matching subsection
+(`Added` / `Changed` / `Fixed` / `Removed` / `Deprecated` / `Breaking`). Skip
+internal refactors, docs-only, test-only, and dev-tooling changes. At release,
+finalize with `/release-notes <version>` (archive + reset flow): details in
+[`docs/ai/wiki/meta/release-notes.md`](docs/ai/wiki/meta/release-notes.md).
+
 ---
 
 ## Rust / Mediaway specifics

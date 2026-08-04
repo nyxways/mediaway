@@ -56,9 +56,10 @@ Status marks: ✅ first-class (tests for claimed scope) · ⚡ Zero-Copy path (n
 | Demux: EBML VINT, `Segment`/`Tracks`/`Cluster`/`SimpleBlock` | ✅ | |
 | Demux: lacing (Xiph, fixed, EBML), `BlockGroup`/`BlockDuration` | ✅ | |
 | Demux: `Cues` / `SeekHead` index | ✅ | Exposed informationally; no seeking in the core |
-| Mux (typestate `Open` → `Live`) | ✅ | Known-size clusters, `SimpleBlock` only (no lacing on write) |
-| Indefinite-size `Cluster` lookahead (live streams) | 🛠️ | Open-element stack grows until `Segment` closes |
-| Mux-side lacing | 🛠️ | Demux already reads all three lacing kinds |
+| Mux (typestate `Open` → `Live`) | ✅ | Known-size clusters; `push_frame` + EBML-laced `push_laced_frames` |
+| Indefinite-size `Cluster` lookahead (live streams) | ✅ | Sibling-ID lookahead bounds the open-element stack |
+| Mux-side lacing | ✅ | EBML lacing writer (`push_laced_frames`) |
+| ffprobe oracle on mux output | ✅ | `tests/mux_oracle.rs`, Tier 7 (skips if ffprobe absent) |
 
 ## Docs
 

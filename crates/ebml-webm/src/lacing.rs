@@ -121,6 +121,25 @@ pub(crate) fn split(
     Some(ranges)
 }
 
+/// Encode `sizes` — every sub-frame's size **except the last** (the last
+/// frame always takes whatever remains, matching [`split`]'s decode
+/// convention) — as EBML lacing: the first size as a plain unsigned VINT,
+/// each following size as a signed delta from the previous one. Exact
+/// inverse of `split`'s `Lacing::Ebml` branch. `sizes` empty (a single-frame
+/// "lace") writes nothing — the caller has no size fields to emit either.
+pub(crate) fn encode_ebml_lace_sizes(sizes: &[usize], out: &mut Vec<u8>) {
+    let Some((&first, rest)) = sizes.split_first() else {
+        return;
+    };
+    vint::encode_size(first as u64, out);
+    let mut prev = first as i64;
+    for &size in rest {
+        let size = size as i64;
+        vint::encode_signed_delta(size - prev, out);
+        prev = size;
+    }
+}
+
 #[cfg(test)]
 #[path = "lacing_tests.rs"]
 mod tests;

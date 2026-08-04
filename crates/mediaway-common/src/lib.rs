@@ -43,6 +43,8 @@ pub enum CodecKind {
     Av1,
     /// VP9 video.
     Vp9,
+    /// VP8 video.
+    Vp8,
     /// AAC audio.
     Aac,
     /// Opus audio.
@@ -69,7 +71,7 @@ impl CodecKind {
     pub const fn is_video(self) -> bool {
         matches!(
             self,
-            Self::H264 | Self::Hevc | Self::Av1 | Self::Vp9 | Self::RawVideo
+            Self::H264 | Self::Hevc | Self::Av1 | Self::Vp9 | Self::Vp8 | Self::RawVideo
         )
     }
 }

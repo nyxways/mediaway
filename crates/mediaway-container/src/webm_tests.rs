@@ -25,6 +25,7 @@ fn track(codec_id: &str, is_video: bool, width: u32, height: u32) -> CoreTrackIn
 
 #[test]
 fn codec_kind_maps_supported_codecs() {
+    assert_eq!(codec_kind("V_VP8"), Some(CodecKind::Vp8));
     assert_eq!(codec_kind("V_VP9"), Some(CodecKind::Vp9));
     assert_eq!(codec_kind("V_AV1"), Some(CodecKind::Av1));
     assert_eq!(codec_kind("A_OPUS"), Some(CodecKind::Opus));
@@ -35,8 +36,10 @@ fn codec_kind_maps_supported_codecs() {
 
 #[test]
 fn codec_kind_none_for_unmapped_webm_codecs() {
-    // VP8 is a common real WebM video codec with no CodecKind variant yet.
-    assert_eq!(codec_kind("V_VP8"), None);
+    // H.264 has no standard WebM CodecID — WebM restricts video to
+    // VP8/VP9/AV1; this crate's CodecKind has an H264 variant, but WebM
+    // itself carries no wire mapping for it.
+    assert_eq!(codec_kind("V_MPEG4/ISO/AVC"), None);
 }
 
 #[test]
@@ -48,8 +51,15 @@ fn track_id_truncates_out_of_range_track_number() {
 
 #[test]
 fn to_stream_info_none_for_unsupported_codec() {
-    let t = track("V_VP8", true, 1280, 720);
+    let t = track("V_MPEG4/ISO/AVC", true, 1280, 720);
     assert_eq!(to_stream_info(&t, MwRational::new(1, 1000)), None);
+}
+
+#[test]
+fn to_stream_info_maps_vp8() {
+    let t = track("V_VP8", true, 640, 480);
+    let info = to_stream_info(&t, MwRational::new(1, 1000)).expect("VP8 is supported");
+    assert_eq!(info.codec(), CodecKind::Vp8);
 }
 
 #[test]
@@ -288,6 +298,45 @@ fn add_track_rejects_unsupported_codec() {
         m.add_track(unsupported),
         Err(Error::UnsupportedCodec(CodecKind::H264))
     );
+}
+
+#[cfg(feature = "mux")]
+#[test]
+fn add_track_accepts_vp8_and_round_trips_through_demuxer() {
+    let mut m = Muxer::<Open>::new();
+    let vp8 = StreamInfo::Video {
+        id: 1,
+        codec: CodecKind::Vp8,
+        time_base: MwRational::new(1, 1000),
+        geometry: VideoGeometry {
+            width: 640,
+            height: 480,
+        },
+        extra_data: Bytes::new(),
+    };
+    m.add_track(vp8).unwrap();
+    let mut live = m.begin();
+    live.push_packet(&Packet {
+        stream_id: 1,
+        pts: 0,
+        dts: 0,
+        duration: 0,
+        is_keyframe: true,
+        is_discard: false,
+        payload: Bytes::from_static(b"vp8-frame"),
+    })
+    .unwrap();
+    live.flush();
+    let mut bytes = Vec::new();
+    live.poll_bytes(&mut bytes);
+
+    let mut demux = Demuxer::new();
+    demux.push_bytes(&bytes);
+    let streams = demux.streams();
+    assert_eq!(streams.len(), 1);
+    assert_eq!(streams[0].codec(), CodecKind::Vp8);
+    let packet = demux.poll_packet().expect("VP8 packet");
+    assert_eq!(&packet.payload[..], b"vp8-frame");
 }
 
 #[cfg(feature = "mux")]

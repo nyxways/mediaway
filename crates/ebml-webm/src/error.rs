@@ -49,4 +49,13 @@ pub enum MuxError {
     /// via `add_track`.
     #[error("push_frame references unregistered TrackNumber {0}")]
     UnknownTrack(u64),
+    /// [`crate::mux::Muxer::push_laced_frames`]: `payloads` was empty —
+    /// nothing to write.
+    #[error("push_laced_frames requires at least one payload")]
+    EmptyLace,
+    /// [`crate::mux::Muxer::push_laced_frames`]: more sub-frames than EBML
+    /// lacing's 1-byte frame-count field can address (max 256 — see
+    /// `mux::MAX_LACED_FRAMES`).
+    #[error("push_laced_frames got {0} payloads, more than the 256 EBML lacing supports")]
+    LaceTooLarge(usize),
 }

@@ -209,8 +209,7 @@ impl Demuxer {
     /// Process one element header at `read_pos`. `false` means stop pumping
     /// for now (incomplete buffer or halted).
     fn step(&mut self) -> bool {
-        let remaining = &self.buffer[self.read_pos..];
-        let (id, id_len) = match vint::decode_id(remaining) {
+        let (id, id_len) = match vint::decode_id(&self.buffer[self.read_pos..]) {
             Ok(v) => v,
             Err(Error::Incomplete) => return false,
             Err(Error::ReservedVint | Error::Unsupported(_)) => {
@@ -218,7 +217,9 @@ impl Demuxer {
                 return false;
             }
         };
-        let (vs, size_len) = match vint::decode_size(&remaining[id_len..]) {
+        self.close_indefinite_cluster_before_sibling(id);
+
+        let (vs, size_len) = match vint::decode_size(&self.buffer[self.read_pos + id_len..]) {
             Ok(v) => v,
             Err(Error::Incomplete) => return false,
             Err(Error::ReservedVint | Error::Unsupported(_)) => {
@@ -256,6 +257,26 @@ impl Demuxer {
         self.handle_leaf(id, content_start, end);
         self.read_pos = end;
         true
+    }
+
+    /// Sibling-ID lookahead (RFC 8794 §9.4): an indefinite-size `Cluster`
+    /// has no explicit end, so it would otherwise stay open on the stack
+    /// until `Segment` itself closes or EOF. When the next element ID is one
+    /// that can only be a `Segment`-level child (`ids::is_segment_level_child`),
+    /// it can't legally be a child of `Cluster` either — that's the signal
+    /// this `Cluster` has implicitly ended; close it now instead of nesting
+    /// the new element underneath it (which would grow the stack once per
+    /// `Cluster` for the rest of the stream).
+    fn close_indefinite_cluster_before_sibling(&mut self, id: u32) {
+        if !ids::is_segment_level_child(id) {
+            return;
+        }
+        while matches!(self.stack.last(), Some(top) if top.id == ids::CLUSTER && top.end.is_none())
+        {
+            if let Some(closed) = self.stack.pop() {
+                self.on_close(closed.id);
+            }
+        }
     }
 
     fn on_open(&mut self, id: u32) {

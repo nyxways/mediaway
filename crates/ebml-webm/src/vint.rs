@@ -121,11 +121,56 @@ pub fn encode_size(value: u64, out: &mut Vec<u8>) {
     while len < 8 && value >= (1u64 << (7 * len)) - 1 {
         len += 1;
     }
+    encode_size_fixed_len(value, len as u8, out);
+}
+
+/// Encode `value` as an unsigned VINT using **exactly** `len` bytes (1..=8),
+/// rather than [`encode_size`]'s auto-picked minimal length. Used where the
+/// caller has already derived `len` from context — EBML lacing's
+/// signed-delta encoding ([`encode_signed_delta`]) picks `len` first (its
+/// bias depends on it) and needs the *same* length to actually land on the
+/// wire, not whatever `encode_size` would pick for the bias-shifted value.
+///
+/// Never panics: `value` too large for `len` bytes' worth of `VINT_DATA`
+/// saturates to the largest representable value at that length (reserving
+/// the all-1s "unknown size" pattern), same total-function posture as
+/// [`encode_size`].
+pub(crate) fn encode_size_fixed_len(value: u64, len: u8, out: &mut Vec<u8>) {
+    let len = u32::from(len.clamp(1, 8));
     let max_at_len = (1u64 << (7 * len)) - 2; // reserve the all-1s "unknown" pattern
     let value = value.min(max_at_len);
     let marker = 1u64 << (7 * len);
     let encoded = marker | value;
     out.extend_from_slice(&encoded.to_be_bytes()[8 - len as usize..]);
+}
+
+/// Encode an EBML lacing signed-delta VINT: `delta` is written as the
+/// unsigned value `delta + bias`, where `bias = 2^(7*L-1) - 1` for the
+/// minimal length `L` (1..=8) whose bias-shifted range covers `delta` — the
+/// exact inverse of [`crate::lacing::split`]'s `Lacing::Ebml` decode. `L`
+/// must be picked *before* encoding (unlike a plain size VINT) because the
+/// bias itself depends on it: [`encode_size_fixed_len`] writes the chosen
+/// `L` exactly, so the decoder (which derives bias from the VINT length it
+/// reads back) reconstructs the same `delta`.
+///
+/// Never panics: a `delta` too large even for `L = 8` clamps to that
+/// length's representable range rather than growing further (not reachable
+/// by any caller in this crate — `SimpleBlock` sub-frame sizes fit `usize`,
+/// far under an 8-byte VINT's range — but this is a public-adjacent
+/// low-level primitive, so it stays total).
+pub(crate) fn encode_signed_delta(delta: i64, out: &mut Vec<u8>) {
+    let mut len = 1u8;
+    loop {
+        let bias = (1i64 << (7 * u32::from(len) - 1)) - 1;
+        let max_at_len = (1i64 << (7 * u32::from(len))) - 2;
+        let shifted = delta + bias;
+        if len >= 8 || (0..=max_at_len).contains(&shifted) {
+            let shifted = shifted.clamp(0, max_at_len);
+            encode_size_fixed_len(shifted as u64, len, out);
+            return;
+        }
+        len += 1;
+    }
 }
 
 /// Write the reserved "unknown size" VINT of length `len` (1..=8) into `out`

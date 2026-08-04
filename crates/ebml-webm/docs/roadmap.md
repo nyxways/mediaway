@@ -26,16 +26,6 @@ Sans-IO EBML/WebM demux (unprefixed). Workspace index: [`docs/roadmap.md`](../..
 - [x] `Cues` / `SeekHead` — parsed and exposed informationally
       (`Demuxer::cues()`/`seek_head()`); this crate does no seeking itself
 
-### Deferred (tracked, not silently dropped)
-
-- [ ] Sibling-ID lookahead to close indefinite-size `Cluster` elements early —
-      still keeps such a `Cluster` open until its parent `Segment` closes or
-      EOF; correct for typical file/VOD WebM (definite-size clusters), a known
-      gap for long-running indefinite-size live streams (unbounded
-      open-element stack growth)
-- [ ] `SimpleBlock` lacing on the **mux** side (never lacs; demux already
-      reads all three lacing kinds for other encoders' output)
-
 ### 3 — Mux (2026-07-29)
 
 - [x] Crate-local [`adr/0003`](../adr/0003-webm-mux.md)
@@ -48,3 +38,18 @@ Sans-IO EBML/WebM demux (unprefixed). Workspace index: [`docs/roadmap.md`](../..
 - [x] Verified by round-tripping through this crate's own `Demuxer`
       (`mux_tests.rs`) — no external WebM mux oracle available this session
 - [x] Used by `mediaway-container::webm` (`Mux` impl, see that crate's roadmap)
+
+### 4 — Close deferred gaps + VP8 (2026-08-05)
+
+- [x] Crate-local [`adr/0004`](../adr/0004-cluster-lookahead-and-mux-lacing.md)
+- [x] Sibling-ID lookahead closes an indefinite-size `Cluster` when a
+      `Segment`-level sibling ID appears (`ids::is_segment_level_child`),
+      instead of nesting it and growing the open-element stack once per
+      `Cluster` — bounds the stack to `Segment` + one open `Cluster`
+- [x] `Muxer::push_laced_frames` — EBML lacing writer (`vint::encode_signed_delta`,
+      `vint::encode_size_fixed_len`, `lacing::encode_ebml_lace_sizes`)
+- [x] `tests/mux_oracle.rs` — external ffprobe oracle on mux output (Tier 7),
+      replacing "round-trip through own `Demuxer` only" as the sole check
+- [x] `mediaway-common::CodecKind::Vp8` added and wired into
+      `mediaway-container::webm::{codec_kind, webm_codec_id}` — closes the
+      WebM VP8 gap (mux + demux); see `mediaway-container/docs/roadmap.md`

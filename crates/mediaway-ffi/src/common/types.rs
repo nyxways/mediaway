@@ -68,6 +68,8 @@ pub enum CodecKind {
     RawVideo = 10,
     /// Uncompressed / raw PCM audio.
     RawAudio = 11,
+    /// VP8 video.
+    Vp8 = 12,
 }
 
 impl From<CodecKind> for CommonCodecKind {
@@ -85,6 +87,7 @@ impl From<CodecKind> for CommonCodecKind {
             CodecKind::Tx3g => Self::Tx3g,
             CodecKind::RawVideo => Self::RawVideo,
             CodecKind::RawAudio => Self::RawAudio,
+            CodecKind::Vp8 => Self::Vp8,
         }
     }
 }
@@ -104,6 +107,7 @@ impl From<CommonCodecKind> for CodecKind {
             CommonCodecKind::Tx3g => Self::Tx3g,
             CommonCodecKind::RawVideo => Self::RawVideo,
             CommonCodecKind::RawAudio => Self::RawAudio,
+            CommonCodecKind::Vp8 => Self::Vp8,
         }
     }
 }

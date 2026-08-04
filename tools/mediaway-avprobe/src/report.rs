@@ -44,6 +44,7 @@ const fn codec_name(codec: CodecKind) -> &'static str {
         CodecKind::Hevc => "hevc",
         CodecKind::Av1 => "av1",
         CodecKind::Vp9 => "vp9",
+        CodecKind::Vp8 => "vp8",
         CodecKind::Aac => "aac",
         CodecKind::Opus => "opus",
         CodecKind::WebVtt => "webvtt",

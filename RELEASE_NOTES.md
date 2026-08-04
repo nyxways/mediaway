@@ -4,6 +4,16 @@
 
 - C#: `Mediaway.Pipeline.AudioEncoder` — AAC audio encode (ABI v2), matching the existing Node.js `@mediaway/encoder` capability
 - C#: `Device/CaptureMicrophone.cs` and `Pipeline/EncodeAudio.cs` examples; existing examples reorganized under `Container/`/`Device/`/`Pipeline/` to mirror the Node.js binding's example layout
+- `ebml-webm`: `Muxer::push_laced_frames` — EBML lacing on the mux side (previously demux-only)
+- `CodecKind::Vp8`, wired into `mediaway-container::webm` mux + demux — closes the WebM VP8 gap
+
+### Changed
+
+- `ebml-webm` demux: indefinite-size `Cluster` sibling-ID lookahead — the open-element stack no longer grows unboundedly on a long-running live `WebM` stream
+
+### Fixed
+
+- `ebml-webm` mux output is now verified against system `ffprobe` in addition to this crate's own demuxer round-trip
 
 # Mediaway v0.1.2
 

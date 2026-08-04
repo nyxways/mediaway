@@ -5,6 +5,7 @@ types). Facade: `mediaway-container::webm` (behind the `demux`/`mux` features).
 ADRs: [`ebml-webm/adr/0001`](../../../../crates/ebml-webm/adr/0001-ebml-vint-webm-schema-v1.md),
 [`ebml-webm/adr/0002`](../../../../crates/ebml-webm/adr/0002-full-matroska-profile.md) (lacing/`BlockGroup`/`Audio`/`Cues`/`SeekHead`, 2026-07-29),
 [`ebml-webm/adr/0003`](../../../../crates/ebml-webm/adr/0003-webm-mux.md) (mux, 2026-07-29),
+[`ebml-webm/adr/0004`](../../../../crates/ebml-webm/adr/0004-cluster-lookahead-and-mux-lacing.md) (Cluster lookahead + mux lacing, 2026-08-05),
 [`mediaway-container/adr/0001`](../../../../crates/mediaway-container/adr/0001-webm-ebml-demux.md),
 [`mediaway-container/adr/0003`](../../../../crates/mediaway-container/adr/0003-webm-mux-facade.md) (mux facade, 2026-07-29).
 
@@ -19,7 +20,7 @@ flowchart LR
     tracks --> facade[mediaway-container::webm::Demuxer]
     frames --> facade
     facade -->|codec_kind supported?| packet[Packet via Demux trait]
-    facade -->|codec_kind = None\nVP8 only, as of 2026-07-29| drop[dropped: no CodecKind mapping]
+    facade -->|codec_kind = None\nunmapped WebM codec, e.g. no MPEG4/ISO/AVC in WebM| drop[dropped: no CodecKind mapping]
 ```
 
 ## Demux scope (v1 + full-profile elements)
@@ -41,41 +42,39 @@ flowchart LR
   informational data — this crate does no seeking itself (sans-io: I/O and
   seek-driven re-reads are the adapter's job).
 
-## Deferred (tracked in both crates' roadmaps, not silently dropped)
-
-- Sibling-ID lookahead to close indefinite-size `Cluster` early — still keeps
-  such a context open until the parent closes or EOF. Fine for typical
-  definite-size-cluster files; a long-running indefinite-size live stream can
-  grow the open-element stack unboundedly.
-- `SimpleBlock` lacing on the **mux** side (never lacs; demux reads all three
-  kinds for other encoders' output — see Mux section below).
-
-## Mux (2026-07-29)
+## Mux (2026-07-29; lacing + oracle added 2026-08-05)
 
 `ebml_webm::mux::Muxer<Open | Live>` mirrors `iso_bmff::mux`'s typestate shape:
-`add_track` → `begin()` → `push_frame` → `poll_bytes`. `Segment` is always
-unknown-size (streaming-first); each `Cluster` batches frames into a
-known-size block, closing early on a full batch or a relative-timecode
-overflow (`SimpleBlock`'s signed 16-bit offset field). New public, low-level,
-**total** (never panic on out-of-range input) `vint::encode_id`/`encode_size`/
-`encode_unknown_size` alongside the existing decoders. `mediaway-container::webm::Muxer`
-wraps it as a full `Mux` trait impl, rejecting any `CodecKind` `WebM` has no
-`CodecID` for (same set demux recognizes: `Vp9`/`Av1`/`Opus`/`Vorbis`/`Aac`).
+`add_track` → `begin()` → `push_frame`/`push_laced_frames` → `poll_bytes`.
+`Segment` is always unknown-size (streaming-first); each `Cluster` batches
+frames into a known-size block, closing early on a full batch or a
+relative-timecode overflow (`SimpleBlock`'s signed 16-bit offset field). New
+public, low-level, **total** (never panic on out-of-range input)
+`vint::encode_id`/`encode_size`/`encode_unknown_size`/`encode_signed_delta`
+alongside the existing decoders. `push_laced_frames` writes one EBML-laced
+`SimpleBlock` for several sub-frames sharing a timecode (`lacing::encode_ebml_lace_sizes`,
+the exact inverse of the demux side's `Lacing::Ebml` decode). `mediaway-container::webm::Muxer`
+wraps `push_frame` as a full `Mux` trait impl, rejecting any `CodecKind` `WebM` has no
+`CodecID` for (same set demux recognizes: `Vp8`/`Vp9`/`Av1`/`Opus`/`Vorbis`/`Aac`).
 `push_packet` maps `Packet::pts` straight to the block timecode — ticks are
 milliseconds (`TimecodeScale` default 1 ms/tick), so callers must convert other
 time bases (the playback harness does `/48` for 48 kHz Opus).
-No external WebM mux oracle exists in this workspace — verified by
-round-tripping through this crate's own `Demuxer` instead (`mux_tests.rs`,
-`webm_tests.rs`).
+Verified two ways: round-tripping through this crate's own `Demuxer`
+(`mux_tests.rs`, `webm_tests.rs`), and an external ffprobe oracle
+(`tests/mux_oracle.rs`, Tier 7 — skips cleanly when ffprobe is absent).
 
-## Facade gaps closed (2026-07-29)
+## Facade gaps closed
 
-- `Demuxer::poll_packet` threads `Frame::duration_ticks` into `Packet::duration`
-  (`BlockGroup`'s `BlockDuration`; `SimpleBlock` frames default to 0).
-- `StreamInfo::Audio` (`mediaway-common`) gained real `sample_rate`/`channels`
-  fields (shared type, also used by `mp4.rs`, WASAPI, WMF AAC) — threaded through.
-- `Demuxer::cues()`/`seek_head()` pass `ebml_webm::{CuePoint, SeekEntry}` through
-  unchanged (plain offsets, nothing codec-specific to convert).
+- 2026-07-29: `Demuxer::poll_packet` threads `Frame::duration_ticks` into
+  `Packet::duration`; `StreamInfo::Audio` real `sample_rate`/`channels`;
+  `Demuxer::cues()`/`seek_head()` pass `ebml_webm` types through unchanged.
+- 2026-08-05: indefinite-size `Cluster` sibling-ID lookahead
+  (`ids::is_segment_level_child` — RFC 8794 §9.4) closes an open `Cluster`
+  when the next element can only be a `Segment`-level sibling, instead of
+  nesting it and growing the open-element stack once per `Cluster` for a
+  long-running live stream. `CodecKind::Vp8` added and wired into
+  `webm.rs::codec_kind`/`webm_codec_id` — the WebM VP8 gap is fully closed
+  (mux + demux); `Vorbis` had already closed the audio half 2026-07-29.
 
 ## Real bug found via FATE testing (2026-07-29)
 
@@ -91,12 +90,3 @@ byte-range reference. Lesson: a sans-io demuxer deferring anything referencing
 a plain rebase underflows when the deferred range falls entirely inside the
 drained prefix, not merely shifted by it.
 
-## Known product gap: VP8
-
-`ebml_webm::TrackInfo::codec_id` keeps the raw WebM `CodecID` string.
-`mediaway-container::webm` maps every codec `CodecKind` has (`Vp9`, `Av1`,
-`Opus`, `Aac`, `Vorbis` — `Vorbis` closed 2026-07-29 once the Ogg facade work
-added the variant). Real WebM files can still use VP8 video — that track
-parses structurally in `ebml-webm` but is **omitted** from the facade's
-`streams()`, and its frames are dropped in `poll_packet()`. Fix requires a
-`CodecKind::Vp8` variant, tracked in `mediaway-container/docs/roadmap.md`.

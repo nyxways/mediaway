@@ -2,18 +2,25 @@
 
 Canonical: [`docs/conventions/hooks.md`](../../../conventions/hooks.md) § CI · workflow [`.github/workflows/ci.yml`](../../../../.github/workflows/ci.yml).
 
+- `source-length` job: first job — whole-workspace ≤1000-line check; no Rust
+  toolchain, runs (and fails fast) on every change regardless of the affected set
 - `affected` job: computes the dependency-tree reachability of the pushed/PR diff
   (`tools/scripts/ci-affected.ts`, bun + `cargo metadata` reverse graph) — outputs
   `NONE` / `ALL` / space-separated crate set. Every Rust-consuming job gates on it:
-  docs-only commits skip the expensive matrix entirely.
-- `rust` job: Windows + Ubuntu — fmt, clippy, test, source ≤1000 lines, scoped to
-  the affected set (`ALL` → full workspace; `NONE` → fmt/policy only)
-- `deny` job: Ubuntu — `cargo deny` (always; policy gate)
+  `NONE` (docs/bindings-only) skips the rust family entirely
+- `rust` job: Windows + Ubuntu — fmt, clippy, test scoped to the affected set
+  (`ALL` → full workspace); whole job skipped on `NONE`
+- `deny` job: Ubuntu — `cargo deny`; skipped on `NONE` (lockfile/manifests
+  untouched ⇒ result identical to main)
 - `wasm` job: Ubuntu — builds `iso-bmff-wasm` / `mediaway-encoder` / `mediaway-decoder`
   / `mediaway-device` for `wasm32-unknown-unknown`; runs on `ALL` or any wasm crate in
   the set
 - `e2e-web` job: optional (continue-on-error); cascades from `wasm`
 - No GPU / system FFmpeg in default CI
+
+Bindings: only the browser binding has CI coverage today (wasm compile + `e2e-web`).
+`bindings/` paths map to `NONE` in the affected set, and C# / Python / Node / C have no
+CI test jobs — see `docs/ai/wiki/meta/language-bindings.md`.
 
 ## Lessons from the first pushes (2026-08-02/03)
 

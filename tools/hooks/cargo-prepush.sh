@@ -80,3 +80,32 @@ else
     fi
 fi
 ok
+
+# Cross-cfg smoke (best effort): the dev machine is Windows-only, so a
+# cfg-gated break on non-Windows (e.g. a windows-only import in an example)
+# passes every local check and fails CI's ubuntu job — that exact class bit
+# us on the opus example. A wasm32-target check compiles the same
+# not-windows cfg paths with no C deps. Only crates proven wasm32-clean are
+# checked (CI's wasm job proves iso-bmff-wasm/encoder/decoder/device; the
+# mediaway facade was verified manually); other crates are left to CI.
+if rustup target list --installed 2>/dev/null | grep -q '^wasm32-unknown-unknown$'; then
+    WASM_SAFE="iso-bmff-wasm mediaway-encoder mediaway-decoder mediaway-device mediaway"
+    WASM_PKGS=""
+    for p in $AFFECTED; do
+        case " $WASM_SAFE " in
+            *" $p "*) WASM_PKGS="$WASM_PKGS -p $p" ;;
+        esac
+    done
+    if [ -n "$WASM_PKGS" ]; then
+        step "cargo check (wasm32 cross-cfg$WASM_PKGS)"
+        # lib/bins/examples only: benches pull criterion→Rayon, which refuses
+        # wasm32, and tests need a runner we don't have for this target.
+        if cargo check --target wasm32-unknown-unknown $WASM_PKGS --lib --bins --examples --all-features >/tmp/mw-wasm.log 2>&1; then
+            ok
+        else
+            echo "✗ wasm32 cross-cfg check failed:"
+            grep -E "^error" -A6 /tmp/mw-wasm.log | head -24
+            exit 1
+        fi
+    fi
+fi

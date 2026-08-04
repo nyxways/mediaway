@@ -36,6 +36,12 @@ Conventional Commits **format** only ([commits.md](commits.md)). English for com
 - `clippy --all-targets --all-features -D warnings` + `cargo nextest`/`cargo test`
   on the **affected set** (ci-affected.ts vs `origin/main`; NONE skips both,
   ALL runs the workspace) — a non-Rust push gates in ~2s instead of ~40s
+- **wasm32 cross-cfg smoke**: the dev machine is Windows-only, so a cfg-gated
+  break on non-Windows (e.g. a windows-only import in an example) passes every
+  local check and fails CI's ubuntu job. A `cargo check --target
+  wasm32-unknown-unknown --lib --bins --examples` on the affected ∩
+  wasm32-clean crates compiles the same not-windows cfg paths (no C deps;
+  benches excluded — criterion refuses wasm32)
 - the test-media fixture cache (`local/.cache/test-media`) is **cleared** before
   tests: a cached fixture whose BLAKE3 still matches an outdated constant would
   pass locally and break CI — every push regenerates and re-verifies fixtures

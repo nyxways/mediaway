@@ -46,9 +46,10 @@ async function ensureBinaryen(): Promise<void> {
   if (existsSync(WASM_OPT)) return;
   console.log("downloading binaryen", BINARYEN_VERSION, "-> local/binaryen/");
   mkdirSync(BINARYEN_DIR, { recursive: true });
-  const tarball = join(BINARYEN_DIR, "binaryen.tar.gz");
-  await $`curl -sL -o ${tarball} ${BINARYEN_URL}`;
-  await $`tar -xzf ${tarball}`.cwd(BINARYEN_DIR);
+  // Stream curl -> tar through stdin instead of a temp tarball path: on
+  // GitHub Windows runners tar misparses a drive-letter path ("D:\...") as a
+  // remote host ("Cannot connect to D:"), failing the extraction.
+  await $`curl -sL ${BINARYEN_URL} | tar -xz`.cwd(BINARYEN_DIR);
 }
 
 const inputs = process.argv.slice(2);

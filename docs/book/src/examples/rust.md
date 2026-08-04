@@ -4,6 +4,14 @@ The primary, always-first-class API. Every capability is reachable from native c
 crates.io (`mediaway`, `mediaway-encoder`, `mediaway-decoder`, `mediaway-device`,
 `mediaway-container`, the `*-core` format crates, …).
 
+## Install
+
+```bash
+cargo add mediaway            # umbrella: pipeline + platform dispatch + re-exports
+# or a specific capability / freestanding core:
+cargo add mediaway-encoder mediaway-container iso-bmff ogg-core
+```
+
 Runnable examples live in the workspace [`examples/`](https://github.com/nyxways/mediaway/tree/main/examples)
 directory, grouped by capability:
 

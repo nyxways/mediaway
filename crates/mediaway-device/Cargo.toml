@@ -1,6 +1,6 @@
 [package]
 name = "mediaway-device"
-description = "Device capture: camera/desktop/audio facades + hotplug, with Windows/Linux/Web backends as #[cfg]-gated modules (ADR-0021)"
+description = "Device capture: camera, microphone, screen/window, audio playback + hotplug, with Windows/Linux/Web backends as #[cfg]-gated modules"
 version.workspace = true
 publish = true # hardware-verified — see docs/roadmap.md
 edition.workspace = true

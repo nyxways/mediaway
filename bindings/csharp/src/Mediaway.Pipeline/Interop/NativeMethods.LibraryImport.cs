@@ -32,5 +32,34 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport(LibraryName)]
     internal static partial void mediaway_pipeline_ffi_buffer_free(nint data, nuint len);
+
+    [LibraryImport(LibraryName)]
+    internal static partial MediawayPipelineStatus mediaway_audio_encoder_open(
+        in NativeAudioEncodeConfig config, out nint outSession);
+
+    [LibraryImport(LibraryName)]
+    internal static partial MediawayPipelineStatus mediaway_audio_encode_session_stream_info(
+        AudioEncodeSessionHandle session, out NativeAudioStreamInfo outInfo);
+
+    [LibraryImport(LibraryName)]
+    internal static partial MediawayPipelineStatus mediaway_audio_encode_session_push_pcm(
+        AudioEncodeSessionHandle session, in NativeAudioFrameView frame);
+
+    [LibraryImport(LibraryName)]
+    internal static partial MediawayPipelineStatus mediaway_audio_encode_session_poll_packet(
+        AudioEncodeSessionHandle session, out NativeAudioPacket outPacket, out byte outHasPacket);
+
+    [LibraryImport(LibraryName)]
+    internal static partial MediawayPipelineStatus mediaway_audio_encode_session_flush(
+        AudioEncodeSessionHandle session);
+
+    [LibraryImport(LibraryName)]
+    internal static partial void mediaway_audio_encode_session_close(nint session);
+
+    [LibraryImport(LibraryName)]
+    internal static partial void mediaway_pipeline_ffi_packet_free(ref NativeAudioPacket packet);
+
+    [LibraryImport(LibraryName)]
+    internal static partial void mediaway_pipeline_ffi_stream_info_free(ref NativeAudioStreamInfo info);
 }
 #endif

@@ -15,15 +15,16 @@ public class MediawayPipelineException : MediawayException
     internal MediawayPipelineException(MediawayPipelineStatus status, string message) : base(message) =>
         Status = status;
 
-    internal static void ThrowIfError(MediawayPipelineStatus status)
+    internal static void ThrowIfError(
+        MediawayPipelineStatus status,
+        string noBackendMessage = "No supported video encoder backend is compiled in on this platform.")
     {
         switch (status)
         {
             case MediawayPipelineStatus.Ok:
                 return;
             case MediawayPipelineStatus.NoBackend:
-                throw new EncoderUnavailableException(
-                    "No supported video encoder backend is compiled in on this platform.");
+                throw new EncoderUnavailableException(noBackendMessage);
             default:
                 throw new MediawayPipelineException(status, Describe(status));
         }

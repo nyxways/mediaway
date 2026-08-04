@@ -64,7 +64,7 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
 - [ ] **Pure Rust SW Codec Extensions**: Add CABAC, P-slice, and B-slice decoding to `mediaway-sw` H.264 decoder (currently Baseline CAVLC I-slice only).
 
 ### 3. Media Containers, Protocols & Image Formats
-- [ ] **Static Image Containers & Codecs**: Expand facade traits and container cores to support image formats (**AVIF**, **HEIC**, **WebP**, **PNG**, **JPEG**).
+- [ ] **Static Image Containers & Codecs**: Expand facade traits and container cores to support image formats (**AVIF**, **HEIC**, **WebP**, **PNG**, **JPEG**, **GIF**).
 - [ ] **RTMP Server Verification**: Verify `rtmp` client against live servers (NGINX-RTMP, YouTube Live, Twitch).
 - [ ] **Matroska / WebM Extensions**: Map VP8 `CodecKind` and expand Matroska demuxing capabilities (`ebml-webm`).
 

@@ -21,9 +21,18 @@ import { join } from "node:path";
 
 const BINARYEN_VERSION = "version_116";
 const BINARYEN_TAG = "version_116";
-const BINARYEN_URL = `https://github.com/WebAssembly/binaryen/releases/download/${BINARYEN_TAG}/binaryen-${BINARYEN_VERSION}-x86_64-windows.tar.gz`;
+// Binaryen release assets are per-OS (`-windows`, `-linux`, `-apple-darwin`);
+// the optimize pass runs in CI on ubuntu and locally on Windows.
+const BINARYEN_OS =
+  process.platform === "win32" ? "windows" : process.platform === "darwin" ? "apple-darwin" : "linux";
+const BINARYEN_URL = `https://github.com/WebAssembly/binaryen/releases/download/${BINARYEN_TAG}/binaryen-${BINARYEN_VERSION}-x86_64-${BINARYEN_OS}.tar.gz`;
 const BINARYEN_DIR = join(import.meta.dir, "..", "..", "local", "binaryen");
-const WASM_OPT = join(BINARYEN_DIR, `binaryen-${BINARYEN_VERSION}`, "bin", "wasm-opt.exe");
+const WASM_OPT = join(
+  BINARYEN_DIR,
+  `binaryen-${BINARYEN_VERSION}`,
+  "bin",
+  process.platform === "win32" ? "wasm-opt.exe" : "wasm-opt",
+);
 
 function findWasmOpt(): string {
   if (existsSync(WASM_OPT)) return WASM_OPT;

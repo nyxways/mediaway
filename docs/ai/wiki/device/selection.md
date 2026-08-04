@@ -58,13 +58,14 @@ per-device consent granularity to expose). See [capabilities](capabilities.md).
 
 ## Status
 
-Types + breaking field changes + `mediaway-device-windows`'s `enumerate` (Microphone/
+Types + breaking field changes + `mediaway-device::windows`'s `enumerate` (Microphone/
 Loopback/Camera/Screen) + `DeviceLost` wiring + `WindowsDeviceHotplug` are **all done and
-hardware-verified**. `Select` resolution: `wasapi.rs::resolve_endpoint` (mic/loopback,
-shared with playback), `camera.rs::resolve_camera_index`, `dxgi.rs::resolve_output_index`
-(adapter-scoped per the ADR). No `mediaway_pipeline::platform` free function for
+hardware-verified**. `Select` resolution: `windows_audio/wasapi.rs::resolve_endpoint`
+(mic/loopback, shared with playback), `windows_camera/capture.rs::resolve_camera_index`,
+`windows_desktop/dxgi.rs::resolve_output_index`
+(adapter-scoped per the ADR). No `mediaway::platform` free function for
 `enumerate` — the ADR's own "free-function shape" precedent means callers use
-`mediaway_device_windows::enumerate` directly, same as `support`/`request_permission`
+`mediaway_device::windows::enumerate` directly, same as `support`/`request_permission`
 today. **Still deferred**: Camera/Screen hotplug (separate mechanism, separate ADR — see
 ADR-0005 § Deferred).
 
@@ -87,7 +88,7 @@ in parentheses **only when not already a substring of the endpoint name** — a 
 
 - [camera-device-handle](camera-device-handle.md) — the Camera micro-decision this supersedes
 - [capabilities](capabilities.md) — ADR-0003, the probe axis this composes with
-- `mediaway-device-windows/src/camera.rs` — `enumerate_cameras`, `resolve_camera_index`
-- `mediaway-device-windows/src/wasapi.rs` — `resolve_endpoint`, `endpoint_friendly_name`
-- `mediaway-device-windows/src/hotplug.rs` — `WindowsDeviceHotplug`,
+- `crates/mediaway-device/src/windows_camera/capture.rs` — `enumerate_cameras`, `resolve_camera_index`
+- `crates/mediaway-device/src/windows_audio/wasapi.rs` — `resolve_endpoint`, `endpoint_friendly_name`
+- `crates/mediaway-device/src/windows/hotplug.rs` — `WindowsDeviceHotplug`,
   `NotificationSink` (`IMMNotificationClient` COM server object)

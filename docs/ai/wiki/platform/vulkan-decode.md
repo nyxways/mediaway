@@ -1,8 +1,8 @@
-# Vulkan Video decode (`mediaway-decoder-vulkan`)
+# Vulkan Video decode (`mediaway-decoder::vulkan`)
 
-Crate: `mediaway-decoder-vulkan` (portable — not OS-suffixed, sibling of
-`mediaway-encoder-vulkan`). ADR:
-[`0001-vulkan-video-decode.md`](../../../../crates/mediaway-decoder-vulkan/adr/0001-vulkan-video-decode.md).
+Module: `mediaway-decoder::vulkan` (portable — not OS-suffixed, sibling of
+`mediaway-encoder::vulkan`). ADR:
+[`0001-vulkan-video-decode.md`](../../../../crates/mediaway-decoder/adr/vulkan/0001-vulkan-video-decode.md).
 
 **Status (2026-07-30): H.264 general-GOP decode is real and
 hardware-verified** — the first general-GOP (P/B + DPB) decode backend in
@@ -50,7 +50,7 @@ index; (2) the destination DPB layer needs `VIDEO_DECODE_DST_KHR` layout
 during the decode command, not permanent `VIDEO_DECODE_DPB_KHR`; (3, the fix
 that mattered) the uploaded bitstream needs a real 3-byte Annex-B start code
 prepended — without one, decode ran error-free but found nothing.
-`cargo test -p mediaway-decoder-vulkan --test hardware_h264_decode` passes
+`cargo test -p mediaway-decoder --test hardware_h264_decode` passes
 with **hard** pixel-value assertions: real IDR decode, real `P_Skip`
 motion-compensated DPB reference read, real new P-frame content.
 
@@ -68,7 +68,7 @@ not reusable from H.264) + short-term RPS construction, 19 new sans-io unit
 tests (62 total). GPU path is IDR-only this round (P/B-slice HEVC decode
 deferred — hand-constructing legal HEVC content needs a real CABAC encoder,
 substantially riskier than H.264's `I_PCM`/CAVLC escape). Hardware test
-chains this workspace's own verified `mediaway-encoder-vulkan` HEVC encoder
+chains this workspace's own verified `mediaway-encoder::vulkan` HEVC encoder
 into the new decoder (no hand-written CABAC needed) and reproduced H.264's
 original symptom: decode ran with zero `VkResult` errors but read back
 all-zero. Found and fixed **two real, confirmed bugs** (`HevcSps`/`HevcPps::

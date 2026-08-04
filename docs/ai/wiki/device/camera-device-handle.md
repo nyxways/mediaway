@@ -18,9 +18,9 @@ The doc comment on the field ("Opaque device token / index bits") does not disam
 ## Current status (corrected 2026-07-31)
 
 **Stale until now:** this page previously said no backend implemented camera capture.
-`crates/mediaway-device-windows/src/camera.rs` (`WindowsCameraCapture`) is real, wired into
-that crate's public API (`mod camera;` + `pub use camera::WindowsCameraCapture;` in
-`lib.rs`), and hardware-verified: its test captured real 1920x1080 frames from a physical
+`crates/mediaway-device/src/windows_camera/capture.rs` (`WindowsCameraCapture`) is real, wired into
+the facade's public API (`pub use capture::{WindowsCameraCapture, enumerate_cameras}` in
+`windows_camera/mod.rs`), and hardware-verified: its test captured real 1920x1080 frames from a physical
 "WeVO WV-1080" USB webcam on the dev machine (see that crate's roadmap Stage 4).
 
 `device` really is an **enumeration index** — confirmed from source:
@@ -29,13 +29,13 @@ that crate's public API (`mod camera;` + `pub use camera::WindowsCameraCapture;`
 camera". `NativeHandle` would have been the wrong choice for this backend (§ above still
 applies: index `0` is valid and common).
 
-`crates/mediaway-device-windows/docs/roadmap.md` Stage 4 and
+`crates/mediaway-device/docs/roadmap.md` Stage 4 and
 `mediaway_device::capability::Unavailable::NotImplemented`'s doc comment ("e.g. `Camera`
 today") still say camera capture doesn't exist / isn't wired — both are now known-stale,
 flagged as follow-ups against their own crates (not fixed here).
 
-Not yet wired: cross-platform dispatch (`mediaway_pipeline::platform`) has no `Camera`
-entry point — only the direct `mediaway-device-windows::WindowsCameraCapture` API and
+Not yet wired: cross-platform dispatch (`mediaway::platform`) has no `Camera`
+entry point — only the direct `mediaway-device::windows_camera::WindowsCameraCapture` API and
 `mediaway-ffi`'s own local `#[cfg]` dispatch (see
 [`ffi-c-abi.md`](ffi-c-abi.md)) reach it today.
 

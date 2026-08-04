@@ -13,7 +13,7 @@ Accumulate knowledge across sessions so agents need not re-trace every system fr
 | [zero-copy](zero-copy/index.md) | ⚡ marks · GPU handles · shared CPU · wgpu interop |
 | [platform](platform/index.md) | OS/runtime APIs · support-matrix pointer · WMF/DX11 |
 | [device](device/index.md) | Camera · mic · screen capture |
-| [audio](audio/index.md) | Audio enhancement — AEC/NS/AGC2/VAD (`mediaway-audio-apm`) |
+| [audio](audio/index.md) | Audio enhancement — AEC/NS/AGC2/VAD (`mediaway-sw::apm`) |
 | [bindings](bindings/index.md) | Language bindings — status · FFI learnings |
 | [license](license/index.md) | Licenses · deny · allowed SW fallbacks |
 | [meta](meta/index.md) | Workspace · hooks · ADR ops |

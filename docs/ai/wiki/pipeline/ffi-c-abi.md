@@ -1,7 +1,7 @@
 # mediaway-ffi — auto-encode → fMP4 C ABI
 
 Second `mediaway-*-ffi` crate, after `mediaway-ffi`. Wraps
-`mediaway_pipeline::platform::AutoEncoder` + `EncodeSession` (auto OS/GPU
+`mediaway::platform::AutoEncoder` + `EncodeSession` (auto OS/GPU
 video encoder wired straight into a single-track fMP4 muxer) over a C ABI.
 Full design:
 [`crates/mediaway-ffi/adr/0001-auto-encode-c-abi.md`](../../../../crates/mediaway-ffi/adr/0001-auto-encode-c-abi.md),

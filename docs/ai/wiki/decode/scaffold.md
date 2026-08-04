@@ -1,13 +1,13 @@
 # Decoder crate scaffold
 
 - Path: `crates/mediaway-decoder` (**facade**); ADRs 0001–0002
-- Windows: `mediaway-decoder-windows` — WMF H.264, two output paths:
+- Windows: `mediaway-decoder::windows` — WMF H.264, two output paths:
   - `VideoOutputPreference::ZeroCopyGpu` — HW decoder MFT + DXGI Zero-Copy out (`ID3D11Device` required)
   - `VideoOutputPreference::CpuFramesOk` — software (sync) H.264 decoder MFT, no GPU/device
     manager at all; NV12 copied straight from the MFT's system-memory buffer
     (`IMF2DBuffer::Lock2D` stride-aware, contiguous `Lock` fallback) — see `wmf/cpu.rs`
-- Verified end-to-end via `tests/cpu_roundtrip.rs`: encodes through
-  `mediaway-encoder-windows`'s CPU-upload H.264 path, decodes through the CPU path above —
+- Verified end-to-end via `crates/mediaway-decoder/tests/windows/cpu_roundtrip.rs`: encodes through
+  `mediaway-encoder::windows`'s CPU-upload H.264 path, decodes through the CPU path above —
   no committed media, no GPU needed for either side (no mux/demux; Annex-B throughout)
 - AVCC↔Annex-B: demuxed MP4 samples are AVCC length-prefixed with an
   `AVCDecoderConfigurationRecord` `extra_data`, but WMF's decoder MFTs expect Annex-B.
@@ -27,12 +27,12 @@
   found+fixed here: after `MF_E_TRANSFORM_STREAM_CHANGE`, these extension decoder MFTs reject
   a caller-reconstructed output type (unlike H.264's inbox decoder, where that path is never
   actually exercised) — must re-negotiate via the MFT's own `GetOutputAvailableType`/
-  `SetOutputType` instead. See `mediaway-decoder-windows/docs/roadmap.md`.
-- Linux: `mediaway-decoder-linux` — VA-API H.264 CPU-output decode, **IDR pictures only**
+  `SetOutputType` instead. See `crates/mediaway-decoder/docs/roadmap.md`.
+- Linux: `mediaway-decoder::linux` — VA-API H.264 CPU-output decode, **IDR pictures only**
   (no DPB / reference management), own SPS/PPS/slice parser reusing `mediaway_sw::h264`'s
   bit reader/NAL framing — see [platform/linux-decode](../platform/linux-decode.md) and
   that crate's ADR-0001. **Zero real-hardware verification** in the session that authored it.
-- Web: `mediaway-decoder-web` — WebCodecs `VideoDecoder`, `EncodedVideoChunk` in →
+- Web: `mediaway-decoder::web` — WebCodecs `VideoDecoder`, `EncodedVideoChunk` in →
   `VideoFrame` out, luma-plane CPU readback via `copyTo`. No facade trait impl (async API).
   See [web-video-decode](web-video-decode.md).
 - Later: demuxer→decode→encode integration smoke, Annex-B/AVCC policy for demuxer-sourced
@@ -41,10 +41,10 @@
 ## Capability probe (2026-07-31)
 
 `mediaway_decoder::capability::{DecodeSupport, DecodeUnavailable}` +
-`mediaway_pipeline::platform::decoder_support(codec)` — mirrors the encoder facade's
+`mediaway::platform::decoder_support(codec)` — mirrors the encoder facade's
 probe (`mediaway-encoder` ADR-0004), but reports a single `DecodeSupport` per codec
 instead of a `Vec` of rows: unlike encode, decode has exactly one implementation per
-platform today (`mediaway-decoder-vulkan` is real but unwired — see
+platform today (`mediaway-decoder::vulkan` is real but unwired — see
 [vulkan-decode](../platform/vulkan-decode.md) — so there's no second backend to
 enumerate). Implemented as a tiny throwaway 64×64 open (empty `extra_data` is tolerated
 by WMF/VA-API at open time), same live-probe cost trade-off as `encoder_support`.

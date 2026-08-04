@@ -1,6 +1,6 @@
 [package]
 name = "vpl-sys"
-description = "Minimal, unprefixed FFI core for a subset of Intel oneVPL (libvpl); dynamic runtime loading via libloading, no build-time link against an Intel import library"
+description = "Minimal FFI bindings for a subset of Intel oneVPL (libvpl); dynamic runtime loading via libloading, no build-time link against an Intel import library"
 version.workspace = true
 publish = true # hardware-verified — see docs/roadmap.md
 edition.workspace = true

@@ -2,7 +2,7 @@
 
 | Doc | Summary |
 |-----|---------|
-| [scaffold](scaffold.md) | Facade `mediaway-device`; backends `device-windows` / `device-web` / … |
+| [scaffold](scaffold.md) | Facade `mediaway-device`; backends `mediaway-device::windows` / `mediaway-device::web` / … |
 | [windows-capture](windows-capture.md) | DXGI DDA screen Zero-Copy |
 | [windows-window](windows-window.md) | WGC single-window capture (≠ screen) |
 | [windows-audio](windows-audio.md) | WASAPI mic / loopback capture + shared-mode render playback (CPU ⚡ later) |
@@ -16,7 +16,7 @@
 | [linux-mic](linux-mic.md) | Direct PipeWire microphone capture (no portal, unverified this session) |
 | [capabilities](capabilities.md) | `DeviceKind`/`Support`/`PermissionState` — live capability + OS permission probe, separate from opening a session |
 | [ffi-c-abi](ffi-c-abi.md) | `mediaway-ffi` — C ABI over Camera + Screen (GPU handle, ADR-0003) video + Microphone/Loopback/ProcessLoopback audio; Window deferred |
-| [hotplug-ffi](hotplug-ffi.md) | `mediaway-ffi` hotplug — callback + poll event delivery (ADR-0002, Accepted; real Windows `open`/`poll_event` wired in and hardware-confirmed; `close()` has an unresolved real-hardware crash, `mediaway-device-windows` follow-up) |
+| [hotplug-ffi](hotplug-ffi.md) | `mediaway-ffi` hotplug — callback + poll event delivery (ADR-0002, Accepted; real Windows `open`/`poll_event` wired in and hardware-confirmed; `close()` has an unresolved real-hardware crash, `mediaway-device::windows` follow-up) |
 
 Support matrix: root [README § Device](../../../../README.md#device).
 
@@ -24,5 +24,5 @@ Packaging: [crate-packaging](../meta/crate-packaging.md).
 
 Audio *enhancement* (echo cancel / noise suppress / gain control / VAD) is a
 separate capability, not part of this facade — see
-[audio/apm](../audio/apm.md) (`mediaway-audio-apm`, Proposed). It consumes
+[audio/apm](../audio/apm.md) (`mediaway-sw::apm`, Proposed). It consumes
 `AudioCapture::poll_frame()`'s output.

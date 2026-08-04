@@ -1,6 +1,6 @@
 [package]
 name = "rtmp"
-description = "Sans-IO RTMP publish-client handshake, chunk stream, and AMF0 command mux (freestanding)"
+description = "Sans-IO RTMP publish-client handshake, chunk stream, and AMF0 command mux"
 version = "0.1.0" # independent versioning — freestanding core (ADR-0021)
 publish = false # Proposed — see adr/0001-rtmp-freestanding-core.md
 edition.workspace = true

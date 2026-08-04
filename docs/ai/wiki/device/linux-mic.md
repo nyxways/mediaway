@@ -1,6 +1,6 @@
 # Linux microphone capture: direct PipeWire audio stream
 
-Crate: `mediaway-device-linux`, `src/mic.rs`. ADR: [`0004-pipewire-microphone-capture.md`](../../../../crates/mediaway-device-linux/adr/0004-pipewire-microphone-capture.md).
+Module: `mediaway-device::linux`, `src/mic.rs`. ADR: [`0004-pipewire-microphone-capture.md`](../../../../crates/mediaway-device/adr/linux/0004-pipewire-microphone-capture.md).
 
 ## Flow
 
@@ -35,7 +35,7 @@ flowchart LR
   reinforcing the pragmatic choice.
 - Only `AudioCaptureSource::Microphone { device_index: 0 }` (default source)
   + `SampleFormat::F32` this session — same restriction shape
-  `mediaway-device-windows` `wasapi.rs` applies to its own first slice.
+  `mediaway-device::windows_audio` `wasapi.rs` applies to its own first slice.
   `Loopback`/`ProcessLoopback` and non-default source targeting are deferred.
 - `capabilities::support(Microphone)` is a real (cheap, non-streaming)
   daemon-connect probe; `request_permission` reports `Granted` once

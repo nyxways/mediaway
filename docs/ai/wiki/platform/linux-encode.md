@@ -1,6 +1,6 @@
 # Linux encode (VA-API)
 
-- Crate: `mediaway-encoder-linux`
+- Module: `mediaway-encoder::linux`
 - Bindings: [`cros-libva`](https://crates.io/crates/cros-libva) (BSD-3-Clause, `cfg(target_os =
   "linux")` dependency only — never pulled into non-Linux builds)
 - Codec: H.264 Constrained Baseline only (`vaapi/codec.rs` → `VAProfileH264ConstrainedBaseline`,
@@ -14,7 +14,7 @@
 - Session shape: `Display`/`Config`/`Context`/`Surface` (safe `cros-libva` wrappers) +
   `Picture<S, T>` **typestate** enforcing `vaBeginPicture → vaRenderPicture → vaEndPicture →
   vaSyncSurface` ordering at compile time
-- ADR: [0001](../../../crates/mediaway-encoder-linux/adr/0001-vaapi-cros-libva-h264-cpu-upload.md)
+- ADR: [0001](../../../../crates/mediaway-encoder/adr/linux/0001-vaapi-cros-libva-h264-cpu-upload.md)
   — binding choice, scope, **zero real-hardware verification** caveat
 
 ## ⚠️ Hardware verification status

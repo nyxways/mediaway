@@ -1,6 +1,6 @@
 # Language bindings
 
-Mediaway exposes a hand-written C ABI (`*-ffi` crates, [`docs/spec/c-ffi.md`](../docs/spec/c-ffi.md) · ADR-0004) so non-Rust languages can call the stack. The browser host (Tier C) goes through WASM instead — never the C ABI.
+Mediaway exposes a hand-written C ABI (`mediaway-ffi` crate, [`docs/spec/c-ffi.md`](../docs/spec/c-ffi.md) · ADR-0004) so non-Rust languages can call the stack. The browser host (Tier C) goes through WASM instead — never the C ABI.
 
 Each language folder is self-contained: its own `README.md` is the entry point. It explains the binding's **status**, the **capabilities** it covers, and its **ideal API** — the DX contract its examples (and eventual real source) follow. Example code lives in `bindings/<lang>/examples/`.
 

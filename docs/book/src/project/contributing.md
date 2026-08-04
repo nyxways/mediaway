@@ -8,6 +8,8 @@ Mediaway takes contributions — code, design feedback, and bug reports.
   [`docs/contributing/`](https://github.com/nyxways/mediaway/tree/main/docs/contributing)
 - PR author checklist (doc sync, quality gates):
   [`docs/contributing/pull-requests.md`](https://github.com/nyxways/mediaway/blob/main/docs/contributing/pull-requests.md)
+- Adding a new crate, per-language example, or reference page:
+  [Extending the Book](./extending.md)
 - Bug/crash/docs issues use the issue tracker; feature ideas start as
   [GitHub Discussions](https://github.com/nyxways/mediaway/discussions) —
   see [`docs/contributing/issues.md`](https://github.com/nyxways/mediaway/blob/main/docs/contributing/issues.md)

@@ -1,7 +1,7 @@
-# `mediaway-audio-apm` — echo cancel / noise suppress / gain control / VAD
+# `mediaway-sw::apm` — echo cancel / noise suppress / gain control / VAD
 
 **Status: Implemented** —
-[`crates/mediaway-audio-apm/adr/0001-sonora-audio-processing-adoption.md`](../../../../crates/mediaway-audio-apm/adr/0001-sonora-audio-processing-adoption.md)
+[`crates/mediaway-sw/adr/apm/0001-sonora-audio-processing-adoption.md`](../../../../crates/mediaway-sw/adr/apm/0001-sonora-audio-processing-adoption.md)
 (Accepted).
 
 - **What:** wraps [`sonora`](https://github.com/dignifiedquire/sonora) (+
@@ -11,7 +11,7 @@
   `VoiceActivityDetector` (`vad` feature) — concrete, not trait-based; each
   usable standalone.
 - **Where in the pipeline:** right after mic capture
-  (`mediaway_device_audio::AudioCapture::poll_frame`), before anything else
+  (`mediaway_device::audio::AudioCapture::poll_frame`), before anything else
   touches the signal. As of `mediaway` ADR-0003, `EncodeSession`
   wires this in transparently (`attach_audio_processor`/`attach_vad`,
   called from inside `write_audio_frame`) — see
@@ -25,7 +25,7 @@
   `poll_processed_frame`), mirroring `VideoEncoder`/`AudioEncoder`'s own
   push/poll idiom.
 - **Config:** `ApmConfig` = `sonora::Config` re-exported directly (plus the
-  whole `sonora::config` module, re-exported as `mediaway_audio_apm::config`)
+  whole `sonora::config` module, re-exported as `mediaway_sw::apm::config`)
   — no parallel config surface; construct
   `ApmConfig { echo_canceller: Some(config::EchoCanceller::default()), .. }`.
   All components disabled by default (matches `sonora`'s own default).
@@ -64,7 +64,7 @@
   force a real payload copy on the hot path (`src/pcm.rs` byte↔f32
   conversion, `#![forbid(unsafe_code)]` rules out a pointer-cast reinterpret)
   — never claim ⚡ here (see [zero-copy/marks](../zero-copy/marks.md)).
-- **Crate shape:** one crate, no platform split (like `mediaway-wgpu`) —
+- **Crate shape:** one crate, no platform split (like `mediaway::wgpu`) —
   `sonora` is cross-platform CPU/SIMD, not an OS API.
 
 See also: [pipeline/frame-filter-hook](../pipeline/frame-filter-hook.md) (the

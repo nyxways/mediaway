@@ -2,7 +2,7 @@
 
 Playwright's bundled `channel: "chromium"` build lacks a real H.264/AAC WebCodecs backend
 (see [web-gpu-frame](web-gpu-frame.md) § "Real Chrome via CDP"), so `is_webcodecs_av_supported`
-gated these paths closed in every prior session — three real bugs in `mediaway-encoder-web`
+gated these paths closed in every prior session — three real bugs in `mediaway-encoder::web`
 sat unreachable until manually verified against the machine's installed real Google Chrome
 over CDP. All three are fixed; none needed a WebGPU-side or codec-choice change.
 

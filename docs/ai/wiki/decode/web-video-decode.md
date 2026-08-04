@@ -1,6 +1,6 @@
-# Web: WebCodecs video decode (`mediaway-decoder-web`)
+# Web: WebCodecs video decode (`mediaway-decoder::web`)
 
-- Crate: `crates/mediaway-decoder-web` (platform backend). Mirrors `mediaway-encoder-web`'s
+- Module: `mediaway-decoder::web` (platform backend). Mirrors `mediaway-encoder::web`'s
   shape (`config`/`host`/`wasm` split) and does **not** implement the `mediaway-decoder`
   facade trait — `VideoDecoder` is inherently async/callback-driven, incompatible with the
   facade's sync `push_packet`/`poll_frame` shape (same reasoning as encoder-web).
@@ -10,7 +10,7 @@
 - `DecodedVideoFrames` exposes `frame_count`, `timestamp_us(i)`, `luma_plane(i)` — reads
   pixel data back via `VideoFrame::copyTo` (async, de-strided using the returned
   `PlaneLayout`, since `codedWidth` can exceed `width`).
-- Chunks cross from `mediaway-encoder-web`'s new `encode_video_frames`/`EncodedVideoChunks`
+- Chunks cross from `mediaway-encoder::web`'s new `encode_video_frames`/`EncodedVideoChunks`
   into this crate as flattened primitive arrays (`Vec<u8>`/`Vec<u32>`/`Vec<f64>`), never as
   shared Rust types or `web-sys` objects — the two crates compile to *separate* wasm
   modules/instances, so only plain JS values cross that boundary.
@@ -32,7 +32,7 @@ if none work.
 ## Real bug found: `isConfigSupported` resolves to a dictionary, not a boolean
 
 `VideoEncoder`/`VideoDecoder`'s `isConfigSupported()` resolve to a `{supported, config}`
-dictionary, never a boolean. `mediaway-encoder-web`'s pre-existing `video_codec_supported` /
+dictionary, never a boolean. `mediaway-encoder::web`'s pre-existing `video_codec_supported` /
 `audio_supported` read `.as_bool()` on that value — **always `None`/`false`**, regardless of
 real support (masked by `webcodecs-fmp4.spec.ts` skipping for a plausible-looking reason).
 Root cause: js-sys 0.3.103's typed `Promise<T>`/`JsFuture<T>` (and typed `Array<T>`) already
@@ -40,8 +40,8 @@ yield the dictionary **strongly typed** (`T`, not `JsValue`) — `.as_bool()` si
 via `Deref<Target = JsValue>`, and a further `.dyn_into::<T>()` (this crate's first attempt)
 fails too, since WebIDL "dictionary" types (`VideoDecoderSupport`, `PlaneLayout`, …) have no
 real JS constructor to `instanceof`-check against. **Fix:** read the getter directly off the
-already-typed result, no cast — see `mediaway-encoder-web/src/wasm.rs`
-(`video_codec_supported`, `audio_supported`) and `mediaway-decoder-web/src/wasm.rs`
+already-typed result, no cast — see `crates/mediaway-encoder/src/web/wasm.rs`
+(`video_codec_supported`, `audio_supported`) and `crates/mediaway-decoder/src/web/wasm.rs`
 (`is_webcodecs_video_decode_supported`, `read_luma_plane`'s `PlaneLayout` read).
 
 ## Second real bug: `isConfigSupported` over-reports H.264 encode in this build

@@ -1,8 +1,8 @@
-# Vulkan Video encode (`mediaway-encoder-vulkan`)
+# Vulkan Video encode (`mediaway-encoder::vulkan`)
 
-Crate: `mediaway-encoder-vulkan` (portable — not OS-suffixed; Vulkan Video is
+Module: `mediaway-encoder::vulkan` (portable — not OS-suffixed; Vulkan Video is
 one API across Windows/Linux/Android). ADR:
-[`0001-vulkan-video-encode-ash-probe.md`](../../../../crates/mediaway-encoder-vulkan/adr/0001-vulkan-video-encode-ash-probe.md).
+[`0001-vulkan-video-encode-ash-probe.md`](../../../../crates/mediaway-encoder/adr/vulkan/0001-vulkan-video-encode-ash-probe.md).
 
 **Binding crate: `vulkanalia`, not `ash`** (migrated 2026-07-29, ADR-0001's
 migration addendum) — `ash` 0.38 had no `VK_KHR_video_encode_av1` bindings and

@@ -1,6 +1,6 @@
 # Linux screen capture: portal + PipeWire
 
-Crate: `mediaway-device-linux`. ADR: [`0001-portal-pipewire-screen-capture.md`](../../../../crates/mediaway-device-linux/adr/0001-portal-pipewire-screen-capture.md).
+Module: `mediaway-device::linux`. ADR: [`0001-portal-pipewire-screen-capture.md`](../../../../crates/mediaway-device/adr/linux/0001-portal-pipewire-screen-capture.md).
 
 ## Flow
 
@@ -52,7 +52,7 @@ session. Compile-checked only (`cargo check`/`clippy`/`test` under WSL2 with
 `libpipewire-0.3-dev` installed). The `_or_skip` unit test
 (`screencast_tests.rs`) is expected to skip here and did, observed returning
 `CaptureError::AccessDenied` from the real (failing) D-Bus handshake attempt.
-Unlike `mediaway-device-windows` (DXGI/WGC/WASAPI — real hardware verification
+Unlike `mediaway-device::windows` (DXGI/WGC/WASAPI — real hardware verification
 in earlier sessions), this backend has none yet.
 
 ## Related backends (same crate, later session)

@@ -481,12 +481,14 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
-      # mediaway-device's Linux backend depends on pipewire; `cargo package`'s
-      # verification build compiles it on this ubuntu runner, so the dev
-      # headers (pipewire-0.3.pc + spa) must be installed.
-      - name: Install system deps (libpipewire for verification builds)
+      # `cargo package`'s verification build compiles the workspace's
+      # cfg(target_os = "linux") backends on this ubuntu runner, so the
+      # system dev libraries they link against must be present: libpipewire
+      # (mediaway-device), libva (mediaway-encoder's cros-libva). libclang +
+      # Linux headers are preinstalled on GitHub runners (v4l bindgen).
+      - name: Install system deps (Linux verification builds)
         shell: bash
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpipewire-0.3-dev
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpipewire-0.3-dev libva-dev
 
       # Dependency-ordered publish of the 20-crate set (see
       # tools/scripts/publish-crates.ts). The gate also runs on dry runs so

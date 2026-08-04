@@ -16,6 +16,6 @@ Framework interop: [`docs/spec/gpu-interop.md`](../../../spec/gpu-interop.md).
 | `Vulkan` | Linux/Win/Android | `VkImage` + memory cookie |
 | `WebGpu` | WASM / browser | host `texture_id` |
 
-**wgpu (Rust):** export via planned `mediaway-wgpu` to `DirectX*` / `Vulkan` / `Metal`.
+**wgpu (Rust):** export via planned `mediaway::wgpu` to `DirectX*` / `Vulkan` / `Metal`.
 
 Ownership / fences: Windows encode ADR-0003 · decode ADR-0001 · capture ADR-0001 / ADR-0004.

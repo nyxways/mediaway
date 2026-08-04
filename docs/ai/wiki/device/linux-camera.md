@@ -1,6 +1,6 @@
 # Linux camera capture: V4L2
 
-Crate: `mediaway-device-linux`, `src/camera.rs`. ADR: [`0002-v4l2-camera-capture.md`](../../../../crates/mediaway-device-linux/adr/0002-v4l2-camera-capture.md).
+Module: `mediaway-device::linux`, `src/camera.rs`. ADR: [`0002-v4l2-camera-capture.md`](../../../../crates/mediaway-device/adr/linux/0002-v4l2-camera-capture.md).
 
 ## Flow
 
@@ -59,5 +59,5 @@ flowchart LR
 ## Related
 
 - [linux-capture.md](linux-capture.md) — screen capture (same crate)
-- [windows-capture.md](windows-capture.md) — `mediaway-device-windows`
-  camera.rs for architecture comparison (Media Foundation, needs `unsafe`)
+- [windows-capture.md](windows-capture.md) — `mediaway-device::windows_camera::capture.rs`
+  for architecture comparison (Media Foundation, needs `unsafe`)

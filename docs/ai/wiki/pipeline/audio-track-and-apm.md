@@ -1,8 +1,8 @@
-# Audio track + `mediaway-audio-apm` integration on `EncodeSession`
+# Audio track + `mediaway-sw::apm` integration on `EncodeSession`
 
 `mediaway` ADR-0003 (crate-local) extends `EncodeSession` from
 video-only/single-track to an optional second (audio) track, with
-`mediaway-audio-apm`'s `AudioProcessor` (AEC3+NS+AGC2) and
+`mediaway-sw::apm`'s `AudioProcessor` (AEC3+NS+AGC2) and
 `VoiceActivityDetector` (RNN VAD) wired in transparently. **Implemented** —
 `src/session.rs` + `src/session_tests.rs`.
 
@@ -60,7 +60,7 @@ caller → write_audio_frame(&AudioFrame)
 - **Known gap, not fixed here:** a trailing audio block shorter than 10ms
   sitting in `AudioProcessor`'s internal buffer at `finish()` time is not
   flushed — `AudioProcessor` has no "flush a partial block" method today.
-  Inherited from `mediaway-audio-apm`, named in ADR-0003 § `finish()`.
+  Inherited from `mediaway-sw::apm`, named in ADR-0003 § `finish()`.
 
 See also: [audio/apm](../audio/apm.md) (the crate this integrates),
 [frame-filter-hook](frame-filter-hook.md) (the video-side precedent this

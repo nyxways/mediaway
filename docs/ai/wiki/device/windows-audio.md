@@ -2,7 +2,7 @@
 
 ## Capture
 
-- Crate: `mediaway-device-windows` — `WindowsWasapiCapture`
+- Module: `mediaway-device::windows_audio` — `WindowsWasapiCapture`
 - Sources: mic · system loopback · process loopback
 - Format: IEEE float (process loopback fixed 48 kHz stereo)
 - Mark today: **🆗** (PCM copied into queue — not CPU ⚡ yet)
@@ -10,14 +10,14 @@
   (no frame-release hook) + WASAPI's `GetBuffer`/`ReleaseBuffer` lifetime rule — see the
   ADR addendum below. Collapsed the per-period copy from zero-init + memcpy to one write.
 - Earn **⚡** with shared/borrowed buffers — [marks](../zero-copy/marks.md)
-- ADR: [0002](../../../crates/mediaway-device-windows/adr/0002-wasapi-capture.md)
+- ADR: [0002](../../../../crates/mediaway-device/adr/windows/0002-wasapi-capture.md)
 
 ## Playback
 
 - Facade: `mediaway-device` — `AudioPlayback` / `AudioPlaybackConfig` / `PlaybackError`
   ([ADR-0004](../../../crates/mediaway-device/adr/0004-audio-playback-traits.md))
-- Crate: `mediaway-device-windows` — `WindowsWasapiPlayback`
-  ([ADR-0005](../../../crates/mediaway-device-windows/adr/0005-wasapi-playback.md))
+- Module: `mediaway-device::windows_audio` — `WindowsWasapiPlayback`
+  ([ADR-0005](../../../../crates/mediaway-device/adr/windows/0005-wasapi-playback.md))
 - Direction is the mirror of capture: **push** model (`write_frame`), not a callback —
   WASAPI render has no true OS-driven callback thread to hang one off. A worker thread
   owns `IAudioClient` + `IAudioRenderClient`; the caller's thread only pushes into a

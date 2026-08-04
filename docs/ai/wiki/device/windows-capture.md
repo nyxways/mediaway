@@ -1,16 +1,16 @@
 # Windows screen capture (DXGI)
 
-- Crate: `mediaway-device-windows`
+- Module: `mediaway-device::windows_desktop`
 - API: `WindowsScreenCapture::open` — DXGI Desktop Duplication only
 - Output: `Bgra8` + `GpuBufferHandle::DirectX11` (GPU); `release_frame` before next poll
 - **Not** window — [windows-window](windows-window.md) · audio — [windows-audio](windows-audio.md)
-- Encode: HW MFT may take ARGB32 ([encoder ADR-0005](../../../crates/mediaway-encoder-windows/adr/0005-bgra-dxgi-input.md))
-- ADR: [0001](../../../crates/mediaway-device-windows/adr/0001-dxgi-desktop-duplication.md)
+- Encode: HW MFT may take ARGB32 ([encoder ADR-0005](../../../../crates/mediaway-encoder/adr/windows/0005-bgra-dxgi-input.md))
+- ADR: [0001](../../../../crates/mediaway-device/adr/windows/0001-dxgi-desktop-duplication.md)
 
 ## Shared, refcounted sessions (not per-session Zero-Copy anymore)
 
 Every `open()` now routes through a shared, refcounted registry keyed by
-output identity (`mediaway-device-windows` ADR-0006). A dedicated driver
+output identity (`mediaway-device::windows` ADR-0006). A dedicated driver
 thread owns the real `IDXGIOutputDuplication` exclusively and fans each frame
 out via one `CopyResource` per attached consumer — including the lone-
 consumer case. This means `WindowsScreenCapture` is **no longer Zero-Copy**:
@@ -19,13 +19,13 @@ twice in-process succeeding instead of failing with
 `CaptureError::AccessDenied`. `close()` now means "release my interest," not
 "the OS resource is freed" — actual `DuplicateOutput` teardown only happens
 once every attached consumer has closed. Implementation:
-`crates/mediaway-device-windows/src/dxgi_shared.rs`. Hardware-verified: two
+`crates/mediaway-device/src/windows_desktop/dxgi_shared.rs`. Hardware-verified: two
 concurrent sessions on the same output both receive independent frames.
 
 Every COM/D3D11 object this module touches is constructed and used only on
 the driver thread that owns it — never moved across threads — mirroring the
 fix `mediaway-ffi` ADR-0002 landed for `WindowsDeviceHotplug: Send`.
-ADR: [0006](../../../crates/mediaway-device-windows/adr/0006-shared-desktop-duplication.md).
+ADR: [0006](../../../../crates/mediaway-device/adr/windows/0006-shared-desktop-duplication.md).
 
 ## Single-shot capture (`capture_video_once` / `capture_next_frame_blocking`)
 

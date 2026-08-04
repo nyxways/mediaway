@@ -1,6 +1,6 @@
 # Web: WebGPU-backed `VideoFrame` (Stage 2 GPU path)
 
-`mediaway-encoder-web` `wasm.rs`: `webcodecs_gpu_video_fmp4_smoke` / `is_webgpu_video_frame_supported`.
+`mediaway-encoder::web` `wasm.rs`: `webcodecs_gpu_video_fmp4_smoke` / `is_webgpu_video_frame_supported`.
 
 ## Key finding — no `GPUTexture` → `VideoFrame` constructor
 

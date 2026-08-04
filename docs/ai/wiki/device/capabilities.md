@@ -2,7 +2,7 @@
 
 Facade: [`mediaway-device`](../../../../crates/mediaway-device) —
 `DeviceKind` / `Support` / `Unavailable` / `PermissionState` ([ADR-0003](../../../../crates/mediaway-device/adr/0003-capability-and-permission-probe.md)).
-Backends: `mediaway-device-windows`/`-linux` `capabilities.rs`. Dispatch:
+Backends: `mediaway-device::windows`/`mediaway-device::linux` `capabilities.rs`. Dispatch:
 `mediaway::platform::{device_support, request_device_permission}`.
 
 ## Two separate questions
@@ -21,7 +21,7 @@ Backends: `mediaway-device-windows`/`-linux` `capabilities.rs`. Dispatch:
 
 ```mermaid
 flowchart TB
-    subgraph Windows["Windows (mediaway-device-windows)"]
+    subgraph Windows["Windows (mediaway-device::windows)"]
         direction TB
         WQ[request_permission] --> WM{DeviceKind}
         WM -->|Microphone| WMic[open real WASAPI endpoint\n+ spawn worker thread\nthen close] --> WMicR[Granted / Denied\nfrom real result]
@@ -29,7 +29,7 @@ flowchart TB
         WM -->|Screen / Window| WSW[No cheap probe\nneeds live GPU device / HWND] --> WSWR[Unknown]
         WM -->|Camera| WCam[No backend] --> WCamR[NotSupported]
     end
-    subgraph Linux["Linux (mediaway-device-linux)"]
+    subgraph Linux["Linux (mediaway-device::linux)"]
         direction TB
         LQ[request_permission Screen] --> LPortal[xdg-desktop-portal\ncreate_session -> select_sources -> start]
         LPortal --> LDialog[["real OS consent dialog\nshown here"]]
@@ -56,7 +56,7 @@ Rust's default test harness runs `#[test]`s concurrently. Concurrent real
 DXGI/WGC/WASAPI sessions from this crate's `_or_skip` tests reproduced a
 genuine `STATUS_ACCESS_VIOLATION` crash the first time capability tests were
 added alongside the existing hardware tests — not hypothetical. Fixed with a
-crate-wide `HARDWARE_TEST_LOCK` mutex (`mediaway-device-windows/src/lib.rs`)
+module-wide `HARDWARE_TEST_LOCK` mutex (`crates/mediaway-device/src/windows/mod.rs`)
 that every real-hardware test acquires for its duration; pure-logic tests
 (e.g. `Camera` → `NotImplemented`) don't need it.
 

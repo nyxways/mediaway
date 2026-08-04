@@ -88,11 +88,11 @@ present via `rustup target list --installed`:
 
 ```
 cargo build -p mediaway-ffi --target x86_64-pc-windows-gnu
-gcc -Icrates/mediaway-ffi/include bindings/c/examples/mux_roundtrip.c \
-    -Ltarget/x86_64-pc-windows-gnu/debug -lmediaway_container_ffi -o mux_roundtrip.exe
+gcc -Icrates/mediaway-ffi/include bindings/c/examples/container/mux_roundtrip.c \
+    -Ltarget/x86_64-pc-windows-gnu/debug -lmediaway_ffi -o mux_roundtrip.exe
 ```
 
-`gcc` picks `libmediaway_container_ffi.dll.a` (import lib) over the staticlib, so
+`gcc` picks `libmediaway_ffi.dll.a` (import lib) over the staticlib, so
 `mediaway_ffi.dll` must sit next to the `.exe` at run time. Verified end-to-end
 (90 pushed / 90 recovered video+audio packets) with no Windows system libs needed beyond
 what the DLL already links in.

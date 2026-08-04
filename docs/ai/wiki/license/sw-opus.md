@@ -1,9 +1,9 @@
-# Opus SW crate — `mediaway-sw-opus`
+# Opus SW crate — `mediaway-sw::opus`
 
-- Path: `crates/mediaway-sw-opus` — **separate crate**, not a `mediaway-sw` module
-- **Status: encode + decode implemented** ([ADR-0001](../../../../crates/mediaway-sw-opus/adr/0001-unsafe-libopus-encode-decode.md),
+- Path: `crates/mediaway-sw` — module `mediaway-sw::opus`
+- **Status: encode + decode implemented** ([ADR-0001](../../../../crates/mediaway-sw/adr/opus/0001-unsafe-libopus-encode-decode.md),
   Accepted) — `OpusEncoder`/`OpusDecoder`, 18 unit tests + a round-trip integration test
-  (`tests/roundtrip.rs`, RMS-energy check on a decoded sine wave). Not yet wired into a
+  (`crates/mediaway-sw/tests/opus/roundtrip.rs`, RMS-energy check on a decoded sine wave). Not yet wired into a
   public `mediaway-encoder`/`mediaway-decoder` trait.
 - Root `README.md`'s CPU/SW table now marks Opus 🆗 (was 👻 "No pure Rust stack targeted",
   then 🛠️ while Proposed)
@@ -24,7 +24,7 @@ every `unsafe` block.
 
 - `CodecKind::Opus` already exists in `mediaway-common`, but before this crate **no encode
   path existed on any platform** — Windows has no inbox Opus encoder MFT at all (confirmed
-  via a real `MFTEnumEx` query, `mediaway-decoder-windows/src/wmf/opus.rs`).
+  via a real `MFTEnumEx` query, `crates/mediaway-decoder/src/windows/wmf/opus.rs`).
 - The one real Opus **decode** path (`WmfOpusDecoder`, same file) is hardware-verified but
   unwired — `mediaway-decoder` has no `AudioDecoder` trait yet, only `VideoDecoder`.
 - `unsafe-libopus` (crates.io, `DCNick3/unsafe-libopus`) — BSD-3-Clause, already on

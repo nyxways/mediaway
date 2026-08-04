@@ -2,24 +2,24 @@
 
 Canonical: [`docs/spec/gpu-interop.md`](../../../spec/gpu-interop.md) · ADR-0005.
 
-- Rust: `mediaway-wgpu` (2026-07-29) — real, hardware-tested `wgpu` HAL interop.
+- Rust: `mediaway::wgpu` (2026-07-29) — real, hardware-tested `wgpu` HAL interop.
   Windows: `WgpuDx12Bridge` reaches past `wgpu`'s own API via `Device::as_hal`/
   `create_texture_from_hal` (`unsafe` escape hatches, not a stabilized public
   contract) to recover the native `ID3D12Device`/`ID3D12Resource` `wgpu`'s
-  DX12 backend holds, then bridges into `mediaway-encoder-windows`'s existing
+  DX12 backend holds, then bridges into `mediaway-encoder::windows`'s existing
   `D3d12SharedEncodeBridge` (D3D12 shared heap → native D3D11 → WMF). **Path
   class: `GpuCopy`, not Zero-Copy** — `wgpu` has no D3D11 backend and WMF
   rejects `D3D11On12`, so one GPU→GPU copy + a CPU↔GPU sync stall per frame is
-  the real cost. `cargo test -p mediaway-wgpu` passes end-to-end on an
+  the real cost. `cargo test -p mediaway` passes end-to-end on an
   RTX 4090 (currently via the graceful-skip path —
   same pre-existing HW/driver limitation the underlying WMF bridge test
-  already hits on its own). See `mediaway-wgpu/adr/0001`.
+  already hits on its own). See `crates/mediaway/adr/wgpu/0001-dx12-hal-gpucopy-bridge.md`.
 - Real bug caught only by compiling: `wgpu-hal` 26.x pins its own `windows`
   crate dependency to 0.58, incompatible as a Rust *type* with this
   workspace's ordinary `windows = "0.62"` even though both wrap the same COM
   interface — bridge only raw pointer bits (`NativeHandle`) across that
   version boundary, never a typed COM object.
-- `mediaway-encoder-vulkan` (2026-07-29) — real, hardware-verified
+- `mediaway-encoder::vulkan` (2026-07-29) — real, hardware-verified
   `VK_KHR_video_queue` capability probe (`ash`). Confirmed:
   NVIDIA RTX 4090 advertises H.264+H.265 encode on queue family 4; Intel UHD
   770's Windows Vulkan driver advertises none. Real bug found+fixed:
@@ -39,19 +39,19 @@ Canonical: [`docs/spec/gpu-interop.md`](../../../spec/gpu-interop.md) · ADR-000
   profile (driver rejected the call outright). Also: HEVC's
   `picture_access_granularity` is `32x32` on this driver, not `16x16` like
   H.264 — the two must never be assumed equal. See
-  `mediaway-encoder-vulkan/adr/0001`.
+  `crates/mediaway-encoder/adr/vulkan/0001-vulkan-video-encode-ash-probe.md`.
 - Reverse direction (decode → `wgpu::Texture`), Windows: **implemented on
-  both sides**, `mediaway-wgpu` ADR-0002 (`WgpuDx12DecodeBridge`,
+  both sides**, `mediaway::wgpu` ADR-0002 (`WgpuDx12DecodeBridge`,
   **Accepted**, 2026-07-31) plus its companion `D3d11SharedDecodeBridge` in
-  `mediaway-decoder-windows` (crate-local ADR-0003, **Accepted**,
+  `mediaway-decoder::windows` (crate-local ADR-0003, **Accepted**,
   2026-07-31). `D3d11SharedDecodeBridge` creates the shared NV12 texture
   directly on the caller's own D3D11 decode device (no re-create, unlike the
   encode-direction bridge), validates same-adapter via a real **two-sided**
   LUID comparison (both devices are caller-owned here, unlike the encode
   bridge which only creates one side), and adds a same-device `GetDevice()`
   guard on the source decode texture beyond what the wgpu-side ADR's
-  contract literally asked for. `WgpuDx12DecodeBridge` (`mediaway-wgpu`,
-  `src/dx12_decode.rs`) mirrors `WgpuDx12Bridge`'s `as_hal` +
+  contract literally asked for. `WgpuDx12DecodeBridge` (`mediaway::wgpu`,
+  `src/wgpu/dx12_decode.rs`) mirrors `WgpuDx12Bridge`'s `as_hal` +
   `create_texture_from_hal` technique in reverse, wraps the bridge's shared
   D3D12 resource **once** at `new()` time (single-buffered, reused
   destination texture — same footgun class as `WgpuDx12Bridge::dest`, sharper
@@ -74,8 +74,8 @@ Canonical: [`docs/spec/gpu-interop.md`](../../../spec/gpu-interop.md) · ADR-000
   `copy_from_decoded` → `import_decoded_texture` round trip with real pixel
   content, and per-plane (`TextureAspect::Plane0`/`Plane1`) view/sampling —
   both blocked on the lack of a working H.264 decode HW MFT in testing so
-  far. See `mediaway-wgpu/adr/0002`,
-  `mediaway-decoder-windows/adr/0003`.
+  far. See `crates/mediaway/adr/wgpu/0002-decode-to-wgpu-texture-bridge.md`,
+  `crates/mediaway-decoder/adr/windows/0003-d3d11-shared-decode-bridge.md`.
 - Browser: WebGPU; native C/C++: Dawn has **zero** video-encode code in its
   entire repo (confirmed via a direct code search) — no HAL-style escape
   hatch exists there the way `wgpu` has one; encode lives entirely in the

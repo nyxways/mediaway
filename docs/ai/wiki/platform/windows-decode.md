@@ -1,11 +1,11 @@
 # Windows decode (WMF)
 
-- Crate: `mediaway-decoder-windows`
+- Module: `mediaway-decoder::windows`
 - Codecs: H.264 / HEVC / AV1 / VP9 HW decoder MFT → DX11 `GpuBufferHandle` (Nv12)
 - CPU out: Stage 1 `Unsupported`
 - README: OS · GPU / D3D11 decode 🆗 (open may skip without HW MFT)
-- ADR: [0001](../../../crates/mediaway-decoder-windows/adr/0001-wmf-h264-dx11-out.md)
-- Benches: [`docs/benchmarks.md`](../../../crates/mediaway-decoder-windows/docs/benchmarks.md)
+- ADR: [0001](../../../../crates/mediaway-decoder/adr/windows/0001-wmf-h264-dx11-out.md)
+- Benches: [`docs/benchmarks.md`](../../../../crates/mediaway-decoder/docs/windows/benchmarks.md)
   (Criterion, `sw_wmf_h264_cpu` vs `zc_wmf_h264_dx11`). Same `ad-hoc` box as the
   encode page also had **no** working Media Foundation decode HW MFT on either GPU
   (`DecodeError::Unsupported` on both NVIDIA RTX 4090 and Intel UHD 770) even though
@@ -47,13 +47,13 @@
 - DPB = one fixed-size NV12 texture array; Zero-Copy output points at DPB subresources
   directly; callers must release Zero-Copy frames promptly or get a backpressure error
   (FFmpeg hwaccel surface-pool model), never a silent overwrite.
-- ADR: [0002](../../../crates/mediaway-decoder-windows/adr/0002-d3d12-native-video-decode.md)
+- ADR: [0002](../../../../crates/mediaway-decoder/adr/windows/0002-d3d12-native-video-decode.md)
   (2026-07-30 addendum has the full hang-debugging trail).
 
 ## wgpu decode interop bridge (implemented — ADR-0003)
 
 - `D3d11SharedDecodeBridge`: shares this crate's WMF DX11 Zero-Copy decode
-  output (above) into a D3D12 resource `mediaway-wgpu`'s `WgpuDx12DecodeBridge`
+  output (above) into a D3D12 resource `mediaway::wgpu`'s `WgpuDx12DecodeBridge`
   can wrap as a `wgpu::Texture`. `GpuCopy`, not Zero-Copy — see
   [zero-copy/gpu-interop](../zero-copy/gpu-interop.md).
 - `src/d3d11_shared_decode_bridge.rs`, implemented 2026-07-31: `open` (caller
@@ -71,5 +71,5 @@
 - `copy_from_decoded` itself is still unverified against real decode output —
   there is still no working H.264 decode HW MFT available (same limitation
   `open_dx11_zero_copy_or_skip` above already hits).
-- ADR: [0003](../../../crates/mediaway-decoder-windows/adr/0003-d3d11-shared-decode-bridge.md)
+- ADR: [0003](../../../../crates/mediaway-decoder/adr/windows/0003-d3d11-shared-decode-bridge.md)
   — **Accepted**, implemented (2026-07-31 addendum has the signature-by-signature account).

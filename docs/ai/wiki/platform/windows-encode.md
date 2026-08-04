@@ -1,20 +1,20 @@
 # Windows encode (WMF)
 
-- Crate: `mediaway-encoder-windows`
+- Module: `mediaway-encoder::windows`
 - Codecs: H.264 / HEVC / AV1 / VP9 (`wmf/codec.rs` → MF subtypes)
 - CPU: H.264 inbox MFT; others via `MFTEnumEx`
 - Zero-Copy: HW MFT + DXGI; input ARGB32 then NV12 (BGRA desktop ZC)
 - **GpuCopy bridge:** `D3d12SharedEncodeBridge` — D3D12 shared → native D3D11 (`OpenSharedResource1`; not D3D11On12)
 - AAC: sync MFT (PCM → raw AAC)
-- ADR: 0001–0005 · [0006 D3D12 share](../../../crates/mediaway-encoder-windows/adr/0006-d3d12-shared-to-d3d11.md)
-  · [0007 D3D12 native encode](../../../crates/mediaway-encoder-windows/adr/0007-d3d12-native-video-encode.md)
-- Benches: [`docs/benchmarks.md`](../../../crates/mediaway-encoder-windows/docs/benchmarks.md)
+- ADR: 0001–0005 · [0006 D3D12 share](../../../../crates/mediaway-encoder/adr/windows/0006-d3d12-shared-to-d3d11.md)
+  · [0007 D3D12 native encode](../../../../crates/mediaway-encoder/adr/windows/0007-d3d12-native-video-encode.md)
+- Benches: [`docs/benchmarks.md`](../../../../crates/mediaway-encoder/docs/windows/benchmarks.md)
   (Criterion, `sw_wmf_h264_cpu` vs `zc_wmf_h264_dx11`). **Driver quirk observed on one
   `ad-hoc` box:** neither an NVIDIA RTX 4090 nor an Intel UHD 770 registered a working
   Media Foundation **encode** HW MFT for H.264 there — NVENC exists but isn't exposed
   as an `IMFTransform` on that driver; `zc_wmf_h264_dx11` came back N/A, not a bug.
   Don't assume every "real HW" box can exercise the DX11 Zero-Copy encode bench.
-  Same box, same reason: `mediaway-wgpu`'s `GpuCopy` bridge smoke test and the
+  Same box, same reason: `mediaway::wgpu`'s `GpuCopy` bridge smoke test and the
   pre-existing `auto_open_gpu_copy_via_d3d12_bridge_or_skip` test both skip
   here too (2026-07-29) — cross-checked as the identical root cause, not two
   separate bugs.
@@ -23,7 +23,7 @@
   native encode API — separate from feeding D3D12 textures into WMF —
   reachable with **zero new dependency cost** via `windows` features this
   crate already enables. **Implemented 2026-07-29:**
-  [`d3d12_video_encode`](../../../crates/mediaway-encoder-windows/src/d3d12_video_encode.rs)
+  [`d3d12_video_encode`](../../../../crates/mediaway-encoder/src/windows/d3d12_video_encode.rs)
   — H.264 Main, CPU-upload NV12, all-intra (every frame independent IDR),
   fixed CQP, hand-written Annex-B SPS/PPS (driver only emits the slice NAL).
   **Not wired into the public API yet** (`auto.rs`/`WindowsVideoEncoder`) —
@@ -45,7 +45,7 @@
   heap-type check); (3) a hardcoded H.264 level reliably fails heap creation —
   must use `D3D12_FEATURE_VIDEO_ENCODER_SUPPORT`'s driver-reported
   `SuggestedLevel`. See
-  [ADR-0007](../../../crates/mediaway-encoder-windows/adr/0007-d3d12-native-video-encode.md)
+  [ADR-0007](../../../../crates/mediaway-encoder/adr/windows/0007-d3d12-native-video-encode.md)
   for full detail + how the debug layer (`ID3D12InfoQueue`) surfaced these.
 - **HEVC extension (2026-07-29):** same module, HEVC Main profile added
   (`hevc.rs`/`ops_hevc.rs`/`bitstream_hevc.rs` — HEVC's 2-byte NAL header + VPS
@@ -70,10 +70,10 @@
   `CODEC_NOT_SUPPORTED` for every configuration tried — this NVIDIA
   consumer driver doesn't appear to implement AV1 through the **D3D12
   Video Encode API** yet, even though the same GPU's NVENC SDK path (a
-  different API) does encode AV1 (see `mediaway-encoder-nvenc`). Code is
+  different API) does encode AV1 (see `mediaway-encoder::nvenc`). Code is
   spec-complete and skips honestly (`d3d12_native_av1_encode_or_skip`) —
   no bitstream/`pic_data` bug ruled out yet since `CreateVideoEncoder` is
-  never reached. See [ADR-0007](../../../crates/mediaway-encoder-windows/adr/0007-d3d12-native-video-encode.md)'s
+  never reached. See [ADR-0007](../../../../crates/mediaway-encoder/adr/windows/0007-d3d12-native-video-encode.md)'s
   AV1 addendum. D3D12 Video Decode (`ID3D12VideoDecoder`, DXVA-shaped
   picture params, DPB) not attempted at all — distinct API surface,
   comparable scope to the encode work above.

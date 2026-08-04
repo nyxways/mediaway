@@ -1,6 +1,6 @@
 # Linux window capture: portal `SourceType::Window`
 
-Crate: `mediaway-device-linux`, `src/window.rs`. ADR: [`0003-portal-window-capture.md`](../../../../crates/mediaway-device-linux/adr/0003-portal-window-capture.md).
+Module: `mediaway-device::linux`, `src/window.rs`. ADR: [`0003-portal-window-capture.md`](../../../../crates/mediaway-device/adr/linux/0003-portal-window-capture.md).
 
 ## Shape
 

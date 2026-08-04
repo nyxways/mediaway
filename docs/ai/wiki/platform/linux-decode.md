@@ -1,6 +1,6 @@
 # Linux decode (VA-API)
 
-- Crate: `mediaway-decoder-linux`
+- Module: `mediaway-decoder::linux`
 - Bindings: [`cros-libva`](https://crates.io/crates/cros-libva) (BSD-3-Clause, `cfg(target_os =
   "linux")` dependency only — never pulled into non-Linux builds)
 - Codec: H.264 baseline/main only (`vaapi/codec.rs` → `VAProfileH264ConstrainedBaseline` /
@@ -13,14 +13,14 @@
   parse SPS/PPS/slice headers itself.
 - CPU: NV12 readback via `Picture::create_image` (`vaCreateImage`+`vaGetImage`) — pitches/
   offsets stripped by `vaapi/nv12.rs` into a tightly packed buffer (same layout as
-  `mediaway-decoder-windows`'s `wmf/cpu.rs`)
+  `mediaway-decoder::windows`'s `wmf/cpu.rs`)
 - Zero-Copy: **not implemented** — `VideoOutputPreference::ZeroCopyGpu` returns `Unsupported`
   (deferred: DMA-BUF surface export, `vaExportSurfaceHandle`)
 - Session shape: `Display`/`Config`/`Context`/`Surface` (safe `cros-libva` wrappers) +
   `Picture<S, T>` **typestate** enforcing `vaBeginPicture → vaRenderPicture → vaEndPicture →
   vaSyncSurface` ordering at compile time; pipeline creation is **lazy** (first SPS seen),
   since `open()` cannot know profile/coded resolution before that
-- ADR: [0001](../../../crates/mediaway-decoder-linux/adr/0001-vaapi-h264-cpu-out.md) —
+- ADR: [0001](../../../../crates/mediaway-decoder/adr/linux/0001-vaapi-h264-cpu-out.md) —
   binding choice, decode scope, **zero real-hardware verification** caveat
 
 ## ⚠️ Hardware verification status

@@ -15,7 +15,7 @@ shape for a second track needs a new ADR "if the shape changes materially" (see 
 does **not** touch `EncodeSession` — it composes the audio track directly against a
 shared `mediaway_container::mp4::Muxer` (`Muxer::with_fragment_batch` → `add_track` ×2 →
 `begin` → interleaved `push_packet`), the exact pattern already proven in
-`mediaway-encoder-windows/tests/av_fmp4_smoke.rs`. Smaller diff, no new ADR triggered.
+`crates/mediaway-encoder/tests/windows/av_fmp4_smoke.rs`. Smaller diff, no new ADR triggered.
 
 ```mermaid
 flowchart LR
@@ -38,7 +38,7 @@ flowchart LR
 
 DXGI Desktop Duplication yields `PixelFormat::Bgra8` GPU textures. The H.264 Zero-Copy
 path accepts `Bgra8` directly (negotiates `MFVideoFormat_ARGB32`, falling back to NV12
-only if the MFT rejects it — see `mediaway-encoder-windows/src/wmf/shared.rs`, the
+only if the MFT rejects it — see `crates/mediaway-encoder/src/windows/wmf/shared.rs`, the
 "live-recorder pattern"). So the captured texture is pushed straight into
 `VideoEncoder::push_frame` with no BGRA→NV12 conversion step — that conversion is *not*
 needed here, unlike `examples/pipeline/screen_record.rs`

@@ -19,14 +19,14 @@ Canonical: [`docs/conventions/hooks.md`](../../../conventions/hooks.md) § CI ·
 
 - **wasm needs `--cfg=web_sys_unstable_apis`**: the WebCodecs/WebGPU web-sys bindings
   (`AudioEncoder`, `VideoEncoder`, `Gpu*`, …) are cfg-gated; without it every import in
-  `mediaway-encoder-web/src/wasm.rs` fails with E0432. Committed as
+  `crates/mediaway-encoder/src/web/wasm.rs` fails with E0432. Committed as
   `.cargo/config.toml` (`[target.wasm32-unknown-unknown] rustflags`), un-ignored in
   `.gitignore` — it was local-only and gitignored before the first push, so CI broke.
-- **Ubuntu rust job needs pipewire system deps**: `mediaway-device-linux`'s `pipewire`
+- **Ubuntu rust job needs pipewire system deps**: `mediaway-device::linux`'s `pipewire`
   crate → `libpipewire-0.3-dev` + `libspa-0.2-dev` via apt (`libspa-sys` build script).
 - **NVENC tests panic without the driver**: the `nvenc` crate unwraps its DLL load, so
   `_or_skip_without_hw` tests panicked on runners without NVENC. `NvencSession::open` now
-  probes `nvEncodeAPI64.dll` first and returns `Err` (see `mediaway-encoder-nvenc`).
+  probes `nvEncodeAPI64.dll` first and returns `Err` (see `mediaway-encoder::nvenc`).
 - **Stale fixture cache hides broken BLAKE3 constants**: a locally cached test-media
   fixture whose bytes still match an outdated constant passes pre-push and fails CI
   (which regenerates from scratch). Pre-push now clears `local/.cache/test-media`

@@ -31,7 +31,7 @@ Rust media stack: **high-level pipelines** built from **first-class low-level** 
 
 Design: `[docs/spec/vision.md](docs/spec/vision.md)`.
 
-Covers device capture (camera, mic, screen), encode/decode, containers, and planned FFI / WASM bindings across Windows, Web, Linux, other. Layout: sans-io cores, per-OS backends, facade crates (e.g. `mediaway-device` + `mediaway-device-windows`). C ABI: per-capability `mediaway-*-ffi` (optional umbrella) — `[docs/spec/c-ffi.md](docs/spec/c-ffi.md)` · `[docs/spec/crate-packaging.md](docs/spec/crate-packaging.md)`.
+Covers device capture (camera, mic, screen), encode/decode, containers, and planned FFI / WASM bindings across Windows, Web, Linux, other. Layout: sans-io cores, facade crates with OS backends as `#[cfg]`-gated modules (e.g. `mediaway-device` contains `windows`/`linux`/`web`). C ABI: a single `mediaway-ffi` facade — `[docs/spec/c-ffi.md](docs/spec/c-ffi.md)` · `[docs/spec/crate-packaging.md](docs/spec/crate-packaging.md)`.
 
 **Repository:** [github.com/nyxways/mediaway](https://github.com/nyxways/mediaway)
 
@@ -77,7 +77,11 @@ let v_track = muxer.add_track(StreamInfo::Video {
 })?;
 
 let mut muxer = muxer.begin(); // Open -> Live
-muxer.push_packet(&Packet { stream_id: v_track, pts: 0, .. })?;
+muxer.push_packet(&Packet {
+    stream_id: v_track, pts: 0, dts: 0, duration: 1,
+    is_keyframe: true, is_discard: false,
+    payload: Bytes::new(),
+})?;
 muxer.flush();
 
 let mut mp4_bytes: Vec<u8> = Vec::new();
@@ -134,11 +138,12 @@ lives entirely in `mediaway::platform`.
 
 ```rust
 use mediaway_common::Rational;
-use mediaway_device::{Select, VideoCaptureConfig, AudioCaptureConfig};
+use mediaway_device::desktop::DesktopVideoCaptureConfig;
+use mediaway_device::{Select, AudioCaptureConfig};
 use mediaway::{platform, EncodeSession};
 
 let tb = Rational::new(1, 30);
-let mut cap = platform::ScreenCapture::open(&VideoCaptureConfig::screen(Select::Default, tb))?;
+let mut cap = platform::ScreenCapture::open(&DesktopVideoCaptureConfig::screen(Select::Default, tb))?;
 let mut mic = platform::Microphone::open(&AudioCaptureConfig::microphone(Rational::new(1, 48_000)))?;
 let encoder = platform::AutoEncoder::open(&enc_config)?;
 let mut session = EncodeSession::open(encoder)?;
@@ -195,12 +200,12 @@ architected with **selective linking**:
 | Language / Host | Interop Path | Status | Target Ergonomics & Use Cases | Examples |
 |-----------------|--------------|--------|-------------------------------|----------|
 | **Rust** | Native crates | ✅ primary | Primary API (100% Zero-Copy, Sans-IO, traits) | [`examples/`](examples/) |
-| **C** | Direct C ABI | ✅ verified | ABI contract baseline, zero-overhead FFI | [`bindings/c/examples/`](bindings/c/examples/) |
-| **C++** | Thin RAII C ABI | ✅ verified | Native desktop apps, custom engines, rendering pipelines | [`bindings/cpp/examples/`](bindings/cpp/examples/) |
-| **C# (.NET)** | P/Invoke | ✅ verified | Windows desktop, WPF/WinUI, Unity native plugins | [`bindings/csharp/`](bindings/csharp/) |
-| **Python** | `ctypes` / `cffi` | ✅ verified | Data processing pipelines, ML model input/output streams | [`bindings/python/examples/`](bindings/python/examples/) |
-| **Node.js (TS)** | Native Addon / N-API (koffi FFI today) | ✅ verified | Node.js server-side video processing and CLI tools | [`bindings/nodejs/examples/`](bindings/nodejs/examples/) |
-| **Browser (TS)** | WASM + WebCodecs | ✅ verified | Browser-native high-performance video apps (no C FFI) | [`bindings/browser/`](bindings/browser/) |
+| [**C**](bindings/c/) | Direct C ABI | ✅ verified | ABI contract baseline, zero-overhead FFI | [`bindings/c/examples/`](bindings/c/examples/) |
+| [**C++**](bindings/cpp/) | Thin RAII C ABI | ✅ verified | Native desktop apps, custom engines, rendering pipelines | [`bindings/cpp/examples/`](bindings/cpp/examples/) |
+| [**C# (.NET)**](bindings/csharp/) | P/Invoke | ✅ verified | Windows desktop, WPF/WinUI, Unity native plugins | [`bindings/csharp/`](bindings/csharp/) |
+| [**Python**](bindings/python/) | `ctypes` / `cffi` | ✅ verified | Data processing pipelines, ML model input/output streams | [`bindings/python/examples/`](bindings/python/examples/) |
+| [**Node.js (TS)**](bindings/nodejs/) | Native Addon / N-API (koffi FFI today) | ✅ verified | Node.js server-side video processing and CLI tools | [`bindings/nodejs/examples/`](bindings/nodejs/examples/) |
+| [**Browser (TS)**](bindings/browser/) | WASM + WebCodecs | ✅ verified | Browser-native high-performance video apps (no C FFI) | [`bindings/browser/`](bindings/browser/) |
 | **Unity / Godot** | Native GPU Plugin | Planned | Seamless Zero-Copy GPU texture sharing & camera/screen record | — |
 
 Status legend: ✅ verified = real binding source built and run against the native
@@ -253,7 +258,7 @@ OS codec APIs (WMF, WebCodecs, VA-API, …) fed with CPU buffers (upload may app
 > (encode→Ogg→ffprobe 2.000 s + mpv; decode of ffmpeg-produced Opus → exact PCM).
 
 
-Detail: [`mediaway-decoder-windows`](crates/mediaway-decoder-windows/README.md) · [`mediaway-encoder-windows`](crates/mediaway-encoder-windows/README.md) · [`mediaway-decoder-web`](crates/mediaway-decoder-web/README.md) · [`mediaway-encoder-web`](crates/mediaway-encoder-web/README.md) · [`mediaway-decoder-linux`](crates/mediaway-decoder-linux/README.md) · [`mediaway-encoder-linux`](crates/mediaway-encoder-linux/README.md).
+Detail: backends live as `#[cfg]`-gated modules — `mediaway-decoder::{windows, web, linux}`, `mediaway-encoder::{windows, web, linux}`.
 
 ### OS · GPU
 
@@ -269,13 +274,13 @@ Same OS APIs with GPU surfaces (`GpuBufferHandle`, DXGI, …). Video only — au
 | ProRes       | 👻      | 👻  | 👻    | 👻    | 👻      |
 
 
-Detail: [`mediaway-encoder-windows`](crates/mediaway-encoder-windows/README.md) · [`mediaway-encoder-web`](crates/mediaway-encoder-web/README.md).
+Detail: `mediaway-encoder::{windows, web}` (`windows` = WMF + DX11 Zero-Copy; `web` = WebCodecs + WebGPU).
 
 ### GPU — by API
 
 **Graphics interop** (D3D11, Vulkan, WebGPU, …) — which API your textures use. Orthogonal to OS · CPU/GPU. **Video only.**
 
-Adapters: [`mediaway-wgpu`](crates/mediaway-wgpu/README.md) 🆗 (DX12 ↔ WMF `GpuCopy` bridges) · Dawn/`webgpu.h` ❌ — WebGPU's only video interop is *consuming* an already-decoded frame via `GPUExternalTexture`; the spec has no video-encode entry point at all, so the **WebGPU column is ❌ for every codec** below, not a "haven't gotten to it yet" 🛠️.
+Adapters: [`mediaway`](crates/mediaway/README.md) `wgpu` module 🆗 (DX12 ↔ WMF `GpuCopy` bridges) · Dawn/`webgpu.h` ❌ — WebGPU's only video interop is *consuming* an already-decoded frame via `GPUExternalTexture`; the spec has no video-encode entry point at all, so the **WebGPU column is ❌ for every codec** below, not a "haven't gotten to it yet" 🛠️.
 
 
 | Codec        | D3D11  | D3D12 | Vulkan | Metal | WebGPU |
@@ -286,15 +291,15 @@ Adapters: [`mediaway-wgpu`](crates/mediaway-wgpu/README.md) 🆗 (DX12 ↔ WMF `
 | VP9          | 🆗 / 🆗 | 👻    | 👻     | 👻    | ❌    |
 
 
-Detail: [`mediaway-wgpu`](crates/mediaway-wgpu/README.md) · [`mediaway-encoder-windows`](crates/mediaway-encoder-windows/README.md) · [`mediaway-decoder-windows`](crates/mediaway-decoder-windows/README.md) · [`mediaway-encoder-vulkan`](crates/mediaway-encoder-vulkan/README.md) · [`mediaway-decoder-vulkan`](crates/mediaway-decoder-vulkan/README.md).
+Detail: [`mediaway`](crates/mediaway/README.md) `wgpu` module · `mediaway-encoder::{windows, vulkan}` · `mediaway-decoder::{windows, vulkan}`.
 
 ### GPU — by vendor
 
 **Vendor SDKs** (NVENC, AMF, …) — separate from OS + graphics interop. Not the default Auto path. **Video only.**
 
-- **NVIDIA** — [`mediaway-encoder-nvenc`](crates/mediaway-encoder-nvenc/README.md), **hardware-verified** H.264/HEVC/AV1 CPU-upload encode.
-- **Intel** — [`mediaway-encoder-quicksync`](crates/mediaway-encoder-quicksync/README.md), **hardware-verified** H.264/HEVC encode; AV1 is ❌ (no hardware support on this iGPU generation).
-- **AMD** — [`mediaway-encoder-amf`](crates/mediaway-encoder-amf/README.md), 🛠️ deferred (binding/dependency blockers, not an AMD capability gap).
+- **NVIDIA** — `mediaway-encoder::nvenc` ([`mediaway-encoder`](crates/mediaway-encoder/README.md)), **hardware-verified** H.264/HEVC/AV1 CPU-upload encode.
+- **Intel** — `mediaway-encoder::quicksync` ([`mediaway-encoder`](crates/mediaway-encoder/README.md)), **hardware-verified** H.264/HEVC encode; AV1 is ❌ (no hardware support on this iGPU generation).
+- **AMD** — AMF backend 🛠️ deferred (binding/dependency blockers, not an AMD capability gap).
 
 | Codec        | NVIDIA | AMD | Intel | Apple | Qualcomm |
 | ------------ | ------ | --- | ----- | ----- | -------- |
@@ -306,7 +311,7 @@ Detail: [`mediaway-wgpu`](crates/mediaway-wgpu/README.md) · [`mediaway-encoder-
 
 ### CPU / SW
 
-**Pure Rust sans-io** software codecs — no C codec FFI (`OpenH264`, `libvpx`, …). Opt-in only; never a silent HW fallback. Detail: [`mediaway-sw`](crates/mediaway-sw/README.md), [`mediaway-sw-opus`](crates/mediaway-sw-opus/README.md).
+**Pure Rust sans-io** software codecs — no C codec FFI (`OpenH264`, `libvpx`, …). Opt-in only; never a silent HW fallback. Detail: [`mediaway-sw`](crates/mediaway-sw/README.md) (H.264 decode, AV1/Opus encode, PCM, audio processing).
 
 
 | Codec                                          | Status |
@@ -316,7 +321,7 @@ Detail: [`mediaway-wgpu`](crates/mediaway-wgpu/README.md) · [`mediaway-encoder-
 | [AV1](crates/mediaway-sw/README.md)               | 🆗     |
 | VP9                                                | 👻     |
 | AAC                                                | 👻     |
-| [Opus](crates/mediaway-sw-opus/README.md)         | 🆗     |
+| [Opus](crates/mediaway-sw/README.md)         | 🆗     |
 | [PCM / raw](crates/mediaway-sw/README.md)         | 🆗     |
 
 <!-- ANCHOR_END: codec-support -->
@@ -347,7 +352,7 @@ Freestanding mux/demux cores plus the `mediaway-container` facade (wraps all eig
 What `mediaway-device` backends target (camera, mic, **screen**, **window**). Same marks as § Codec support. **⚡** = Zero-Copy out (GPU `GpuBufferHandle` **or** shared CPU PCM without payload copy); cell = **CPU capture / GPU surface** where both apply (`🆗 / ⚡`).
 
 
-| Source           | [Windows](crates/mediaway-device-windows/README.md) | [Web](crates/mediaway-device-web/README.md) | [Linux](crates/mediaway-device-linux/README.md) | Apple | Android |
+| Source           | [Windows](crates/mediaway-device/README.md) | [Web](crates/mediaway-device/README.md) | [Linux](crates/mediaway-device/README.md) | Apple | Android |
 | ---------------- | ------- | --- | ----- | ----- | ------- |
 | Camera (video)   | 🆗      | 🆗  | 👻   | 👻    | 👻      |
 | Microphone       | 🆗      | 🆗  | 👻   | 👻    | 👻      |
@@ -360,31 +365,31 @@ What `mediaway-device` backends target (camera, mic, **screen**, **window**). Sa
 
 <!-- ANCHOR: crates -->
 
-| Crate                      | Role                                                        |
+| Crate | Role |
 | -------------------------- | ----------------------------------------------------------- |
-| `mediaway-common`          | Shared types (`Rational`, formats, `GpuBufferHandle`)       |
-| `iso-bmff`                 | Freestanding ISOBMFF/MP4 mux+demux                          |
-| `iso-cenc`                 | Freestanding ClearKey CENC                                  |
-| `ebml-webm`                | Freestanding EBML/WebM mux + demux                          |
-| `mediaway-container`       | Container facade + Mediaway-typed MP4 + WebM (mux + demux)  |
-| `mediaway`        | Convenience pipeline (`EncodeSession` + platform dispatch)  |
-| `mediaway-encoder`         | Encode facade / traits                                      |
-| `mediaway-encoder-windows` | Windows WMF / DX11 encode backend                           |
-| `mediaway-decoder`         | Decode facade / traits                                      |
-| `mediaway-decoder-windows` | Windows WMF / DX11 decode backend                           |
-| `mediaway-device`          | Capture + playback facade / traits                          |
-| `mediaway-device-windows`  | Windows DXGI screen · WGC window · WASAPI capture + playback |
-| `mediaway-device-linux`    | Linux portal `ScreenCast` + PipeWire screen capture (CPU copy) |
-| `mediaway-encoder-vulkan`  | Vulkan Video encode backend (`vulkanalia`) — hardware-verified H.264 + HEVC `VideoEncoder`; AV1 implemented, driver-blocked |
-| `mediaway-decoder-vulkan`  | Vulkan Video decode backend (`vulkanalia`) — H.264 general-GOP decode **hardware-verified**; HEVC sans-io real+tested, GPU path still unresolved; AV1 follow-up |
-| `mediaway-wgpu`            | `wgpu` HAL interop ↔ Mediaway `GpuBufferHandle` (Windows: DX12 ↔ WMF `GpuCopy` bridges, encode + decode) |
-| `iso-bmff-wasm`            | WASM mux/demux bindings for browser E2E                     |
-| `mediaway-encoder-web`     | WebCodecs encode backend (wasm32)                           |
-| `mediaway-device-web`      | Browser capture (`getUserMedia` / `getDisplayMedia`)        |
-| `mediaway-sw`              | Pure Rust sans-io SW codec facade                           |
-| `mediaway-test-media`      | Rust-generated test fixtures (local cache only)             |
-| `mediaway-avcli`           | AV CLI compat binary (not affiliated with FFmpeg)           |
-| `mediaway-avprobe`         | Media probe CLI (not affiliated with FFmpeg)                |
+| `mediaway-common`          | Shared types (`Rational`, formats, `GpuBufferHandle`, packets/frames) |
+| `iso-bmff`                 | MP4 / ISOBMFF mux + demux core (fMP4, ClearKey CENC) |
+| `iso-cenc`                 | ClearKey CENC sample crypto (AES-128-CTR) |
+| `ebml-webm`                | EBML / WebM mux + demux core |
+| `riff-wave-core`           | WAV / RIFF PCM mux + demux core |
+| `adts-core`                | ADTS (raw AAC) mux + demux core |
+| `mpeg-audio`               | MP3 (MPEG Layer III) mux + demux core |
+| `ogg-core`                 | Ogg page/packet mux + demux core |
+| `flv-core`                 | FLV tag mux + demux core |
+| `mpeg-ts-core`             | MPEG-2 Transport Stream mux + demux core |
+| `rtmp`                     | RTMP publish-client handshake + chunk stream + AMF0 command mux |
+| `mediaway-container`       | Container facade: shared traits + typed `mp4`/`webm`/`wav`/`adts`/`mp3`/`ogg`/`flv`/`ts` |
+| `mediaway-encoder`         | Encode traits + `auto` selection; Windows WMF / NVENC / QuickSync / Vulkan / WebCodecs / VA-API backends |
+| `mediaway-decoder`         | Decode traits; Windows WMF (HW, DX11 Zero-Copy) / Vulkan / WebCodecs backends |
+| `mediaway-device`          | Capture + playback traits; Windows DXGI/WGC/WASAPI, Linux portal+PipeWire+V4L2, Web getUserMedia/getDisplayMedia |
+| `mediaway`                 | Convenience pipeline (`EncodeSession` + `platform` auto-dispatch + wgpu interop) |
+| `mediaway-sw`              | Pure Rust sans-io software codecs (H.264 decode, AV1/Opus encode, PCM, audio processing) |
+| `vpl-sys`                  | oneVPL FFI bindings (runtime-loaded; no build-time link) |
+| `iso-bmff-wasm`            | WASM bindings for `iso-bmff` (browser) |
+| `mediaway-ffi`             | Single C ABI facade (container / device / pipeline) |
+| `mediaway-test-media`      | Rust-generated test fixtures (local cache only) |
+| `mediaway-avcli`           | AV CLI (mux; not affiliated with FFmpeg) |
+| `mediaway-avprobe`         | Media probe CLI (not affiliated with FFmpeg) |
 
 <!-- ANCHOR_END: crates -->
 

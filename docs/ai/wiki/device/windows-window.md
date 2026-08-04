@@ -1,6 +1,6 @@
 # Windows window capture (WGC)
 
-- Crate: `mediaway-device-windows`
+- Module: `mediaway-device::windows_desktop`
 - API: `WindowsWindowCapture::open` — WinRT Graphics Capture (`CreateForWindow`)
 - Source: `CaptureSource::Window` / `VideoCaptureConfig::window` (≠ Screen)
 - Output: `Bgra8` + `DirectX11` Zero-Copy; hold frame until `release_frame`
@@ -9,4 +9,4 @@
 - Resize: `poll_frame` detects a `Frame.ContentSize` mismatch and calls
   `Direct3D11CaptureFramePool::Recreate` at the new size before delivering the frame
   (previously every frame after a resize was silently skipped forever)
-- ADR: [0004](../../../crates/mediaway-device-windows/adr/0004-wgc-window-capture.md)
+- ADR: [0004](../../../../crates/mediaway-device/adr/windows/0004-wgc-window-capture.md)

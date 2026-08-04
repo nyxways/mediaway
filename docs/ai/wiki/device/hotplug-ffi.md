@@ -75,7 +75,7 @@ successfully-constructed handle used to crash the process
 `WindowsDeviceHotplug::open()` calling `CoUninitialize()` before returning
 while still storing the `IMMDeviceEnumerator` obtained under that torn-down
 apartment; `close()` later called `UnregisterEndpointNotificationCallback`
-through the now-stale pointer. Fixed in `mediaway-device-windows/src/hotplug.rs`
+through the now-stale pointer. Fixed in `crates/mediaway-device/src/windows/hotplug.rs`
 by having `HotplugSession` own its `ComGuard` for the object's whole
 lifetime instead of two independent per-call scopes. Full write-up: ADR-0002's
 2026-07-31 addenda; the fix's own thread-affinity requirement (`open`/

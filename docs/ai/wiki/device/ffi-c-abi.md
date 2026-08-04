@@ -42,7 +42,7 @@ just-captured GPU handle — a real bug found and fixed in the wrapped
   `video.rs`/`audio.rs`/`hotplug.rs` (each its own Cargo feature; hotplug: see
   [`hotplug-ffi.md`](hotplug-ffi.md)), `lib.rs`. Local `#[cfg(windows)]`/
   `#[cfg(target_os = "linux")]` Camera/Screen dispatch lives inside `video.rs`,
-  mirroring (not importing) `mediaway_pipeline::platform`'s shape.
+  mirroring (not importing) `mediaway::platform`'s shape.
 
 ## Type reuse vs. new types
 
@@ -88,13 +88,13 @@ MSVC output, so build for `x86_64-pc-windows-gnu` instead:
 
 ```
 cargo build -p mediaway-ffi --target x86_64-pc-windows-gnu
-gcc -Icrates/mediaway-ffi/include bindings/c/examples/camera_record.c \
-    -Ltarget/x86_64-pc-windows-gnu/debug -lmediaway_device_ffi -lmediaway_pipeline_ffi \
+gcc -Icrates/mediaway-ffi/include bindings/c/examples/device/camera_record.c \
+    -Ltarget/x86_64-pc-windows-gnu/debug -lmediaway_ffi \
     -o camera_record.exe
 ```
 
-`camera_record.c` links both libs but `#include`s only `<mediaway/device.h>` (co-including
-`<mediaway/pipeline.h>` fails: duplicate `mediaway_rational_t` tag redefinition) — Both
-DLLs must sit next to the `.exe`. Verified pre-ADR-0003: real 1920x1080 "WeVO WV-1080"
+`camera_record.c` links the merged lib but `#include`s only `<mediaway/device.h>` (co-including
+`<mediaway/pipeline.h>` fails: duplicate `mediaway_rational_t` tag redefinition) — The
+DLL must sit next to the `.exe`. Verified pre-ADR-0003: real 1920x1080 "WeVO WV-1080"
 camera + 48000 Hz/1ch mic captured into `out_camera.mp4`. `screen_record.c` predates
 ADR-0003's `gpu_device` parameter and needs updating to build again — not done yet.

@@ -19,9 +19,10 @@
 # PyPI needs NO token: Trusted Publishing (OIDC) is configured on pypi.org
 # for nyxways/mediaway@release.yml (environment: release) — see the pypi job.
 #
-# crates.io: dependency-ordered publish of the 19-crate set (9 freestanding
-# cores + the mediaway-* family + avcli/avprobe + vpl-sys; rtmp and
-# mediaway-ffi stay `publish = false`) via tools/scripts/publish-crates.ts.
+# crates.io: dependency-ordered publish of the 20-crate set (9 freestanding
+# cores + the mediaway-* family incl. avcli/avprobe + vpl-sys +
+# mediaway-test-media; rtmp, mediaway-ffi and iso-bmff-wasm stay
+# `publish = false`) via tools/scripts/publish-crates.ts.
 #
 # npm and NuGet need NO long-lived tokens: the @mediaway org uses npm OIDC
 # Trusted Publishing (npmjs.com → org Settings → Trusted Publishing), and
@@ -117,6 +118,11 @@ jobs:
   native-assets:
     name: native assets (win64 DLLs)
     runs-on: windows-latest
+    # crates.io publishes first (dependency-ordered, with per-crate
+    # verification builds); the native binding build and everything after it
+    # waits for that gate so a registry failure aborts the whole pipeline
+    # before any binding artifacts are produced.
+    needs: [version, crates]
     steps:
       - uses: actions/checkout@v4
 
@@ -215,6 +221,11 @@ jobs:
         run: rustup target add wasm32-unknown-unknown
       - name: Install wasm-pack
         uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          # Pin: the action's default 'latest' lookup falls back to 0.9.1,
+          # whose manifest parser rejects workspace-inherited package fields
+          # (license/repository). 0.15.0 supports them.
+          version: 'v0.15.0'
 
       - name: C# round-trip test (Container, no hardware)
         shell: bash
@@ -262,6 +273,11 @@ jobs:
 
       - name: Install wasm-pack
         uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          # Pin: the action's default 'latest' lookup falls back to 0.9.1,
+          # whose manifest parser rejects workspace-inherited package fields
+          # (license/repository). 0.15.0 supports them.
+          version: 'v0.15.0'
 
       - uses: oven-sh/setup-bun@v2
 
@@ -320,6 +336,10 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
+          # Diagnostics for the OIDC trusted-publishing flow (temporary).
+          echo "node: $(node --version) npm: $(npm --version)"
+          echo "ACTIONS_ID_TOKEN_REQUEST_URL: ${ACTIONS_ID_TOKEN_REQUEST_URL:+present}"
+          echo "ACTIONS_ID_TOKEN_REQUEST_TOKEN: ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:+present}"
           PROV=""
           if [[ "${{ github.event.inputs.npm_provenance }}" != "false" ]]; then PROV="--provenance"; fi
           # No auth token: npm OIDC Trusted Publishing authenticates this
@@ -332,13 +352,13 @@ jobs:
             if npm view "@mediaway/$p@$VERSION" version >/dev/null 2>&1; then
               echo "@mediaway/$p@$VERSION already published — skip"
             else
-              (cd "bindings/nodejs/packages/$p" && npm publish --access public $PROV)
+              (cd "bindings/nodejs/packages/$p" && npm publish --access public $PROV --loglevel verbose)
             fi
           done
           if npm view "@mediaway/browser@$VERSION" version >/dev/null 2>&1; then
             echo "@mediaway/browser@$VERSION already published — skip"
           else
-            (cd bindings/browser/packages/browser && npm publish --access public $PROV)
+            (cd bindings/browser/packages/browser && npm publish --access public $PROV --loglevel verbose)
           fi
 
   nuget:
@@ -475,7 +495,16 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
-      # Dependency-ordered publish of the 19-crate set (see
+      # `cargo package`'s verification build compiles the workspace's
+      # cfg(target_os = "linux") backends on this ubuntu runner, so the
+      # system dev libraries they link against must be present: libpipewire
+      # (mediaway-device), libva (mediaway-encoder's cros-libva). libclang +
+      # Linux headers are preinstalled on GitHub runners (v4l bindgen).
+      - name: Install system deps (Linux verification builds)
+        shell: bash
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpipewire-0.3-dev libva-dev
+
+      # Dependency-ordered publish of the 20-crate set (see
       # tools/scripts/publish-crates.ts). The gate also runs on dry runs so
       # `cargo package` validation happens for every crate before any real
       # upload.

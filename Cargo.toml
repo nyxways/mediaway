@@ -57,49 +57,49 @@ authors = ["NyxWays"]
 publish = false # early development — see docs/spec/status.md
 
 [workspace.dependencies]
-mediaway-common = { path = "crates/mediaway-common", version = "0.1.0" }
-iso-cenc = { path = "crates/iso-cenc", version = "0.1.0" }
-iso-bmff = { path = "crates/iso-bmff", version = "0.1.0" }
-ebml-webm = { path = "crates/ebml-webm", version = "0.2.0" }
-riff-wave-core = { path = "crates/riff-wave-core", version = "0.1.0" }
-adts-core = { path = "crates/adts-core", version = "0.1.0" }
-mpeg-audio = { path = "crates/mpeg-audio", version = "0.1.0" }
-ogg-core = { path = "crates/ogg-core", version = "0.1.0" }
-flv-core = { path = "crates/flv-core", version = "0.1.0" }
-mpeg-ts-core = { path = "crates/mpeg-ts-core", version = "0.1.0" }
+mediaway-common = { path = "crates/mediaway-common", version = "0.1.2" }
+iso-cenc = { path = "crates/iso-cenc", version = "0.1.1" }
+iso-bmff = { path = "crates/iso-bmff", version = "0.1.1" }
+ebml-webm = { path = "crates/ebml-webm", version = "0.2.1" }
+riff-wave-core = { path = "crates/riff-wave-core", version = "0.1.1" }
+adts-core = { path = "crates/adts-core", version = "0.1.1" }
+mpeg-audio = { path = "crates/mpeg-audio", version = "0.1.1" }
+ogg-core = { path = "crates/ogg-core", version = "0.1.1" }
+flv-core = { path = "crates/flv-core", version = "0.1.1" }
+mpeg-ts-core = { path = "crates/mpeg-ts-core", version = "0.1.1" }
 rtmp = { path = "crates/rtmp", version = "0.1.0" }
-mediaway-container = { path = "crates/mediaway-container", version = "0.1.0" }
-mediaway-ffi = { path = "crates/mediaway-ffi", version = "0.1.0" }
+mediaway-container = { path = "crates/mediaway-container", version = "0.1.2" }
+mediaway-ffi = { path = "crates/mediaway-ffi", version = "0.1.2" }
 
-mediaway = { path = "crates/mediaway", version = "0.1.0" }
+mediaway = { path = "crates/mediaway", version = "0.1.2" }
 
-mediaway-encoder = { path = "crates/mediaway-encoder", version = "0.1.0" }
-
-
-
-
-vpl-sys = { path = "crates/vpl-sys", version = "0.1.0" }
-
-mediaway-decoder = { path = "crates/mediaway-decoder", version = "0.1.0" }
+mediaway-encoder = { path = "crates/mediaway-encoder", version = "0.1.2" }
 
 
 
-mediaway-device = { path = "crates/mediaway-device", version = "0.1.0" }
+
+vpl-sys = { path = "crates/vpl-sys", version = "0.1.2" }
+
+mediaway-decoder = { path = "crates/mediaway-decoder", version = "0.1.2" }
 
 
+
+mediaway-device = { path = "crates/mediaway-device", version = "0.1.2" }
 
 
 
 
 
 
-iso-bmff-wasm = { path = "crates/iso-bmff-wasm", version = "0.1.0" }
 
 
-mediaway-sw = { path = "crates/mediaway-sw", version = "0.1.0" }
+iso-bmff-wasm = { path = "crates/iso-bmff-wasm", version = "0.1.2" }
 
 
-mediaway-test-media = { path = "crates/mediaway-test-media", version = "0.1.0" }
+mediaway-sw = { path = "crates/mediaway-sw", version = "0.1.2" }
+
+
+mediaway-test-media = { path = "crates/mediaway-test-media", version = "0.1.2" }
 
 # Official Win32 projection (MIT OR Apache-2.0). Feature set per consumer crate.
 windows = { version = "0.62", default-features = false }

@@ -22,11 +22,20 @@
 
   <ItemGroup>
     <!--
-      Dev-time only: no real NuGet native-asset packaging exists yet (ADR-0017 build
-      sequence step 5). Points straight at the workspace's cargo output so this test
-      exercises the real native library, not a mock.
+      Native library for the P/Invoke layer. No real NuGet native-asset packaging exists
+      yet (ADR-0017 build sequence step 5), so the DLL is copied in directly: prefer the
+      release-staged copy under bindings/csharp/runtime/win-x64/native (populated by
+      tools/scripts/copy-native-dlls.ts — what the release workflow's native-assets job
+      stages and the RC-stage binding check downloads), and fall back to the workspace's
+      dev-time cargo output so a local `dotnet test` still works without a staging step.
+      Exactly one condition holds, so exactly one DLL is copied.
     -->
+    <None Include="..\..\runtime\win-x64\native\mediaway_ffi.dll"
+          Condition="Exists('..\..\runtime\win-x64\native\mediaway_ffi.dll')"
+          Link="mediaway_ffi.dll"
+          CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\..\..\target\debug\mediaway_ffi.dll"
+          Condition="!Exists('..\..\runtime\win-x64\native\mediaway_ffi.dll')"
           Link="mediaway_ffi.dll"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

@@ -89,6 +89,24 @@ aspirational):
 | `pipeline/screen_record.py` | screen + mic → encode → MP4 | 🚧 aspirational — `VideoCapture.open(source="screen")` raises `CaptureUnsupportedError` today |
 | `device/capture_screen.py` | screen capture only | 🚧 same gap, capture-only |
 
+## Testing
+
+The release pipeline stages the built `mediaway_ffi.dll` at
+`mediaway/_native/mediaway_ffi.dll` (the wheel's native directory). The
+round-trip binding check validates that DLL against the documented ABI
+contract:
+
+```
+python tests/test_mux_roundtrip.py
+```
+
+Run from `bindings/python/`. Pure std-lib (no pytest), assert-based: it muxes
+90 synthetic H.264 video + 90 synthetic AAC audio packets into a fragmented
+MP4, demuxes the bytes back, and asserts the 1:1 packet round-trip plus the
+recovered stream metadata (video codec/dimensions/frame rate, audio codec). A
+failed assertion exits nonzero, which is the CI job's failure signal. Pure CPU
+— no hardware required.
+
 ## Rules
 
 - English comments only.

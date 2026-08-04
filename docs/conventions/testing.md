@@ -154,8 +154,18 @@ Selective runs for the **local edit loop** via `cargo-impact` + nextest (Bun wra
 | Incremental tests | `cd tools/scripts && bun run incremental-test.ts` |
 | vs `main` | `bun run incremental-test.ts --since main` |
 | Extra nextest args | `bun run incremental-test.ts -- --no-fail-fast` |
+| Incremental coverage | `bun run coverage-check.ts` |
+| Coverage vs `main` | `bun run coverage-check.ts --since main` |
 
-Requires: `cargo install cargo-impact cargo-nextest`. Default `--confidence-min 0.5`.
+Requires: `cargo install cargo-impact cargo-nextest` (tests) · `cargo install cargo-llvm-cov cargo-nextest` (coverage). Default `--confidence-min 0.5`.
+
+**Incremental coverage** (`coverage-check.ts`) diffs changed Rust files against a
+baseline — the local `local/.cache/coverage/baseline.json`, an explicit `--since`, or
+the last commit ≥ 24 h old — then runs `cargo llvm-cov nextest --workspace` and reports
+test counts, total line coverage, and per-changed-file coverage with deltas. Baseline is
+stored after each run; `--no-store` skips that. A daily scheduled CI run
+([`.github/workflows/coverage-daily.yml`](../../.github/workflows/coverage-daily.yml))
+does the same on `main` and posts the report as a workflow summary.
 
 **Not a gate:** do **not** put these in pre-push or PR CI. Full `cargo nextest` / `cargo test --workspace` remains the merge gate (impact can miss tests). Empty impact filter → exit 0 (nothing to run).
 

@@ -19,6 +19,10 @@ bun run incremental-test.ts                  # cargo-impact → nextest (dev loo
 bun run incremental-test.ts --since main
 bun run incremental-bench.ts                 # benches for changed crates (+ reverse-deps)
 bun run incremental-bench.ts --since main --no-deps
+
+bun run coverage-check.ts                    # changed files → llvm-cov → report (+ baseline)
+bun run coverage-check.ts --since main
+bun run coverage-check.ts --baseline <file> --no-store
 ```
 
 Do **not** reuse `Mediaway-standards-fetch` / `Mediaway-fate-fetch` User-Agents outside their respective scripts.

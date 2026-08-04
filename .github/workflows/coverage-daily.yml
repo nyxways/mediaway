@@ -1,0 +1,146 @@
+# Daily incremental coverage on `main` only.
+# Reports test counts + line coverage, and the changed-Rust-files table with
+# per-file deltas vs the previous successful run's baseline artifact.
+# Dev-loop equivalent: `cd tools/scripts && bun run coverage-check.ts`.
+name: coverage-daily
+
+on:
+  schedule:
+    # Once per day (02:00 UTC). Scheduled workflows use the default branch workflow file.
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: coverage-daily-main
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  coverage:
+    name: coverage (main)
+    runs-on: windows-latest
+    # schedule → default branch; manual runs only from main (do not track other branches).
+    if: >
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Skip if no new commits since last successful run
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          HEAD_SHA="$(git rev-parse HEAD)"
+          echo "head_sha=${HEAD_SHA}" >> "$GITHUB_OUTPUT"
+
+          LAST_SHA="$(gh run list \
+            --workflow coverage-daily.yml \
+            --branch main \
+            --status success \
+            --limit 1 \
+            --json headSha \
+            --jq '.[0].headSha // empty' || true)"
+
+          if [[ -z "${LAST_SHA}" ]]; then
+            echo "No prior successful run — continuing."
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "${LAST_SHA}" == "${HEAD_SHA}" ]]; then
+            echo "main unchanged since last successful coverage-daily (${HEAD_SHA}) — skip."
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "should_run=true" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust toolchain
+        if: steps.gate.outputs.should_run == 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        if: steps.gate.outputs.should_run == 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: mediaway-ci-main-v1
+          key: coverage-daily-windows
+          cache-on-failure: true
+          save-if: true
+
+      - name: Install cargo-llvm-cov + cargo-nextest
+        if: steps.gate.outputs.should_run == 'true'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov, cargo-nextest
+
+      - name: Download previous baseline
+        if: steps.gate.outputs.should_run == 'true'
+        id: baseline
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN_ID="$(gh run list \
+            --workflow coverage-daily.yml \
+            --branch main \
+            --status success \
+            --limit 1 \
+            --json databaseId \
+            --jq '.[0].databaseId // empty' || true)"
+          if [[ -z "${RUN_ID}" ]]; then
+            echo "No previous successful run — starting fresh (no baseline)."
+            exit 0
+          fi
+          mkdir -p local/.cache/coverage
+          gh run download "${RUN_ID}" \
+            --name coverage-baseline \
+            --dir local/.cache/coverage-download || true
+          if [[ -f "local/.cache/coverage-download/baseline.json" ]]; then
+            cp local/.cache/coverage-download/baseline.json local/.cache/coverage/baseline.json
+            echo "baseline restored from run ${RUN_ID}"
+          else
+            echo "No baseline artifact in previous run — starting fresh."
+          fi
+
+      - name: Run coverage check (incremental)
+        if: steps.gate.outputs.should_run == 'true'
+        shell: bash
+        run: |
+          cd tools/scripts && bun install --frozen-lockfile
+          cd ../..
+          tools/scripts/node_modules/.bin/bun run tools/scripts/coverage-check.ts \
+            --baseline local/.cache/coverage/baseline.json \
+            --output local/.cache/coverage/report.md
+          cat local/.cache/coverage/report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload new baseline
+        if: steps.gate.outputs.should_run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-baseline
+          path: local/.cache/coverage/baseline.json
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Upload coverage report
+        if: steps.gate.outputs.should_run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-${{ github.sha }}
+          path: local/.cache/coverage/report.md
+          if-no-files-found: warn
+          retention-days: 90

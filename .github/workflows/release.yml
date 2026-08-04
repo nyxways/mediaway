@@ -221,6 +221,11 @@ jobs:
         run: rustup target add wasm32-unknown-unknown
       - name: Install wasm-pack
         uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          # Pin: the action's default 'latest' lookup falls back to 0.9.1,
+          # whose manifest parser rejects workspace-inherited package fields
+          # (license/repository). 0.15.0 supports them.
+          version: 'v0.15.0'
 
       - name: C# round-trip test (Container, no hardware)
         shell: bash
@@ -268,6 +273,11 @@ jobs:
 
       - name: Install wasm-pack
         uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          # Pin: the action's default 'latest' lookup falls back to 0.9.1,
+          # whose manifest parser rejects workspace-inherited package fields
+          # (license/repository). 0.15.0 supports them.
+          version: 'v0.15.0'
 
       - uses: oven-sh/setup-bun@v2
 

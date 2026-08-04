@@ -24,14 +24,14 @@
 <br>
 
 > **Status:** early development (`0.x`). **Not recommended for production.**  
-> **Pre-1.0:** public APIs, crate layout, and backends may change often (no stability guarantee).  
-> Details: `[docs/spec/status.md](docs/spec/status.md)`.
+> **Pre-1.0:** public APIs, crate layout, and backends may change often (no stability guarantee).
+> Details: [docs/spec/status.md](docs/spec/status.md).
 
 Rust media stack: **high-level pipelines** built from **first-class low-level** APIs — OS/GPU codec sessions, `GpuBufferHandle`, and **sans-io** mux/demux/bitstream cores. Prefer Zero-Copy paths (GPU handles **or** shared CPU buffers); name CPU readback, cross-API copies, and SW fallbacks when they exist.
 
-Design: `[docs/spec/vision.md](docs/spec/vision.md)`.
+Design: [docs/spec/vision.md](docs/spec/vision.md).
 
-Covers device capture (camera, mic, screen), encode/decode, containers, and planned FFI / WASM bindings across Windows, Web, Linux, other. Layout: sans-io cores, facade crates with OS backends as `#[cfg]`-gated modules (e.g. `mediaway-device` contains `windows`/`linux`/`web`). C ABI: a single `mediaway-ffi` facade — `[docs/spec/c-ffi.md](docs/spec/c-ffi.md)` · `[docs/spec/crate-packaging.md](docs/spec/crate-packaging.md)`.
+Covers device capture (camera, mic, screen), encode/decode, containers, and planned FFI / WASM bindings across Windows, Web, Linux, other. Layout: sans-io cores, facade crates with OS backends as `#[cfg]`-gated modules (e.g. `mediaway-device` contains `windows`/`linux`/`web`). C ABI: a single `mediaway-ffi` facade — [docs/spec/c-ffi.md](docs/spec/c-ffi.md) · [docs/spec/crate-packaging.md](docs/spec/crate-packaging.md).
 
 **Repository:** [github.com/nyxways/mediaway](https://github.com/nyxways/mediaway)
 
@@ -394,7 +394,8 @@ What `mediaway-device` backends target (camera, mic, **screen**, **window**). Sa
 <!-- ANCHOR_END: crates -->
 
 
-Further platform backends (`*-web`, `*-linux`, …) are added when that backend’s code starts.
+OS backends live as `#[cfg]`-gated modules inside the facade crates
+(`mediaway-encoder`, `mediaway-decoder`, `mediaway-device`).
 
 ## Dev setup
 
@@ -414,13 +415,13 @@ cargo install cargo-nextest gitleaks   # or scoop/brew for gitleaks
 
 ## Docs
 
-- `[CONTRIBUTING.md](CONTRIBUTING.md)` — how to contribute
-- `[docs/contributing/pull-requests.md](docs/contributing/pull-requests.md)` — PR checklist (doc sync, quality gates, …)
-- `[docs/contributing/for-agents.md](docs/contributing/for-agents.md)` — for AI assistants helping contributors
-- `[docs/contributing/](docs/contributing/)` — getting started, docs map, PRs
-- `[docs/spec/](docs/spec/)` — product vision and design
-- `[docs/conventions/](docs/conventions/)` — commits, hooks, style, license, testing
-- `[docs/roadmap.md](docs/roadmap.md)` — platform order and crate roadmap index
+- [CONTRIBUTING.md](CONTRIBUTING.md) — how to contribute
+- [docs/contributing/pull-requests.md](docs/contributing/pull-requests.md) — PR checklist (doc sync, quality gates, …)
+- [docs/contributing/for-agents.md](docs/contributing/for-agents.md) — for AI assistants helping contributors
+- [docs/contributing/](docs/contributing/) — getting started, docs map, PRs
+- [docs/spec/](docs/spec/) — product vision and design
+- [docs/conventions/](docs/conventions/) — commits, hooks, style, license, testing
+- [docs/roadmap.md](docs/roadmap.md) — platform order and crate roadmap index
 - Codec support tables — this README (§ Codec support)
 - Container support table — this README (§ Container support)
 - Device table — this README (§ Device)
@@ -428,7 +429,7 @@ cargo install cargo-nextest gitleaks   # or scoop/brew for gitleaks
 
 ## License & dependencies
 
-- **License:** MIT OR Apache-2.0 — `[LICENSE-MIT](LICENSE-MIT)`, `[LICENSE-APACHE](LICENSE-APACHE)`.
-- **Cargo graph:** no GPL/LGPL (etc.) deps; no linking `libav`* / FFmpeg libraries in shipped crates. See `[docs/spec/vision.md](docs/spec/vision.md)` § License & dependency boundary.
+- **License:** MIT OR Apache-2.0 — [LICENSE-MIT](LICENSE-MIT), [LICENSE-APACHE](LICENSE-APACHE).
+- **Cargo graph:** no GPL/LGPL (etc.) deps; no linking `libav`* / FFmpeg libraries in shipped crates. See [docs/spec/vision.md](docs/spec/vision.md) § License & dependency boundary.
 - System `ffmpeg` / `ffprobe` on `PATH` are optional **test/dev oracles** only ([ADR-0002](docs/adr/0002-system-oracle.md)).
 

@@ -34,12 +34,13 @@ transport anywhere in the workspace.
   crate otherwise has zero non-`bytes`/`thiserror` dependencies (deps-policy: new
   deps are deliberate, and a dependency-free from-scratch implementation of a
   15-line bit-by-bit CRC was judged simpler than adding a crate for it).
-- `granule_position`/`bos`/`eos` are page-level fields, attached to *every*
-  packet completed while parsing a page (spec-precise only for the last packet on
-  a multi-packet page) — documented as an approximation on [`Packet`] rather than
-  tracking exact per-packet provenance, which would need materially more state for
-  a case (many packets per page) that doesn't arise from this crate's own mux at
-  all.
+- `granule_position`/`bos`/`eos` are page-level fields, attached to the page
+  that *completed* each packet (spec-precise for the last packet completed on
+  a page). `page_index`/`page_count` record a packet's position among the
+  packets completed on its finishing page, so a codec-aware layer (the
+  `mediaway-container::ogg` facade) can back-compute each packet's own end
+  position from the page granule — exact per-packet provenance without
+  pulling codec knowledge into the transport core.
 - Continuation-flag mismatches (a page's `continued` bit disagreeing with whether
   a partial packet is actually buffered) are a hard `Err`
   (`Error::ContinuationFlagMismatch`) — a real stream desync, never silently

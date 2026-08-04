@@ -199,6 +199,17 @@ jobs:
       - name: Add wasm32 target
         run: rustup target add wasm32-unknown-unknown
 
+      - name: sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Enable sccache (namespaced)
+        shell: bash
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          # Different SCCACHE_GHA_VERSION ⇒ isolated GHA blob namespace (docs: mozilla/sccache GHA.md)
+          echo "SCCACHE_GHA_VERSION=mediaway-${MEDIAWAY_CACHE_NS}-v1" >> "$GITHUB_ENV"
+
       - name: Build wasm crates
         run: |
           cargo build -p iso-bmff-wasm -p mediaway-encoder -p mediaway-decoder -p mediaway-device \
@@ -219,16 +230,52 @@ jobs:
       - name: Add wasm32 target
         run: rustup target add wasm32-unknown-unknown
 
+      - name: sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Enable sccache (namespaced)
+        shell: bash
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          # Different SCCACHE_GHA_VERSION ⇒ isolated GHA blob namespace (docs: mozilla/sccache GHA.md)
+          echo "SCCACHE_GHA_VERSION=mediaway-${MEDIAWAY_CACHE_NS}-v1" >> "$GITHUB_ENV"
+
       - name: Install wasm-bindgen-cli (prebuilt binary)
         uses: taiki-e/install-action@v2
         with:
           tool: wasm-bindgen-cli@0.2.126
 
+      - name: Install wasm-pack (prebuilt binary)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+
       - uses: oven-sh/setup-bun@v2
+
+      # `playwright install chromium` downloads a ~170 MB browser every run;
+      # cache it (keyed on the pinned @playwright/test version in package.json)
+      # so warm runs skip the download entirely.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ env.MEDIAWAY_CACHE_NS }}-${{ hashFiles('tools/e2e-web/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-${{ env.MEDIAWAY_CACHE_NS }}-
 
       - name: Build wasm packages
         working-directory: tools/e2e-web
         run: bun run build:wasm
+
+      # The browser-package fixture serves the @mediaway/browser npm package
+      # (dist + wasm pkg) — without this build it 404s and every test on
+      # browser-package.html times out.
+      - name: Build @mediaway/browser package
+        working-directory: bindings/browser/packages/browser
+        run: |
+          bun install
+          bun run build
 
       - name: Install Playwright + run tests
         working-directory: tools/e2e-web

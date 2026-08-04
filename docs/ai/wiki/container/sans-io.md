@@ -15,6 +15,7 @@ Canonical: [`docs/spec/sans-io.md`](../../../docs/spec/sans-io.md). Naming v1: [
 - Errors: `thiserror` in `iso-bmff` ([errors](../meta/errors.md)).
 - Demux: fMP4 `moof`/`mdat`, unfragmented `stbl`, and `edts`/`elst` sample expansion.
 - Sample-entry codec coverage (`avc1`/`vp09`/`mp4a`, HEVC/AV1 still mislabeled): [mp4-sample-entries](mp4-sample-entries.md).
+- Mux timing: sample durations derive from consecutive `dts` deltas (no silent zero-duration trun — players stutter on it); `Sample::duration` optional, trusted only for the last sample of a fragment — `iso-bmff/adr/0004` (2026-08-04).
 - Edit-list remap: `dts' = dts - media_time + base` (signed); out-of-window samples set `is_discard`.
 - ClearKey: `tenc`/`senc` + `DemuxDecrypt` → [`iso-cenc`](../meta/crypto.md).
 - Conformance + FATE `oracle_compare` (`nb_read_packets`) — [testing](../meta/testing.md). Every container crate now carries its own `fate_manifest.txt`/`demux_exceptions.rs` (2026-07-29), not just `iso-bmff` — see [webm.md](webm.md), [audio-containers.md](audio-containers.md), [general-containers.md](general-containers.md).

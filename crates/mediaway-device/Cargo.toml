@@ -9,6 +9,12 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
+# cdylib: the browser (`web`) module's `#[wasm_bindgen]` exports are consumed
+# by the e2e-web fixtures (`tools/e2e-web/scripts/build-wasm.ts`) — the crate
+# must emit a `.wasm` artifact for wasm32 targets.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 
 [dependencies]
 mediaway-common = { workspace = true }

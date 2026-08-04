@@ -8,17 +8,22 @@
 //! codec's declared config bytes, the same boundary `iso-bmff` already
 //! crosses for AAC's `esds`/`AudioSpecificConfig`, not decoding audio.
 //!
-//! `granule_position` becomes `Packet::pts` directly: for Opus it is always a
-//! 48 kHz sample count (RFC 7845 §4, independent of the stream's nominal
-//! input rate); for Vorbis it is a sample count at the stream's own rate
-//! (parsed from the identification header). Both cases: `time_base = 1 /
+//! `granule_position` becomes `Packet::pts` after per-packet refinement: for
+//! Opus the facade back-computes each packet's own end position from its
+//! page's granule using RFC 6716 TOC frame durations (packets completed on
+//! one page all carry the page granule in `ogg-core` — see its ADR-0001), so
+//! `pts` is the packet's end position in 48 kHz samples and `duration` its
+//! TOC-derived length; for Vorbis `pts` remains the page granule (per-packet
+//! block-size parsing is out of scope). Both cases: `time_base = 1 /
 //! sample_rate` makes `pts` unit-correct without further conversion.
 
 #![forbid(unsafe_code)]
 
 use crate::{Demux, Mux};
 use mediaway_common::{Bytes, CodecKind, Packet, Rational, StreamInfo};
+use ogg_core::Packet as CorePacket;
 use ogg_core::{Demuxer as CoreDemuxer, Muxer as CoreMuxer};
+use std::collections::VecDeque;
 
 /// Ogg mux/demux error (same as [`ogg_core::Error`]).
 pub type Error = ogg_core::Error;
@@ -94,6 +99,12 @@ impl Mux for Muxer {
 pub struct Demuxer {
     inner: CoreDemuxer,
     streams: Vec<StreamInfo>,
+    /// Completed packets of the current Opus page (completion order, with
+    /// TOC-derived durations) — buffered until the page is complete so each
+    /// packet's end position can be back-computed from the page granule.
+    page: Vec<(CorePacket, i64)>,
+    /// Packets ready to emit after back-computation.
+    ready: VecDeque<Packet>,
 }
 
 impl Demuxer {
@@ -122,6 +133,9 @@ impl Demuxer {
     /// match `OpusHead`/Vorbis) are skipped.
     pub fn poll_packet(&mut self) -> Option<Packet> {
         loop {
+            if let Some(p) = self.ready.pop_front() {
+                return Some(p);
+            }
             let p = self.inner.poll_packet().ok().flatten()?;
             if self.streams.is_empty() {
                 let Some(info) = identify(&p.data) else {
@@ -134,17 +148,59 @@ impl Demuxer {
                 self.streams.push(info);
                 continue; // the identification header itself is not audio data
             }
-            let stream = &self.streams[0];
-            return Some(Packet {
-                stream_id: stream.id(),
-                pts: p.granule_position,
-                dts: p.granule_position,
-                duration: 0, // Ogg carries no per-packet duration; only granule position
+            if !matches!(self.streams[0].codec(), CodecKind::Opus) {
+                // Vorbis et al.: no per-packet duration parsing (out of scope),
+                // so the page-level granule is the best available position.
+                return Some(Packet {
+                    stream_id: self.streams[0].id(),
+                    pts: p.granule_position,
+                    dts: p.granule_position,
+                    duration: 0, // Ogg carries no per-packet duration; only granule position
+                    is_keyframe: true,
+                    is_discard: false,
+                    payload: p.data,
+                });
+            }
+            // Opus: packets completed on one page all carry the page granule
+            // (the position after the *last* of them). Back-compute each
+            // packet's own end position from the page granule minus the TOC
+            // frame durations of the packets completed after it on the page.
+            let duration = opus_packet_duration(&p.data);
+            if !self.page.is_empty()
+                && (p.granule_position != self.page[0].0.granule_position
+                    || p.page_count != self.page[0].0.page_count)
+            {
+                self.finalize_page();
+            }
+            self.page.push((p, duration));
+            let page_len = u32::try_from(self.page.len()).unwrap_or(u32::MAX);
+            if page_len == self.page[0].0.page_count {
+                self.finalize_page();
+            }
+        }
+    }
+
+    /// Emit the buffered Opus page in completion order with back-computed pts.
+    fn finalize_page(&mut self) {
+        let stream_id = self.streams[0].id();
+        let granule = self.page[0].0.granule_position;
+        let mut suffix = 0i64;
+        for (p, duration) in self.page.iter().rev() {
+            let pts = granule - suffix;
+            self.ready.push_front(Packet {
+                stream_id,
+                pts,
+                dts: pts,
+                duration: u64::try_from(*duration).unwrap_or(0),
                 is_keyframe: true,
                 is_discard: false,
-                payload: p.data,
+                // clone: CorePacket outlives the emitted Packet (page buffer
+                // drains after); Bytes is a refcounted handle, not a copy.
+                payload: p.data.clone(),
             });
+            suffix += *duration;
         }
+        self.page.clear();
     }
 }
 
@@ -161,6 +217,72 @@ impl Demux for Demuxer {
     fn poll_packet(&mut self) -> Option<Packet> {
         Demuxer::poll_packet(self)
     }
+}
+
+/// Opus packet duration in 48 kHz samples (RFC 6716 §3.1/§3.2): the TOC
+/// byte's `config` picks a per-frame size (SILK 10-60 ms, hybrid 10-20 ms,
+/// CELT 2.5-20 ms — Table 2) and its `c` code the frame count; zero-length
+/// (DTX) frames contribute no samples. Validated against real encoder output:
+/// per-page TOC sums equal the page granule deltas exactly.
+fn opus_packet_duration(packet: &[u8]) -> i64 {
+    let Some(&toc) = packet.first() else {
+        return 0;
+    };
+    let config = (toc >> 3) & 0x1F;
+    let frame: i64 = match config {
+        0..=11 => i64::from(480 * [1, 2, 4, 6][usize::from(config & 3)]),
+        12..=15 => i64::from(480 << (config & 1)),
+        _ => i64::from(120 << (config & 3)), // 16..=31 CELT
+    };
+    let frames = match toc & 0x3 {
+        0 => 1,
+        1 => 2,
+        2 => {
+            // Two frames, first length-coded (§3.2.4); a 0-length (DTX)
+            // first frame contributes no samples.
+            let Some(&l) = packet.get(1) else {
+                return 0;
+            };
+            if l == 0 { 1 } else { 2 }
+        }
+        _ => {
+            // Code 3: second byte = v(bit 0) p(bit 1) M(bits 2-7); M is the
+            // frame count (MUST NOT be zero, RFC 6716 §3.2.5).
+            let Some(&b1) = packet.get(1) else {
+                return 0;
+            };
+            let m = i64::from((b1 >> 2) & 0x3F).max(1);
+            if b1 & 1 == 1 {
+                // VBR: walk the length-coded sizes of the first M-1 frames
+                // (§3.2.1); 0-length (DTX) frames contribute no samples. The
+                // last frame's length is inferred, assume it is present.
+                let mut pos = 2usize;
+                let mut present = 0i64;
+                for _ in 0..m - 1 {
+                    let Some(&l) = packet.get(pos) else {
+                        break;
+                    };
+                    pos += 1;
+                    let len = if l >= 252 {
+                        let Some(&l2) = packet.get(pos) else {
+                            break;
+                        };
+                        pos += 1;
+                        i64::from(l2) * 4 + i64::from(l)
+                    } else {
+                        i64::from(l)
+                    };
+                    if len > 0 {
+                        present += 1;
+                    }
+                }
+                present + 1
+            } else {
+                m
+            }
+        }
+    };
+    frames * frame
 }
 
 const OPUS_HEAD_MAGIC: &[u8] = b"OpusHead";

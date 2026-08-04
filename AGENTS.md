@@ -44,7 +44,7 @@ Then, as needed by scope:
 1. [`docs/spec/README.md`](docs/spec/README.md) — design SSOT
 2. **Crate `docs/roadmap.md` + `adr/`** when working in that crate (crate root `README.md` is a short overview only — not an agent entrypoint)
 3. [`docs/adr/README.md`](docs/adr/README.md) — **workspace-wide** decisions only
-4. [`docs/conventions/`](docs/conventions/) — commits / hooks / style / security / deps / testing / [docs-layout](docs/conventions/docs-layout.md)
+4. [`docs/conventions/`](docs/conventions/) — commits / [branches](docs/conventions/branches.md) / hooks / style / security / deps / testing / [docs-layout](docs/conventions/docs-layout.md)
 5. [`docs/roadmap.md`](docs/roadmap.md) — platform order + index of crate roadmaps
 
 **Do not** put agent rules, Rule 0, or wiki “read first” prose in root or crate `README.md` files. Those are for humans; agents use this file and `docs/ai/wiki/`. See [`docs/conventions/docs-layout.md`](docs/conventions/docs-layout.md) § Audience.
@@ -95,11 +95,12 @@ Then, as needed by scope:
 ### Process & docs
 
 1. **Spec / design decisions require an ADR** — **crate-local** `adr/` for that crate’s backends/API; **`docs/adr/`** only for workspace-wide policy. See [`docs/conventions/docs-layout.md`](docs/conventions/docs-layout.md).
-2. **Direct push to `main`** — only trivial docs/typos + `.claude/*` tooling. Else PR
-3. **If using `--no-verify`**, put `[skip-hooks: <reason>]` in the commit body
-4. **English-only artifacts** — see [Language policy](#language-policy). Includes **commit messages and PR title/body** (and issues). Chat with the user may use their language. **Not enforced by git hooks** — format hooks stay mechanical; language is policy + review.
-5. **Keep `local/` local** — machine-specific notes, agent scratch memory, experiments, bench raw outputs, and **downloaded external standards** belong under [`local/`](local/README.md) (gitignored). Do **not** commit them. Durable knowledge goes to the wiki / spec / ADR instead.
-6. **External standards by URL + BLAKE3** — do not paste full ISO/ITU/MPEG/etc. text into wiki/spec. Record official URLs and pin file digests in [`docs/standards/registry.toml`](docs/standards/registry.toml); cache under `local/standards/` and **verify BLAKE3** on use (`bun tools/scripts/fetch-standard.ts`). When using **that script**, agents **must** pass `--ai-agent` so its `User-Agent` discloses an AI coding agent (humans omit the flag). **Do not** put a Mediaway / `Mediaway-standards-fetch` User-Agent on any other requests (browsers, curl, random fetches). Paywalled docs: lawful local copy only, then `pin`. See [`docs/conventions/external-standards.md`](docs/conventions/external-standards.md).
+2. **Branch before new work** — before adding commits, check the current branch's purpose and freshness (`git status`, `git log -1`, and whether it's diverged from `origin/main`). If it's unrelated to the task at hand, already merged/landed upstream, or stale, create a fresh branch off `main` (not `origin/main`'s local `main` blindly — verify it's up to date first) instead of stacking new work onto it. One task's changes = one branch = one PR; do not let unrelated work accumulate on an existing branch. Naming and lifetime: [`docs/conventions/branches.md`](docs/conventions/branches.md).
+3. **Direct push to `main`** — only trivial docs/typos + `.claude/*` tooling. Else PR
+4. **If using `--no-verify`**, put `[skip-hooks: <reason>]` in the commit body
+5. **English-only artifacts** — see [Language policy](#language-policy). Includes **commit messages and PR title/body** (and issues). Chat with the user may use their language. **Not enforced by git hooks** — format hooks stay mechanical; language is policy + review.
+6. **Keep `local/` local** — machine-specific notes, agent scratch memory, experiments, bench raw outputs, and **downloaded external standards** belong under [`local/`](local/README.md) (gitignored). Do **not** commit them. Durable knowledge goes to the wiki / spec / ADR instead.
+7. **External standards by URL + BLAKE3** — do not paste full ISO/ITU/MPEG/etc. text into wiki/spec. Record official URLs and pin file digests in [`docs/standards/registry.toml`](docs/standards/registry.toml); cache under `local/standards/` and **verify BLAKE3** on use (`bun tools/scripts/fetch-standard.ts`). When using **that script**, agents **must** pass `--ai-agent` so its `User-Agent` discloses an AI coding agent (humans omit the flag). **Do not** put a Mediaway / `Mediaway-standards-fetch` User-Agent on any other requests (browsers, curl, random fetches). Paywalled docs: lawful local copy only, then `pin`. See [`docs/conventions/external-standards.md`](docs/conventions/external-standards.md).
 
 ### Architecture & API shape
 

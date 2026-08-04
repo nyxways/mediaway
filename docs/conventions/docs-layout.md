@@ -42,6 +42,10 @@ crates/mediaway-encoder/
     └── template.md
 ```
 
+Crate `README.md` files follow [`crate-readme-template.md`](crate-readme-template.md):
+user-facing, status table with the shared marks, real code snippet, and **no ADR
+links** (ADR references live in the crate's `docs/roadmap.md`).
+
 ### Rules
 
 1. **Crate work plan → that crate’s `docs/roadmap.md`.**

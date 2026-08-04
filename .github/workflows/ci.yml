@@ -246,6 +246,11 @@ jobs:
         with:
           tool: wasm-bindgen-cli@0.2.126
 
+      - name: Install wasm-pack (prebuilt binary)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+
       - uses: oven-sh/setup-bun@v2
 
       # `playwright install chromium` downloads a ~170 MB browser every run;
@@ -262,6 +267,15 @@ jobs:
       - name: Build wasm packages
         working-directory: tools/e2e-web
         run: bun run build:wasm
+
+      # The browser-package fixture serves the @mediaway/browser npm package
+      # (dist + wasm pkg) — without this build it 404s and every test on
+      # browser-package.html times out.
+      - name: Build @mediaway/browser package
+        working-directory: bindings/browser/packages/browser
+        run: |
+          bun install
+          bun run build
 
       - name: Install Playwright + run tests
         working-directory: tools/e2e-web

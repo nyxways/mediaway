@@ -13,12 +13,14 @@ const flag = profile === "release" ? "--release" : "";
 const cargoTargetDir = join(root, "target");
 process.env.CARGO_TARGET_DIR = cargoTargetDir;
 
-// mediaway-device stays out: the facade is rlib-only (no cdylib → no .wasm
-// artifact); the CI wasm job still compile-gates it for wasm32.
+// mediaway-device is included: its `web` module's `#[wasm_bindgen]` exports
+// (`open_user_media`, `device_selection_policy`, …) back the device-stream
+// fixtures; the crate builds as a cdylib for wasm32 (see its Cargo.toml).
 const crates = [
   "iso-bmff-wasm",
   "mediaway-encoder",
   "mediaway-decoder",
+  "mediaway-device",
 ] as const;
 
 mkdirSync(pkgRoot, { recursive: true });

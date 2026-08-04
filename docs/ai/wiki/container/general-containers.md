@@ -35,6 +35,10 @@ Crate-local [ADR-0001](../../../crates/flv-core/adr/0001-flv-freestanding-core.m
   tag once per track before data tags; unsupported codecs rejected at
   `add_track`, not silently dropped. Still its own method shape
   (`push_packet(&Packet, &mut Vec<u8>)`), not the shared `Mux` trait.
+  **Mux timebase is one millisecond** (`pts`/`dts` are ms, `Tag::timestamp_ms`
+  — documented in `flv.rs` module docs): the playback harness converts 30 fps
+  video frame indices and 48 kHz AAC frames (1024 samples) to ms
+  (2026-08-04).
 
 ## `mpeg-ts-core` (MPEG-2 Transport Stream) — added 2026-07-29
 

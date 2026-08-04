@@ -19,6 +19,7 @@ mod error;
 mod mux;
 mod types;
 
+pub use crc::crc32_ogg;
 pub use demux::Demuxer;
 pub use error::Error;
 pub use mux::{MAX_SINGLE_PAGE_PAYLOAD, Muxer};

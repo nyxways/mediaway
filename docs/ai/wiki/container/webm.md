@@ -61,6 +61,9 @@ overflow (`SimpleBlock`'s signed 16-bit offset field). New public, low-level,
 `encode_unknown_size` alongside the existing decoders. `mediaway-container::webm::Muxer`
 wraps it as a full `Mux` trait impl, rejecting any `CodecKind` `WebM` has no
 `CodecID` for (same set demux recognizes: `Vp9`/`Av1`/`Opus`/`Vorbis`/`Aac`).
+`push_packet` maps `Packet::pts` straight to the block timecode — ticks are
+milliseconds (`TimecodeScale` default 1 ms/tick), so callers must convert other
+time bases (the playback harness does `/48` for 48 kHz Opus).
 No external WebM mux oracle exists in this workspace — verified by
 round-tripping through this crate's own `Demuxer` instead (`mux_tests.rs`,
 `webm_tests.rs`).

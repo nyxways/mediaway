@@ -100,6 +100,14 @@ impl Demuxer {
         let payload_start = with_seg_table_len;
         let mut seg_start = payload_start;
         let mut offset = payload_start;
+        // Packets completed on this page (each non-255 segment terminator
+        // completes exactly one packet). `page_count` is known upfront so the
+        // demuxer can hand each packet its position among the page's completed
+        // packets — codec-aware consumers back-compute per-packet positions
+        // from the page granule using these.
+        let page_count =
+            u32::try_from(segment_table.iter().filter(|&&s| s < 255).count()).unwrap_or(u32::MAX);
+        let mut page_index = 0u32;
         for &seg in &segment_table {
             offset += usize::from(seg);
             if seg < 255 {
@@ -113,6 +121,8 @@ impl Demuxer {
                         serial,
                         bos,
                         eos,
+                        page_index,
+                        page_count,
                     });
                     self.partial.clear();
                     self.has_partial = false;
@@ -123,8 +133,11 @@ impl Demuxer {
                         serial,
                         bos,
                         eos,
+                        page_index,
+                        page_count,
                     });
                 }
+                page_index += 1;
             }
         }
         if seg_start < total_page_len {

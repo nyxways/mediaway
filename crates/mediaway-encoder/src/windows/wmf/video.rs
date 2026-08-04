@@ -1,4 +1,9 @@
 //! Video encode sessions: sync/soft MFT (CPU) or hardware MFT (DX11 Zero-Copy).
+//!
+//! The MFT may emit B-frame streams in **decode order** while stamping each
+//! output sample with its display `pts`, so emitted packets get `dts` =
+//! decode-order position (1 tick per frame in the config timebase) and
+//! `cto = pts - dts` — never `dts = pts` (see [`Self::drain_output`]).
 
 #![allow(unsafe_code)]
 
@@ -37,6 +42,10 @@ pub(crate) struct WmfVideoEncoder {
     pending: VecDeque<Packet>,
     flushed: bool,
     dx11: Option<Dx11Session>,
+    /// Decode-order position (media-timebase ticks) for the next emitted
+    /// packet — the MFT may reorder B-frames, so `dts` cannot be the sample's
+    /// display `pts` (see [`Self::drain_output`]).
+    dts_counter: i64,
 }
 
 impl WmfVideoEncoder {
@@ -92,6 +101,7 @@ impl WmfVideoEncoder {
             pending: VecDeque::new(),
             flushed: false,
             dx11: None,
+            dts_counter: 0,
         };
         enc.refresh_extradata();
         Ok(enc)
@@ -126,6 +136,7 @@ impl WmfVideoEncoder {
             pending: VecDeque::new(),
             flushed: false,
             dx11: Some(session),
+            dts_counter: 0,
         };
         enc.refresh_extradata();
         Ok(enc)
@@ -261,7 +272,16 @@ impl WmfVideoEncoder {
                 dx11::drain_events_nonblocking(session)?;
             }
             match process_one_output(&self.transform, self.output_buf_size, provides, &self.info)? {
-                Drain::Packet(p) => self.pending.push_back(p),
+                // The MFT emits B-frame streams in decode order while each
+                // output sample carries its *display* timestamp (`pts`). `dts`
+                // must be the decode-order position (1 tick per emitted frame,
+                // CBR pacing in the config timebase) or muxers would compute
+                // wrong durations and `cto = pts - dts`.
+                Drain::Packet(mut p) => {
+                    p.dts = self.dts_counter;
+                    self.dts_counter = self.dts_counter.saturating_add(1);
+                    self.pending.push_back(p);
+                }
                 Drain::NeedMore => break,
                 Drain::StreamChange => self.refresh_extradata(),
             }

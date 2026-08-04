@@ -34,6 +34,9 @@ const _: () = assert!(
 struct Pending {
     track_id: u32,
     base_dts: u64,
+    /// Per-sample decode timestamps (media timescale) — durations are derived
+    /// from consecutive `dts` deltas at flush time, see [`Muxer::push_packet`].
+    dts: SmallVec<[i64; INLINE_SAMPLES]>,
     durations: SmallVec<[u32; INLINE_SAMPLES]>,
     sizes: SmallVec<[u32; INLINE_SAMPLES]>,
     flags: SmallVec<[u32; INLINE_SAMPLES]>,
@@ -123,6 +126,14 @@ impl Muxer<Live> {
     }
 
     /// Push a compressed Sample (H.264 Annex-B auto-converted to AVCC).
+    ///
+    /// Sample durations are computed from consecutive `dts` deltas inside each
+    /// fragment (standard muxer convention), so `Sample::duration` is optional:
+    /// it is only trusted for the **last** sample of a fragment, and when it is
+    /// zero the last sample's duration is estimated from the previous sample's
+    /// delta (a lone-sample fragment defaults to one media tick). `dts` must be
+    /// monotonically non-decreasing per track; out-of-order `dts` degrades to
+    /// a 1-tick duration.
     pub fn push_packet(&mut self, sample: &Sample) -> Result<(), Error> {
         let idx = self
             .tracks
@@ -192,6 +203,7 @@ impl Muxer<Live> {
 
         let base_dts = u64::try_from(sample.dts.max(0)).unwrap_or(0);
         if let Some(p) = self.pending.iter_mut().find(|p| p.track_id == isobmff_id) {
+            p.dts.push(sample.dts);
             p.durations.push(dur);
             p.sizes.push(size);
             p.flags.push(flags);
@@ -201,12 +213,14 @@ impl Muxer<Live> {
             let mut pending = Pending {
                 track_id: isobmff_id,
                 base_dts,
+                dts: SmallVec::with_capacity(batch),
                 durations: SmallVec::with_capacity(batch),
                 sizes: SmallVec::with_capacity(batch),
                 flags: SmallVec::with_capacity(batch),
                 ctos: SmallVec::with_capacity(batch),
                 payload: Vec::with_capacity(payload.len().saturating_mul(batch)),
             };
+            pending.dts.push(sample.dts);
             pending.durations.push(dur);
             pending.sizes.push(size);
             pending.flags.push(flags);
@@ -254,9 +268,25 @@ impl Muxer<Live> {
         let Some(pos) = self.pending.iter().position(|p| p.track_id == track_id) else {
             return;
         };
-        let pending = self.pending.swap_remove(pos);
+        let mut pending = self.pending.swap_remove(pos);
         if pending.durations.is_empty() {
             return;
+        }
+        // Sample durations are the dts deltas between consecutive samples
+        // (standard muxer convention). The caller-provided duration is only
+        // consulted for the LAST sample of the fragment; when it is zero we
+        // estimate it from the previous sample's delta, and a lone-sample
+        // fragment defaults to one media tick.
+        let n = pending.durations.len();
+        for i in 0..n.saturating_sub(1) {
+            // Non-monotonic dts (caller out of order) clamps to a 1-tick
+            // duration instead of a zero/u32::MAX sample: `saturating_sub`
+            // saturates at i64::MIN, so clamp the delta explicitly.
+            let delta = pending.dts[i + 1].saturating_sub(pending.dts[i]).max(1);
+            pending.durations[i] = u32::try_from(delta).unwrap_or(u32::MAX);
+        }
+        if pending.durations[n - 1] == 0 {
+            pending.durations[n - 1] = if n >= 2 { pending.durations[n - 2] } else { 1 };
         }
         self.sequence = self.sequence.saturating_add(1);
         write_fragment(
@@ -272,3 +302,7 @@ impl Muxer<Live> {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "mux_tests.rs"]
+mod tests;

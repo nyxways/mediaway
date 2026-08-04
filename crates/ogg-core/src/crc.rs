@@ -3,17 +3,17 @@
 //! zlib/PNG `crc32` (which is bit-reflected).
 
 #![forbid(unsafe_code)]
-#![allow(
-    clippy::redundant_pub_crate,
-    reason = "crate-private helper used by mux.rs/demux.rs; module itself is private"
-)]
 
+/// Ogg's CRC-32 polynomial (RFC 3533 §6).
 const POLY: u32 = 0x04C1_1DB7;
 
-/// Compute the Ogg page CRC over `data` (caller must zero the page's own CRC
-/// field before calling, per RFC 3533).
+/// Compute the Ogg page CRC over `data`.
+///
+/// The caller must zero the page's own CRC field first (per RFC 3533). Public
+/// so codec-aware consumers can build/verify pages (e.g. tests); mux/demux
+/// use it internally.
 #[must_use]
-pub(crate) fn crc32_ogg(data: &[u8]) -> u32 {
+pub fn crc32_ogg(data: &[u8]) -> u32 {
     let mut crc: u32 = 0;
     for &byte in data {
         crc ^= u32::from(byte) << 24;

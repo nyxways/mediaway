@@ -87,6 +87,7 @@ Crate-local [ADR-0001](../../../crates/ogg-core/adr/0001-ogg-freestanding-core.m
   header (`OpusHead` magic, RFC 7845 §5.1; Vorbis ID header, Vorbis I §4.2.2)
   — the same "read a codec's own declared config bytes" boundary `iso-bmff`
   crosses for AAC's `esds`, not audio decoding. `granule_position` → `pts`
-  directly (Opus: fixed 48 kHz per RFC 7845 §4; Vorbis: the stream's own
-  rate). `CodecKind::Vorbis` added (also closed half of WebM's VP8/Vorbis
-  gap — see [webm.md](webm.md)).
+  (Opus: per-packet end positions back-computed from page granules + RFC 6716
+  TOC frame durations, fixed 48 kHz per RFC 7845 §4; Vorbis: page granule at
+  the stream's own rate). `CodecKind::Vorbis` added (also closed half of
+  WebM's VP8/Vorbis gap — see [webm.md](webm.md)).

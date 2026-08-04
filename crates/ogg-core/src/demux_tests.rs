@@ -67,8 +67,12 @@ fn parses_multiple_packets_from_one_page() {
     demux.push_bytes(&page);
     let first = demux.poll_packet().unwrap().expect("first");
     assert_eq!(&first.data[..], b"ab");
+    assert_eq!(first.page_index, 0);
+    assert_eq!(first.page_count, 2);
     let second = demux.poll_packet().unwrap().expect("second");
     assert_eq!(&second.data[..], b"cde");
+    assert_eq!(second.page_index, 1);
+    assert_eq!(second.page_count, 2);
     assert!(demux.poll_packet().unwrap().is_none());
 }
 
@@ -91,6 +95,11 @@ fn reassembles_packet_spanning_two_pages() {
     assert_eq!(packet.data.len(), 265);
     assert_eq!(&packet.data[..255], &part1[..]);
     assert_eq!(&packet.data[255..], &part2[..]);
+    // Provenance comes from the *finishing* page (the one whose granule the
+    // merged packet carries).
+    assert_eq!(packet.granule_position, 5);
+    assert_eq!(packet.page_index, 0);
+    assert_eq!(packet.page_count, 1);
     assert_eq!(packet.granule_position, 5); // page 2's granule position
 }
 

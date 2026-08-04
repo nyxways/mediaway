@@ -189,9 +189,11 @@ fn verify_mp4() {
         live.push_packet(&pkt(v, i as i64, i % 30 == 0, au))
             .unwrap();
     }
-    // raw AAC — one packet per frame (the facade does not split)
+    // raw AAC — one packet per frame (the facade does not split). A frame is
+    // 1024 samples @ 48 kHz = 21.3 ms, so pts/dts step by 1024 media ticks.
     for (i, frame) in aac.iter().enumerate() {
-        live.push_packet(&pkt(a, i as i64, false, frame)).unwrap();
+        live.push_packet(&pkt(a, (i as i64) * 1024, false, frame))
+            .unwrap();
     }
     live.flush();
     let mut bytes = Vec::new();
@@ -214,14 +216,18 @@ fn verify_flv() {
         .unwrap();
     let mut out = Vec::new();
     m.write_header(true, true, &mut out);
+    // The FLV facade's tags share one millisecond timebase (pts/dts are
+    // milliseconds — see `flv.rs` module docs): convert 30 fps frame indices
+    // and 48 kHz AAC frames (1024 samples) to ms.
     for (i, au) in annex_b_aus(&h264).iter().enumerate() {
         let conv = iso_bmff::bitstream::avc::to_avcc(au);
-        m.push_packet(&pkt(0, i as i64, i % 30 == 0, &conv.payload), &mut out)
+        let ms = (i as i64) * 1000 / 30;
+        m.push_packet(&pkt(0, ms, i % 30 == 0, &conv.payload), &mut out)
             .unwrap();
     }
     for (i, frame) in aac.iter().enumerate() {
-        m.push_packet(&pkt(1, i as i64, false, frame), &mut out)
-            .unwrap();
+        let ms = (i as i64) * 1024 * 1000 / 48_000;
+        m.push_packet(&pkt(1, ms, false, frame), &mut out).unwrap();
     }
     write_out("verify.flv", &out);
 }
@@ -400,14 +406,15 @@ fn verify_ogg_webm() {
     mo.poll_bytes(&mut ogg_bytes);
     write_out("verify.opus.ogg", &ogg_bytes);
 
-    // webm (audio-only opus)
+    // webm (audio-only opus) — block timecodes are ms ticks (TimecodeScale
+    // default 1 ms/tick): convert the 48 kHz demuxed pts.
     let mut mw = webm::Muxer::<webm::Open>::new();
     let wm_id = mw
         .add_track(audio_stream(CodecKind::Opus, 48_000, 2, head))
         .unwrap();
     let mut live = mw.begin();
     for (_, p) in &data {
-        live.push_packet(&pkt(wm_id, p.pts, p.is_keyframe, &p.payload))
+        live.push_packet(&pkt(wm_id, p.pts / 48, p.is_keyframe, &p.payload))
             .unwrap();
     }
     live.flush();

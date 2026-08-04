@@ -1,3 +1,10 @@
+## Unreleased
+
+### Added
+
+- C#: `Mediaway.Pipeline.AudioEncoder` — AAC audio encode (ABI v2), matching the existing Node.js `@mediaway/encoder` capability
+- C#: `Device/CaptureMicrophone.cs` and `Pipeline/EncodeAudio.cs` examples; existing examples reorganized under `Container/`/`Device/`/`Pipeline/` to mirror the Node.js binding's example layout
+
 # Mediaway v0.1.2
 
 ## What's new

@@ -32,5 +32,34 @@ internal static unsafe partial class NativeMethods
 
     [DllImport(LibraryName, ExactSpelling = true)]
     internal static extern void mediaway_pipeline_ffi_buffer_free(nint data, nuint len);
+
+    [DllImport(LibraryName, ExactSpelling = true)]
+    internal static extern MediawayPipelineStatus mediaway_audio_encoder_open(
+        in NativeAudioEncodeConfig config, out nint outSession);
+
+    [DllImport(LibraryName, ExactSpelling = true)]
+    internal static extern MediawayPipelineStatus mediaway_audio_encode_session_stream_info(
+        AudioEncodeSessionHandle session, out NativeAudioStreamInfo outInfo);
+
+    [DllImport(LibraryName, ExactSpelling = true)]
+    internal static extern MediawayPipelineStatus mediaway_audio_encode_session_push_pcm(
+        AudioEncodeSessionHandle session, in NativeAudioFrameView frame);
+
+    [DllImport(LibraryName, ExactSpelling = true)]
+    internal static extern MediawayPipelineStatus mediaway_audio_encode_session_poll_packet(
+        AudioEncodeSessionHandle session, out NativeAudioPacket outPacket, out byte outHasPacket);
+
+    [DllImport(LibraryName, ExactSpelling = true)]
+    internal static extern MediawayPipelineStatus mediaway_audio_encode_session_flush(
+        AudioEncodeSessionHandle session);
+
+    [DllImport(LibraryName, ExactSpelling = true)]
+    internal static extern void mediaway_audio_encode_session_close(nint session);
+
+    [DllImport(LibraryName, ExactSpelling = true)]
+    internal static extern void mediaway_pipeline_ffi_packet_free(ref NativeAudioPacket packet);
+
+    [DllImport(LibraryName, ExactSpelling = true)]
+    internal static extern void mediaway_pipeline_ffi_stream_info_free(ref NativeAudioStreamInfo info);
 }
 #endif

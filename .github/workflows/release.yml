@@ -336,6 +336,10 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
+          # Diagnostics for the OIDC trusted-publishing flow (temporary).
+          echo "node: $(node --version) npm: $(npm --version)"
+          echo "ACTIONS_ID_TOKEN_REQUEST_URL: ${ACTIONS_ID_TOKEN_REQUEST_URL:+present}"
+          echo "ACTIONS_ID_TOKEN_REQUEST_TOKEN: ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:+present}"
           PROV=""
           if [[ "${{ github.event.inputs.npm_provenance }}" != "false" ]]; then PROV="--provenance"; fi
           # No auth token: npm OIDC Trusted Publishing authenticates this
@@ -348,13 +352,13 @@ jobs:
             if npm view "@mediaway/$p@$VERSION" version >/dev/null 2>&1; then
               echo "@mediaway/$p@$VERSION already published — skip"
             else
-              (cd "bindings/nodejs/packages/$p" && npm publish --access public $PROV)
+              (cd "bindings/nodejs/packages/$p" && npm publish --access public $PROV --loglevel verbose)
             fi
           done
           if npm view "@mediaway/browser@$VERSION" version >/dev/null 2>&1; then
             echo "@mediaway/browser@$VERSION already published — skip"
           else
-            (cd bindings/browser/packages/browser && npm publish --access public $PROV)
+            (cd bindings/browser/packages/browser && npm publish --access public $PROV --loglevel verbose)
           fi
 
   nuget:

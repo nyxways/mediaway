@@ -17,6 +17,7 @@
 | [source-file-length](source-file-length.md) | Source ≤1000 lines (pre-commit) |
 | [ci](ci.md) | GitHub Actions (fmt / clippy / test / deny) |
 | [release](release.md) | Release workflow — release branch → publish + GitHub release · secrets TUI |
+| [release-notes](release-notes.md) | Unreleased → versioned notes · agent rule § 10 + `/release-notes` |
 | [scripts-bun](scripts-bun.md) | Light utils = Bun + TypeScript |
 | [issues](issues.md) | Bug/crash/docs issues · features as discussions |
 | [contributing](contributing.md) | Human CONTRIBUTING + docs/contributing map |

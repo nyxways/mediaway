@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <!-- Ultra-Clean Solid App Icon Background -->
+  <rect width="512" height="512" rx="112" fill="#030712"/>
+
+  <!-- Perfectly Centered 5x5 Matrix Array (A_ij Data Lattice) -->
+  <g id="matrix-spectrum-grid">
+    
+    <g class="matrix-voxel">
+      <polygon points="256,129.78 289.46,149.1 256,168.42 222.54,149.1" fill="#38bdf8" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="222.54,149.1 256,168.42 256,198.32 222.54,179" fill="#0284c7" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="289.46,149.1 256,168.42 256,198.32 289.46,179" fill="#0369a1" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+    </g>
+    <polygon points="216.16,181.76 249.63,201.08 216.16,220.4 182.7,201.08" fill="#1e293b" stroke="#334155" stroke-width="1" stroke-linejoin="round"/>
+    
+    <g class="matrix-voxel">
+      <polygon points="295.84,152.78 329.3,172.1 295.84,191.42 262.37,172.1" fill="#38bdf8" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="262.37,172.1 295.84,191.42 295.84,221.32 262.37,202" fill="#0284c7" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="329.3,172.1 295.84,191.42 295.84,221.32 329.3,202" fill="#0369a1" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+    </g>
+    
+    <g class="matrix-voxel">
+      <polygon points="176.33,184.98 209.79,204.3 176.33,223.62 142.86,204.3" fill="#fbbf24" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="142.86,204.3 176.33,223.62 176.33,244.32 142.86,225" fill="#f59e0b" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="209.79,204.3 176.33,223.62 176.33,244.32 209.79,225" fill="#d97706" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+    </g>
+    
+    <g class="matrix-voxel">
+      <polygon points="256,175.78 289.46,195.1 256,214.42 222.54,195.1" fill="#34d399" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="222.54,195.1 256,214.42 256,244.32 222.54,225" fill="#059669" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="289.46,195.1 256,214.42 256,244.32 289.46,225" fill="#047857" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+    </g>
+    
+    <g class="matrix-voxel">
+      <polygon points="335.67,175.78 369.14,195.1 335.67,214.42 302.21,195.1" fill="#38bdf8" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="302.21,195.1 335.67,214.42 335.67,244.32 302.21,225" fill="#0284c7" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="369.14,195.1 335.67,214.42 335.67,244.32 369.14,225" fill="#0369a1" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+    </g>
+    <polygon points="136.49,227.76 169.95,247.08 136.49,266.4 103.03,247.08" fill="#1e293b" stroke="#334155" stroke-width="1" stroke-linejoin="round"/>
+    <polygon points="216.16,227.76 249.63,247.08 216.16,266.4 182.7,247.08" fill="#1e293b" stroke="#334155" stroke-width="1" stroke-linejoin="round"/>
+    <polygon points="295.84,227.76 329.3,247.08 295.84,266.4 262.37,247.08" fill="#1e293b" stroke="#334155" stroke-width="1" stroke-linejoin="round"/>
+    
+    <g class="matrix-voxel">
+      <polygon points="375.51,198.78 408.97,218.1 375.51,237.42 342.05,218.1" fill="#38bdf8" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="342.05,218.1 375.51,237.42 375.51,267.32 342.05,248" fill="#0284c7" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="408.97,218.1 375.51,237.42 375.51,267.32 408.97,248" fill="#0369a1" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+    </g>
+    <polygon points="256,250.76 289.46,270.08 256,289.4 222.54,270.08" fill="#1e293b" stroke="#334155" stroke-width="1" stroke-linejoin="round"/>
+    <polygon points="335.67,250.76 369.14,270.08 335.67,289.4 302.21,270.08" fill="#1e293b" stroke="#334155" stroke-width="1" stroke-linejoin="round"/>
+    
+    <g class="matrix-voxel">
+      <polygon points="96.65,221.78 130.11,241.1 96.65,260.42 63.19,241.1" fill="#818cf8" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="63.19,241.1 96.65,260.42 96.65,290.32 63.19,271" fill="#6366f1" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="130.11,241.1 96.65,260.42 96.65,290.32 130.11,271" fill="#4338ca" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+    </g>
+    
+    <g class="matrix-voxel">
+      <polygon points="176.33,221.78 209.79,241.1 176.33,260.42 142.86,241.1" fill="#c084fc" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="142.86,241.1 176.33,260.42 176.33,290.32 142.86,271" fill="#a855f7" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="209.79,241.1 176.33,260.42 176.33,290.32 209.79,271" fill="#7e22ce" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+    </g>
+    
+    <g class="matrix-voxel">
+      <polygon points="415.35,221.78 448.81,241.1 415.35,260.42 381.89,241.1" fill="#38bdf8" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="381.89,241.1 415.35,260.42 415.35,290.32 381.89,271" fill="#0284c7" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="448.81,241.1 415.35,260.42 415.35,290.32 448.81,271" fill="#0369a1" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+    </g>
+    <polygon points="216.16,273.76 249.63,293.08 216.16,312.4 182.7,293.08" fill="#1e293b" stroke="#334155" stroke-width="1" stroke-linejoin="round"/>
+    <polygon points="295.84,273.76 329.3,293.08 295.84,312.4 262.37,293.08" fill="#1e293b" stroke="#334155" stroke-width="1" stroke-linejoin="round"/>
+    <polygon points="375.51,273.76 408.97,293.08 375.51,312.4 342.05,293.08" fill="#1e293b" stroke="#334155" stroke-width="1" stroke-linejoin="round"/>
+    
+    <g class="matrix-voxel">
+      <polygon points="136.49,244.78 169.95,264.1 136.49,283.42 103.03,264.1" fill="#818cf8" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="103.03,264.1 136.49,283.42 136.49,313.32 103.03,294" fill="#6366f1" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="169.95,264.1 136.49,283.42 136.49,313.32 169.95,294" fill="#4338ca" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+    </g>
+    <polygon points="256,296.76 289.46,316.08 256,335.4 222.54,316.08" fill="#1e293b" stroke="#334155" stroke-width="1" stroke-linejoin="round"/>
+    <polygon points="335.67,296.76 369.14,316.08 335.67,335.4 302.21,316.08" fill="#1e293b" stroke="#334155" stroke-width="1" stroke-linejoin="round"/>
+    
+    <g class="matrix-voxel">
+      <polygon points="176.33,267.78 209.79,287.1 176.33,306.42 142.86,287.1" fill="#818cf8" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="142.86,287.1 176.33,306.42 176.33,336.32 142.86,317" fill="#6366f1" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="209.79,287.1 176.33,306.42 176.33,336.32 209.79,317" fill="#4338ca" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+    </g>
+    <polygon points="295.84,319.76 329.3,339.08 295.84,358.4 262.37,339.08" fill="#1e293b" stroke="#334155" stroke-width="1" stroke-linejoin="round"/>
+    
+    <g class="matrix-voxel">
+      <polygon points="216.16,290.78 249.63,310.1 216.16,329.42 182.7,310.1" fill="#818cf8" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="182.7,310.1 216.16,329.42 216.16,359.32 182.7,340" fill="#6366f1" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="249.63,310.1 216.16,329.42 216.16,359.32 249.63,340" fill="#4338ca" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+    </g>
+    
+    <g class="matrix-voxel">
+      <polygon points="256,313.78 289.46,333.1 256,352.42 222.54,333.1" fill="#818cf8" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="222.54,333.1 256,352.42 256,382.32 222.54,363" fill="#6366f1" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+      <polygon points="289.46,333.1 256,352.42 256,382.32 289.46,363" fill="#4338ca" stroke="#020617" stroke-width="2" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

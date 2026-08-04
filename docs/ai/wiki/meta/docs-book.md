@@ -11,12 +11,21 @@ getting-started/guide content lives, per
 ```
 docs/book/
 ├── book.toml          # mdbook config, site-url = "/mediaway/"
+├── theme/
+│   └── favicon.svg     # copy of docs/assets/mediaway-logo.svg
 └── src/
     ├── SUMMARY.md      # table of contents
     ├── introduction.md, getting-started/, project/
     ├── guides/         # hand-written tutorials, one per examples/ sector
     └── reference/      # thin pages that {{#include}} README tables
 ```
+
+`theme/favicon.svg` overrides mdBook's built-in default icon site-wide (every
+page's `<link rel="icon">`, browser tab). It's a plain copy of
+`docs/assets/mediaway-logo.svg` (the same logo used in the README) — if that
+logo changes, re-copy it here. Only the SVG is overridden; mdBook drops the
+PNG fallback link entirely once a custom `favicon.svg` is present, so no
+`favicon.png` is needed.
 
 Build: `cd docs/book && mdbook build` (output `docs/book/book/`, gitignored).
 Local install: `cargo install mdbook`.

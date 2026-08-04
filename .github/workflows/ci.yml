@@ -226,6 +226,17 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
+      # `playwright install chromium` downloads a ~170 MB browser every run;
+      # cache it (keyed on the pinned @playwright/test version in package.json)
+      # so warm runs skip the download entirely.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ env.MEDIAWAY_CACHE_NS }}-${{ hashFiles('tools/e2e-web/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-${{ env.MEDIAWAY_CACHE_NS }}-
+
       - name: Build wasm packages
         working-directory: tools/e2e-web
         run: bun run build:wasm

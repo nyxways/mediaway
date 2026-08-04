@@ -29,13 +29,18 @@ using MuxerSession session = muxer.Begin(); // Open -> Live
 /* session.PushPacket(...); session.Flush(); drain with PollBytes() */
 ```
 
-Examples live in [`bindings/csharp/examples/`](https://github.com/nyxways/mediaway/tree/main/bindings/csharp/examples):
+Examples live in [`bindings/csharp/examples/`](https://github.com/nyxways/mediaway/tree/main/bindings/csharp/examples),
+mirroring the Rust `examples/` sector layout (`Container/`, `Device/`, `Pipeline/`):
 
-| Example | Shows |
-|---------|-------|
-| `MuxRoundtrip.cs` | MP4 mux → demux round-trip |
-| `EncodeToMp4.cs` | Encode + mux pipeline |
-| `CameraRecord.cs` | Camera capture |
-| `ScreenRecord.cs` | Screen capture (Zero-Copy) |
+| Capability | Example files |
+|------------|---------------|
+| Container | `Container/MuxRoundtrip.cs` |
+| Device | `Device/CameraRecord.cs` · `CaptureMicrophone.cs` |
+| Pipeline | `Pipeline/EncodeAudio.cs` · `EncodeToMp4.cs` · `ScreenRecord.cs` |
+
+`Mediaway.Pipeline.AudioEncoder` (AAC, ABI v2 — `crates/mediaway-ffi/adr/pipeline/0003-auto-audio-encode-c-abi.md`)
+is the session-is-the-encoder counterpart of `AutoVideoEncoder`/`EncodeSession`: no
+intermediate handle, no consumption trap. `EncodeAudio.cs` is hardware-verified: 96 frames of
+a synthetic 440 Hz sine → 96 AAC packets → an audio-only fragmented MP4.
 
 Build and run instructions: [`bindings/csharp/README.md`](https://github.com/nyxways/mediaway/blob/main/bindings/csharp/README.md).

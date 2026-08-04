@@ -13,7 +13,7 @@ freestanding cores 0.1.1 (`ebml-webm` 0.2.1) · CPack `Mediaway-0.1.2-win64`.
 | C++ | `bindings/cpp/include/mediaway/mediaway.hpp` RAII wrapper | ✅ verified — 7 examples compile+run; two-track camera_record on real hardware |
 | Python | `bindings/python/mediaway/` ctypes package | ✅ verified — 7 examples run; encode output byte-identical to C/C++/Node (6253 B video; 27372 B audio) |
 | Node.js | `bindings/nodejs/packages/@mediaway/*` koffi FFI | ✅ verified — 7 examples run; napi-rs is the eventual official path |
-| C# | `bindings/csharp/src/` P/Invoke | ✅ verified (xUnit against native libs; ADR-0017/0018) |
+| C# | `bindings/csharp/src/` P/Invoke | ✅ verified (xUnit against native libs; ADR-0017/0018); 6 examples under `Container/`/`Device/`/`Pipeline/`, mirroring Node's layout |
 | Browser | WASM (`iso-bmff-wasm` + WebCodecs) | ✅ verified — `@mediaway/browser` (ADR-0020): wasm mux/demux + WebCodecs H.264/AAC encode to fMP4, E2E-verified in Chromium + real Edge (`tools/e2e-web`, `browser-package.spec.ts`) |
 
 ## DX-driven example flow
@@ -32,6 +32,9 @@ bindings were then implemented to satisfy those examples. Examples mirror the Ru
   handle, no consumption trap); `push_pcm`/`poll_packet` stream AAC; `stream_info` exposes the
   AudioSpecificConfig (materialized after the first pushed frame — the muxer track needs it).
   camera_record now produces ONE two-track MP4 (H.264 + AAC, remuxed) on real hardware.
+  C# gained its own `Mediaway.Pipeline.AudioEncoder` wrapper this pass (previously Node-only)
+  — hardware-verified: 96 synthetic PCM frames → 96 AAC packets → 27376-byte audio-only fMP4,
+  matching Node's own `encode-audio.ts` output (27372 B) to within container-padding noise.
 - **Screen capture not from C**: needs a live `ID3D11Device*` with no CPU fallback; Screen + `NONE` gpu → `INVALID_INPUT`, Window → `UNSUPPORTED` (both verified). Browser host: `getDisplayMedia` is native and real.
 
 ## Audio encode learnings (this pass)

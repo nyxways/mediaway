@@ -172,10 +172,81 @@ jobs:
             bindings/csharp/runtime/win-x64/native
             bindings/native/runtime/win-x64
 
+  bindings-tests:
+    name: bindings tests (RC gate)
+    runs-on: windows-latest
+    needs: [version, native-assets]
+    # RC stage: validate the release-built native DLL through every binding
+    # round-trip before anything is published. Runs on dry runs too — that is
+    # the RC validation step. Every publish job gates on this job.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-dlls
+          path: bindings
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # C tests compile with MinGW gcc — same toolchain as native-assets.
+      - uses: msys2/setup-msys2@v2
+        with:
+          update: false
+      - name: Install MinGW-w64 (ucrt)
+        shell: msys2 {0}
+        run: pacman -S --noconfirm mingw-w64-ucrt-x86_64-gcc
+      - name: Put ucrt64 bin on PATH
+        shell: bash
+        run: echo "C:\msys64\ucrt64\bin" >> "$GITHUB_PATH"
+
+      # Browser npm test rebuilds the wasm package (wasm-pack + wasm-opt).
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Add wasm32 target
+        shell: bash
+        run: rustup target add wasm32-unknown-unknown
+      - name: Install wasm-pack
+        uses: jetli/wasm-pack-action@v0.4.0
+
+      - name: C# round-trip test (Container, no hardware)
+        shell: bash
+        run: dotnet test bindings/csharp/tests/Mediaway.Container.Tests/Mediaway.Container.Tests.csproj
+
+      - name: Python round-trip test
+        shell: bash
+        working-directory: bindings/python
+        run: python tests/test_mux_roundtrip.py
+
+      - name: Node round-trip test
+        shell: bash
+        working-directory: bindings/nodejs
+        run: |
+          bun install
+          npm test
+
+      - name: C round-trip test
+        shell: bash
+        run: bash bindings/c/tests/run-roundtrip.sh
+
+      - name: Browser round-trip test
+        shell: bash
+        working-directory: bindings/browser/packages/browser
+        run: |
+          bun install
+          npm test
+
   npm:
     name: npm (@mediaway/*)
     runs-on: windows-latest
-    needs: [version, native-assets]
+    needs: [version, native-assets, bindings-tests]
     environment: release
     env:
       MEDIAWAY_SKIP_CARGO_BUILD: "1"
@@ -273,7 +344,7 @@ jobs:
   nuget:
     name: nuget (Mediaway.*)
     runs-on: windows-latest
-    needs: [version, native-assets]
+    needs: [version, native-assets, bindings-tests]
     environment: release
     env:
       MEDIAWAY_SKIP_CARGO_BUILD: "1"
@@ -328,7 +399,7 @@ jobs:
   pypi:
     name: pypi (mediaway)
     runs-on: windows-latest
-    needs: [version, native-assets]
+    needs: [version, native-assets, bindings-tests]
     env:
       MEDIAWAY_SKIP_CARGO_BUILD: "1"
     steps:
@@ -430,7 +501,7 @@ jobs:
   native:
     name: cpp (CPack win64)
     runs-on: windows-latest
-    needs: [version, native-assets]
+    needs: [version, native-assets, bindings-tests]
     environment: release
     steps:
       - uses: actions/checkout@v4

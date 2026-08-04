@@ -99,8 +99,9 @@ manually). Never re-run a release without bumping.
 
 - **Dry-run**: `workflow_dispatch` with `dry_run=true` (pick the release
   branch as the ref) runs the whole pipeline — version checks, crates
-  pre-flight, `npm publish --dry-run`, `dotnet pack`, wheel build, CPack —
-  and publishes nothing.
+  pre-flight, `npm publish --dry-run`, `dotnet pack`, wheel build, CPack,
+  and the `bindings-tests` RC gate (C#/Python/Node/C/Browser round-trips
+  against the staged DLL) — and publishes nothing.
 
 - **Manual fallback** (pre-1.0, when the workflow is not used): build with the
   Bun scripts under `tools/scripts/`, then upload with the registry's CLI:

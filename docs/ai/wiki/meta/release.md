@@ -10,7 +10,9 @@ runbook: [`docs/contributing/repo-operations.md`](../../../contributing/repo-ope
   (`pyproject.toml`), and CPack (`CMakeLists.txt`) from it.
 - **Jobs**: `version` gate (semver + refuses existing `v<version>`) → `crates`
   (metadata pre-flight: publishable-set closure; publish in dependency order
-  via retry rounds) + `native-assets` (win64 GNU cdylibs, MinGW-w64) → `npm` /
+  via retry rounds) + `native-assets` (win64 GNU cdylibs, MinGW-w64) →
+  `bindings-tests` (RC gate — C#/Python/Node/C/Browser round-trips run
+  against the staged DLL; every publish job waits on it) → `npm` /
   `nuget` / `pypi` (wheel build on Windows) + `pypi-publish` (Linux: OIDC +
   PEP 740 attestations — `gh-action-pypi-publish`'s container cannot run on
   Windows runners) + `native` (CPack) in parallel → `release` (tag

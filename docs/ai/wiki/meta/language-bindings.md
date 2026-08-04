@@ -80,6 +80,13 @@ hub: per-language status legend, capability truth table, and scenario map.
   2026-08. Revisit per `docs/spec/c-ffi.md` Tier B when a concrete consumer
   appears.
 
+## RC validation
+
+`bindings/` paths map to `NONE` in the CI affected-set, so binding checks
+happen at release time: the `bindings-tests` job in `release.yml` runs each
+binding's round-trip suite against the release-built DLL and gates every
+publish job (also on `dry_run` = RC validation).
+
 ## Rules the examples/bindings follow
 
 - English comments only.

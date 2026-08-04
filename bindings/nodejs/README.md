@@ -89,6 +89,36 @@ aspirational):
 | `pipeline/screen-record.ts` | screen + mic → encode → MP4 | 🚧 aspirational — `openScreenCapture()` throws `CaptureUnavailableError` today |
 | `device/capture-screen.ts` | screen capture only | 🚧 same gap, capture-only |
 
+## Testing
+
+`test/mux-roundtrip.test.ts` is the container round-trip suite — the RC-stage
+binding check. It exercises the **release-built DLL** end to end through the
+public `@mediaway/container` API: mux 90 synthetic H.264 video packets + 90
+synthetic AAC audio packets into a fragmented MP4, demux the bytes back, and
+assert that packet counts, stream metadata (codec / geometry / timebase — the
+MP4 demux ABI does not report audio sample rate / channels yet), timestamps,
+keyframe flags, and payload bytes all survive the round trip. Deterministic
+synthetic payloads only — no randomness, no files, no hardware. Any failed
+assertion exits nonzero.
+
+The DLL must be staged at `packages/ffi/native/mediaway_ffi.dll` (the release
+workflow stages it there via `tools/scripts/copy-native-dlls.ts`). Run the
+suite with one command, from `bindings/nodejs/`:
+
+    bun install && npm test
+
+The `test` script rebuilds the `@mediaway/ffi` and `@mediaway/container` dist
+with `tsc` (no cargo — the DLL is already staged), type-checks the suite, and
+runs it via `tsx`.
+
+Type-check the suite standalone (requires the dist build above to exist):
+
+    bun node_modules/typescript/bin/tsc --noEmit
+
+(Use the `node_modules/typescript/bin/tsc` path, not `npx tsc`/`bunx tsc` — on
+Windows CI runners without `.bin` shims those can pull the placeholder
+`tsc@2.0.4` package.)
+
 ## Rules
 
 - English comments only.

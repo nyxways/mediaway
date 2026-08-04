@@ -117,3 +117,31 @@ gcc -Icrates/mediaway-ffi/include bindings/c/examples/container/mux_roundtrip.c 
 ```
 
 The DLLs must sit next to the `.exe` when running (MinGW cannot link MSVC output).
+
+## Testing
+
+The RC-stage binding check compiles the real round-trip example and links it
+against the release-built native DLL, then runs it end to end. One command:
+
+```
+bash bindings/c/tests/run-roundtrip.sh
+```
+
+What the script does (see `tests/run-roundtrip.sh`):
+
+1. Resolves `MEDIAWAY_NATIVE_DIR` — the directory holding `mediaway_ffi.dll`
+   and its MinGW import lib `libmediaway_ffi.dll.a`. Defaults to
+   `bindings/native/runtime/win-x64` (the `native-dlls` release artifact);
+   override with `MEDIAWAY_NATIVE_DIR=/path/to/dir` to point at a locally
+   built `target/x86_64-pc-windows-gnu/{debug,release}` dir instead.
+2. Compiles `examples/container/mux_roundtrip.c` against
+   `crates/mediaway-ffi/include` and links it to the DLL:
+   `gcc -Icrates/mediaway-ffi/include bindings/c/examples/container/mux_roundtrip.c -L"$MEDIAWAY_NATIVE_DIR" -lmediaway_ffi -o roundtrip.exe`.
+3. Runs the exe with `PATH="$MEDIAWAY_NATIVE_DIR:$PATH"` so Windows resolves
+   `mediaway_ffi.dll` at load time. The example muxes 90 synthetic H.264 + 90
+   synthetic AAC packets into fragmented MP4, demuxes the bytes back, and
+   asserts a 1:1 recovery — any mismatch exits nonzero.
+
+Any failure — missing DLL, compile/link error, load error, or round-trip
+mismatch — exits nonzero. Pure CPU, no hardware required; needs MinGW `gcc`
+and `bash` (both present on windows-latest runners).

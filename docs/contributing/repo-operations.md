@@ -123,10 +123,12 @@ manually). Never re-run a release without bumping.
 
 ## Releases
 
-1. Bump the workspace version (root `Cargo.toml` → `[workspace.package]` →
-   `version`) and update [`docs/spec/status.md`](../spec/status.md) if support
-   promises change. Do **not** hand-bump the npm / NuGet / PyPI / CPack
-   manifests — the workflow stamps them from the workspace version.
+1. Bump the workspace version with `bun tools/scripts/bump-version.ts
+   <version>` (root `Cargo.toml` → `[workspace.package]` → `version`, plus
+   the lockstep internal dependency pins — see § Internal dependency
+   versioning below) and update [`docs/spec/status.md`](../spec/status.md) if
+   support promises change. Do **not** hand-bump the npm / NuGet / PyPI /
+   CPack manifests — the workflow stamps them from the workspace version.
 2. Create a **release branch** `release/vX.Y.Z` (version must match the
    workspace version — the workflow refuses a mismatch), finalize
    [`RELEASE_NOTES.md`](../../RELEASE_NOTES.md) from its `## Unreleased`
@@ -139,6 +141,21 @@ manually). Never re-run a release without bumping.
 
 Release notes should cover platforms (Windows-first), codecs (H.264/AAC/…),
 bindings (C/C++/C#/Python/Node/Browser), and the honest maturity bar.
+
+### Internal dependency versioning
+
+Per ADR-0021's versioning addendum: freestanding unprefixed cores (`iso-bmff`,
+`ebml-webm`, `flv-core`, `adts-core`, `ogg-core`, `riff-wave-core`,
+`mpeg-ts-core`, `mpeg-audio`, `iso-cenc`, `rtmp`) pin their **own** version and
+release on their own cadence — never touched by a workspace version bump.
+Everything else (`mediaway-*`, `vpl-sys`, `iso-bmff-wasm`, …) uses
+`version.workspace = true` and is released together. Their entries in
+`[workspace.dependencies]` (root `Cargo.toml`) carry a `# lockstep with
+workspace version` marker and pin only `major.minor` (pre-1.0) — Cargo's
+default caret match already covers patch releases within that line, so a
+patch bump touches no dependency pins at all. `bump-version.ts` finds the
+marker and rewrites the pin only when the minor (or, post-1.0, major)
+component actually changes.
 
 Version history accumulates in [`CHANGELOG.md`](../../CHANGELOG.md). After the
 GitHub release ships, restore the Unreleased template on `main`

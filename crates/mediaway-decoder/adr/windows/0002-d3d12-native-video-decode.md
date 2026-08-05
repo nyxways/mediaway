@@ -626,3 +626,102 @@ dump capture around the hang, which can name the exact shader/microcode stage th
 stalled — outside this session's available tooling; (3) systematically testing with
 `film_grain`/scaling-matrix-free, single-macroblock synthetic streams to bisect which
 DXVA field is at fault, rather than a real encoder's full complexity.
+
+## Addendum (2026-08-05): field-by-field diff against real reference implementations (static, no hardware run)
+
+Follow-up research-only pass (explicitly **no hardware test run** — the previous
+addendum's 6 real TDRs stand as the reason to stop blind hardware iteration). Did
+candidate (1) above in spirit — not a from-scratch WMF/DXVA2 dump, but a byte-for-byte
+diff of `h264_pic_params.rs`'s `DXVA_PicParams_H264`/`DXVA_Slice_H264_Long` fill against
+two real, independent, hardware-validated DXVA producers fetched fresh this session:
+
+- **FFmpeg `libavcodec/dxva2_h264.c`** (`ff_dxva2_h264_fill_picture_parameters`,
+  `fill_slice_long`) — fetched from `github.com/FFmpeg/FFmpeg` (master).
+- **GStreamer `gst-libs/gst/dxva/gstdxvah264decoder.cpp`** (shared D3D11/D3D12 base
+  class `GstDxvaH264Decoder`, used by both `d3d11h264dec` and `d3d12h264dec`) —
+  fetched from `github.com/GStreamer/gstreamer` (main); found via `gh search code
+  "MinLumaBipredSize8x8Flag"`, which is how the struct-layout/field-source ground
+  truth below was located precisely (`gh api repos/GStreamer/gstreamer/contents/...`
+  for the raw file).
+- Wine's `include/dxva.h` mirror re-confirmed the exact `DXVA_PicParams_H264`/
+  `DXVA_Slice_H264_Long` field order this crate's `repr(C)` structs already use —
+  **struct layout itself matches perfectly, field-for-field, no ordering bug found.**
+
+### Bug 4 (fixed): `MinLumaBipredSize8x8Flag` (wBitFields bit 14) sourced from the wrong SPS field
+
+`h264_pic_params::build_pic_params` derived bit 14 from `sps.direct_8x8_inference_flag`
+(with a comment asserting `"MinLumaBipredSize8x8Flag <- direct_8x8_inference_flag"`, an
+unreferenced guess from the original implementation pass). Both real references agree
+this is wrong: FFmpeg computes `(sps->level_idc >= 31) << 14`; GStreamer computes
+`params->MinLumaBipredSize8x8Flag = sps->level_idc >= 31;` — bit-for-bit identical,
+level-derived, and **unrelated** to the `direct_8x8_inference_flag` SPS syntax element
+(which correctly has its own separate struct field elsewhere in the same fill). Fixed:
+`build_pic_params` now passes `sps.level_idc >= 31`. `level_idc` was already parsed and
+stored on `Sps`, so this is a one-line source-value change, not a new field to parse.
+
+### Bug 5 (fixed): `Reserved16Bits` is not actually zero-fill despite the name
+
+`h264_pic_params::build_pic_params` set `reserved16_bits: 0`. FFmpeg's
+`fill_picture_parameters` reveals this field is **not** truly reserved/zero — it is a
+real, driver-workaround-selected value: `0` only under a named legacy workaround
+(`FF_DXVA2_WORKAROUND_SCALING_LIST_ZIGZAG`), `0x34c` only under another
+(`FF_DXVA2_WORKAROUND_INTEL_CLEARVIDEO`), and **`3` as the default** for a normal
+driver with neither workaround active (FFmpeg's own comment: `/* FIXME is there a way
+to detect the right mode ? */`). GStreamer's independent implementation agrees
+unconditionally: `params->Reserved16Bits = 3;`, no workaround branching at all. This
+crate has no equivalent of either named FFmpeg workaround and no evidence its
+reference RTX 4090 needs one, so `3` (the shared default both references agree on) is
+the correct value — not `0`. Fixed: `build_pic_params` now sets `reserved16_bits: 3`.
+This is exactly the class of bug the previous addendum predicted ("a wrong QP value,
+an incorrect `wBitFields` bit... would not surface as a debug-layer message at all") —
+an undocumented-by-name field whose correct value is only discoverable by diffing
+against a real, working producer, not by reading `dxva.h`'s field name alone.
+
+### Investigated, not fixed: `DXVA_Slice_H264_Long::BitOffsetToSliceData` raw-vs-de-emulated question (Bug 3 revisited)
+
+The previous addendum's Bug 3 fix (`h264_slice::rbsp_bit_offset_to_raw_bit_offset`)
+translates the slice header's de-emulated bit count into a position counted against the
+**raw** NAL bytes (escape sequences counted as real bits to skip over), on the
+stated-but-uncited assumption that `BitOffsetToSliceData` "must index into the raw NAL
+bytes." Directly tracing FFmpeg's real implementation this session **contradicts that
+assumption in one clear respect**: `libavcodec/h264dec.c` feeds the hwaccel
+`decode_slice` callback `nal->raw_data`/`nal->raw_size` (raw, escapes intact — same as
+this crate), but `fill_slice_long`'s `BitOffsetToSliceData = get_bits_count(&sl->gb) - 8`
+is computed from `sl->gb = nal->gb`, which `libavcodec/h2645_parse.c` initializes on
+`nal->data` — the **de-emulated** RBSP buffer produced by `ff_h2645_extract_rbsp`.
+FFmpeg's `fill_slice_long` contains **no** raw-byte-position translation step anywhere.
+This is a real, concrete discrepancy: this crate translates to a raw position, FFmpeg's
+real, hardware-proven implementation does not.
+
+**Not fixed this session** — the exact additive constant is genuinely ambiguous from
+static tracing alone: cross-referencing older FFmpeg forks/mirrors via `gh search code
+"BitOffsetToSliceData"` shows the formula has changed *within FFmpeg's own history*
+(`get_bits_count(&s->gb)` with no adjustment in some old trees, `+ 8` in others,
+today's maintained `- 8` in current master and every recent mirror checked) — meaning
+even this reference has visibly gotten this specific constant wrong before. Resolving
+whether this crate's own `+8`-for-header-byte convention (`d3d12_video_decode.rs::
+decode_slice`: `8u32.saturating_add(raw_bit_offset_after_header)`) should also change
+requires confirming exactly what bit position `nal->gb` starts counting from relative
+to the header byte, which was not resolvable with confidence from source alone this
+session. Given a wrong bit offset is plausibly hang-causing (the exact failure mode
+this ADR is chasing) and the one hardware data point available (the CIF test's
+diagnostic dump) had **zero escape bytes** before `slice_data()` — meaning the
+raw-translation function was a no-op for that specific run either way — leaving this
+untouched changes nothing about the already-collected evidence, but guessing wrong on
+the additive constant risks a **new**, unverified regression. Recommended follow-up:
+resolve the exact `nal->gb` start-position convention against a **third** reference
+(e.g. the Windows SDK `dxva.h`'s own comment on this field, `/* after CABAC alignment
+*/`, found in the Microsoft SDK 10.0.22621.0 mirror this session but not yet
+cross-referenced against a spec definition of "CABAC alignment"), or a synthetic
+single-macroblock stream deliberately engineered to contain an escape byte inside the
+slice header, decoded first through a CPU-only reference parser to get an unambiguous
+expected value — **before** spending another real hardware TDR on it.
+
+### Static-only verification this session
+
+`cargo check -p mediaway-decoder --all-targets`, `cargo clippy -p mediaway-decoder
+--all-targets --all-features -- -D warnings`, and `cargo fmt -p mediaway-decoder --
+--check` all clean after Bugs 4 and 5. **No hardware test was run** — per this
+session's explicit scope, the hang itself remains unverified against real hardware;
+Bugs 4 and 5 narrow the "opaque blob content" hypothesis space but do not confirm or
+rule out that either one is *the* hang's cause.

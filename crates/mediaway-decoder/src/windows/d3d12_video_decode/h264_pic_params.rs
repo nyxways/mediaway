@@ -204,7 +204,15 @@ pub(super) fn build_pic_params(
         true, // MbsConsecutiveFlag (no FMO/ASO, enforced by h264_sps_pps::parse_pps)
         true, // frame_mbs_only_flag (enforced by h264_sps_pps::parse_sps)
         pps.transform_8x8_mode_flag,
-        sps.direct_8x8_inference_flag, // MinLumaBipredSize8x8Flag <- direct_8x8_inference_flag
+        // MinLumaBipredSize8x8Flag: **not** `direct_8x8_inference_flag` (a plausible-looking
+        // but wrong guess this module previously made) — ground-truthed against two
+        // independent, real, hardware-validated DXVA_PicParams_H264 producers: FFmpeg
+        // `libavcodec/dxva2_h264.c` (`(sps->level_idc >= 31) << 14`) and GStreamer
+        // `gst-libs/gst/dxva/gstdxvah264decoder.cpp`
+        // (`params->MinLumaBipredSize8x8Flag = sps->level_idc >= 31;`). Both agree: this
+        // bit is level-derived, unrelated to the `direct_8x8_inference_flag` SPS syntax
+        // element (which is packed separately into its own struct field below).
+        sps.level_idc >= 31,
         is_intra_only,
     );
 
@@ -216,7 +224,15 @@ pub(super) fn build_pic_params(
         w_bit_fields,
         bit_depth_luma_minus8: u8::try_from(sps.bit_depth_luma_minus8).unwrap_or(0),
         bit_depth_chroma_minus8: u8::try_from(sps.bit_depth_chroma_minus8).unwrap_or(0),
-        reserved16_bits: 0,
+        // Despite the name, `Reserved16Bits` is not a true zero-filled reserved field —
+        // ground-truthed against FFmpeg `libavcodec/dxva2_h264.c`
+        // (`ff_dxva2_h264_fill_picture_parameters`): its default value (no known-buggy-
+        // driver workaround active) is `3`, matching GStreamer
+        // `gst-libs/gst/dxva/gstdxvah264decoder.cpp`'s unconditional
+        // `params->Reserved16Bits = 3;`. FFmpeg only uses `0` (or `0x34c`) for two named
+        // legacy-driver workarounds this crate has no equivalent of and no evidence it
+        // needs; `3` is the correct default for a normal, non-workaround driver.
+        reserved16_bits: 3,
         status_report_feedback_number,
         ref_frame_list,
         curr_field_order_cnt: [curr_top_poc, curr_bottom_poc],

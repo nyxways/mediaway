@@ -19,23 +19,18 @@ Found while adding `mediaway-ffi`'s decode C ABI
 (`crates/mediaway-ffi/adr/pipeline/0004-auto-decode-c-abi.md`) — a real, pre-existing bug in
 `WindowsVideoDecoder`'s `CpuFramesOk` H.264 path, not a defect in that new FFI wrapper:
 
-- `crates/mediaway-decoder/tests/windows/cpu_roundtrip.rs` (a real WMF H.264 CPU encode→decode
-  round-trip test) existed but was **never actually running** — nested `tests/<dir>/*.rs` paths
-  are not auto-discovered by `cargo test`, and its imports (pre-ADR-0021 crate names) no longer
-  compiled either. Moved to `tests/cpu_roundtrip.rs` and fixed — same class of gap as other
-  nested test files across the workspace (`mediaway/tests/wgpu/*`, `mediaway-encoder/tests/
-  windows/*`, `mediaway-sw/tests/opus/*`) not yet audited.
+- `crates/mediaway-decoder/tests/windows/cpu_roundtrip.rs` (WMF H.264 CPU encode→decode
+  round-trip) existed but was **never actually running** — nested `tests/<dir>/*.rs` paths
+  aren't auto-discovered by `cargo test`, and its imports (pre-ADR-0021 names) didn't compile
+  either. Moved to `tests/cpu_roundtrip.rs` and fixed — same gap class as other nested test
+  files workspace-wide, not yet audited.
 - Run for real for the first time: `decoder.poll_frame()` returns **zero frames** for a real,
-  valid single-packet H.264 bitstream from a real WMF encoder — no error, just nothing to poll.
-- A fuller round trip through `mediaway-ffi`'s new C ABI (mux → demux → decode, 10 frames,
-  `mediaway-ffi/tests/decode_smoke.rs`) hits a **worse** symptom on the same underlying path:
-  `poll_frame` triggers a Rust std UB precondition check
-  (`Alignment::new_unchecked requires a power of two`) and **aborts the process** —
-  not a catchable panic, so `catch_unwind` in the FFI layer cannot turn it into a status code.
-- Both symptoms point at the same `WindowsVideoDecoder` CPU-output code path; root cause not
-  found. Both test files are `#[ignore]`d with the reason in their own doc comments — real,
-  tracked bugs, not deleted or silently passed. Next step: bisect single-packet (silent-empty)
-  vs. multi-packet-from-demux (crash) inputs to find what the crash path corrupts.
+  valid single-packet H.264 bitstream — no error, just nothing to poll. A fuller round trip via
+  `mediaway-ffi`'s C ABI (`mediaway-ffi/tests/decode_smoke.rs`) hits a **worse** symptom on the
+  same path: `poll_frame` triggers a Rust std UB precondition check and **aborts the process**
+  (not catchable — `catch_unwind` can't turn it into a status code).
+- Root cause not found; both test files `#[ignore]`d with the reason in their doc comments —
+  tracked, not silently passed. Next: bisect single-packet vs. multi-packet-from-demux inputs.
 
 ## D3D12 native decode (H.264 implemented, unregistered — ADR-0002)
 
@@ -64,8 +59,17 @@ Found while adding `mediaway-ffi`'s decode C ABI
   the opaque `DXVA_PicParams_H264` blob content itself (invisible to the debug layer).
   **6 real hardware TDRs** were triggered finding this — by explicit project-owner decision,
   further hardware iteration here is **paused** rather than continuing to reset the machine's
-  GPU on speculation. Next real step if resumed: diff this backend's picture-param fill
-  byte-for-byte against a working WMF/DXVA2 reference on the same stream, or Nsight Aftermath.
+  GPU on speculation.
+- **Follow-up static-only pass (2026-08-05, no hardware run)**: field-by-field diff against
+  two real DXVA producers (FFmpeg `dxva2_h264.c`, GStreamer `gstdxvah264decoder.cpp`) found
+  and fixed **2 more real bugs**: `wBitFields` bit 14 (`MinLumaBipredSize8x8Flag`) was sourced
+  from `direct_8x8_inference_flag` instead of `level_idc >= 31` (both references agree);
+  `Reserved16Bits` — not a true zero-fill field despite its name — was `0` instead of the
+  shared default `3` both references use. A third candidate (Bug 3's raw-vs-de-emulated
+  `BitOffsetToSliceData` translation) looks likely unnecessary per FFmpeg but the exact
+  additive constant stayed ambiguous from static tracing, so **not** changed — see ADR
+  addendum for the full reasoning and a proposed synthetic-stream follow-up. Struct field
+  order/layout re-confirmed correct (Wine `dxva.h` mirror) — no layout bug.
 - `GpuBufferHandle::DirectX12` has no `subresource` field — Zero-Copy output currently uses a
   local `DecodedOutput` type instead of forcing it through the shared facade type; flagged as
   a cross-crate follow-up.
@@ -81,20 +85,16 @@ Found while adding `mediaway-ffi`'s decode C ABI
   output (above) into a D3D12 resource `mediaway::wgpu`'s `WgpuDx12DecodeBridge`
   can wrap as a `wgpu::Texture`. `GpuCopy`, not Zero-Copy — see
   [zero-copy/gpu-interop](../zero-copy/gpu-interop.md).
-- `src/d3d11_shared_decode_bridge.rs`, implemented 2026-07-31: `open` (caller
-  D3D11 + caller D3D12 device, two-sided LUID check, shared NV12 texture),
-  `copy_from_decoded` (cross-device `GetDevice()` guard, `CopySubresourceRegion`
-  + bounded query/flush poll), `d3d12_resource_handle`.
-  `open_same_adapter_or_skip` hardware-verified this session (not just a
-  skip) — a real same-adapter D3D11+D3D12 device pair opened successfully on
-  the RTX 4090.
-- Real finding beyond the ADR's own flagged risk list: `ID3D11DeviceContext::
-  GetData`'s `windows`-crate `Result<()>` collapses S_OK and S_FALSE (both
-  non-negative HRESULTs) to `Ok(())` — a poll loop must check the actual
-  `BOOL` out-param, not just `.is_ok()`, or it can return before the GPU copy
-  actually retires.
-- `copy_from_decoded` itself is still unverified against real decode output —
-  there is still no working H.264 decode HW MFT available (same limitation
-  `open_dx11_zero_copy_or_skip` above already hits).
+- `src/d3d11_shared_decode_bridge.rs`, implemented 2026-07-31: `open` (caller D3D11 + caller
+  D3D12 device, two-sided LUID check, shared NV12 texture), `copy_from_decoded` (cross-device
+  `GetDevice()` guard, `CopySubresourceRegion` + bounded query/flush poll),
+  `d3d12_resource_handle`. `open_same_adapter_or_skip` hardware-verified this session (not
+  just a skip) — a real same-adapter D3D11+D3D12 device pair opened on the RTX 4090.
+- Real finding beyond the ADR's own flagged risk list: `ID3D11DeviceContext::GetData`'s
+  `windows`-crate `Result<()>` collapses S_OK and S_FALSE (both non-negative HRESULTs) to
+  `Ok(())` — a poll loop must check the actual `BOOL` out-param, not just `.is_ok()`, or it
+  can return before the GPU copy actually retires.
+- `copy_from_decoded` itself is still unverified against real decode output — no working
+  H.264 decode HW MFT available (same limitation `open_dx11_zero_copy_or_skip` hits above).
 - ADR: [0003](../../../../crates/mediaway-decoder/adr/windows/0003-d3d11-shared-decode-bridge.md)
   — **Accepted**, implemented (2026-07-31 addendum has the signature-by-signature account).

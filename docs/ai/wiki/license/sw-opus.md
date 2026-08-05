@@ -25,8 +25,8 @@ every `unsafe` block.
 - `CodecKind::Opus` already exists in `mediaway-common`, but before this crate **no encode
   path existed on any platform** — Windows has no inbox Opus encoder MFT at all (confirmed
   via a real `MFTEnumEx` query, `crates/mediaway-decoder/src/windows/wmf/opus.rs`).
-- The one real Opus **decode** path (`WmfOpusDecoder`, same file) is hardware-verified but
-  unwired — `mediaway-decoder` has no `AudioDecoder` trait yet, only `VideoDecoder`.
+- The one real Opus **decode** path (`WmfOpusDecoder`, same file) is hardware-verified and
+  now implements `mediaway-decoder`'s `AudioDecoder` trait ([ADR-0003](../../../../crates/mediaway-decoder/adr/0003-audio-decoder-trait.md)).
 - `unsafe-libopus` (crates.io, `DCNick3/unsafe-libopus`) — BSD-3-Clause, already on
   `deny.toml`'s allow-list, `c2rust`-transpiled libopus 1.3.1, IETF test-vector conformant,
   no system libopus / CMake / autotools build step. `cargo deny check` against the resolved
@@ -38,10 +38,13 @@ every `unsafe` block.
 `frame_size_samples` (shared by both sessions); `error.rs` holds the single `OpusError`
 `thiserror` enum both directions use; `encoder.rs`/`decoder.rs` hold `OpusEncoder`/
 `OpusDecoder`. `OpusEncoder` mirrors `mediaway_encoder::AudioEncoder`'s push/poll method
-names; `OpusDecoder` mirrors `WmfOpusDecoder`'s (`push_packet`/`poll_frame`/`flush` — no
-`AudioDecoder` trait to implement yet). Neither `impl`s the sibling facade trait directly —
-this crate does not depend on `mediaway-encoder`/`mediaway-decoder` to avoid an unwanted
-dependency edge for a leaf codec crate; a factory can wire it in later.
+names; `OpusDecoder` mirrors `WmfOpusDecoder`'s (`push_packet`/`poll_frame`/`flush`).
+Neither `impl`s the sibling facade trait directly — this crate does not depend on
+`mediaway-encoder`/`mediaway-decoder` to avoid an unwanted dependency edge for a leaf
+codec crate. Both facades instead wrap these sessions in a thin newtype
+(`SwOpusAudioEncoder` in `mediaway-encoder`, `SwOpusAudioDecoder` in `mediaway-decoder`'s
+`audio::sw_opus`) that implements the local trait and maps `OpusError` onto the facade's
+own error type.
 
 Both sessions own a private raw pointer with RAII `Drop` → `opus_{encoder,decoder}_destroy`,
 and a justified `unsafe impl Send` (not `Sync`) — the raw pointer never appears in the public

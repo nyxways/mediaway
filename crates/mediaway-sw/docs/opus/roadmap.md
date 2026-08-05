@@ -33,8 +33,9 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
   shape mirrors `mediaway-decoder-windows`'s `WmfOpusDecoder` session
 - [x] Real decode test, round-tripped against this crate's own `OpusEncoder` output
   (`tests/roundtrip.rs` — RMS energy similarity check, lossy codec so not byte-exact)
-- [ ] Wire behind an `AudioDecoder` trait once `mediaway-decoder` defines one (out of scope
-  here — same gap `mediaway-decoder-windows/src/wmf/opus.rs` already names)
+- [x] Wired behind an `AudioDecoder` trait — `mediaway-decoder`'s ADR-0003 adds the trait;
+  `mediaway-decoder::audio::sw_opus::SwOpusAudioDecoder` wraps this crate's `OpusDecoder`
+  and `impl`s it (mirrors `SwOpusAudioEncoder`'s existing wrapper shape)
 
 ### 3 — Cost documentation
 

@@ -22,8 +22,11 @@
 //! `opus_decode_float`) and only exact Opus frame sizes (no internal re-buffering) — see
 //! [`config::OpusEncoderConfig::time_base`] and [`error::OpusError::FrameSizeMismatch`].
 //!
-//! **Status: encode + decode implemented.** See `docs/roadmap.md` for remaining wiring work
-//! (an `AudioDecoder` trait does not exist in `mediaway-decoder` yet to implement against).
+//! **Status: encode + decode implemented, both wired into their facade traits** — see
+//! `docs/roadmap.md`. `mediaway-decoder`'s `AudioDecoder` trait (crate `adr/0003-audio-decoder-trait.md`)
+//! is implemented for [`decoder::OpusDecoder`] via a thin wrapper
+//! (`mediaway_decoder::SwOpusAudioDecoder`), mirroring how `mediaway-encoder`'s
+//! `SwOpusAudioEncoder` already wraps [`encoder::OpusEncoder`].
 
 #![allow(clippy::too_long_first_doc_paragraph)]
 // crate-root doc became module doc (ADR-0021 merge)

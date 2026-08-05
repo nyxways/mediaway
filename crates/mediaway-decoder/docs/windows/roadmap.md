@@ -53,11 +53,10 @@ Platform order: **Windows first**. Workspace index: [`docs/roadmap.md`](../../..
       asserts a real 480-samples/channel Float32 PCM frame comes back at 48 kHz stereo.
       No new Cargo dependency needed for this — a full encode→decode round trip using an
       external Opus encoder is a separate, deliberate deps-policy decision, not taken here.
-- [ ] Not wired into any public entry point: `mediaway-decoder` has no `AudioDecoder`
-      trait today (only `VideoDecoder`), so `WmfOpusDecoder` has no facade shape to
-      implement against. Designing that trait, plus wiring `mod opus;`/`CodecKind::Opus`
-      into `src/lib.rs` / `src/wmf/codec.rs`, is a follow-up integration pass (left
-      unregistered here deliberately).
+- [x] `AudioDecoder` trait added to `mediaway-decoder` (crate `adr/0003-audio-decoder-trait.md`),
+      mirroring `VideoDecoder`. `WmfOpusDecoder` now `impl`s it (`src/wmf/opus.rs`) in addition
+      to its existing inherent methods. Still not wired into any `WindowsAudioDecoder`-style
+      backend switcher — no such type exists (Opus is the only Windows audio decode path).
 
 ### 4 — HEVC / AV1 / VP9 CPU decode (research + real MFT sessions, not yet wired into a public API)
 

@@ -81,6 +81,44 @@ fn decodes_minimal_toc_only_packet_to_real_pcm_or_skip() {
     assert_eq!(total_samples_per_channel, 480);
 }
 
+/// Drives one packet through `dec` purely via the [`AudioDecoder`] trait bound —
+/// proves the type satisfies the trait, not just its own inherent methods (used
+/// identically against `SwOpusAudioDecoder` in `audio::sw_opus_tests`).
+fn decode_via_trait<D: AudioDecoder>(dec: &mut D, packet: &Packet) -> usize {
+    dec.push_packet(packet).expect("push via trait");
+    dec.flush().expect("flush via trait");
+    let mut frames = 0usize;
+    while dec.poll_frame().expect("poll via trait").is_some() {
+        frames += 1;
+    }
+    frames
+}
+
+#[test]
+fn decodes_via_audio_decoder_trait_or_skip() {
+    let mut dec = match WmfOpusDecoder::open(&cfg()) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("skip: WmfOpusDecoder::open failed ({e:?}) — no inbox Opus decoder MFT?");
+            return;
+        }
+    };
+    let packet = Packet {
+        stream_id: 0,
+        pts: 0,
+        dts: 0,
+        duration: 480,
+        is_keyframe: true,
+        is_discard: false,
+        payload: Bytes::from(MINIMAL_TOC_ONLY_PACKET.to_vec()),
+    };
+    let frames = decode_via_trait(&mut dec, &packet);
+    assert!(
+        frames >= 1,
+        "expected at least one decoded PCM frame via trait"
+    );
+}
+
 #[test]
 fn rejects_invalid_config() {
     let bad = OpusDecoderConfig {

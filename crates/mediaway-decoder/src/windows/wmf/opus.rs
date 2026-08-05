@@ -19,18 +19,17 @@
 //! `ProcessOutput` produced a real 3840-byte (960 float samples, 2ch x 480/ch = 10 ms
 //! @ 48 kHz) PCM buffer.
 //!
-//! Not yet wired into any public backend entry point: `mediaway-decoder` has no
-//! `AudioDecoder` trait today (only `VideoDecoder`), so there is no facade shape for this
-//! module to implement against yet. Designing that trait is a facade-level API decision
-//! (ADR-worthy) out of scope here; this module stays a self-contained, real, and tested
-//! MFT session so a later integration pass can wire it in without redesigning the MFT
-//! plumbing. See `docs/roadmap.md`.
+//! Implements the facade [`crate::AudioDecoder`] trait ([ADR-0003](../../../adr/0003-audio-decoder-trait.md))
+//! in addition to its own inherent methods (kept for callers not importing the trait —
+//! see that ADR for why both exist). Not wired into any `WindowsAudioDecoder`-style
+//! backend switcher yet — no such type exists (unlike video's `WindowsVideoDecoder`),
+//! since Opus is the only Windows audio decode path today. See `docs/roadmap.md`.
 
 #![allow(unsafe_code)]
 
 use std::collections::VecDeque;
 
-use crate::DecodeError;
+use crate::{AudioDecoder, DecodeError};
 use mediaway_common::{AudioFrame, Bytes, CodecKind, Packet, Rational, SampleFormat, StreamInfo};
 use windows::Win32::Media::MediaFoundation::{
     CMSOpusDecMFT, IMFMediaBuffer, IMFSample, IMFTransform, MF_E_TRANSFORM_NEED_MORE_INPUT,
@@ -187,6 +186,24 @@ impl WmfOpusDecoder {
             format: SampleFormat::F32,
             data: payload.data,
         }
+    }
+}
+
+impl AudioDecoder for WmfOpusDecoder {
+    fn stream_info(&self) -> &StreamInfo {
+        self.stream_info()
+    }
+
+    fn push_packet(&mut self, packet: &Packet) -> Result<(), DecodeError> {
+        self.push_packet(packet)
+    }
+
+    fn poll_frame(&mut self) -> Result<Option<AudioFrame>, DecodeError> {
+        self.poll_frame()
+    }
+
+    fn flush(&mut self) -> Result<(), DecodeError> {
+        self.flush()
     }
 }
 

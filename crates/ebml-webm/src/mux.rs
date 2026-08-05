@@ -6,6 +6,7 @@
 
 #![forbid(unsafe_code)]
 
+use crate::lacing;
 use crate::types::TrackInfo;
 use crate::{INLINE_TRACKS, MuxError, ids, vint};
 use smallvec::SmallVec;
@@ -21,6 +22,10 @@ pub struct Live;
 
 /// Default frames buffered per `Cluster` before it is flushed to `output`.
 pub const DEFAULT_CLUSTER_BATCH: usize = 32;
+
+/// Max sub-frames [`Muxer::push_laced_frames`] can pack into one laced
+/// `SimpleBlock` — EBML's `frame_count - 1` field is one byte (0..=255).
+pub const MAX_LACED_FRAMES: usize = 256;
 
 /// Matroska/`WebM` default `TimecodeScale` (ns per tick) — matches the
 /// demux side's [`crate::demux`] default when a file omits it.
@@ -163,6 +168,69 @@ impl Muxer<Live> {
         is_keyframe: bool,
         payload: &[u8],
     ) -> Result<(), MuxError> {
+        let relative_timecode = self.open_cluster_for(track_number, timecode)?;
+        write_simple_block(
+            &mut self.cluster,
+            track_number,
+            relative_timecode,
+            is_keyframe,
+            payload,
+        );
+        self.cluster_frames += 1;
+        Ok(())
+    }
+
+    /// Push several sub-frames as one EBML-laced `SimpleBlock` — they share
+    /// one `timecode` (Matroska lacing doesn't encode a distinct timecode
+    /// per sub-frame, the same real spec property [`crate::demux`]'s reader
+    /// relies on). `payloads.len() == 1` writes a plain, unlaced
+    /// `SimpleBlock` (same wire bytes as [`Self::push_frame`]).
+    ///
+    /// # Errors
+    ///
+    /// [`MuxError::UnknownTrack`] if `track_number` was never registered;
+    /// [`MuxError::EmptyLace`] if `payloads` is empty;
+    /// [`MuxError::LaceTooLarge`] if <code>payloads.len() > [MAX_LACED_FRAMES]</code>.
+    pub fn push_laced_frames(
+        &mut self,
+        track_number: u64,
+        timecode: i64,
+        is_keyframe: bool,
+        payloads: &[&[u8]],
+    ) -> Result<(), MuxError> {
+        if payloads.is_empty() {
+            return Err(MuxError::EmptyLace);
+        }
+        if payloads.len() > MAX_LACED_FRAMES {
+            return Err(MuxError::LaceTooLarge(payloads.len()));
+        }
+        let relative_timecode = self.open_cluster_for(track_number, timecode)?;
+        if let [payload] = payloads {
+            write_simple_block(
+                &mut self.cluster,
+                track_number,
+                relative_timecode,
+                is_keyframe,
+                payload,
+            );
+        } else {
+            write_laced_simple_block(
+                &mut self.cluster,
+                track_number,
+                relative_timecode,
+                is_keyframe,
+                payloads,
+            );
+        }
+        self.cluster_frames += 1;
+        Ok(())
+    }
+
+    /// Shared `push_frame`/`push_laced_frames` prelude: validates
+    /// `track_number`, opens a new `Cluster` if the current one is absent,
+    /// full, or can't fit `timecode` in `SimpleBlock`'s signed 16-bit
+    /// relative-offset field, and returns the relative timecode to write.
+    fn open_cluster_for(&mut self, track_number: u64, timecode: i64) -> Result<i16, MuxError> {
         if !self.tracks.iter().any(|t| t.track_number == track_number) {
             return Err(MuxError::UnknownTrack(track_number));
         }
@@ -179,15 +247,7 @@ impl Muxer<Live> {
         // Base is always `Some` here — just set above, or the frame fit an
         // already-open cluster.
         let base = self.cluster_timecode.unwrap_or(timecode);
-        write_simple_block(
-            &mut self.cluster,
-            track_number,
-            (timecode - base) as i16,
-            is_keyframe,
-            payload,
-        );
-        self.cluster_frames += 1;
-        Ok(())
+        Ok((timecode - base) as i16)
     }
 
     /// Force the open `Cluster` (if any) to close and become available via
@@ -316,6 +376,39 @@ fn write_simple_block(
     body.extend_from_slice(&relative_timecode.to_be_bytes());
     body.push(if is_keyframe { 0x80 } else { 0x00 });
     body.extend_from_slice(payload);
+    write_id(out, ids::SIMPLE_BLOCK);
+    vint::encode_size(body.len() as u64, out);
+    out.extend_from_slice(&body);
+}
+
+/// EBML-laced `SimpleBlock` body: track number VINT, 2-byte signed relative
+/// timecode, flags byte (`0x80` keyframe `|` `0x06` EBML lacing bits), a
+/// `frame_count - 1` byte, then every sub-frame's size but the last
+/// ([`lacing::encode_ebml_lace_sizes`] — the last frame takes whatever
+/// remains, same convention [`crate::demux`]'s `lacing::split` reads back),
+/// then the concatenated payloads. Caller (`push_laced_frames`) already
+/// checked `2..=MAX_LACED_FRAMES` frames.
+fn write_laced_simple_block(
+    out: &mut Vec<u8>,
+    track_number: u64,
+    relative_timecode: i16,
+    is_keyframe: bool,
+    payloads: &[&[u8]],
+) {
+    let payload_len: usize = payloads.iter().map(|p| p.len()).sum();
+    let mut body = Vec::with_capacity(payload_len + 8 + payloads.len());
+    vint::encode_size(track_number, &mut body);
+    body.extend_from_slice(&relative_timecode.to_be_bytes());
+    body.push(if is_keyframe { 0x80 } else { 0x00 } | 0x06); // EBML lacing
+    body.push((payloads.len() - 1) as u8);
+    let sizes: Vec<usize> = payloads[..payloads.len() - 1]
+        .iter()
+        .map(|p| p.len())
+        .collect();
+    lacing::encode_ebml_lace_sizes(&sizes, &mut body);
+    for payload in payloads {
+        body.extend_from_slice(payload);
+    }
     write_id(out, ids::SIMPLE_BLOCK);
     vint::encode_size(body.len() as u64, out);
     out.extend_from_slice(&body);

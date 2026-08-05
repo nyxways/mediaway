@@ -112,6 +112,21 @@ pub const fn is_descend_master(id: u32) -> bool {
             | SEEK
     )
 }
+
+/// IDs that only ever occur as a direct `Segment` child.
+///
+/// Seeing one of these while an indefinite-size `Cluster` is open is a
+/// "sibling ID" — RFC 8794 §9.4 unknown-size resolution: the new element
+/// implicitly closes the still-open `Cluster` before starting, rather than
+/// nesting under it. Narrower than a full parent/child schema table (which
+/// this crate doesn't model): this only recognizes the sibling shapes that
+/// can actually follow a `Cluster` at `Segment` level, so an unmodeled
+/// *real* child of `Cluster` (`SilentTracks`, `Void`, …) never gets mistaken
+/// for a sibling.
+#[must_use]
+pub const fn is_segment_level_child(id: u32) -> bool {
+    matches!(id, SEGMENT_INFO | TRACKS | CLUSTER | CUES | SEEK_HEAD)
+}
 /// `TrackEntry\CodecPrivate` (codec-specific config: `OpusHead` for Opus, the
 /// VP9 uncompressed-header config for VP9, …).
 pub const CODEC_PRIVATE: u32 = 0x63A2;

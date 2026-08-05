@@ -30,12 +30,17 @@ Facade for container formats. Workspace index: [`docs/roadmap.md`](../../../docs
       needed, plain seek-index offsets) — 2026-07-29.
 - [x] `CodecKind::Vorbis` added (for the Ogg facade, see Stage 3) and wired
       into `webm.rs::codec_kind` — closes half of the VP8/Vorbis gap.
-      `CodecKind::Vp8` still open (video codec, no existing mapping to reuse).
 - [x] WebM mux — `ebml-webm` gained a real `mux::Muxer` (`ebml-webm/adr/0003`)
       and `webm::Muxer<Open | Live>` wraps it as a full `crate::Mux` impl
       (`adr/0003-webm-mux-facade.md`), symmetric with `mp4::Muxer`'s typestate
       shape. Same codec set as demux (`Vp9`/`Av1`/`Opus`/`Vorbis`/`Aac`);
       anything else rejected at `add_track` — 2026-07-29.
+- [x] `CodecKind::Vp8` added — closes the other half of the VP8/Vorbis gap.
+      Wired into `webm.rs::codec_kind`/`webm_codec_id` (demux and mux both);
+      every other exhaustive match on `CodecKind` across the workspace
+      updated to a correct arm (mostly "unsupported codec" — no backend
+      implements VP8 encode/decode) — see `mediaway-common`'s and
+      `mediaway-ffi`'s roadmaps for the FFI mirror-enum discriminant.
 - [ ] Optional facade features to re-export a default format
 
 ### 3 — `riff-wave`/`adts`/`mpeg-audio`/`ogg`/`flv`/`mpeg-ts` facades

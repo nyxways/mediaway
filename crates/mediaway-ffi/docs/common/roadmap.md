@@ -16,6 +16,10 @@ Internal `rlib` shared by `mediaway-*-ffi` crates. Workspace index: [`docs/roadm
 - [x] `mediaway-container-ffi`, `mediaway-ffi`, `mediaway-device-ffi` migrated
       to depend on this crate and re-export its types under their own local alias;
       each crate's exported C type names, header, and free-function names unchanged
+- [x] `CodecKind::Vp8 = 12` added, mirroring `mediaway_common::CodecKind::Vp8`
+      (closes the WebM VP8 gap — see `mediaway-container/docs/roadmap.md`
+      Stage 2). Pre-1.0 discriminant append, per this type's documented
+      "values may be renumbered" posture — 2026-08-05.
 
 ## Out of scope (by design, not a gap)
 

@@ -37,6 +37,17 @@ fn elem(id: &[u8], payload: &[u8]) -> Vec<u8> {
     out
 }
 
+/// Build one EBML element with the reserved "unknown size" marker (1-byte
+/// `0xFF` size VINT) instead of an explicit length — used to test the
+/// indefinite-size `Cluster` sibling-ID lookahead.
+fn elem_unknown_size(id: &[u8], payload: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(id);
+    out.push(0xFF);
+    out.extend_from_slice(payload);
+    out
+}
+
 fn uint_payload(v: u64, len: usize) -> Vec<u8> {
     let be = v.to_be_bytes();
     be[8 - len..].to_vec()
@@ -374,6 +385,64 @@ fn read_uint_rejects_over_long_body() {
     assert_eq!(read_uint(&[0u8; 9]), None);
     assert_eq!(read_uint(&[0, 0, 0, 0, 0, 0, 0, 5]), Some(5));
     assert_eq!(read_uint(&[]), Some(0));
+}
+
+/// One `SimpleBlock` element for `track_number` = 1, keyframe, no lacing.
+fn simple_block_elem(relative_timecode: i16, payload: &[u8]) -> Vec<u8> {
+    let mut body = Vec::new();
+    body.push(0x81); // track number VINT = 1
+    body.extend_from_slice(&relative_timecode.to_be_bytes());
+    body.push(0x80); // keyframe, no lacing
+    body.extend_from_slice(payload);
+    elem(&[0xA3], &body) // SimpleBlock
+}
+
+/// An indefinite-size `Cluster` (unknown-size marker, not an explicit
+/// length) with a `Timecode` and one `SimpleBlock` child.
+fn indefinite_cluster(timecode: u64, payload: &[u8]) -> Vec<u8> {
+    let mut body = elem(&[0xE7], &uint_payload(timecode, 4)); // Timecode
+    body.extend_from_slice(&simple_block_elem(0, payload));
+    elem_unknown_size(&[0x1F, 0x43, 0xB6, 0x75], &body) // Cluster
+}
+
+#[test]
+fn indefinite_clusters_close_via_sibling_lookahead_not_nesting() {
+    let tracks = tracks_with_one_video_track();
+    let mut segment_body = Vec::new();
+    segment_body.extend_from_slice(&tracks);
+    segment_body.extend_from_slice(&indefinite_cluster(0, &[1, 2, 3]));
+    segment_body.extend_from_slice(&indefinite_cluster(100, &[4, 5, 6]));
+    segment_body.extend_from_slice(&indefinite_cluster(200, &[7, 8, 9]));
+    let segment = elem(&[0x18, 0x53, 0x80, 0x67], &segment_body); // Segment (explicit size)
+    let header = elem(&[0x1A, 0x45, 0xDF, 0xA3], &[]);
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&header);
+    bytes.extend_from_slice(&segment);
+
+    let mut d = Demuxer::new();
+    d.push_bytes(&bytes);
+
+    assert_eq!(d.streams().len(), 1);
+    // Only the still-open last Cluster stays on the stack, under Segment —
+    // never nested inside the earlier (now-closed) Clusters.
+    assert_eq!(
+        d.stack.len(),
+        2,
+        "stack must stay bounded, not grow one entry per Cluster"
+    );
+
+    let f1 = d.poll_frame().expect("frame from first Cluster");
+    assert_eq!(f1.timecode, 0);
+    assert_eq!(&f1.payload[..], &[1, 2, 3]);
+    let f2 = d.poll_frame().expect("frame from second Cluster");
+    assert_eq!(f2.timecode, 100);
+    assert_eq!(&f2.payload[..], &[4, 5, 6]);
+    let f3 = d
+        .poll_frame()
+        .expect("frame from third (still-open) Cluster");
+    assert_eq!(f3.timecode, 200);
+    assert_eq!(&f3.payload[..], &[7, 8, 9]);
+    assert!(d.poll_frame().is_none());
 }
 
 #[test]

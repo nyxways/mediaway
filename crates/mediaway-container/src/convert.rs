@@ -106,12 +106,14 @@ const fn from_codec_kind(c: CodecKind) -> Codec {
         CodecKind::Opus => Codec::Opus,
         CodecKind::WebVtt => Codec::WebVtt,
         CodecKind::Tx3g => Codec::Tx3g,
-        // Raw capture, MP3, and Vorbis are not ISOBMFF sample codecs this crate writes;
-        // do not mux them via this helper yet.
+        // Raw capture, MP3, Vorbis, and VP8 are not ISOBMFF sample codecs this
+        // crate writes (VP8 is WebM/Matroska's domain, not MP4's); do not mux
+        // them via this helper.
         CodecKind::H264
         | CodecKind::RawVideo
         | CodecKind::RawAudio
         | CodecKind::Mp3
-        | CodecKind::Vorbis => Codec::H264,
+        | CodecKind::Vorbis
+        | CodecKind::Vp8 => Codec::H264,
     }
 }

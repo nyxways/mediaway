@@ -1,14 +1,11 @@
 //! Mediaway-typed `WebM` mux + demux surface over [`ebml_webm`].
 //!
 //! `ebml_webm::TrackInfo::codec_id` is a raw `WebM` string (e.g. `"V_VP9"`,
-//! `"V_VP8"`); [`Demuxer::streams`] maps only the codecs [`CodecKind`]
-//! already has (`Vp9`, `Av1`, `Opus`, `Aac`, `Vorbis` — `CodecKind::Vorbis`
-//! closed this gap 2026-07-29), and [`Muxer::add_track`] rejects any other
-//! codec rather than writing a `CodecID` this facade can't round-trip. VP8
-//! tracks are still **omitted** on demux (no `CodecKind::Vp8` yet) and their
-//! frames are dropped in [`Demuxer::poll_packet`] — see `ebml-webm/adr/0001`
-//! and this crate's `adr/0001` for the remaining tracked gap. Mux: see
-//! `adr/0003` (this crate) and `ebml-webm/adr/0003`.
+//! `"V_VP8"`); [`Demuxer::streams`] maps every codec [`CodecKind`] has a
+//! `WebM` `CodecID` for (`Vp8`, `Vp9`, `Av1`, `Opus`, `Aac`, `Vorbis` —
+//! `CodecKind::Vp8` closed the last gap here), and [`Muxer::add_track`]
+//! rejects any other codec rather than writing a `CodecID` this facade can't
+//! round-trip. See `adr/0003` (this crate) and `ebml-webm/adr/0003` for mux.
 
 #![forbid(unsafe_code)]
 
@@ -199,6 +196,7 @@ const fn channels_u16(channels: u32) -> u16 {
 #[cfg(feature = "demux")]
 fn codec_kind(codec_id: &str) -> Option<CodecKind> {
     match codec_id {
+        "V_VP8" => Some(CodecKind::Vp8),
         "V_VP9" => Some(CodecKind::Vp9),
         "V_AV1" => Some(CodecKind::Av1),
         "A_OPUS" => Some(CodecKind::Opus),
@@ -218,6 +216,7 @@ fn codec_kind(codec_id: &str) -> Option<CodecKind> {
 #[cfg(feature = "mux")]
 const fn webm_codec_id(codec: CodecKind) -> Option<&'static str> {
     match codec {
+        CodecKind::Vp8 => Some("V_VP8"),
         CodecKind::Vp9 => Some("V_VP9"),
         CodecKind::Av1 => Some("V_AV1"),
         CodecKind::Opus => Some("A_OPUS"),

@@ -40,6 +40,11 @@ mediaway-encoder = { workspace = true }
 # transitively, so this adds no new feature surface.
 mediaway-decoder = { workspace = true }
 mediaway = { workspace = true }
+# Needed for `mediaway_sw::opus::OpusDecoder` (audio decode C ABI,
+# adr/pipeline/0006-audio-decode-c-abi.md) — no `AudioDecoder` trait exists yet to
+# reach it through `mediaway-decoder`, so this crate depends on it directly. Default
+# features only (no `apm`/`vad`): the Opus module itself is unconditionally compiled.
+mediaway-sw = { workspace = true }
 
 
 [dev-dependencies]

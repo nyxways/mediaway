@@ -42,9 +42,10 @@ GPU input:
   a `staticlib`; two crates exporting the identical global symbol name is a
   guaranteed duplicate-symbol link error if both are ever statically linked
   into one consumer.
-- ABI version `MEDIAWAY_PIPELINE_FFI_ABI_VERSION` is `4`: `0`→`1` ADR-0002's struct
+- ABI version `MEDIAWAY_PIPELINE_FFI_ABI_VERSION` is `5`: `0`→`1` ADR-0002's struct
   growth, `1`→`2` ADR-0003's audio encode surface, `2`→`3` ADR-0004's decode
-  surface, `3`→`4` ADR-0005's capture-to-encode bridge.
+  surface, `3`→`4` ADR-0005's capture-to-encode bridge, `4`→`5` ADR-pipeline/0006's
+  Opus audio decode + Opus-in-audio-encode.
 - `mediaway_decode_session_t` (ADR-0004): single-step, like audio encode — the
   handle IS the decoder, no muxer to wire, no consumption trap.
   `mediaway_auto_video_decode_config_t.extra_data` is required at **open** time
@@ -55,6 +56,15 @@ GPU input:
   into an encode session — no intermediate frame struct, no extra copy (Screen
   is Zero-Copy end-to-end). First cross-module (`device` handle types accepted
   by `pipeline` functions) coupling in this crate's C ABI.
+- `mediaway_audio_decode_session_t` (`adr/pipeline/0006-audio-decode-c-abi.md`):
+  single-step, wraps `mediaway_sw::opus::OpusDecoder` **directly** (no `Box<dyn
+  Trait>` — no `AudioDecoder` trait exists yet). Reuses
+  `mediaway_decode_packet_view_t` for input; an empty payload is Opus
+  packet-loss concealment, not an error. Same ADR wires `CodecKind::Opus` into
+  the *existing* audio encode surface (`mediaway_audio_encode_config_opus`) —
+  `SwOpusAudioEncoder` was already real Rust, just unreachable from C
+  (AAC-only dispatch). Both sides cross-platform, round-trip-verified in
+  `tests/audio_decode_smoke.rs`.
 
 ## Panic safety
 

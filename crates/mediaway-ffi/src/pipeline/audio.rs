@@ -58,7 +58,8 @@ fn rust_config(
 ) -> Result<AudioEncoderConfig, MediawayPipelineStatus> {
     let codec = match config.codec {
         MediawayPipelineCodecKind::Aac => CodecKind::Aac,
-        _ => return Err(MediawayPipelineStatus::Unsupported), // only AAC today
+        MediawayPipelineCodecKind::Opus => CodecKind::Opus,
+        _ => return Err(MediawayPipelineStatus::Unsupported), // only AAC/Opus today
     };
     let sample_format = match config.sample_format {
         MediawaySampleFormat::F32 => SampleFormat::F32,
@@ -78,11 +79,21 @@ fn rust_config(
 }
 
 /// Open the best available audio encoder on the current platform. Mirrors
-/// `mediaway::platform::AutoEncoder`'s dispatch shape: Windows reaches
-/// the real WMF AAC backend; every other platform returns
-/// `EncodeError::NoBackend` (graceful, not an error the caller must treat as a
-/// bug).
+/// `mediaway::platform::AutoEncoder`'s dispatch shape, extended with the one
+/// codec-driven branch `mediaway::platform`'s own `encoder_support` probe already
+/// established for Opus: `CodecKind::Opus` always resolves to `mediaway-sw`'s
+/// pure-Rust backend (cross-platform, no `#[cfg]`) — no inbox WMF Opus encoder MFT
+/// exists on Windows (`docs/ai/wiki/license/sw-opus.md`). Every other codec keeps the
+/// existing OS-backend dispatch: Windows reaches the real WMF AAC backend; every
+/// other platform returns `EncodeError::NoBackend` (graceful, not an error the
+/// caller must treat as a bug).
 fn open_audio_encoder(config: &AudioEncoderConfig) -> Result<Box<dyn AudioEncoder>, EncodeError> {
+    if config.codec == CodecKind::Opus {
+        return Ok(Box::new(mediaway_encoder::SwOpusAudioEncoder::open(
+            config,
+        )?));
+    }
+
     #[cfg(windows)]
     {
         Ok(Box::new(

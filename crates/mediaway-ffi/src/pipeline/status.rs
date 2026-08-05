@@ -9,6 +9,7 @@ use mediaway_container::mp4;
 use mediaway_decoder::DecodeError;
 use mediaway_device::CaptureError;
 use mediaway_encoder::EncodeError;
+use mediaway_sw::opus::error::OpusError;
 
 /// C ABI status code returned by fallible `mediaway-ffi` functions.
 ///
@@ -52,6 +53,21 @@ pub enum MediawayPipelineStatus {
     DecoderBackendFailure = 13,
     /// [`DecodeError::Closed`] (`adr/0004-auto-decode-c-abi.md` §6).
     DecoderClosed = 14,
+}
+
+impl From<OpusError> for MediawayPipelineStatus {
+    fn from(err: OpusError) -> Self {
+        match err {
+            OpusError::Backend { .. } => Self::DecoderBackendFailure,
+            OpusError::Closed => Self::DecoderClosed,
+            OpusError::UnsupportedSampleFormat
+            | OpusError::ConfigMismatch
+            | OpusError::FrameSizeMismatch { .. }
+            | OpusError::InvalidFrameDuration { .. } => Self::InvalidInput,
+            // `OpusError` is `#[non_exhaustive]`; catch-all for a future variant.
+            _ => Self::UnknownError,
+        }
+    }
 }
 
 impl From<EncodeError> for MediawayPipelineStatus {

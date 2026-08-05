@@ -7,9 +7,9 @@
 //! `unsafe` for its pointer-validity-until-open contract, not because it can fail.
 
 use crate::pipeline::types::{
-    MediawayAudioEncodeConfig, MediawayAutoVideoDecodeConfig, MediawayAutoVideoEncodeConfig,
-    MediawayGpuDeviceHandle, MediawayGpuDeviceKind, MediawayPipelineCodecKind, MediawayPixelFormat,
-    MediawayRational, MediawaySampleFormat,
+    MediawayAudioDecodeConfig, MediawayAudioEncodeConfig, MediawayAutoVideoDecodeConfig,
+    MediawayAutoVideoEncodeConfig, MediawayGpuDeviceHandle, MediawayGpuDeviceKind,
+    MediawayPipelineCodecKind, MediawayPixelFormat, MediawayRational, MediawaySampleFormat,
 };
 
 /// Build a config for `codec` at `width`x`height`/`time_base`.
@@ -73,6 +73,43 @@ pub const extern "C" fn mediaway_audio_encode_config_aac(
         sample_format: MediawaySampleFormat::F32,
         time_base,
         bitrate_bps: 0,
+    }
+}
+
+/// Build an Opus audio encode config.
+///
+/// `adr/pipeline/0006-audio-decode-c-abi.md` § Encode side: F32 input,
+/// backend-default bitrate, caller-chosen channel count (unlike
+/// [`mediaway_audio_encode_config_aac`]'s hardcoded stereo — Opus voice use is
+/// commonly mono).
+#[unsafe(no_mangle)]
+pub const extern "C" fn mediaway_audio_encode_config_opus(
+    sample_rate: u32,
+    channels: u16,
+    time_base: MediawayRational,
+) -> MediawayAudioEncodeConfig {
+    MediawayAudioEncodeConfig {
+        codec: MediawayPipelineCodecKind::Opus,
+        sample_rate,
+        channels,
+        sample_format: MediawaySampleFormat::F32,
+        time_base,
+        bitrate_bps: 0,
+    }
+}
+
+/// Build an Opus audio decode config (`adr/pipeline/0006-audio-decode-c-abi.md`).
+#[unsafe(no_mangle)]
+pub const extern "C" fn mediaway_audio_decode_config_opus(
+    sample_rate: u32,
+    channels: u16,
+    time_base: MediawayRational,
+) -> MediawayAudioDecodeConfig {
+    MediawayAudioDecodeConfig {
+        codec: MediawayPipelineCodecKind::Opus,
+        sample_rate,
+        channels,
+        time_base,
     }
 }
 

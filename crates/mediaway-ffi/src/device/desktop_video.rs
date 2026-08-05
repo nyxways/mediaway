@@ -51,8 +51,12 @@ const EMPTY_GPU_BUFFER: crate::device::types::MediawayGpuBufferHandle =
 /// Thread-confined by convention: may be moved between threads, but must not be used
 /// from two threads concurrently without external synchronization.
 pub struct DesktopCaptureHandle {
-    poisoned: bool,
-    inner: Box<dyn DesktopVideoCapture>,
+    // `pub(crate)`, not private: `pipeline`'s capture-to-encode bridge
+    // (`adr/pipeline/0005-capture-encode-bridge-c-abi.md`) polls/releases this
+    // handle directly from another module of the same crate — still fully opaque
+    // to C callers regardless of Rust-level visibility.
+    pub(crate) poisoned: bool,
+    pub(crate) inner: Box<dyn DesktopVideoCapture>,
 }
 
 /// Build a Screen capture config for output ordinal `output_index`.

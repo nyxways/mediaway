@@ -1,8 +1,13 @@
-# mediaway-common-ffi ADRs
+# mediaway-ffi `common` module ADRs
 
-This crate's existence, scope, and boundaries are decided by a workspace-wide ADR, not a
-crate-local one — see [`docs/adr/0015-common-ffi-unification.md`](../../../docs/adr/0015-common-ffi-unification.md).
-No crate-local ADR is added here; do not re-derive that reasoning in a new `0001-*.md`.
+The original Rust-side unification (former `mediaway-common-ffi` crate) was decided by a
+workspace-wide ADR, not a crate-local one — see
+[`docs/adr/0015-common-ffi-unification.md`](../../../docs/adr/0015-common-ffi-unification.md),
+subsumed by [ADR-0021](../../../docs/adr/0021-workspace-consolidation.md)'s crate merge.
+
+[`0001-shared-header-consolidation.md`](0001-shared-header-consolidation.md) is a
+crate-local follow-up: the C header text (`include/mediaway/common.h`) side of that same
+unification, which the crate merge alone had not yet delivered.
 
 Workspace C-FFI policy: [`docs/adr/0004-c-ffi.md`](../../../docs/adr/0004-c-ffi.md).
 Workspace packaging: [`docs/adr/0003-crate-packaging.md`](../../../docs/adr/0003-crate-packaging.md).

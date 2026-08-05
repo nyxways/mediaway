@@ -6,6 +6,8 @@
 
 use mediaway::PipelineError;
 use mediaway_container::mp4;
+use mediaway_decoder::DecodeError;
+use mediaway_device::CaptureError;
 use mediaway_encoder::EncodeError;
 
 /// C ABI status code returned by fallible `mediaway-ffi` functions.
@@ -44,6 +46,12 @@ pub enum MediawayPipelineStatus {
     UnknownError = 11,
     /// This call caught a Rust panic; the handle is now poisoned.
     InternalPanic = 12,
+    /// [`DecodeError::Backend`] (`adr/0004-auto-decode-c-abi.md` §6). Not shared with
+    /// [`Self::EncoderBackendFailure`] — a program using both encode and decode from C
+    /// could not otherwise tell which side failed.
+    DecoderBackendFailure = 13,
+    /// [`DecodeError::Closed`] (`adr/0004-auto-decode-c-abi.md` §6).
+    DecoderClosed = 14,
 }
 
 impl From<EncodeError> for MediawayPipelineStatus {
@@ -54,6 +62,45 @@ impl From<EncodeError> for MediawayPipelineStatus {
             EncodeError::InvalidInput => Self::InvalidInput,
             EncodeError::Backend => Self::EncoderBackendFailure,
             EncodeError::Closed => Self::EncoderClosed,
+            _ => Self::UnknownError,
+        }
+    }
+}
+
+impl From<DecodeError> for MediawayPipelineStatus {
+    fn from(err: DecodeError) -> Self {
+        match err {
+            DecodeError::NoBackend => Self::NoBackend,
+            DecodeError::Unsupported => Self::Unsupported,
+            DecodeError::InvalidInput => Self::InvalidInput,
+            DecodeError::Backend => Self::DecoderBackendFailure,
+            DecodeError::Closed => Self::DecoderClosed,
+            // `DecodeError` is `#[non_exhaustive]`; catch-all for a future variant.
+            _ => Self::UnknownError,
+        }
+    }
+}
+
+/// Maps a `device`-module capture failure onto the closest existing
+/// `MediawayPipelineStatus` variant — the capture-to-encode bridge
+/// (`adr/pipeline/0005-capture-encode-bridge-c-abi.md` §4) deliberately does not add
+/// device-specific status codes, since its failure surface is a strict subset of
+/// what `write_frame` alone can already report.
+impl From<CaptureError> for MediawayPipelineStatus {
+    fn from(err: CaptureError) -> Self {
+        match err {
+            CaptureError::NoBackend => Self::NoBackend,
+            CaptureError::Unsupported => Self::Unsupported,
+            CaptureError::InvalidInput => Self::InvalidInput,
+            CaptureError::Closed => Self::EncoderClosed,
+            // Backend/AccessDenied/DeviceLost are all backend-level capture failures
+            // with no closer `MediawayPipelineStatus` analog than the generic
+            // encoder-backend-failure code (§4's reuse decision).
+            CaptureError::Backend | CaptureError::AccessDenied | CaptureError::DeviceLost => {
+                Self::EncoderBackendFailure
+            }
+            // `CaptureError` is `#[non_exhaustive]`; catch-all for a future variant
+            // (including `Timeout`, which plain `poll_frame` does not itself return).
             _ => Self::UnknownError,
         }
     }

@@ -2,17 +2,17 @@
 //!
 //! Field layouts and ownership are decided in `adr/0001-auto-encode-c-abi.md` §5/§6.
 //!
-//! `MediawayRational`/`MediawayPipelineCodecKind` are re-exported from
-//! `mediaway-common-ffi` rather than defined locally
-//! (`docs/adr/0015-common-ffi-unification.md`) — confirmed field-identical to
-//! `mediaway-container-ffi`'s independent copy before this migration. The C-facing
-//! type name (`mediaway_rational_t`/`mediaway_pipeline_codec_kind_t`, this crate's
-//! `include/mediaway/pipeline.h`) is unaffected by where the Rust definition lives.
-
-use mediaway_common::PixelFormat;
+//! `MediawayRational`/`MediawayPipelineCodecKind`/`MediawayPixelFormat`/
+//! `MediawaySampleFormat`/`MediawayVideoFrameStorageKind` are all re-exported from
+//! `common::types` rather than defined locally — `Rational`/`CodecKind` since
+//! ADR-0015, the other three moved there later after confirming they were
+//! field-identical to `device::types`'s independent copies
+//! (`adr/common/0001-shared-header-consolidation.md`). The C-facing type names
+//! (this crate's `include/mediaway/pipeline.h`) are unaffected by where the Rust
+//! definitions live.
 
 /// Rational timebase (`num / den`, seconds) — see `mediaway-common-ffi::types::Rational`.
-pub use crate::common::types::Rational as MediawayRational;
+pub type MediawayRational = crate::common::types::Rational;
 
 /// Codec kind — see `mediaway-common-ffi::types::CodecKind`.
 ///
@@ -21,20 +21,20 @@ pub use crate::common::types::Rational as MediawayRational;
 /// [`crate::pipeline::MediawayPipelineStatus::InvalidArgument`], not a compile-time
 /// restriction — [`mediaway_encoder::auto::AutoVideoEncodeConfig`]'s `codec`
 /// field really is the full codec-kind range.
-pub use crate::common::types::CodecKind as MediawayPipelineCodecKind;
+pub type MediawayPipelineCodecKind = crate::common::types::CodecKind;
 
 /// GPU device kind — see `mediaway-common-ffi::gpu::GpuDeviceKind`.
-pub use crate::common::gpu::GpuDeviceKind as MediawayGpuDeviceKind;
+pub type MediawayGpuDeviceKind = crate::common::gpu::GpuDeviceKind;
 
 /// Native GPU device handle — see `mediaway-common-ffi::gpu::GpuDeviceHandle`.
 ///
 /// Same input/borrow contract `mediaway-device-ffi` already documents for this type
 /// (`adr/0003-gpu-handle-c-abi.md` §2): caller-owned, must outlive the call it's
 /// passed to.
-pub use crate::common::gpu::GpuDeviceHandle as MediawayGpuDeviceHandle;
+pub type MediawayGpuDeviceHandle = crate::common::gpu::GpuDeviceHandle;
 
 /// GPU buffer/texture kind — see `mediaway-common-ffi::gpu::GpuBufferKind`.
-pub use crate::common::gpu::GpuBufferKind as MediawayGpuBufferKind;
+pub type MediawayGpuBufferKind = crate::common::gpu::GpuBufferKind;
 
 /// Native GPU buffer/texture handle — see `mediaway-common-ffi::gpu::GpuBufferHandle`.
 ///
@@ -43,61 +43,17 @@ pub use crate::common::gpu::GpuBufferKind as MediawayGpuBufferKind;
 /// (`adr/0002-gpu-frame-input-c-abi.md` §2): the caller owns the underlying texture and
 /// must keep it alive for at least the duration of
 /// [`crate::pipeline::mediaway_encode_session_write_frame`].
-pub use crate::common::gpu::GpuBufferHandle as MediawayGpuBufferHandle;
+pub type MediawayGpuBufferHandle = crate::common::gpu::GpuBufferHandle;
 
-/// Pixel layout — mirrors [`PixelFormat`]'s 5 variants.
+/// Pixel layout — mirrors `mediaway_common::PixelFormat`'s 5 variants.
 ///
-/// First definition of this enum in the workspace's C headers — no mirroring
-/// precedent to reconcile against. Only `Nv12`/`Bgra8` are exercised by the
-/// current Windows CPU-upload backend today; this is an existing Rust-level
-/// limitation, not a new FFI one — passing another variant surfaces as
+/// Re-exported from `common::types` (moved there after confirming this module's
+/// former independent copy was field-identical to `device::types`'s —
+/// `adr/common/0001-shared-header-consolidation.md`). Only `Nv12`/`Bgra8` are
+/// exercised by the current Windows CPU-upload backend today; this is an existing
+/// Rust-level limitation, not a new FFI one — passing another variant surfaces as
 /// [`crate::pipeline::MediawayPipelineStatus::Unsupported`] from the wrapped encoder.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MediawayPixelFormat {
-    /// 8-bit NV12 (YUV 4:2:0 semi-planar) — common HW encode input.
-    Nv12 = 0,
-    /// 8-bit I420 / YUV420P.
-    I420 = 1,
-    /// 8-bit BGRA packed.
-    Bgra8 = 2,
-    /// 8-bit RGBA packed.
-    Rgba8 = 3,
-    /// 8-bit YUYV / YUY2 packed (YUV 4:2:2).
-    Yuyv = 4,
-}
-
-impl From<MediawayPixelFormat> for PixelFormat {
-    fn from(format: MediawayPixelFormat) -> Self {
-        match format {
-            MediawayPixelFormat::Nv12 => Self::Nv12,
-            MediawayPixelFormat::I420 => Self::I420,
-            MediawayPixelFormat::Bgra8 => Self::Bgra8,
-            MediawayPixelFormat::Rgba8 => Self::Rgba8,
-            MediawayPixelFormat::Yuyv => Self::Yuyv,
-        }
-    }
-}
-
-impl From<PixelFormat> for MediawayPixelFormat {
-    // `PixelFormat` is `#[non_exhaustive]`; all variants that exist today are matched
-    // by name below. No "unknown" C variant exists to fall back to (unlike
-    // `MediawayPipelineStatus::UnknownError`), so a future variant maps to the safest
-    // default (NV12, the same default `AutoVideoEncodeConfig::new` uses) — which
-    // happens to equal the `Nv12` arm's own body; that overlap is intentional, not a
-    // copy-paste bug.
-    #[allow(clippy::match_same_arms)]
-    fn from(format: PixelFormat) -> Self {
-        match format {
-            PixelFormat::Nv12 => Self::Nv12,
-            PixelFormat::I420 => Self::I420,
-            PixelFormat::Bgra8 => Self::Bgra8,
-            PixelFormat::Rgba8 => Self::Rgba8,
-            PixelFormat::Yuyv => Self::Yuyv,
-            _ => Self::Nv12,
-        }
-    }
-}
+pub type MediawayPixelFormat = crate::common::types::PixelFormat;
 
 /// Config for [`crate::pipeline::mediaway_auto_encoder_open`] — plain value struct, no
 /// handle, no heap allocation, no free function.
@@ -131,17 +87,10 @@ pub struct MediawayAutoVideoEncodeConfig {
 
 /// Which of [`MediawayVideoFrame`]'s two storage fields is valid.
 ///
-/// `adr/0002-gpu-frame-input-c-abi.md` §2 — mirrors `mediaway-device-ffi`'s
-/// `MediawayVideoFrameStorageKind` idiom exactly (kind field decides which fields
+/// Re-exported from `common::types` (`adr/0002-gpu-frame-input-c-abi.md` §2 —
+/// mirrors `device::types`'s identical idiom: kind field decides which fields
 /// matter, no C union, no second write function).
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MediawayVideoFrameStorageKind {
-    /// `raw_bytes`/`raw_bytes_len` are valid; `gpu_buffer` is unused/zeroed.
-    Cpu = 0,
-    /// `gpu_buffer` is valid; `raw_bytes` is `NULL`, `raw_bytes_len` is `0`.
-    Gpu = 1,
-}
+pub type MediawayVideoFrameStorageKind = crate::common::types::VideoFrameStorageKind;
 
 /// Input to [`crate::pipeline::mediaway_encode_session_write_frame`] — borrowed view,
 /// valid for the call only.
@@ -179,19 +128,10 @@ pub struct MediawayVideoFrame {
 
 /// Audio PCM sample layout — mirrors `mediaway_common::SampleFormat`'s 3 variants.
 ///
-/// First definition in this header; `mediaway-device-ffi` carries its own
-/// independent copy (no shared header exists yet). Only `F32` is accepted by
-/// the real Windows backend today.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MediawaySampleFormat {
-    /// Signed 16-bit little-endian interleaved PCM.
-    S16 = 0,
-    /// Signed 32-bit little-endian interleaved PCM.
-    S32 = 1,
-    /// IEEE float32 interleaved PCM.
-    F32 = 2,
-}
+/// Re-exported from `common::types` (moved there after confirming this module's
+/// former independent copy was field-identical to `device::types`'s). Only `F32` is
+/// accepted by the real Windows backend today.
+pub type MediawaySampleFormat = crate::common::types::SampleFormat;
 
 /// Config for [`crate::pipeline::audio::mediaway_audio_encoder_open`] — plain value struct,
 /// no handle, no heap allocation, no free function.
@@ -287,4 +227,95 @@ pub struct MediawayAudioStreamInfo {
     pub extra_data: *mut u8,
     /// Length of `extra_data` in bytes.
     pub extra_data_len: usize,
+}
+
+// ── Video decode (`../../adr/pipeline/0004-auto-decode-c-abi.md`) ────────────────
+
+/// Config for [`crate::pipeline::mediaway_decode_session_open`] — no handle, no free.
+///
+/// Not fully POD: `extra_data` is a **borrowed** input, valid only for the duration
+/// of the `mediaway_decode_session_open` call that reads it (same ownership shape
+/// as `mediaway_video_track_info_t`'s `extra_data`).
+///
+/// GPU output stays deferred (always opens `CpuFramesOk` internally) — see
+/// `adr/0004-auto-decode-c-abi.md` §1. `extra_data` (AVCC/SPS-PPS codec config) IS
+/// required at open time — confirmed against the real Rust contract
+/// (`VideoDecoderConfig.extra_data` is consumed inside `open()`, before any packet is
+/// pushed), corrected from this ADR's own first draft which assumed the muxer-track
+/// analogy (supply via the first packet) held here. It does not.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct MediawayAutoVideoDecodeConfig {
+    /// Input codec.
+    pub codec: MediawayPipelineCodecKind,
+    /// Expected width (may be refined from the bitstream).
+    pub width: u32,
+    /// Expected height (may be refined from the bitstream).
+    pub height: u32,
+    /// Timestamp timebase for pushed packets / polled frames.
+    pub time_base: MediawayRational,
+    /// Preferred output pixel format when the backend converts.
+    pub pixel_format: MediawayPixelFormat,
+    /// Borrowed codec config (AVCC / SPS-PPS); `NULL` iff `extra_data_len == 0` (no
+    /// codec config supplied). Valid for the `mediaway_decode_session_open` call only.
+    pub extra_data: *const u8,
+    /// Length of `extra_data` in bytes.
+    pub extra_data_len: usize,
+}
+
+/// Input to [`crate::pipeline::mediaway_decode_session_push_packet`] — borrowed view,
+/// valid for the call only.
+///
+/// New, pipeline-scoped type, not reused from `container.h`'s
+/// `mediaway_packet_view_t` — see `adr/0004-auto-decode-c-abi.md` §4 for why.
+/// `stream_id` is accepted but unused by decode (kept for call-site symmetry with a
+/// container-demuxed packet the caller likely already has).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct MediawayDecodePacketView {
+    /// Unused by decode; kept for call-site symmetry with a demuxed packet.
+    pub stream_id: u32,
+    /// Presentation timestamp in the stream timebase.
+    pub pts: i64,
+    /// Decode timestamp in the stream timebase.
+    pub dts: i64,
+    /// Duration in timebase units (`0` if unknown).
+    pub duration: u64,
+    /// Random access point.
+    pub is_keyframe: bool,
+    /// Outside the active edit window; decoders may skip.
+    pub is_discard: bool,
+    /// Borrowed compressed bitstream bytes; valid for the call only. `NULL` iff
+    /// `payload_len == 0`.
+    pub payload: *const u8,
+    /// Length of `payload` in bytes.
+    pub payload_len: usize,
+}
+
+/// Output of [`crate::pipeline::mediaway_decode_session_poll_frame`] — OWNED; release
+/// with [`crate::pipeline::mediaway_decoded_video_frame_free`].
+///
+/// CPU-only (no `storage_kind`/`gpu_buffer` — GPU decode output is deferred, see
+/// `adr/0004-auto-decode-c-abi.md` §1/§5). New, pipeline-scoped name: distinct
+/// ownership direction from [`MediawayVideoFrame`] (borrowed encode *input* there vs.
+/// owned decode *output* here) and distinct module from `device.h`'s frame types (no
+/// codec/bitstream involved there).
+#[repr(C)]
+#[derive(Debug)]
+pub struct MediawayDecodedVideoFrame {
+    /// Presentation timestamp in the stream timebase.
+    pub pts: i64,
+    /// Duration in timebase units (`0` if unknown).
+    pub duration: u64,
+    /// Width in pixels.
+    pub width: u32,
+    /// Height in pixels.
+    pub height: u32,
+    /// Pixel layout.
+    pub pixel_format: MediawayPixelFormat,
+    /// Owned plane bytes. `NULL` after
+    /// [`crate::pipeline::mediaway_decoded_video_frame_free`].
+    pub data: *mut u8,
+    /// Length of `data` in bytes.
+    pub data_len: usize,
 }

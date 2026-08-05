@@ -8,9 +8,34 @@
 
 ### Added
 
+- `mediaway-ffi`: video decode C ABI (`mediaway_decode_session_open/push_packet/
+  poll_frame/flush/close`, `adr/pipeline/0004-auto-decode-c-abi.md`), wrapping
+  `mediaway::platform::AutoDecoder`. CPU output only this pass; blocked from
+  hardware verification by a real, pre-existing `WindowsVideoDecoder` bug found
+  while adding it (see Fixed).
+- `mediaway-ffi`: capture-to-encode bridge
+  (`mediaway_encode_session_write_frame_from_{camera,desktop}_capture`,
+  `adr/pipeline/0005-capture-encode-bridge-c-abi.md`) — pushes a polled
+  Camera/Screen capture frame straight into an encode session with no
+  intermediate frame struct and no extra copy (Screen is Zero-Copy end-to-end).
+  Hardware-verified with a real USB camera.
+
 ### Changed
 
+- `mediaway-ffi`: shared C header value types (`mediaway_rational_t`, pixel/sample
+  formats, GPU device/buffer handles) moved into a new `include/mediaway/common.h`,
+  included by `container.h`/`device.h`/`pipeline.h` instead of each redefining them.
+- `mediaway-ffi`: adopted `cbindgen` tooling (`cbindgen.toml`,
+  `tools/scripts/cbindgen-headers.ts generate|verify`) — produces a clean-compiling
+  generated header for the whole crate; the shipped `include/mediaway/*.h` headers
+  stay hand-written pending a separate per-header migration.
+
 ### Fixed
+
+- `mediaway-decoder/tests/cpu_roundtrip.rs` (moved from a `tests/windows/` subpath
+  `cargo test` never discovered) now actually compiles and runs; found a real,
+  unresolved bug in `WindowsVideoDecoder`'s CPU H.264 decode path — left
+  `#[ignore]`d with the finding documented, not silently passing.
 
 ### Removed
 

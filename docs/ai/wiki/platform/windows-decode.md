@@ -2,7 +2,8 @@
 
 - Module: `mediaway-decoder::windows`
 - Codecs: H.264 / HEVC / AV1 / VP9 HW decoder MFT → DX11 `GpuBufferHandle` (Nv12)
-- CPU out: Stage 1 `Unsupported`
+- CPU out (`VideoOutputPreference::CpuFramesOk`): implemented but not verified working for
+  H.264 on this reference machine — see § CPU decode bug below.
 - README: OS · GPU / D3D11 decode 🆗 (open may skip without HW MFT)
 - ADR: [0001](../../../../crates/mediaway-decoder/adr/windows/0001-wmf-h264-dx11-out.md)
 - Benches: [`docs/benchmarks.md`](../../../../crates/mediaway-decoder/docs/windows/benchmarks.md)
@@ -11,6 +12,30 @@
   (`DecodeError::Unsupported` on both NVIDIA RTX 4090 and Intel UHD 770) even though
   `ffmpeg h264_cuvid`/NVDEC decodes fine outside MF — `zc_wmf_h264_dx11` came back
   N/A there, consistent with `open_dx11_zero_copy_or_skip`'s own graceful skip.
+
+## CPU decode bug (found 2026-08-05, unresolved)
+
+Found while adding `mediaway-ffi`'s decode C ABI
+(`crates/mediaway-ffi/adr/pipeline/0004-auto-decode-c-abi.md`) — a real, pre-existing bug in
+`WindowsVideoDecoder`'s `CpuFramesOk` H.264 path, not a defect in that new FFI wrapper:
+
+- `crates/mediaway-decoder/tests/windows/cpu_roundtrip.rs` (a real WMF H.264 CPU encode→decode
+  round-trip test) existed but was **never actually running** — nested `tests/<dir>/*.rs` paths
+  are not auto-discovered by `cargo test`, and its imports (pre-ADR-0021 crate names) no longer
+  compiled either. Moved to `tests/cpu_roundtrip.rs` and fixed — same class of gap as other
+  nested test files across the workspace (`mediaway/tests/wgpu/*`, `mediaway-encoder/tests/
+  windows/*`, `mediaway-sw/tests/opus/*`) not yet audited.
+- Run for real for the first time: `decoder.poll_frame()` returns **zero frames** for a real,
+  valid single-packet H.264 bitstream from a real WMF encoder — no error, just nothing to poll.
+- A fuller round trip through `mediaway-ffi`'s new C ABI (mux → demux → decode, 10 frames,
+  `mediaway-ffi/tests/decode_smoke.rs`) hits a **worse** symptom on the same underlying path:
+  `poll_frame` triggers a Rust std UB precondition check
+  (`Alignment::new_unchecked requires a power of two`) and **aborts the process** —
+  not a catchable panic, so `catch_unwind` in the FFI layer cannot turn it into a status code.
+- Both symptoms point at the same `WindowsVideoDecoder` CPU-output code path; root cause not
+  found. Both test files are `#[ignore]`d with the reason in their own doc comments — real,
+  tracked bugs, not deleted or silently passed. Next step: bisect single-packet (silent-empty)
+  vs. multi-packet-from-demux (crash) inputs to find what the crash path corrupts.
 
 ## D3D12 native decode (H.264 implemented, unregistered — ADR-0002)
 

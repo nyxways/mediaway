@@ -9,7 +9,9 @@
     "incremental-test": "bun run incremental-test.ts",
     "incremental-bench": "bun run incremental-bench.ts",
     "release-secrets": "bun run release-secrets.ts",
-    "bump-version": "bun run bump-version.ts"
+    "bump-version": "bun run bump-version.ts",
+    "cbindgen-generate": "bun run cbindgen-headers.ts generate",
+    "cbindgen-verify": "bun run cbindgen-headers.ts verify"
   },
   "dependencies": {
     "@noble/hashes": "1.8.0",

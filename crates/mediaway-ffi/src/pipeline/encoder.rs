@@ -5,6 +5,8 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use mediaway::platform::AutoEncoder;
+use mediaway_common::{Packet, StreamInfo, VideoFrame};
+use mediaway_encoder::EncodeError;
 use mediaway_encoder::VideoEncoder;
 use mediaway_encoder::auto::AutoVideoEncodeConfig;
 
@@ -18,12 +20,31 @@ use crate::pipeline::types::MediawayAutoVideoEncodeConfig;
 /// [`mediaway_auto_encoder_close`]) both destroy the pointer unconditionally, so
 /// there is no repeated-call-after-panic scenario to guard against.
 ///
-/// `*mut AutoEncoderHandle` is a thin C pointer to a heap-allocated `Box<dyn
-/// VideoEncoder>` (itself a fat pointer, 2 words) — i.e. `Box::new(fat_ptr)`
-/// boxes an already-`Sized` value, giving a normal thin allocation. Not a
-/// double-`Box::into_raw` of the same allocation; one extra level of
-/// indirection versus a concrete `Box<T: Sized>` handle.
-pub type AutoEncoderHandle = Box<dyn VideoEncoder>;
+/// `#[repr(transparent)]` newtype, not a bare `Box<dyn VideoEncoder>` type alias —
+/// `cbindgen` (`docs/adr/0016-cbindgen-ffi-headers.md`) can forward-declare a
+/// newtype struct as an opaque C handle but has no way to do the same for a type
+/// alias to a trait object. Same layout as the type alias it replaces (a boxed fat
+/// pointer, 2 words) — `#[repr(transparent)]` guarantees no extra indirection.
+#[repr(transparent)]
+pub struct AutoEncoderHandle(Box<dyn VideoEncoder>);
+
+impl VideoEncoder for AutoEncoderHandle {
+    fn stream_info(&self) -> &StreamInfo {
+        self.0.stream_info()
+    }
+
+    fn push_frame(&mut self, frame: &VideoFrame) -> Result<(), EncodeError> {
+        self.0.push_frame(frame)
+    }
+
+    fn poll_packet(&mut self) -> Result<Option<Packet>, EncodeError> {
+        self.0.poll_packet()
+    }
+
+    fn flush(&mut self) -> Result<(), EncodeError> {
+        self.0.flush()
+    }
+}
 
 /// Open the best available video encoder for `config` on the current platform.
 ///
@@ -65,7 +86,7 @@ pub unsafe extern "C" fn mediaway_auto_encoder_open(
 
     match result {
         Ok(Ok(encoder)) => {
-            let handle: Box<AutoEncoderHandle> = Box::new(encoder);
+            let handle: Box<AutoEncoderHandle> = Box::new(AutoEncoderHandle(encoder));
             // SAFETY: `out_encoder` is checked non-null above (function contract).
             unsafe { out_encoder.write(Box::into_raw(handle)) };
             MediawayPipelineStatus::Ok

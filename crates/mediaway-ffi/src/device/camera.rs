@@ -29,8 +29,12 @@ use crate::device::types::{MediawayCameraCaptureConfig, MediawayCameraFrame, Med
 /// Thread-confined by convention: may be moved between threads, but must not be used
 /// from two threads concurrently without external synchronization.
 pub struct CameraCaptureHandle {
-    poisoned: bool,
-    inner: Box<dyn CameraCapture>,
+    // `pub(crate)`, not private: `pipeline`'s capture-to-encode bridge
+    // (`adr/pipeline/0005-capture-encode-bridge-c-abi.md`) polls/releases this
+    // handle directly from another module of the same crate — still fully opaque
+    // to C callers regardless of Rust-level visibility.
+    pub(crate) poisoned: bool,
+    pub(crate) inner: Box<dyn CameraCapture>,
 }
 
 /// Build a default camera capture config for device ordinal `device_index`.

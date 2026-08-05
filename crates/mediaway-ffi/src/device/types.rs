@@ -3,13 +3,13 @@
 //! Field layouts and ownership are decided in `adr/0001-capture-c-abi.md` §5/§6/§7,
 //! amended by `adr/0004-domain-feature-split.md` for the per-domain type split below.
 //!
-//! `MediawayRational` is re-exported from `mediaway-common-ffi` rather than defined
-//! locally (`docs/adr/0015-common-ffi-unification.md`) — confirmed field-identical to
-//! `mediaway-container-ffi`'s/`mediaway-ffi`'s independent copies before this
-//! migration. `MediawayPixelFormat` stays a local copy of `mediaway-ffi`'s:
-//! `PixelFormat` mirroring is out of ADR-0015's decided scope (Rational/CodecKind only)
-//! — a natural follow-up, not done here. `MediawaySampleFormat` and the
-//! frame-direction-specific structs below are new, crate-scoped types — see
+//! `MediawayRational`/`MediawayPixelFormat`/`MediawaySampleFormat`/
+//! `MediawayVideoFrameStorageKind` are all re-exported from `common::types` rather
+//! than defined locally — `Rational` since ADR-0015, the other three moved there
+//! later (`adr/common/0001-shared-header-consolidation.md`'s C-header-text
+//! consolidation had left the Rust definitions independently duplicated between this
+//! module and `pipeline::types`; confirmed field-identical before merging). The
+//! frame-direction-specific structs below stay new, crate-scoped types — see
 //! `adr/0001-capture-c-abi.md` §7 for why they are *not* reused/shared.
 //!
 //! **Per-domain feature gating** (`adr/0004-domain-feature-split.md`): types used only
@@ -41,81 +41,36 @@
 use mediaway_device::DeviceKind;
 
 /// Rational timebase (`num / den`, seconds) — see `mediaway-common-ffi::types::Rational`.
-pub use crate::common::types::Rational as MediawayRational;
+pub type MediawayRational = crate::common::types::Rational;
 
 // ── GPU handles (Desktop/Screen Zero-Copy only) ────────────────────────────────
 
 /// Polled GPU frame storage (borrowed) — see `mediaway-common-ffi::gpu::GpuBufferHandle`
 /// and `adr/0003-gpu-handle-c-abi.md` §3/§8.
 #[cfg(feature = "desktop")]
-pub use crate::common::gpu::GpuBufferHandle as MediawayGpuBufferHandle;
+pub type MediawayGpuBufferHandle = crate::common::gpu::GpuBufferHandle;
 /// GPU buffer/texture handle discriminant — see `mediaway-common-ffi::gpu::GpuBufferKind`.
 #[cfg(feature = "desktop")]
-pub use crate::common::gpu::GpuBufferKind as MediawayGpuBufferKind;
+pub type MediawayGpuBufferKind = crate::common::gpu::GpuBufferKind;
 /// Caller-supplied GPU device handle (Screen capture's `gpu_device`) — see
 /// `mediaway-common-ffi::gpu::GpuDeviceHandle` and `adr/0003-gpu-handle-c-abi.md` §1/§2.
 #[cfg(feature = "desktop")]
-pub use crate::common::gpu::GpuDeviceHandle as MediawayGpuDeviceHandle;
+pub type MediawayGpuDeviceHandle = crate::common::gpu::GpuDeviceHandle;
 /// GPU device handle discriminant — see `mediaway-common-ffi::gpu::GpuDeviceKind`.
 #[cfg(feature = "desktop")]
-pub use crate::common::gpu::GpuDeviceKind as MediawayGpuDeviceKind;
+pub type MediawayGpuDeviceKind = crate::common::gpu::GpuDeviceKind;
 
 // ── Video (Camera + Desktop) ────────────────────────────────────────────────────
 
 /// Pixel layout — mirrors `mediaway_common::PixelFormat`'s 5 variants.
 ///
-/// Reused verbatim from `mediaway-ffi`'s `MediawayPixelFormat` — both wrap the
-/// identical shared `PixelFormat` (`adr/0001-capture-c-abi.md` §7). Only `Nv12`/`Bgra8`
-/// are exercised by the current Windows Camera backend today (an existing Rust-level
-/// limitation, not a new FFI one).
+/// Re-exported from `common::types` (moved there after confirming this module's
+/// former independent copy was field-identical to `pipeline::types`'s —
+/// `docs/adr/0015-common-ffi-unification.md`). Only `Nv12`/`Bgra8` are exercised by
+/// the current Windows Camera backend today (an existing Rust-level limitation, not
+/// a new FFI one).
 #[cfg(any(feature = "camera", feature = "desktop"))]
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MediawayPixelFormat {
-    /// 8-bit NV12 (YUV 4:2:0 semi-planar) — common HW encode input.
-    Nv12 = 0,
-    /// 8-bit I420 / YUV420P.
-    I420 = 1,
-    /// 8-bit BGRA packed.
-    Bgra8 = 2,
-    /// 8-bit RGBA packed.
-    Rgba8 = 3,
-    /// 8-bit YUYV / YUY2 packed (YUV 4:2:2).
-    Yuyv = 4,
-}
-
-#[cfg(any(feature = "camera", feature = "desktop"))]
-impl From<MediawayPixelFormat> for mediaway_common::PixelFormat {
-    fn from(format: MediawayPixelFormat) -> Self {
-        match format {
-            MediawayPixelFormat::Nv12 => Self::Nv12,
-            MediawayPixelFormat::I420 => Self::I420,
-            MediawayPixelFormat::Bgra8 => Self::Bgra8,
-            MediawayPixelFormat::Rgba8 => Self::Rgba8,
-            MediawayPixelFormat::Yuyv => Self::Yuyv,
-        }
-    }
-}
-
-#[cfg(any(feature = "camera", feature = "desktop"))]
-impl From<mediaway_common::PixelFormat> for MediawayPixelFormat {
-    // `PixelFormat` is `#[non_exhaustive]`; all variants that exist today are matched
-    // by name below. No "unknown" C variant exists to fall back to, so a future
-    // variant maps to the safest default (NV12) — that overlap with the `Nv12` arm's
-    // own body is intentional, not a copy-paste bug.
-    #[allow(clippy::match_same_arms)]
-    fn from(format: mediaway_common::PixelFormat) -> Self {
-        use mediaway_common::PixelFormat;
-        match format {
-            PixelFormat::Nv12 => Self::Nv12,
-            PixelFormat::I420 => Self::I420,
-            PixelFormat::Bgra8 => Self::Bgra8,
-            PixelFormat::Rgba8 => Self::Rgba8,
-            PixelFormat::Yuyv => Self::Yuyv,
-            _ => Self::Nv12,
-        }
-    }
-}
+pub type MediawayPixelFormat = crate::common::types::PixelFormat;
 
 /// Config for [`crate::device::camera::mediaway_camera_capture_open`] — plain value struct, no
 /// handle, no heap allocation, no free function.
@@ -202,18 +157,11 @@ pub struct MediawayDesktopCaptureConfig {
 
 /// Which of [`MediawayDesktopFrame`]'s two storage fields is valid.
 ///
-/// `adr/0003-gpu-handle-c-abi.md` §3 — added instead of a second poll function or a C
-/// union, mirroring this crate's existing "kind field decides which fields matter"
-/// idiom.
+/// Re-exported from `common::types` (`adr/0003-gpu-handle-c-abi.md` §3 — added
+/// instead of a second poll function or a C union, mirroring this crate's existing
+/// "kind field decides which fields matter" idiom).
 #[cfg(feature = "desktop")]
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MediawayVideoFrameStorageKind {
-    /// `data`/`data_len` are valid; `gpu_buffer` is unused/zeroed.
-    Cpu = 0,
-    /// `gpu_buffer` is valid; `data` is `NULL`, `data_len` is `0`.
-    Gpu = 1,
-}
+pub type MediawayVideoFrameStorageKind = crate::common::types::VideoFrameStorageKind;
 
 /// Output of [`crate::device::desktop_video::mediaway_desktop_capture_poll_frame`] — release
 /// with [`crate::device::desktop_video::mediaway_desktop_frame_free`].
@@ -259,47 +207,10 @@ pub struct MediawayDesktopFrame {
 
 /// Audio PCM sample layout — mirrors `mediaway_common::SampleFormat`'s 3 variants.
 ///
-/// First definition of this enum in the workspace's C headers — no mirroring
-/// precedent to reconcile against (`adr/0001-capture-c-abi.md` §5).
+/// Re-exported from `common::types` (moved there after confirming this module's
+/// former independent copy was field-identical to `pipeline::types`'s copy).
 #[cfg(any(feature = "audio", feature = "desktop"))]
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MediawaySampleFormat {
-    /// Signed 16-bit little-endian interleaved PCM.
-    S16 = 0,
-    /// Signed 32-bit little-endian interleaved PCM.
-    S32 = 1,
-    /// IEEE float32 interleaved PCM.
-    F32 = 2,
-}
-
-#[cfg(any(feature = "audio", feature = "desktop"))]
-impl From<MediawaySampleFormat> for mediaway_common::SampleFormat {
-    fn from(format: MediawaySampleFormat) -> Self {
-        match format {
-            MediawaySampleFormat::S16 => Self::S16,
-            MediawaySampleFormat::S32 => Self::S32,
-            MediawaySampleFormat::F32 => Self::F32,
-        }
-    }
-}
-
-#[cfg(any(feature = "audio", feature = "desktop"))]
-impl From<mediaway_common::SampleFormat> for MediawaySampleFormat {
-    // `SampleFormat` is `#[non_exhaustive]`; all variants that exist today are matched
-    // by name below. A future variant falls back to F32 — the format the real Windows
-    // WASAPI backend already requires today, not an arbitrary choice.
-    #[allow(clippy::match_same_arms)]
-    fn from(format: mediaway_common::SampleFormat) -> Self {
-        use mediaway_common::SampleFormat;
-        match format {
-            SampleFormat::S16 => Self::S16,
-            SampleFormat::S32 => Self::S32,
-            SampleFormat::F32 => Self::F32,
-            _ => Self::F32,
-        }
-    }
-}
+pub type MediawaySampleFormat = crate::common::types::SampleFormat;
 
 /// Config for [`crate::device::audio::mediaway_audio_capture_open`] — plain value struct, no
 /// handle, no heap allocation, no free function.

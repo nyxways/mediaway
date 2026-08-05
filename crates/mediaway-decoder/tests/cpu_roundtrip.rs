@@ -1,6 +1,18 @@
-//! Encode → CPU decode round trip: WMF H.264 CPU-upload encode into the new
+//! Encode → CPU decode round trip: WMF H.264 CPU-upload encode into the
 //! [`VideoOutputPreference::CpuFramesOk`] software decode path, with no GPU device anywhere
 //! in the chain. Skips (does not fail) when Media Foundation itself is unavailable.
+//!
+//! **Currently `#[ignore]`d.** This file previously lived at `tests/windows/cpu_roundtrip.rs`,
+//! a path `cargo test` never discovers (only direct `tests/*.rs` files are auto-registered as
+//! test binaries) — moved to `tests/cpu_roundtrip.rs` and its imports fixed for the current
+//! (post-ADR-0021 merge) crate layout while investigating `mediaway-ffi`'s decode C ABI
+//! (`adr/pipeline/0004-auto-decode-c-abi.md`). Running it for real (not just compiling it) found
+//! a genuine, pre-existing bug: `decoder.poll_frame()` returns zero frames for a real, valid
+//! H.264 bitstream — same underlying `WindowsVideoDecoder` CPU path that a fuller round trip
+//! (`mediaway-ffi/tests/decode_smoke.rs`, muxed/demuxed multi-frame input) crashes the process on
+//! (`Alignment::new_unchecked requires a power of two`, unwind-proof abort). Left `#[ignore]`d,
+//! not deleted or silently passing, until that root cause is found — see
+//! `docs/ai/wiki/decode/index.md`/`docs/roadmap.md`.
 
 #![cfg(all(windows, feature = "video"))]
 #![allow(
@@ -11,8 +23,8 @@
 )]
 
 use mediaway_common::{Bytes, CodecKind, PixelFormat, Rational, VideoFrame, VideoFrameStorage};
+use mediaway_decoder::windows::WindowsVideoDecoder;
 use mediaway_decoder::{VideoDecoder, VideoDecoderConfig, VideoOutputPreference};
-use mediaway_decoder_windows::WindowsVideoDecoder;
 use mediaway_encoder::windows::WindowsVideoEncoder;
 use mediaway_encoder::{VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 
@@ -20,6 +32,7 @@ const WIDTH: u32 = 64;
 const HEIGHT: u32 = 64;
 
 #[test]
+#[ignore = "real, pre-existing WindowsVideoDecoder CPU-decode bug — see module doc comment"]
 fn encode_cpu_then_decode_cpu_round_trip() {
     let nv12_len = (WIDTH * HEIGHT + WIDTH * HEIGHT / 2) as usize;
     let enc_cfg = VideoEncoderConfig {

@@ -2,11 +2,17 @@
 //!
 //! Field layouts and ownership are decided in `adr/0001-mp4-mux-demux-c-abi.md` §5/§6.
 //!
-//! `MediawayRational`/`MediawayCodecKind` are re-exported from `mediaway-common-ffi`
+//! `MediawayRational`/`MediawayCodecKind` are type aliases into `common::types`
 //! rather than defined locally (`docs/adr/0015-common-ffi-unification.md`) — the
 //! C-facing type name (`mediaway_rational_t`/`mediaway_codec_kind_t`, this crate's
 //! `include/mediaway/container.h`) is unaffected by where the Rust definition lives.
-pub use crate::common::types::{CodecKind as MediawayCodecKind, Rational as MediawayRational};
+//! A type alias, not a `pub use` re-export, so `cbindgen` can resolve it
+//! (`docs/adr/0016-cbindgen-ffi-headers.md`).
+
+/// Codec kind — see `common::types::CodecKind`.
+pub type MediawayCodecKind = crate::common::types::CodecKind;
+/// Rational timebase (`num / den`, seconds) — see `common::types::Rational`.
+pub type MediawayRational = crate::common::types::Rational;
 
 /// Input to [`crate::container::mediaway_muxer_add_video_track`] — caller-owned, valid for the call only.
 #[repr(C)]

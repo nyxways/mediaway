@@ -142,13 +142,23 @@ C ABI facade over `mediaway-device`. Workspace index: [`docs/roadmap.md`](../../
 - Capability / permission probe (`mediaway_device::capability`) — separate
   Rust surface, own ADR
 - `cbindgen` migration — [`docs/adr/0016-cbindgen-ffi-headers.md`](../../../docs/adr/0016-cbindgen-ffi-headers.md)
-  decided to adopt cbindgen starting with this crate specifically, but its
-  hand-written `include/mediaway/device.h` was already implemented and
-  hardware-link-verified before that ADR concluded (parallel drafting). Not
-  yet migrated — this crate's own first concrete `cbindgen` migration target,
-  tracked here, not silently dropped.
-- Shared `mediaway-common-ffi` header text (not just the Rust-side value
-  types already unified per ADR-0015) — would resolve the real
-  `device.h`+`pipeline.h` co-include hazard found in Stage 4 above; deferred
-  alongside the `cbindgen` question since both bear on the same header-owns-
-  the-types decision.
+  decided to adopt cbindgen (written when this was still the standalone
+  `mediaway-device-ffi` crate; its 2026-08-05 addendum updates the decision for
+  the ADR-0021 merge). Tooling now real: `cbindgen.toml` +
+  `tools/scripts/cbindgen-headers.ts` (`generate`/`verify`) produce a header
+  covering the whole crate that compiles clean (gcc/g++, `-Wall -Wextra`).
+  `include/mediaway/device.h` itself is **not yet migrated** — still
+  hand-written, still the one hardware-link-verified and shipped; cutting it
+  over means updating every `bindings/c/examples/device/*.c` file and
+  re-verifying hardware, tracked here as real follow-up work, not silently
+  dropped.
+- ~~Shared `mediaway-common-ffi` header text~~ — resolved:
+  `include/mediaway/common.h` now holds the shared value types
+  (`mediaway_rational_t`, `mediaway_pixel_format_t`, GPU handle types, …),
+  `#include`d by `container.h`/`device.h`/`pipeline.h`
+  (`adr/common/0001-shared-header-consolidation.md`). Note: the co-include of
+  `device.h`+`pipeline.h` found in Stage 4 above was already non-fatal by the
+  time this was tackled (matching `#ifndef ..._T_DEFINED` guards across the
+  three headers already prevented the redefinition error, verified directly)
+  — the real gap this closed was the 3-way copy-pasted definitions, not an
+  active compile failure.

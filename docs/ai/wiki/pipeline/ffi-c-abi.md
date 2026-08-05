@@ -42,9 +42,19 @@ GPU input:
   a `staticlib`; two crates exporting the identical global symbol name is a
   guaranteed duplicate-symbol link error if both are ever statically linked
   into one consumer.
-- ABI version `MEDIAWAY_PIPELINE_FFI_ABI_VERSION` is `1` (bumped from `0` by
-  ADR-0002's struct growth — a breaking layout change even though existing
-  field offsets are unchanged).
+- ABI version `MEDIAWAY_PIPELINE_FFI_ABI_VERSION` is `4`: `0`→`1` ADR-0002's struct
+  growth, `1`→`2` ADR-0003's audio encode surface, `2`→`3` ADR-0004's decode
+  surface, `3`→`4` ADR-0005's capture-to-encode bridge.
+- `mediaway_decode_session_t` (ADR-0004): single-step, like audio encode — the
+  handle IS the decoder, no muxer to wire, no consumption trap.
+  `mediaway_auto_video_decode_config_t.extra_data` is required at **open** time
+  (not via the first packet — corrected from that ADR's own first draft after
+  checking the real `WindowsVideoDecoder::open` contract). CPU output only.
+- `mediaway_encode_session_write_frame_from_{camera,desktop}_capture` (ADR-0005):
+  polls one frame from a `device`-module capture handle and pushes it straight
+  into an encode session — no intermediate frame struct, no extra copy (Screen
+  is Zero-Copy end-to-end). First cross-module (`device` handle types accepted
+  by `pipeline` functions) coupling in this crate's C ABI.
 
 ## Panic safety
 
@@ -55,10 +65,20 @@ the one deliberate exception — no `poisoned` field, justified above.
 ## Deferred (see ADR-0001 § Deferred, ADR-0002 § Negative)
 
 `backend`/`max_path_class` config fields (no way to force `Readback`/
-`Software` or pin a vendor SDK from C yet); `cbindgen` adoption;
-`mediaway`'s unconditional decode/device Cargo deps (same class of
-gap as `mediaway-container`'s unconditional format-core deps); screen/camera
-capture and decode C surfaces.
+`Software` or pin a vendor SDK from C yet); `cbindgen` migration of this
+module's `pipeline.h` (tooling adopted crate-wide, this header not yet cut
+over — [ADR-0016](../../../adr/0016-cbindgen-ffi-headers.md)'s 2026-08-05 addendum);
+`mediaway`'s unconditional decode/device Cargo deps (same class of gap as
+`mediaway-container`'s unconditional format-core deps); GPU decode output
+(ADR-0004 §1); Microphone audio composed into the same capture-bridge session
+(ADR-0005 — still the caller's own job). Decode's own integration test is
+`#[ignore]`d — real, pre-existing `WindowsVideoDecoder` CPU-decode bug, not a
+defect here — see [`platform/windows-decode.md`](../platform/windows-decode.md)
+§ CPU decode bug.
+
+Shared value types (`mediaway_rational_t`, GPU handle types, …) are consolidated into
+`include/mediaway/common.h` — no longer a per-header duplication concern, see
+[`adr/common/0001-shared-header-consolidation.md`](../../../../crates/mediaway-ffi/adr/common/0001-shared-header-consolidation.md).
 
 `mediaway-ffi` unification — **resolved** by
 [ADR-0015](../../../../docs/adr/0015-common-ffi-unification.md): an

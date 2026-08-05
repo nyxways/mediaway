@@ -1,7 +1,7 @@
 # mediaway-ffi — Camera + Screen video, microphone audio C ABI
 
-Third `mediaway-*-ffi` crate in the workspace, after `mediaway-ffi` and
-`mediaway-ffi`. Wraps `mediaway_device::{VideoCapture, AudioCapture}` over a
+`mediaway-ffi`'s `device` module (formerly the standalone `mediaway-device-ffi` crate,
+merged by ADR-0021). Wraps `mediaway_device::{VideoCapture, AudioCapture}` over a
 hand-written C ABI. Full design:
 [`crates/mediaway-ffi/adr/0001-capture-c-abi.md`](../../../../crates/mediaway-ffi/adr/0001-capture-c-abi.md),
 GPU handles: [`adr/0003-gpu-handle-c-abi.md`](../../../../crates/mediaway-ffi/adr/0003-gpu-handle-c-abi.md).
@@ -15,8 +15,7 @@ hardware-verified Windows backends. Screen requires a live
 `mediaway_video_capture_config_screen()` — no CPU fallback exists in the wrapped Rust
 backend. `mediaway_video_capture_open()` enforces the pairing: Camera + non-`NONE`
 `gpu_device`, or Screen + `NONE`/malformed `gpu_device`, both return
-`INVALID_INPUT` rather than silently ignoring the mismatch. **Window capture is still
-deferred** — no C constructor exists (needs a native `HWND` input shape).
+`INVALID_INPUT` rather than silently ignoring the mismatch. Window capture is deferred (see below).
 
 `mediaway_device_video_frame_t` carries a `storage_kind` tag: `CPU` (owned bytes,
 Camera) or `GPU` (borrowed `mediaway_gpu_buffer_handle_t`, Screen — never freed by the
@@ -46,17 +45,14 @@ just-captured GPU handle — a real bug found and fixed in the wrapped
 
 ## Type reuse vs. new types
 
-`mediaway_rational_t` re-exports `mediaway-ffi::types::Rational`;
-`mediaway_pixel_format_t` stays copy-pasted from `mediaway-ffi` (out of
-ADR-0015's scope). `mediaway_gpu_device_handle_t`/`mediaway_gpu_buffer_handle_t` are
-`mediaway-ffi`'s **second** shared type family (`adr/0003` §1) — the stated
-future second consumer is now real, [`mediaway-ffi/adr/0002`](../../../../crates/mediaway-ffi/adr/0002-gpu-frame-input-c-abi.md),
-adding the shared type's first **reverse** (C→Rust) `GpuBufferHandle::to_common()` (this
-crate only ever produces `GpuBufferHandle` as poll output).
-`mediaway_device_video_frame_t`/`_audio_frame_t` stay **new, crate-scoped** names, not
-reused from `mediaway-ffi`'s `mediaway_video_frame_t` (borrowed input there vs.
-owned output here — same collision class `mediaway-ffi/adr/0001` §4c fixed
-for packets).
+`mediaway_rational_t`/`mediaway_pixel_format_t`/`mediaway_sample_format_t`/GPU handle
+types are all `common::types`/`common::gpu` aliases now (`adr/common/0001`) — no more
+per-module copies. `mediaway_gpu_buffer_handle_t` gained its first **reverse** (C→Rust)
+use, `GpuBufferHandle::to_common()`, once `pipeline` also needed it as encode *input*
+(`adr/pipeline/0002-gpu-frame-input-c-abi.md`); this crate only ever produces it as poll
+output. `mediaway_device_video_frame_t`/`_audio_frame_t` stay **new, crate-scoped**
+names, not reused from `pipeline`'s `mediaway_video_frame_t` (borrowed input there vs.
+owned output here — same collision class `adr/pipeline/0001` §4c fixed for packets).
 
 ## Panic safety, ownership, header
 
@@ -68,17 +64,20 @@ Zero-Copy gap, shared with the other two `-ffi` crates); GPU output is a borrowe
 handle, never copied. `mediaway_*_capture_close` **joins the backend's worker thread**
 (blocks up to one frame/period interval — [`caveats-and-clarity.md`](../../../spec/caveats-and-clarity.md))
 and returns a real status instead of `void`. Header is hand-written
-(`include/mediaway/device.h`), not `cbindgen` — the "once ≥2 headers exist" evaluation
-condition is overdue a second time.
+(`include/mediaway/device.h`); shared value types live in `include/mediaway/common.h`,
+`#include`d by `device.h`/`pipeline.h`/`container.h` — see
+[`adr/common/0001-shared-header-consolidation.md`](../../../../crates/mediaway-ffi/adr/common/0001-shared-header-consolidation.md).
 
 ## Deferred
 
 Window capture (needs a native `HWND` C input shape), status-enum + buffer-free
-fragmentation across all three `-ffi` crates, `cbindgen` adoption, Linux hardware
-verification (untested on this Windows dev machine; `LinuxScreenCapture` is CPU-only —
-a different shape than this crate's GPU-mandatory Screen dispatch, not wired),
-capability/permission probe ABI. See `adr/0001`/`adr/0003`'s own § Deferred for detail.
-Hotplug (`DeviceHotplug`) C ABI is implemented (ADR-0002) but blocked on
+fragmentation across all three modules, `cbindgen` migration of this file (tooling
+adopted crate-wide, this header itself not yet cut over —
+[ADR-0016](../../../adr/0016-cbindgen-ffi-headers.md)'s 2026-08-05 addendum), Linux
+hardware verification (untested on this Windows dev machine; `LinuxScreenCapture` is
+CPU-only — a different shape than this crate's GPU-mandatory Screen dispatch, not
+wired), capability/permission probe ABI. See `adr/0001`/`adr/0003`'s own § Deferred
+for detail. Hotplug (`DeviceHotplug`) C ABI is implemented (ADR-0002) but blocked on
 `WindowsDeviceHotplug: Send` — see [`hotplug-ffi.md`](hotplug-ffi.md).
 
 ## Building the C examples on Windows
@@ -93,8 +92,9 @@ gcc -Icrates/mediaway-ffi/include bindings/c/examples/device/camera_record.c \
     -o camera_record.exe
 ```
 
-`camera_record.c` links the merged lib but `#include`s only `<mediaway/device.h>` (co-including
-`<mediaway/pipeline.h>` fails: duplicate `mediaway_rational_t` tag redefinition) — The
-DLL must sit next to the `.exe`. Verified pre-ADR-0003: real 1920x1080 "WeVO WV-1080"
+`camera_record.c` links the merged lib and `#include`s `<mediaway/container.h>`,
+`<mediaway/device.h>`, and `<mediaway/pipeline.h>` together in one translation unit —
+co-inclusion is verified safe (`adr/common/0001-shared-header-consolidation.md`; the DLL
+must still sit next to the `.exe`). Verified pre-ADR-0003: real 1920x1080 "WeVO WV-1080"
 camera + 48000 Hz/1ch mic captured into `out_camera.mp4`. `screen_record.c` predates
 ADR-0003's `gpu_device` parameter and needs updating to build again — not done yet.

@@ -1,6 +1,7 @@
 # ADR-0016: Adopt `cbindgen` for `mediaway-*-ffi` C header generation
 
-- **Status**: Proposed
+- **Status**: Accepted (tooling; per-header migration tracked separately — see
+  2026-08-05 addendum)
 - **Date**: 2026-07-31
 - **Deciders**: @dev-nyxie (+ agent)
 
@@ -191,5 +192,95 @@ abstract idea of it):
 - conventions: [`docs/conventions/deps-policy.md`](../conventions/deps-policy.md),
   [`docs/conventions/scripts.md`](../conventions/scripts.md)
 - wiki: `docs/ai/wiki/container/ffi-c-abi.md`, `docs/ai/wiki/pipeline/ffi-c-abi.md`
+
+## 2026-08-05 addendum: tooling validated, real findings
+
+Written against [ADR-0021](0021-workspace-consolidation.md)'s merged `mediaway-ffi`
+crate (`common`/`container`/`device`/`pipeline` modules, one header set) — the four
+per-capability crates this ADR originally targeted no longer exist separately.
+`cbindgen 0.29.4` installed and run against the real crate; `crates/mediaway-ffi/cbindgen.toml`
+and `tools/scripts/cbindgen-headers.ts` (`generate`/`verify`) now exist and produce a
+header that compiles cleanly (`gcc`/`g++`, `-Wall -Wextra`, both C and C++ modes) for
+the crate's full default feature set. Resolves this ADR's own § Deferred/open questions:
+
+- **`pub use X as Y` re-exports are invisible to `cbindgen`** (not documented anywhere
+  in its own docs; discovered empirically) — it cannot resolve them to their
+  underlying `#[repr(C)]` definition at all (`Can't find MediawayRational`-class
+  warnings, then a missing/incomplete type in the generated header). `pub type Y = X;`
+  **type aliases** resolve correctly and collapse to one typedef. Fixing this required
+  converting every `pub use crate::common::{types,gpu}::X as MediawayY;` re-export in
+  `container::types`/`device::types`/`pipeline::types` (~17 sites) to `pub type`
+  aliases — a real, applied source change (this ADR's own affected files), not just a
+  config knob.
+- **`MediawayPixelFormat`/`MediawaySampleFormat`/`MediawayVideoFrameStorageKind` were
+  independently duplicated Rust definitions** in `device::types` and `pipeline::types`
+  (not merely re-exports) — a real name collision once `cbindgen` combines the whole
+  crate into one header. Fixed by moving them into `common::types` as the single
+  canonical definition (`adr/common/0001-shared-header-consolidation.md`'s Rust-side
+  analog), consumed via the same `pub type` alias pattern.
+- **`AutoEncoderHandle`'s opaque-handle shape**: confirmed the ADR's own suspicion —
+  a bare `Box<dyn VideoEncoder>` type alias cannot be forward-declared as an opaque
+  struct. Fixed with a `#[repr(transparent)]` newtype
+  (`struct AutoEncoderHandle(Box<dyn VideoEncoder>)`) plus a delegating `VideoEncoder`
+  impl; the crate's other trait-object handle, `AudioEncodeSessionHandle`
+  (`pipeline::audio`), had the identical latent problem and got the identical fix.
+- **`cbindgen --parse-expand` requires a nightly `rustc`** (`-Zunpretty=expanded`) —
+  tried as an alternative to the `pub use` fix above; rejected as a project-wide
+  tooling requirement (this workspace targets stable) once the `pub type` fix proved
+  sufficient without it.
+- **Enum variant prefixing leaks the renamed type's `_t` suffix**: neither
+  `[enum] prefix_with_name = true` nor `rename_variants = "QualifiedScreamingSnakeCase"`
+  derives the prefix from the original Rust name — both use the post-`[export.rename]`
+  C name, producing `MEDIAWAY_STATUS_T_OK` instead of the hand-written headers'
+  `MEDIAWAY_STATUS_OK`. No config fix found within this pass's time budget; accepted as
+  a known, visible cosmetic divergence (already anticipated by § Decision 5's "known
+  cost" framing), not a blocker.
+- **`documentation_style = "doxy"` (`/** */`) is a real, compile-breaking hazard**, not
+  just cosmetically rougher than hand-written prose: several existing doc comments
+  contain markdown bold immediately followed by a slash (e.g. `` **buffer**/texture ``),
+  which forms a `**/` sequence that prematurely closes a C block comment and corrupts
+  every declaration after it. `documentation_style = "c99"` (`//` line comments) has no
+  multi-line terminator sequence and cannot hit this class of bug — switched as the
+  config default, not left as a discovered-but-unfixed landmine.
+- **`style = "type"`**, not the config template's default `"both"`, matches every
+  hand-written header's existing signature style exactly (`mediaway_muxer_t
+  *mediaway_muxer_create(void);`, not `struct mediaway_muxer_t *...`).
+- **`CodecKind` cannot be fully collapsed**: `MediawayCodecKind` (container) and
+  `MediawayPipelineCodecKind` (pipeline) are deliberately distinct C types by an
+  earlier, still-valid ADR decision, so the shared base `CodecKind` Rust enum is left
+  unrenamed in `[export.rename]` — `cbindgen` emits it as a third, unprefixed,
+  unused-by-name leftover definition alongside the two real ones. Accepted as a known
+  cosmetic redundancy (source-code searchable, functionally inert), the alternative
+  (renaming the base too) would silently re-merge the two intentionally-separate
+  types.
+- **`--verify`** is a built-in `cbindgen` flag (regenerate and diff against a
+  committed file, failing on mismatch) — used directly by the wrapper script's
+  `verify` mode rather than hand-rolling the diff logic §3 assumed would be
+  hand-written.
+
+**Not done in this pass, tracked as the real per-header migration §4 already
+anticipated:** `include/mediaway/{common,container,device,pipeline}.h` are still
+hand-written. `generate`'s default output goes to `target/cbindgen/` (gitignored,
+scratch), not over the real headers — cutting any one of them over means updating
+every `bindings/c/examples/**` file that includes it and re-running that example's
+hardware verification, real per-header work this addendum does not shortcut.
+`verify` is not yet wired into CI for the same reason: nothing real to diff against
+until a header is actually migrated.
+
+**2026-08-05, later same day — a second real finding while adding `pipeline`'s
+decode + capture-bridge surfaces:** `cbindgen.toml`'s `[export.rename]` table needs
+a manual entry per exported type, and drifts the moment new types are added without
+a matching entry (found and fixed twice this same day — decode's three new types,
+then this one). More seriously: once `pipeline::capture_bridge`'s two new functions
+started referencing `device::{CameraCaptureHandle, DesktopCaptureHandle}` (the
+crate's first types referenced by exported functions in **two different modules**),
+`cbindgen` stopped emitting an opaque forward-declaration for either type at all —
+the generated header uses `mediaway_camera_capture_t`/`mediaway_desktop_capture_t`
+in the bridge functions' signatures but never declares either type anywhere,
+failing to compile. Root cause not investigated further this pass (same
+time-boxing as the enum-prefix `_T` finding above); the working, shipped
+`include/mediaway/pipeline.h` (hand-written) is unaffected — this is a `cbindgen`
+generation gap only, found via `tools/scripts/cbindgen-headers.ts generate` +
+`gcc -fsyntax-only`, not a regression in any real header.
 
 ADRs are written in **English**.

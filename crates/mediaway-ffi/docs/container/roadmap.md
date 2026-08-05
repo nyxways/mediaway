@@ -32,3 +32,10 @@ C ABI facade over `mediaway-container`. Workspace index: [`docs/roadmap.md`](../
       `bindings/c/examples/mux_roundtrip.c`'s scenario (verified via
       `--target x86_64-pc-windows-gnu` + `gcc`: 90 video + 90 audio packets
       recovered exactly)
+
+### Deferred
+
+- `cbindgen` migration — tooling adopted crate-wide
+  (`docs/adr/0016-cbindgen-ffi-headers.md`'s 2026-08-05 addendum); this
+  module's `include/mediaway/container.h` itself is not yet migrated (still
+  hand-written).

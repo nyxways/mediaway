@@ -62,3 +62,27 @@ blake3 = "777a1ec8187b57af5876f23bb67be1010e74377ef129d65c2ce053d7d3aa5763"
 paywalled = false
 note = "AV1 Codec ISO Media File Format Binding (AOMedia) — av01/av1C sample entry used by iso-bmff sample_entry.rs. Free; not yet cached locally."
 
+[[standard]]
+id = "rfc-3550-rtp"
+url = "https://www.rfc-editor.org/rfc/rfc3550"
+filename = "rfc3550.txt"
+blake3 = "e0a3f8e1682341d763e17351244173955cda91411da491819dbf78b0adc2a48f"
+paywalled = false
+note = "RTP: A Transport Protocol for Real-Time Applications — base packet header used by the new rtp crate. Free IETF RFC, cached under local/standards/."
+
+[[standard]]
+id = "rfc-6184-rtp-h264"
+url = "https://www.rfc-editor.org/rfc/rfc6184"
+filename = "rfc6184.txt"
+blake3 = "6c5c0121516e84d19a80f1950d115edca2a593f7a62a32049309ec127b67cdc2"
+paywalled = false
+note = "RTP Payload Format for H.264 Video — single-NAL/STAP-A/FU-A packetization used by the new rtp crate. Free IETF RFC, cached under local/standards/."
+
+[[standard]]
+id = "rfc-7798-rtp-hevc"
+url = "https://www.rfc-editor.org/rfc/rfc7798"
+filename = "rfc7798.txt"
+blake3 = "348af66a2ba1c64149fcd24a7b145aefaabdfd546be04984d1881bc3eefd9531"
+paywalled = false
+note = "RTP Payload Format for HEVC Video — single-NAL/AP/FU packetization used by the new rtp crate. Free IETF RFC, cached under local/standards/."
+

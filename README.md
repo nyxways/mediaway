@@ -377,6 +377,7 @@ What `mediaway-device` backends target (camera, mic, **screen**, **window**). Sa
 | `ogg-core`                 | Ogg page/packet mux + demux core |
 | `flv-core`                 | FLV tag mux + demux core |
 | `mpeg-ts-core`             | MPEG-2 Transport Stream mux + demux core |
+| `rtp-core`                 | RTP payloadization for H.264/HEVC (RFC 3550/6184/7798) |
 | `rtmp`                     | RTMP publish-client handshake + chunk stream + AMF0 command mux |
 | `mediaway-container`       | Container facade: shared traits + typed `mp4`/`webm`/`wav`/`adts`/`mp3`/`ogg`/`flv`/`ts` |
 | `mediaway-encoder`         | Encode traits + `auto` selection; Windows WMF / NVENC / QuickSync / Vulkan / WebCodecs / VA-API backends |

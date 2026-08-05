@@ -31,6 +31,7 @@ Facades (`mediaway-encoder`, `decoder`, `device`) list platform-backend crates i
 | `ogg-core` | [`crates/ogg-core/docs/roadmap.md`](../crates/ogg-core/docs/roadmap.md) |
 | `flv-core` | [`crates/flv-core/docs/roadmap.md`](../crates/flv-core/docs/roadmap.md) |
 | `mpeg-ts-core` | [`crates/mpeg-ts-core/docs/roadmap.md`](../crates/mpeg-ts-core/docs/roadmap.md) |
+| `rtp-core` | [`crates/rtp-core/docs/roadmap.md`](../crates/rtp-core/docs/roadmap.md) |
 | `rtmp` | [`crates/rtmp/docs/roadmap.md`](../crates/rtmp/docs/roadmap.md) |
 | `mediaway-container` | [`crates/mediaway-container/docs/roadmap.md`](../crates/mediaway-container/docs/roadmap.md) |
 | `mediaway-encoder` | [`crates/mediaway-encoder/docs/roadmap.md`](../crates/mediaway-encoder/docs/roadmap.md) |

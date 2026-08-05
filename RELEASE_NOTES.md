@@ -48,6 +48,11 @@
   (`adr/0003-audio-decoder-trait.md`). Implemented for the WMF Opus decoder
   (`windows::WmfOpusDecoder`) and `mediaway-sw`'s software Opus decoder
   (`SwOpusAudioDecoder`, wrapping `mediaway_sw::opus::OpusDecoder`).
+- New freestanding sans-io crate `rtp-core`: RTP payloadization for H.264/HEVC
+  (RFC 3550/6184/7798) — fixed header build/parse, single-NAL-unit packets, and
+  FU-A/FU fragmentation for NAL units larger than a caller-supplied payload
+  budget. Closes the workspace's previous no-RTP gap for standard-interop
+  low-latency streaming.
 
 ### Changed
 

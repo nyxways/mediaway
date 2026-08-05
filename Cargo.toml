@@ -11,6 +11,7 @@ members = [
     "crates/ogg-core",
     "crates/flv-core",
     "crates/mpeg-ts-core",
+    "crates/rtp-core",
     "crates/rtmp",
     "crates/mediaway-container",
     "crates/mediaway-ffi",
@@ -67,6 +68,7 @@ mpeg-audio = { path = "crates/mpeg-audio", version = "0.1.1" }
 ogg-core = { path = "crates/ogg-core", version = "0.1.1" }
 flv-core = { path = "crates/flv-core", version = "0.1.1" }
 mpeg-ts-core = { path = "crates/mpeg-ts-core", version = "0.1.1" }
+rtp-core = { path = "crates/rtp-core", version = "0.1.0" }
 rtmp = { path = "crates/rtmp", version = "0.1.0" }
 mediaway-container = { path = "crates/mediaway-container", version = "0.1" } # lockstep with workspace version
 mediaway-ffi = { path = "crates/mediaway-ffi", version = "0.1" } # lockstep with workspace version

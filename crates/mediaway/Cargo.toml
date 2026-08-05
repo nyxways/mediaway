@@ -65,6 +65,8 @@ windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Graphics_Direct3D",
     "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
     "Win32_UI_WindowsAndMessaging",
 ] }
 
@@ -75,3 +77,22 @@ workspace = true
 
 [features]
 default = []
+
+
+# `tests/wgpu/*.rs` live under a subdirectory — Cargo's default test-target
+# auto-discovery only picks up `.rs` files directly in `tests/`, so these need
+# explicit `[[test]]` entries or they silently never get compiled/run (found
+# this session: both files below referenced a non-existent `mediaway_wgpu`
+# extern crate — a leftover from before the `mediaway-wgpu` crate was merged
+# into this one, ADR-0021 — and had therefore never actually been compiled).
+[[test]]
+name = "dx12_decode_smoke"
+path = "tests/wgpu/dx12_decode_smoke.rs"
+
+[[test]]
+name = "dx12_encode_smoke"
+path = "tests/wgpu/dx12_encode_smoke.rs"
+
+[[test]]
+name = "dx12_decode_pixel_roundtrip"
+path = "tests/wgpu/dx12_decode_pixel_roundtrip.rs"

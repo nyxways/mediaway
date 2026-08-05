@@ -462,4 +462,98 @@ H.264 decode HW MFT has been available in testing so far to produce a real
 -- -D warnings`, `cargo fmt --check`, and `cargo test` (2 integration tests + the pre-existing
 encode smoke test, all passing) all ran clean on this Windows host.
 
+## Addendum (2026-08-05): real, byte-exact pixel round trip verified — plus two real test-harness bugs found
+
+`import_decoded_texture` had never actually run against real pixel content (§ Context / prior
+addendum) because no working H.264 decode HW MFT exists on this reference machine. Since the
+bridge only cares that it receives a valid, real D3D11 NV12 texture + subresource — not where
+it came from — a new test,
+`tests/wgpu/dx12_decode_pixel_roundtrip.rs::wgpu_dx12_decode_bridge_pixel_roundtrip_or_skip`,
+sidesteps that gap: it creates its own ordinary D3D11 NV12 texture on the same `ID3D11Device`
+the bridge is opened with, writes a known non-trivial byte pattern into it from the CPU (via a
+`D3D11_USAGE_STAGING` `Map`/memcpy/`Unmap` + `CopyResource`, the same pattern
+`mediaway-encoder`'s `nvenc::dx11::device::upload_cpu_nv12` already hardware-verifies), and
+feeds it through `import_decoded_texture` exactly like real decoder output would be.
+
+**Before this test could even be written, two real, pre-existing bugs were found that meant
+`dx12_decode_smoke.rs` and `dx12_encode_smoke.rs` had never actually been compiled, let alone
+run, despite this ADR's own prior addendum claiming a clean `cargo test` pass:**
+
+1. **Neither file was wired into a Cargo test target.** `tests/wgpu/*.rs` lives in a
+   subdirectory; Cargo's default test-target auto-discovery only picks up `.rs` files directly
+   in `tests/`, not subdirectories. With no `[[test]]` entry, `cargo test -p mediaway --tests`
+   silently built and ran zero tests from that directory — no error, no warning, nothing to
+   notice. Fixed by adding explicit `[[test]]` entries for `dx12_decode_smoke`,
+   `dx12_encode_smoke`, and the new `dx12_decode_pixel_roundtrip` to `crates/mediaway/Cargo.toml`.
+2. **Both files referenced a non-existent `mediaway_wgpu` extern crate** (`use
+   mediaway_wgpu::WgpuDx12DecodeBridge;`, `use mediaway_wgpu::WgpuDx12Bridge;`,
+   `mediaway_wgpu::BRIDGE_FORMAT`) — a leftover from before `mediaway-wgpu` was merged into this
+   `mediaway` package (ADR-0021's crate merge; this crate's own package name is `mediaway`, the
+   bridge types live at `mediaway::wgpu::*`). Since bug #1 meant these files were never actually
+   compiled, this second, independent compile error was never caught either. Fixed to `use
+   mediaway::wgpu::{WgpuDx12Bridge, WgpuDx12DecodeBridge};` / `mediaway::wgpu::BRIDGE_FORMAT`,
+   matching the correct pattern already used by this crate's other integration tests (e.g.
+   `screen_mic_av_smoke.rs`'s `use mediaway::platform;`).
+
+With both fixed, `dx12_decode_smoke.rs` and `dx12_encode_smoke.rs` compile and run for the
+first time verifiably in this session — `dx12_decode_smoke` prints the same real construction-ok
+result the prior addendum described (now actually re-confirmed, not just claimed), and
+`dx12_encode_smoke` hits its already-documented, unrelated `no HW H.264 MFT for BGRA DXGI
+input` skip, consistent with prior findings.
+
+**A real, genuine, hardware/API limitation was then hit — and worked around, not papered
+over — while writing the new test's readback step.** The natural wgpu-side readback
+(`CommandEncoder::copy_texture_to_buffer` with `TextureAspect::Plane0`/`Plane1` into a
+`wgpu::Buffer`, then `map_async`) panics on real hardware:
+
+```
+thread '...' panicked at wgpu-hal-26.0.6/src/dx12/mod.rs:944:18:
+internal error: entered unreachable code
+```
+
+Direct source inspection of the pinned `wgpu-hal 26.0.6` confirms this is a genuine upstream
+gap, not a Mediaway bug: `wgpu_hal::dx12::Texture::calc_subresource_for_copy` (`src/dx12/mod.rs`)
+matches `base.aspect: FormatAspects` against `COLOR | DEPTH => 0`, `STENCIL => 1`, `_ =>
+unreachable!()` — with no arm for `FormatAspects::PLANE_0`/`PLANE_1`, even though
+`FormatAspects::new` (`src/lib.rs`) correctly maps `wgt::TextureAspect::Plane0`/`Plane1` to
+those exact bits, and `FormatAspects::from(TextureFormat::NV12)` is `PLANE_0 | PLANE_1`. Both
+`copy_texture_to_buffer` and `copy_texture_to_texture` route through this same function on the
+DX12 backend, and `TextureAspect::All` on an NV12 texture resolves to the same multi-bit
+`PLANE_0 | PLANE_1` value (not `COLOR`), hitting the identical `unreachable!()` — so **no**
+`wgpu`-level copy of any kind currently works against a multi-planar-format texture on this
+pinned DX12 backend version. `cargo update -p wgpu --dry-run` confirmed 26.0.6 is already the
+newest compatible `wgpu-hal` patch this workspace's `wgpu = "26.0"` constraint resolves to —
+this is not a stale-lockfile problem, and bumping to a new `wgpu` major/minor line to chase a
+fix is out of scope for a test-only readback need.
+
+**Workaround, not a soft skip**: the test instead reaches past `wgpu` again — the same HAL
+escape-hatch idiom `dx12_decode.rs`/`dx12.rs` already use for the library bridges themselves —
+to recover the raw `ID3D12Resource` behind the bridge's returned `wgpu::Texture`
+(`wgpu::Texture::as_hal::<hal::api::Dx12>()`), opens it as a **fresh native D3D11 texture** via
+`ID3D12Device::CreateSharedHandle` → `ID3D11Device1::OpenSharedResource1` (the reverse direction
+of `D3d11SharedDecodeBridge::open`'s own D3D11→D3D12 share, confirming that direction also works
+symmetrically on this hardware), and reads it back with an ordinary D3D11
+`D3D11_USAGE_STAGING` `Map(READ)`. This only changes how the *test* reads bytes back off the
+GPU — it still asserts byte-exact equality against the real result of the full pipeline under
+test (D3D11 CPU write → `D3d11SharedDecodeBridge::copy_from_decoded` → `import_decoded_texture`'s
+D3D11→D3D12 shared-handle wrap), it just avoids `wgpu`'s currently-broken client-side read path
+for multi-planar formats.
+
+**Result: a real, hard-passing, byte-exact round trip**, confirmed reproducible across multiple
+runs on the RTX 4090: `wgpu dx12 decode bridge: byte-exact pixel round trip ok (6144 bytes:
+64x64 NV12)` — 64×64 NV12 = 4096 luma + 2048 chroma bytes, every byte matching a deterministic,
+non-trivial per-pixel pattern (distinct formulas for luma, chroma U, and chroma V, so a
+transposed plane or a U/V channel swap would also have failed the comparison). This resolves
+this ADR's own "Still unverified" item above, and `mediaway-decoder-windows` ADR-0003 §
+Residual risk #7, in the positive for the D3D11→D3D12 wrap + copy path itself — the still-open
+part of ADR-0003 § Residual risk #5/#7 is now narrowed specifically to `wgpu`'s own
+`TextureAspect::Plane0`/`Plane1` **sampling/view** path (`create_view`), which this workaround
+does not exercise and remains genuinely unverified pending either a `wgpu`/`wgpu-hal` fix or a
+similar HAL-level workaround for that use case.
+
+`cargo check --workspace --all-targets`, `cargo clippy -p mediaway --all-targets -- -D
+warnings`, `cargo fmt -p mediaway -- --check` (new/touched files only — this crate has
+pre-existing formatting drift elsewhere, unrelated to this change), and `cargo test -p mediaway
+--lib` all ran clean this session.
+
 ADRs are **English**. Numbering is local to this `adr/` folder.

@@ -51,28 +51,55 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
 ## Active & Planned Work Items (Wiki & Architecture Backlog)
 
 ### 1. High-Level Pipeline & FFI Bindings
-- [ ] **Multi-track `EncodeSession`**: Extend `EncodeSession` in `mediaway` to support multi-track (video + audio) muxing natively (currently single-track video; two-track is test-level).
-- [ ] **C ABI facade**: Complete the `mediaway-ffi` C ABI surface (container / device / pipeline).
-- [ ] **Game Engine & Seamless DX Wrappers**: First-class Zero-Copy wrappers for `wgpu`, `Three.js` (WebGPU), `Unity`, and `Godot` (passing native `GpuBufferHandle` / D3D11 / D3D12 / Vulkan pointers without CPU readback).
-- [ ] **Multi-language binding wrappers**: Idiomatic bindings for C++, C# (.NET / Unity), Python, Go, Swift, Kotlin, and Node.js.
+- [ ] **Multi-track `EncodeSession`**: native two-track (video + audio) support landed
+      (`EncodeSession::open_with_audio` / `write_audio_frame`, `crates/mediaway/src/session.rs`);
+      remaining gap is migrating `tests/screen_mic_av_smoke.rs` off its hand-rolled second-track
+      muxing onto the native API.
+- [ ] **C ABI facade**: container + device C ABI mature and hardware-verified; `mediaway-ffi`'s
+      pipeline module still defers screen/camera capture + decode, `cbindgen` migration and a
+      shared `mediaway-common-ffi` header are still open (see `crates/mediaway-ffi/docs/*/roadmap.md`).
+- [ ] **Game Engine & Seamless DX Wrappers**: `mediaway::wgpu` exists (Windows DX12 only) — encode
+      bridge hardware-verified, decode bridge construction-only (no pixel round trip yet); no
+      `Three.js`/WebGPU or Godot wrapper exists.
+- [ ] **Multi-language binding wrappers**: C, C++, C# (.NET / Unity), Python, Node.js, and Browser
+      (WASM) are verified (`bindings/`); Go, Swift, and Kotlin have not been started.
 
 ### 2. Codecs, Hardware Acceleration & OS Backends
-- [ ] **Linux Hardware Verification**: Validate the Linux VA-API backends (`mediaway-encoder::linux`, `mediaway-decoder::linux`) against physical `/dev/dri` device hardware.
-- [ ] **Windows D3D12 Decoder Hang Investigation**: Debug GPU driver TDR (`DXGI_ERROR_DEVICE_HUNG`) hang during native D3D12 decoding.
-- [ ] **Vulkan Video Decoder/Encoder Refinements**: Resolve HEVC GPU decode zero-pixel output and finalize AV1 Vulkan encode/decode driver support.
-- [ ] **Opus Audio Codec Integration**: Wire inbox WMF Opus and `mediaway-sw::opus` into the public `AudioEncoder`/`AudioDecoder` traits.
+- [ ] **Linux Hardware Verification**: the VA-API backends (`mediaway-encoder`/`mediaway-decoder`
+      `linux` modules) are compile-verified via WSL2 only — no run against physical `/dev/dri`
+      hardware yet.
+- [ ] **Windows D3D12 Decoder Hang Investigation**: still reproduces `DXGI_ERROR_DEVICE_HUNG`
+      after 3 real bugs already fixed (readback pitch, NV12 chroma-plane barrier, RBSP bit
+      offset); root cause narrowed to the opaque DXVA picture-parameter blob, unresolved
+      (`mediaway-decoder/adr/windows/0002-d3d12-native-video-decode.md`).
+- [ ] **Vulkan Video Decoder/Encoder Refinements**: HEVC GPU decode still reads back all-zero
+      pixels (root cause not found); AV1 encode is structurally hardware-verified but every
+      frame's OBU output is invalid — confirmed driver-maturity limitation, not a Mediaway bug;
+      AV1 decode has not been started.
+- [x] **Opus Audio Codec Integration (encode)**: `WindowsAudioEncoder` dispatches `CodecKind::Opus`
+      to `mediaway-sw`'s `SwOpusAudioEncoder` as a real `AudioEncoder` backend
+      (`crates/mediaway-encoder/src/windows/mod.rs`). Decode side still open — `mediaway-decoder`
+      has no facade `AudioDecoder` trait yet, so `WmfOpusDecoder` only works standalone.
 - [ ] **Pure Rust SW Codec Extensions**: Add CABAC, P-slice, and B-slice decoding to `mediaway-sw` H.264 decoder (currently Baseline CAVLC I-slice only).
 
 ### 3. Media Containers, Protocols & Image Formats
 - [ ] **Static Image Containers & Codecs**: Expand facade traits and container cores to support image formats (**AVIF**, **HEIC**, **WebP**, **PNG**, **JPEG**, **GIF**).
-- [ ] **RTMP Server Verification**: Verify `rtmp` client against live servers (NGINX-RTMP, YouTube Live, Twitch).
-- [ ] **Matroska / WebM Extensions**: Map VP8 `CodecKind` and expand Matroska demuxing capabilities (`ebml-webm`).
+- [ ] **RTMP Server Verification**: handshake digest math is cross-checked against 3 reference
+      implementations (FFmpeg/librtmp/SRS) only — a live handshake/connect/publish smoke test
+      against a real server (NGINX-RTMP, YouTube Live, Twitch) is still open.
+- [x] **Matroska / WebM Extensions**: VP8 `CodecKind` mapped, lacing (Xiph/fixed/EBML) and
+      `Cluster` lookahead closed (`ebml-webm` adr/0004, 2026-08-05).
 
 ### 4. Device Capture & Audio DSP
-- [ ] **Windows Camera Public Integration**: Wire `IMFSourceReader` camera capture into `mediaway-device` facade traits.
-- [ ] **Single-Shot Zero-Copy Capture (`capture_once`)**: Implement `capture_video_once` blocking zero-copy frame retrieval (ADR-0006).
-- [ ] **Windows Hotplug Fix**: Resolve crash during `close()` in Windows hotplug monitoring (`mediaway-device::windows::WindowsDeviceHotplug`).
-- [ ] **Linux Capture Hardware Verification**: Test `xdg-desktop-portal` ScreenCast, PipeWire mic, and V4L2 camera capture on real Linux installations.
+- [x] **Windows Camera Public Integration**: `IMFSourceReader` camera capture wired into the
+      `mediaway-device` facade (`camera` module), hardware-verified against a real USB webcam.
+- [x] **Single-Shot Zero-Copy Capture (`capture_once`)**: `capture_video_once` implemented
+      (`mediaway-device::desktop::video`, `::camera::capture`, ADR-0006).
+- [x] **Windows Hotplug Fix**: `close()` crash fixed 2026-07-31 — `HotplugSession` now owns its
+      `ComGuard` for the object's whole lifetime instead of two independent short-lived scopes.
+- [ ] **Linux Capture Hardware Verification**: `xdg-desktop-portal` ScreenCast, PipeWire mic, and
+      V4L2 camera capture are compile-verified via WSL2 only — zero runtime verification on a
+      real Linux desktop yet.
 
 ## Workspace bootstrap
 

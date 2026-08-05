@@ -32,11 +32,11 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
       `DeviceLost` wiring into `wasapi.rs`/`wasapi_playback.rs`'s worker
       loops. **Still pending**: `WindowsDeviceHotplug` (`IMMNotificationClient`)
       backend implementation — separate follow-up task.
-- [ ] [ADR-0006](../adr/0006-capture-once-screenshot.md) (Proposed): single-shot
+- [x] [ADR-0006](../adr/0006-capture-once-screenshot.md): single-shot
       zero-copy frame — `VideoCapture::capture_next_frame_blocking` (default
       trait method) + `capture_video_once` (generic facade composition),
-      same `VideoFrame`/`GpuBufferHandle` as continuous capture. Design only,
-      no implementation yet.
+      same `VideoFrame`/`GpuBufferHandle` as continuous capture. Implemented
+      in `desktop::video` and `camera::capture`.
 
 ### 1 — Windows
 
@@ -46,7 +46,8 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 - [x] WASAPI mic + system + process loopback (`WindowsWasapiCapture`)
 - [x] WASAPI shared-mode render playback (`WindowsWasapiPlayback`,
       [ADR-0004](../adr/0004-audio-playback-traits.md))
-- [ ] Camera (Media Foundation later)
+- [x] Camera (Media Foundation, `windows_camera` module) — hardware-verified
+      against a real USB webcam; see `docs/windows/roadmap.md` Stage 4
 - [ ] Named BGRA→NV12 GpuCopy only if HW MFT rejects ARGB32
 
 ### 2 — Web

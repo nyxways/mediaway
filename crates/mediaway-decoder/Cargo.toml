@@ -48,6 +48,20 @@ criterion = { workspace = true }
 # HEVC has no CAVLC/I_PCM escape that bypasses entropy coding entirely — see
 # adr/0001's HEVC addendum for why hand-construction was not chosen here).
 
+# Explicit [[test]] entries: cargo's default `tests/*.rs` auto-discovery does
+# not descend into subdirectories, so these two Vulkan hardware-gated tests
+# (kept under tests/vulkan/ since ADR-0021's crate merge) need to be named
+# here or `cargo test -p mediaway-decoder` silently never runs them at all —
+# found while investigating the HEVC all-zero decode bug (see adr/0001's
+# HEVC addendum).
+[[test]]
+name = "hardware_h264_decode"
+path = "tests/vulkan/hardware_h264_decode.rs"
+
+[[test]]
+name = "hardware_hevc_decode"
+path = "tests/vulkan/hardware_hevc_decode.rs"
+
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = [
     "Win32_Foundation",

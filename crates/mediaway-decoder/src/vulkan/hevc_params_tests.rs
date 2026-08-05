@@ -125,6 +125,15 @@ fn sps_parse_extracts_expected_fields() {
     assert_eq!(sps.log2_diff_max_min_tb_size, 3);
     assert_eq!(sps.general_profile_idc, 1);
     assert_eq!(sps.general_level_idc, 60);
+    // `write_profile_tier_level` signals general_tier_flag=0,
+    // progressive_source=1, interlaced_source=0, non_packed_constraint=1,
+    // frame_only_constraint=1 — must be echoed exactly, not hardcoded (the
+    // real hardware bug `to_std_profile_tier_level`'s doc describes).
+    assert!(!sps.general_tier_flag);
+    assert!(sps.general_progressive_source_flag);
+    assert!(!sps.general_interlaced_source_flag);
+    assert!(sps.general_non_packed_constraint_flag);
+    assert!(sps.general_frame_only_constraint_flag);
     // These four must be echoed exactly, not silently zeroed — the real
     // hardware bug this crate's own HEVC decode hit (see `HevcSps::to_std`'s
     // doc). Set to a mix of true/false here so a regression back to
@@ -133,6 +142,28 @@ fn sps_parse_extracts_expected_fields() {
     assert!(sps.sample_adaptive_offset_enabled_flag);
     assert!(sps.sps_temporal_mvp_enabled_flag);
     assert!(!sps.strong_intra_smoothing_enabled_flag);
+}
+
+#[test]
+fn to_std_profile_tier_level_converts_raw_level_idc_to_vulkan_ordinal() {
+    // Level 2.0's raw ITU-T H.265 general_level_idc is 60 (30 * 2.0), but
+    // StdVideoH265LevelIdc's ordinal for Level 2.0 is 1
+    // (STD_VIDEO_H265_LEVEL_IDC_2_0) — a direct `i32::from(60)` cast (this
+    // crate's original bug) would build an out-of-range enum value with no
+    // defined meaning to the driver.
+    let rbsp = build_sps_rbsp(1, 64, 16);
+    let sps = HevcSps::parse(&rbsp).unwrap();
+    let ptl = sps.to_std_profile_tier_level();
+    assert_eq!(ptl.general_level_idc, native::STD_VIDEO_H265_LEVEL_IDC_2_0);
+    assert_eq!(
+        ptl.general_profile_idc,
+        native::STD_VIDEO_H265_PROFILE_IDC_MAIN
+    );
+    assert_eq!(ptl.flags.general_progressive_source_flag(), 1);
+    assert_eq!(ptl.flags.general_frame_only_constraint_flag(), 1);
+    assert_eq!(ptl.flags.general_tier_flag(), 0);
+    assert_eq!(ptl.flags.general_interlaced_source_flag(), 0);
+    assert_eq!(ptl.flags.general_non_packed_constraint_flag(), 1);
 }
 
 #[test]
@@ -205,6 +236,8 @@ fn pps_parse_extracts_expected_fields() {
     writer.push_bit(0); // transquant_bypass_enabled_flag
     writer.push_bit(0); // tiles_enabled_flag
     writer.push_bit(0); // entropy_coding_sync_enabled_flag
+    writer.push_bit(1); // pps_loop_filter_across_slices_enabled_flag
+    writer.push_bit(0); // deblocking_filter_control_present_flag
     let rbsp = writer.finish();
 
     let pps = HevcPps::parse(&rbsp).unwrap();
@@ -212,6 +245,40 @@ fn pps_parse_extracts_expected_fields() {
     assert_eq!(pps.num_extra_slice_header_bits, 2);
     assert_eq!(pps.num_ref_idx_l0_default_active, 1);
     assert_eq!(pps.init_qp, 26);
+    // Must be echoed exactly, not left always-false — the real hardware bug
+    // this field's own doc describes (see `HevcPps::pps_loop_filter_across_slices_enabled_flag`).
+    assert!(pps.pps_loop_filter_across_slices_enabled_flag);
+}
+
+#[test]
+fn pps_parse_rejects_deblocking_filter_control_present() {
+    let mut writer = BitWriter::new();
+    writer.write_ue(0); // pps_pic_parameter_set_id
+    writer.write_ue(0); // pps_seq_parameter_set_id
+    writer.push_bit(0); // dependent_slice_segments_enabled_flag
+    writer.push_bit(0); // output_flag_present_flag
+    writer.write_bits(0, 3); // num_extra_slice_header_bits
+    writer.push_bit(0); // sign_data_hiding_enabled_flag
+    writer.push_bit(0); // cabac_init_present_flag
+    writer.write_ue(0); // num_ref_idx_l0_default_active_minus1
+    writer.write_ue(0); // num_ref_idx_l1_default_active_minus1
+    writer.write_ue(0); // init_qp_minus26
+    writer.push_bit(0); // constrained_intra_pred_flag
+    writer.push_bit(0); // transform_skip_enabled_flag
+    writer.push_bit(0); // cu_qp_delta_enabled_flag
+    writer.write_ue(0); // pps_cb_qp_offset
+    writer.write_ue(0); // pps_cr_qp_offset
+    writer.push_bit(0); // pps_slice_chroma_qp_offsets_present_flag
+    writer.push_bit(0); // weighted_pred_flag
+    writer.push_bit(0); // weighted_bipred_flag
+    writer.push_bit(0); // transquant_bypass_enabled_flag
+    writer.push_bit(0); // tiles_enabled_flag
+    writer.push_bit(0); // entropy_coding_sync_enabled_flag
+    writer.push_bit(0); // pps_loop_filter_across_slices_enabled_flag
+    writer.push_bit(1); // deblocking_filter_control_present_flag = 1 (unsupported)
+    let rbsp = writer.finish();
+    let err = HevcPps::parse(&rbsp).unwrap_err();
+    assert!(matches!(err, HevcParamError::Unsupported { .. }));
 }
 
 #[test]

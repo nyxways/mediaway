@@ -39,6 +39,9 @@ use mediaway_sw::h264::{BitReader, H264Error};
 use thiserror::Error;
 use vulkanalia::vk::video as native;
 
+mod hevc_ptl;
+use hevc_ptl::{parse_profile_tier_level, std_level_idc};
+
 /// Errors from parsing an HEVC VPS/SPS/PPS/slice-segment-header, or a syntax
 /// element this crate's scope does not support.
 ///
@@ -228,8 +231,31 @@ pub struct HevcSps {
     pub max_transform_hierarchy_depth_intra: u32,
     /// `general_profile_idc` (from `profile_tier_level`).
     pub general_profile_idc: u8,
-    /// `general_level_idc`.
+    /// Raw ITU-T H.265 `general_level_idc` syntax element (`30 *
+    /// level_number`, e.g. `93` for Level 3.1) — **not** the small sequential
+    /// ordinal `StdVideoH265LevelIdc` expects; see
+    /// [`std_level_idc`] for the conversion this crate's first cut of
+    /// `to_std_profile_tier_level` was missing.
     pub general_level_idc: u8,
+    /// `general_tier_flag` (from `profile_tier_level`) — Main (`false`) vs.
+    /// High (`true`) tier. Not parsed/echoed at all in this crate's original
+    /// HEVC decode attempt (defaulted to `0`); `FFmpeg`'s `vulkan_hevc.c`
+    /// (`set_sps`) echoes the real parsed value, so this crate now does too.
+    pub general_tier_flag: bool,
+    /// `general_progressive_source_flag` (from `profile_tier_level`).
+    /// Previously hardcoded to `1` regardless of what the real bitstream
+    /// signaled — see [`HevcSps::to_std_profile_tier_level`]'s doc.
+    pub general_progressive_source_flag: bool,
+    /// `general_interlaced_source_flag` (from `profile_tier_level`). Not
+    /// parsed/echoed at all in this crate's original HEVC decode attempt.
+    pub general_interlaced_source_flag: bool,
+    /// `general_non_packed_constraint_flag` (from `profile_tier_level`). Not
+    /// parsed/echoed at all in this crate's original HEVC decode attempt.
+    pub general_non_packed_constraint_flag: bool,
+    /// `general_frame_only_constraint_flag` (from `profile_tier_level`).
+    /// Previously hardcoded to `1` regardless of what the real bitstream
+    /// signaled — see [`HevcSps::to_std_profile_tier_level`]'s doc.
+    pub general_frame_only_constraint_flag: bool,
     /// `amp_enabled_flag` — must be echoed into `StdVideoH265SequenceParameterSet`
     /// exactly as signaled: it changes how a real encoder binarizes inter
     /// `part_mode`, so a mismatch desyncs the hardware's own CABAC parser
@@ -295,8 +321,7 @@ impl HevcSps {
             });
         }
         let _sps_temporal_id_nesting_flag = reader.read_bit()?;
-        let (general_profile_idc, general_level_idc) =
-            parse_profile_tier_level(&mut reader, sps_max_sub_layers_minus1)?;
+        let ptl = parse_profile_tier_level(&mut reader, sps_max_sub_layers_minus1)?;
 
         let sps_seq_parameter_set_id = reader.read_ue()? as u8;
         let chroma_format_idc = reader.read_ue()?;
@@ -410,8 +435,13 @@ impl HevcSps {
             log2_diff_max_min_tb_size,
             max_transform_hierarchy_depth_inter,
             max_transform_hierarchy_depth_intra,
-            general_profile_idc,
-            general_level_idc,
+            general_profile_idc: ptl.general_profile_idc,
+            general_level_idc: ptl.general_level_idc,
+            general_tier_flag: ptl.general_tier_flag,
+            general_progressive_source_flag: ptl.general_progressive_source_flag,
+            general_interlaced_source_flag: ptl.general_interlaced_source_flag,
+            general_non_packed_constraint_flag: ptl.general_non_packed_constraint_flag,
+            general_frame_only_constraint_flag: ptl.general_frame_only_constraint_flag,
             amp_enabled_flag,
             sample_adaptive_offset_enabled_flag,
             sps_temporal_mvp_enabled_flag,
@@ -420,6 +450,24 @@ impl HevcSps {
     }
 
     /// Builds the `StdVideoH265ProfileTierLevel` this SPS parsed.
+    ///
+    /// Every constraint flag and `general_level_idc` is echoed from what this
+    /// SPS actually signaled, not hardcoded — this crate's original HEVC
+    /// decode attempt hardcoded `general_progressive_source_flag`/
+    /// `general_frame_only_constraint_flag` to `1` unconditionally, never set
+    /// `general_tier_flag`/`general_interlaced_source_flag`/
+    /// `general_non_packed_constraint_flag` at all, and passed the raw ITU-T
+    /// H.265 `general_level_idc` byte (`30 * level_number`) straight through
+    /// as if it were `StdVideoH265LevelIdc`'s small sequential ordinal
+    /// (`STD_VIDEO_H265_LEVEL_IDC_3_1 == 4`, not `93`) — confirmed against
+    /// `FFmpeg`'s real, working `libavcodec/vulkan_hevc.c` (`set_sps`), which
+    /// echoes every one of these constraint flags from the parsed
+    /// `profile_tier_level()` and converts the level via its own
+    /// `ff_vk_h265_level_to_vk` lookup rather than a raw cast. See `adr/0001`'s
+    /// HEVC addendum for whether this was the all-zero decode's actual root
+    /// cause (none of these fields gate slice/CTU-level bitstream syntax per
+    /// the spec, so this is a real, necessary correctness fix independent of
+    /// whether it explains the observed bug).
     #[must_use]
     pub fn to_std_profile_tier_level(&self) -> native::StdVideoH265ProfileTierLevel {
         let mut flags = native::StdVideoH265ProfileTierLevelFlags {
@@ -427,14 +475,21 @@ impl HevcSps {
             _bitfield_1: native::__BindgenBitfieldUnit::new([0u8; 1]),
             __bindgen_padding_0: [0; 3],
         };
-        flags.set_general_progressive_source_flag(1);
-        flags.set_general_frame_only_constraint_flag(1);
+        flags.set_general_tier_flag(u32::from(self.general_tier_flag));
+        flags.set_general_progressive_source_flag(u32::from(self.general_progressive_source_flag));
+        flags.set_general_interlaced_source_flag(u32::from(self.general_interlaced_source_flag));
+        flags.set_general_non_packed_constraint_flag(u32::from(
+            self.general_non_packed_constraint_flag,
+        ));
+        flags.set_general_frame_only_constraint_flag(u32::from(
+            self.general_frame_only_constraint_flag,
+        ));
         native::StdVideoH265ProfileTierLevel {
             flags,
             general_profile_idc: native::StdVideoH265ProfileIdc(i32::from(
                 self.general_profile_idc,
             )),
-            general_level_idc: native::StdVideoH265LevelIdc(i32::from(self.general_level_idc)),
+            general_level_idc: std_level_idc(self.general_level_idc),
         }
     }
 
@@ -522,39 +577,6 @@ impl HevcSps {
     }
 }
 
-/// `profile_tier_level(profilePresentFlag=1, maxNumSubLayersMinus1)` (ITU-T
-/// H.265 § 7.3.3), general-only (no sub-layer profile/level, since
-/// `sps_max_sub_layers_minus1 == 0` is required by [`HevcSps::parse`]).
-/// Returns `(general_profile_idc, general_level_idc)`.
-fn parse_profile_tier_level(
-    reader: &mut BitReader<'_>,
-    max_num_sub_layers_minus1: u32,
-) -> Result<(u8, u8), HevcParamError> {
-    let _general_profile_space = reader.read_bits(2)?;
-    let _general_tier_flag = reader.read_bit()?;
-    let general_profile_idc = reader.read_bits(5)? as u8;
-    for _ in 0..32 {
-        let _general_profile_compatibility_flag = reader.read_bit()?;
-    }
-    let _general_progressive_source_flag = reader.read_bit()?;
-    let _general_interlaced_source_flag = reader.read_bit()?;
-    let _general_non_packed_constraint_flag = reader.read_bit()?;
-    let _general_frame_only_constraint_flag = reader.read_bit()?;
-    // 43 general reserved/constraint bits + 1 (44 total, per the spec's
-    // profile_idc-conditional block collapsing to a flat 44-bit reserved
-    // field for the profiles this crate accepts).
-    let _ = reader.read_bits(32)?;
-    let _ = reader.read_bits(12)?;
-    let general_level_idc = reader.read_bits(8)? as u8;
-    for _ in 0..max_num_sub_layers_minus1 {
-        // Unreachable this round (max_num_sub_layers_minus1 == 0 always,
-        // enforced by the caller), kept for structural completeness.
-        let _sub_layer_profile_present_flag = reader.read_bit()?;
-        let _sub_layer_level_present_flag = reader.read_bit()?;
-    }
-    Ok((general_profile_idc, general_level_idc))
-}
-
 /// Parsed HEVC PPS fields this crate's decode session needs.
 #[allow(
     clippy::struct_excessive_bools,
@@ -619,6 +641,22 @@ pub struct HevcPps {
     /// bit at the very start of **every** `coding_unit()`; a mismatch desyncs
     /// CABAC parsing on the first CU of the first CTU.
     pub transquant_bypass_enabled_flag: bool,
+    /// `pps_loop_filter_across_slices_enabled_flag` — gates
+    /// `slice_loop_filter_across_slices_enabled_flag` in **every** slice
+    /// header whenever `(slice_sao_luma_flag || slice_sao_chroma_flag ||
+    /// !slice_deblocking_filter_disabled_flag)` also holds (ITU-T H.265 §
+    /// 7.3.6.1) — real encoders commonly enable this by default alongside
+    /// SAO. This crate's `HevcPps::parse` originally stopped reading *before*
+    /// this field (a module-doc comment incorrectly claimed nothing past
+    /// `entropy_coding_sync_enabled_flag` affects slice/CTU bit-parsing);
+    /// confirmed wrong against `FFmpeg`'s real `libavcodec/hevc/hevcdec.c`
+    /// (`hls_slice_header`), which reads `slice_loop_filter_across_slices_enabled_flag`
+    /// under exactly this condition. Leaving it always-`false` in
+    /// `StdVideoH265PictureParameterSet` desyncs the driver's own
+    /// slice-header parse by one bit on any real encoder output that sets
+    /// this PPS flag (which `mediaway-encoder`'s own HEVC PPS construction
+    /// does).
+    pub pps_loop_filter_across_slices_enabled_flag: bool,
 }
 
 impl HevcPps {
@@ -626,8 +664,9 @@ impl HevcPps {
     ///
     /// # Errors
     ///
-    /// [`HevcParamError::Unsupported`] when `tiles_enabled_flag == 1` or
-    /// `entropy_coding_sync_enabled_flag == 1` (WPP) — both out of scope, per
+    /// [`HevcParamError::Unsupported`] when `tiles_enabled_flag == 1`,
+    /// `entropy_coding_sync_enabled_flag == 1` (WPP), or
+    /// `deblocking_filter_control_present_flag == 1` — all out of scope, per
     /// the module doc. Other [`HevcParamError::Bitstream`] variants on
     /// truncated/overflowing data.
     pub fn parse(rbsp: &[u8]) -> Result<Self, HevcParamError> {
@@ -674,12 +713,29 @@ impl HevcPps {
                 reason: "entropy_coding_sync_enabled_flag (WPP) == 1 is not supported",
             });
         }
-        // `pps_loop_filter_across_slices_enabled_flag` + deblocking-override
-        // fields + scaling-list/extension fields follow — none of these add
-        // or remove slice/CTU-level bitstream syntax elements (deblocking
-        // parameters only change filter *values*, not bit layout), so this
-        // crate's own parser stops here, matching `mediaway_sw::h264::Sps::parse`'s
-        // "parse through what changes bit-parsing, not everything" convention.
+        // `pps_loop_filter_across_slices_enabled_flag` DOES gate a real
+        // slice-header bit (see this struct field's own doc) — read it for
+        // real, unlike this crate's original (incorrect) assumption.
+        // `deblocking_filter_control_present_flag`'s own sub-fields
+        // (`deblocking_filter_override_enabled_flag`,
+        // `pps_deblocking_filter_disabled_flag`, `pps_beta_offset_div2`,
+        // `pps_tc_offset_div2`) only change filter *values*, not slice-header
+        // bit layout beyond the presence flag itself — but this crate does
+        // not yet build `StdVideoH265PictureParameterSet`'s corresponding
+        // `deblocking_filter_control_present_flag`/`deblocking_filter_override_enabled_flag`
+        // bits, so a stream signaling it is rejected here rather than
+        // silently mis-echoed. Scaling-list/extension fields past this point
+        // still do not add slice/CTU-level syntax for this crate's Main-
+        // profile scope, so parsing stops after this check, matching
+        // `mediaway_sw::h264::Sps::parse`'s "parse through what changes
+        // bit-parsing, not everything" convention.
+        let pps_loop_filter_across_slices_enabled_flag = reader.read_bit()? != 0;
+        let deblocking_filter_control_present_flag = reader.read_bit()? != 0;
+        if deblocking_filter_control_present_flag {
+            return Err(HevcParamError::Unsupported {
+                reason: "deblocking_filter_control_present_flag == 1 is not supported this round",
+            });
+        }
 
         let init_qp = init_qp_minus26
             .checked_add(26)
@@ -705,6 +761,7 @@ impl HevcPps {
             weighted_pred_flag,
             weighted_bipred_flag,
             transquant_bypass_enabled_flag,
+            pps_loop_filter_across_slices_enabled_flag,
         })
     }
 
@@ -737,6 +794,9 @@ impl HevcPps {
         flags.set_weighted_pred_flag(u32::from(self.weighted_pred_flag));
         flags.set_weighted_bipred_flag(u32::from(self.weighted_bipred_flag));
         flags.set_transquant_bypass_enabled_flag(u32::from(self.transquant_bypass_enabled_flag));
+        flags.set_pps_loop_filter_across_slices_enabled_flag(u32::from(
+            self.pps_loop_filter_across_slices_enabled_flag,
+        ));
         native::StdVideoH265PictureParameterSet {
             flags,
             pps_pic_parameter_set_id: self.pps_pic_parameter_set_id,

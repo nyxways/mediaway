@@ -4,12 +4,11 @@ Module: `mediaway-decoder::vulkan` (portable — not OS-suffixed, sibling of
 `mediaway-encoder::vulkan`). ADR:
 [`0001-vulkan-video-decode.md`](../../../../crates/mediaway-decoder/adr/vulkan/0001-vulkan-video-decode.md).
 
-**Status (2026-07-30): H.264 general-GOP decode is real and
-hardware-verified** — the first general-GOP (P/B + DPB) decode backend in
-this workspace to pass a real hardware round trip. **HEVC (Stage 2) is
-implemented and sans-io-tested but not yet hardware-verified** (IDR-only
-GPU path, real bugs fixed, picture still decodes all-zero — see below). AV1
-is a follow-up addendum (files not written yet).
+**Status (2026-08-05): H.264 general-GOP decode and HEVC IDR decode are both
+real and hardware-verified.** H.264 was the first general-GOP (P/B + DPB)
+decode backend in this workspace to pass a real hardware round trip; HEVC's
+IDR-only GPU path is now hardware-verified too (root cause found — see
+below). AV1 is a follow-up addendum (files not written yet).
 
 ## Scope — broader than the encoder-vulkan precedent, by project-owner decision
 
@@ -60,25 +59,25 @@ image is one shared `2D_ARRAY` view, not per-slot views; slice-header
 parsing was missing `num_ref_idx_active_override_flag` and deblocking-
 filter-control fields until cross-checked against `ffmpeg`.
 
-## HEVC (Stage 2): sans-io real and tested, GPU decode not yet verified
+## HEVC (Stage 2): IDR decode hardware-verified; P/B still deferred
 
 `hevc_params.rs`/`hevc_slice.rs`/`session_command_hevc.rs`/`decoder_hevc.rs`
 add real VPS/SPS/PPS/slice-segment-header parsing (2-byte NAL header, new —
-not reusable from H.264) + short-term RPS construction, 19 new sans-io unit
-tests (62 total). GPU path is IDR-only this round (P/B-slice HEVC decode
-deferred — hand-constructing legal HEVC content needs a real CABAC encoder,
-substantially riskier than H.264's `I_PCM`/CAVLC escape). Hardware test
-chains this workspace's own verified `mediaway-encoder::vulkan` HEVC encoder
-into the new decoder (no hand-written CABAC needed) and reproduced H.264's
-original symptom: decode ran with zero `VkResult` errors but read back
-all-zero. Found and fixed **two real, confirmed bugs** (`HevcSps`/`HevcPps::
-to_std` silently hardcoded several `Std*Flags` bits — `amp_enabled_flag`,
-`sample_adaptive_offset_enabled_flag`, `transquant_bypass_enabled_flag`,
-`cu_qp_delta_enabled_flag` — to 0 instead of the real parsed value, desyncing
-the driver's own CABAC parser). **Picture still decodes all-zero after both
-fixes** — root cause not yet found; hardware test soft-skips with a loud,
-specific `eprintln!` rather than hard-failing. See ADR-0001's 2026-07-30
-HEVC addendum for the full trail.
+not reusable from H.264) + short-term RPS construction, 22 sans-io unit
+tests (120 total for the crate). GPU path is IDR-only this round (P/B-slice
+HEVC decode deferred — hand-constructing legal HEVC content needs a real
+CABAC encoder, substantially riskier than H.264's `I_PCM`/CAVLC escape).
+Hardware test chains this workspace's own verified `mediaway-encoder::vulkan`
+HEVC encoder into the decoder (no hand-written CABAC needed).
+
+Root cause of the all-zero symptom (two hardware hypotheses — level too low,
+hardcoded PTL constraint bits — tested and ruled out first; see ADR-0001's
+2026-08-05 addendum): `HevcPps::parse` stopped reading *before*
+`pps_loop_filter_across_slices_enabled_flag`, which gates a conditional
+`slice_loop_filter_across_slices_enabled_flag` slice-header bit (confirmed
+against `FFmpeg`'s `hevcdec.c`) — desyncing the driver's CABAC parser one bit
+before CTU data. `cargo test -p mediaway-decoder --test hardware_hevc_decode`
+now passes with **hard** pixel-value assertions.
 
 ## Bitstream-parser reuse
 

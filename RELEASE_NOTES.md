@@ -1,4 +1,6 @@
-## Unreleased
+# Mediaway v0.1.3
+
+## What's new
 
 ### Added
 
@@ -14,26 +16,6 @@
 ### Fixed
 
 - `ebml-webm` mux output is now verified against system `ffprobe` in addition to this crate's own demuxer round-trip
-
-# Mediaway v0.1.2
-
-## What's new
-
-### Added
-
-- Windows Opus decode via Media Foundation (public API) and software Opus encode in the facade
-
-### Changed
-
-- All 8 container formats (audio included) verified playable in mpv via the playback-verification example
-- `flv` and `ogg` freestanding cores renamed to `flv-core` / `ogg-core` (crates.io name collisions)
-- `ebml-webm` 0.2.0 — CodecPrivate API
-- All crates re-published on crates.io (workspace 0.1.2, freestanding cores 0.1.1, `ebml-webm` 0.2.1) with refreshed READMEs and consumer-facing descriptions
-
-### Fixed
-
-- MP4s that failed to play: malformed `stsz` box and raw SPS written as `avcC`
-- Playback timing corrections: ISO-BMFF mux duration/DTS delta (ADR-0004) and Ogg demux/CRC fixes
 
 ## Overview
 
@@ -66,10 +48,12 @@ core crates (`iso-bmff`, `ebml-webm`, `flv-core`, `adts-core`, `ogg-core`,
   AAC — software (ADTS).
 - Audio: Opus — Windows decode via Media Foundation (public
   `mediaway_decoder::windows::WmfOpusDecoder`), software encode/decode
-  (`unsafe-libopus`); audio processing module (sonora).
-- Containers: ISOBMFF/MP4, WebM (EBML), FLV, MPEG-TS, ADTS, Ogg, RIFF/WAVE,
-  MPEG audio — all 8 verified playable in mpv; CENC encryption/decryption;
-  RTMP (proposed, unpublished).
+  (`unsafe-libopus`); audio processing module (sonora); AAC — software encode
+  (C# `Mediaway.Pipeline.AudioEncoder`, ABI v2).
+- Containers: ISOBMFF/MP4, WebM (EBML, now including VP8 mux/demux and
+  mux-side lacing), FLV, MPEG-TS, ADTS, Ogg, RIFF/WAVE, MPEG audio — all
+  verified playable in mpv; CENC encryption/decryption; RTMP (proposed,
+  unpublished).
 
 ## Bindings
 

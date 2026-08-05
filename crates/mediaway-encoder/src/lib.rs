@@ -35,7 +35,7 @@ pub use audio::sw_opus::SwOpusAudioEncoder;
 pub use audio::{AudioEncoder, AudioEncoderConfig};
 pub use error::EncodeError;
 #[cfg(feature = "video")]
-pub use video::{VideoEncoder, VideoEncoderConfig, VideoInputPreference};
+pub use video::{RateControlConfig, VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 
 // ── merged platform/domain modules (ADR-0021) ──
 pub mod linux;

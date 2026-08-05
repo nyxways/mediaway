@@ -65,6 +65,8 @@ fn av_fmp4_dx11_zero_copy_roundtrip() {
         pixel_format: PixelFormat::Nv12,
         input: VideoInputPreference::ZeroCopyGpu,
         gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
+        gop_size: 1,
+        rate_control: None,
     };
     let mut venc = match WindowsVideoEncoder::open(&vcfg) {
         Ok(e) => e,

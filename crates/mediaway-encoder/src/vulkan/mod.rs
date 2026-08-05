@@ -40,12 +40,15 @@
 
 #![allow(unsafe_code)]
 
+mod av1_gop;
 mod av1_params;
 mod encoder;
 #[cfg(test)]
 #[path = "encoder_tests.rs"]
 mod encoder_tests;
+mod h264_gop;
 mod h264_params;
+mod hevc_gop;
 mod hevc_params;
 #[cfg(test)]
 mod nal;

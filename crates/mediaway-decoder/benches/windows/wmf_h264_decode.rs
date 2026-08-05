@@ -67,6 +67,8 @@ mod imp {
             pixel_format: PixelFormat::Nv12,
             input: VideoInputPreference::CpuUploadOk,
             gpu_device: None,
+            gop_size: 1,
+            rate_control: None,
         };
         let mut enc = WindowsVideoEncoder::open(&cfg).ok()?;
         let nv12_len = (WIDTH * HEIGHT + WIDTH * HEIGHT / 2) as usize;

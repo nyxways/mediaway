@@ -306,6 +306,8 @@ fn encode_one_codec_cpu(codec: CodecKind) -> Option<(Vec<Packet>, Bytes)> {
         pixel_format: PixelFormat::Nv12,
         input: VideoInputPreference::CpuUploadOk,
         gpu_device: None,
+        gop_size: 1,
+        rate_control: None,
     };
     let mut encoder = match WindowsVideoEncoder::open(&enc_cfg) {
         Ok(e) => e,

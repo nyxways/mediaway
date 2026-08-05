@@ -22,12 +22,77 @@
 )]
 
 use vulkanalia::vk;
+use vulkanalia::vk::video as native;
 use vulkanalia::vk::{
     DeviceV1_0, DeviceV1_3, HasBuilder, KhrVideoEncodeQueueExtensionDeviceCommands,
     KhrVideoQueueExtensionDeviceCommands,
 };
 
+use crate::vulkan::h264_params;
 use crate::vulkan::session::{EncodeDevice, SessionResources, VulkanEncodeSessionError};
+
+/// DPB slot wiring for one `vkCmdEncodeVideoKHR` call (ADR-0002) —
+/// [`Self::idr_only`] reproduces Stage 1's exact single-slot, no-reference
+/// shape; GOP mode (`crate::vulkan::h264_gop::GopState`) fills in a real
+/// setup/reference slot pair.
+pub(crate) struct DpbRecordParams {
+    /// How many array layers `resources.dpb_image`/`dpb_image_view` actually
+    /// have — `1` for Stage 1's single-slot DPB image, GOP-capped
+    /// (`h264_gop::WORKSPACE_DPB_CAP`) otherwise.
+    pub(crate) layer_count: u32,
+    /// Whether to emit the one-time `UNDEFINED -> VIDEO_ENCODE_DPB_KHR`
+    /// layout transition for the whole `dpb_image` this call. `true` for
+    /// every Stage 1 call (each is an independent one-shot session that
+    /// never reads the DPB back) and for only the *first* `push_frame` of a
+    /// GOP-enabled `VulkanVideoEncoder` session — later GOP calls must not
+    /// re-discard already-written reference slots (see
+    /// [`record_pre_encode_barriers`]).
+    pub(crate) transition: bool,
+    /// DPB slot this frame's picture is written into
+    /// (`VkVideoEncodeInfoKHR::pSetupReferenceSlot`). `0` for Stage 1.
+    pub(crate) setup_slot: i32,
+    /// `Some` chains a real `VkVideoEncodeH264DpbSlotInfoKHR` onto the setup
+    /// slot (GOP mode only — future frames read this back). `None` keeps
+    /// Stage 1's exact bare-`VkVideoReferenceSlotInfoKHR` shape, already
+    /// hardware-verified without it.
+    pub(crate) setup_reference_info: Option<native::StdVideoEncodeH264ReferenceInfo>,
+    /// The sole L0 reference to read for a P-frame: the DPB slot index and
+    /// that slot's `StdVideoEncodeH264ReferenceInfo`. `None` for an IDR
+    /// frame (Stage 1's only case).
+    pub(crate) reference: Option<(i32, native::StdVideoEncodeH264ReferenceInfo)>,
+}
+
+impl DpbRecordParams {
+    /// Stage 1's exact shape: single slot 0, one-time transition every call
+    /// (each Stage 1 session only ever calls this once), no reference chain.
+    pub(crate) const fn idr_only() -> Self {
+        Self {
+            layer_count: 1,
+            transition: true,
+            setup_slot: 0,
+            setup_reference_info: None,
+            reference: None,
+        }
+    }
+}
+
+/// CBR rate control for one `vkCmdBeginVideoCodingKHR` scope (ADR-0002) —
+/// replaces the hardcoded `RATE_CONTROL_MODE_DISABLED` builder when
+/// `Some`. Built by the caller (`VulkanVideoEncoder::open`) from
+/// `VideoEncoderConfig::rate_control`, once per session (bitrate/framerate
+/// do not vary per frame in this design) — `Copy` so
+/// `VulkanVideoEncoder::push_frame` can read its stored copy every call
+/// without a per-frame clone.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct RateControlParams {
+    pub(crate) average_bitrate_bps: u64,
+    pub(crate) max_bitrate_bps: u64,
+    pub(crate) frame_rate_numerator: u32,
+    pub(crate) frame_rate_denominator: u32,
+    /// `0` lets the driver pick its own default VBV size — see
+    /// `VideoEncoderConfig::RateControlConfig::vbv_buffer_size_bytes`'s doc.
+    pub(crate) virtual_buffer_size_in_ms: u32,
+}
 
 /// Grouped params for [`record_and_submit`] — keeps that function's own
 /// signature under `clippy::too_many_arguments`.
@@ -36,6 +101,8 @@ pub(crate) struct RecordParams<'a> {
     pub(crate) coded_extent: vk::Extent2D,
     pub(crate) dst_size: vk::DeviceSize,
     pub(crate) picture_info_pnext: &'a mut vk::VideoEncodeH264PictureInfoKHR,
+    pub(crate) dpb: DpbRecordParams,
+    pub(crate) rate_control: Option<RateControlParams>,
 }
 
 /// Records and submits the whole command buffer: upload barrier + copy,
@@ -84,6 +151,8 @@ pub(crate) fn record_and_submit(
         command_buffer,
         params.coded_extent,
         params.dst_size,
+        params.dpb.layer_count,
+        params.dpb.transition,
     );
     record_video_coding(encode_device, resources, params, command_buffer);
 
@@ -115,20 +184,30 @@ const fn whole_color_range() -> vk::ImageSubresourceRange {
 /// the second barrier batch that transitions both images into their
 /// video-coding layouts and the destination buffer into
 /// `VIDEO_ENCODE_WRITE_KHR`. See [`record_and_submit`]'s doc for why the
-/// barriers are deliberately coarse.
+/// barriers are deliberately coarse. `dpb_layer_count`/`transition_dpb` are
+/// forwarded to [`record_pre_encode_barriers`] — see that function's doc.
 pub(crate) fn record_upload_and_barriers(
     device: &vulkanalia::Device,
     resources: &SessionResources,
     command_buffer: vk::CommandBuffer,
     coded_extent: vk::Extent2D,
     dst_size: vk::DeviceSize,
+    dpb_layer_count: u32,
+    transition_dpb: bool,
 ) {
     record_upload(device, resources, command_buffer, coded_extent);
     // SAFETY: `resources.dst_buffer` was just created with `TRANSFER_DST`
     // usage; this is the first command touching it, so no prior barrier is
     // needed before this write.
     unsafe { device.cmd_fill_buffer(command_buffer, resources.dst_buffer, 0, dst_size, 0) };
-    record_pre_encode_barriers(device, resources, command_buffer, dst_size);
+    record_pre_encode_barriers(
+        device,
+        resources,
+        command_buffer,
+        dst_size,
+        dpb_layer_count,
+        transition_dpb,
+    );
 }
 
 /// Transitions the input image to `TRANSFER_DST_OPTIMAL` and copies the
@@ -211,11 +290,23 @@ fn record_upload(
 /// the DPB image into `VIDEO_ENCODE_DPB_KHR`, and the (already zero-filled)
 /// destination buffer's access mask into `VIDEO_ENCODE_WRITE_KHR` — one
 /// batched `vkCmdPipelineBarrier2` call.
+///
+/// `dpb_layer_count` sizes the DPB barrier's subresource range (ADR-0002's
+/// GOP mode uses a multi-layer `dpb_image`, one layer per DPB slot — Stage 1
+/// stays `1`). `transition_dpb` chooses the DPB barrier's `old_layout`:
+/// `UNDEFINED` (discard — correct only the *first* time each layer is ever
+/// touched) when `true`, or a same-layout `VIDEO_ENCODE_DPB_KHR ->
+/// VIDEO_ENCODE_DPB_KHR` no-op when `false` — GOP mode passes `false` after
+/// its first call so already-written reference slots are never discarded;
+/// Stage 1 always passes `true` (each session only ever calls this once, so
+/// there is nothing valid to preserve).
 fn record_pre_encode_barriers(
     device: &vulkanalia::Device,
     resources: &SessionResources,
     command_buffer: vk::CommandBuffer,
     dst_size: vk::DeviceSize,
+    dpb_layer_count: u32,
+    transition_dpb: bool,
 ) {
     let whole_color_range = whole_color_range();
     let all_commands = vk::PipelineStageFlags2::ALL_COMMANDS;
@@ -232,17 +323,29 @@ fn record_pre_encode_barriers(
         .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
         .image(resources.input_image)
         .subresource_range(whole_color_range);
+    let dpb_old_layout = if transition_dpb {
+        vk::ImageLayout::UNDEFINED
+    } else {
+        vk::ImageLayout::VIDEO_ENCODE_DPB_KHR
+    };
+    let dpb_range = vk::ImageSubresourceRange {
+        aspect_mask: vk::ImageAspectFlags::COLOR,
+        base_mip_level: 0,
+        level_count: 1,
+        base_array_layer: 0,
+        layer_count: dpb_layer_count,
+    };
     let dpb_to_encode = vk::ImageMemoryBarrier2::builder()
         .src_stage_mask(all_commands)
         .src_access_mask(vk::AccessFlags2::empty())
         .dst_stage_mask(all_commands)
         .dst_access_mask(memory_rw)
-        .old_layout(vk::ImageLayout::UNDEFINED)
+        .old_layout(dpb_old_layout)
         .new_layout(vk::ImageLayout::VIDEO_ENCODE_DPB_KHR)
         .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
         .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
         .image(resources.dpb_image)
-        .subresource_range(whole_color_range);
+        .subresource_range(dpb_range);
     let dst_buffer_barrier = vk::BufferMemoryBarrier2::builder()
         .src_stage_mask(all_commands)
         .src_access_mask(memory_rw)
@@ -263,7 +366,22 @@ fn record_pre_encode_barriers(
 }
 
 /// `vkCmdBeginVideoCodingKHR` → `vkCmdEncodeVideoKHR` →
-/// `vkCmdEndVideoCodingKHR` for the one synthetic IDR frame.
+/// `vkCmdEndVideoCodingKHR` for one frame. `params.dpb ==
+/// DpbRecordParams::idr_only()` (Stage 1's only case) reproduces the
+/// original single-slot, no-reference, `DISABLED`-rate-control call shape
+/// exactly, field for field; ADR-0002's GOP mode instead wires a real
+/// setup/reference slot pair (with `VkVideoEncodeH264DpbSlotInfoKHR` chained
+/// so a *future* frame can read this one back, mirroring the AV1 addendum's
+/// same finding in `adr/0001`) and, when `params.rate_control.is_some()`,
+/// `CBR` instead of `DISABLED`.
+#[allow(
+    clippy::too_many_lines,
+    reason = "linear per-frame Vulkan Video struct construction — every local here \
+              (setup/reference slot resources, DPB-slot-info chains, rate control) must \
+              stay on this function's own stack frame for the raw pointers built from them \
+              to remain valid through the unsafe calls at the bottom; splitting further would \
+              just move half these locals into an out-param struct with the same lifetime need"
+)]
 fn record_video_coding(
     encode_device: &EncodeDevice<'_>,
     resources: &SessionResources,
@@ -271,15 +389,88 @@ fn record_video_coding(
     command_buffer: vk::CommandBuffer,
 ) {
     let device = encode_device.device;
-    let dpb_resource = vk::VideoPictureResourceInfoKHR::builder()
+
+    // --- setup slot: the DPB slot this frame's picture is written into ---
+    let setup_resource = vk::VideoPictureResourceInfoKHR::builder()
         .coded_offset(vk::Offset2D { x: 0, y: 0 })
         .coded_extent(params.coded_extent)
-        .base_array_layer(0)
+        .base_array_layer(params.dpb.setup_slot as u32)
         .image_view_binding(resources.dpb_image_view);
-    let setup_slot = vk::VideoReferenceSlotInfoKHR::builder()
-        .slot_index(0)
-        .picture_resource(&dpb_resource);
-    let begin_slots = [vk::VideoReferenceSlotInfoKHR::builder().slot_index(0)];
+    let setup_reference_info = params
+        .dpb
+        .setup_reference_info
+        .unwrap_or_else(|| h264_params::build_reference_info(0, 0, true));
+    let mut setup_dpb_slot_info = vk::VideoEncodeH264DpbSlotInfoKHR::builder()
+        .std_reference_info(&setup_reference_info)
+        .build();
+    let setup_slot = if params.dpb.setup_reference_info.is_some() {
+        vk::VideoReferenceSlotInfoKHR::builder()
+            .slot_index(params.dpb.setup_slot)
+            .picture_resource(&setup_resource)
+            .push_next(&mut setup_dpb_slot_info)
+    } else {
+        vk::VideoReferenceSlotInfoKHR::builder()
+            .slot_index(params.dpb.setup_slot)
+            .picture_resource(&setup_resource)
+    };
+    // `begin_slots`' own setup-slot entry stays exactly Stage 1's shape (no
+    // `picture_resource`, no DPB-slot-info chain) — this slot's content is
+    // being (re)initialized by this very operation, matching the
+    // already-hardware-verified convention.
+    let begin_setup_slot =
+        vk::VideoReferenceSlotInfoKHR::builder().slot_index(params.dpb.setup_slot);
+
+    // --- reference slot: the sole L0 reference a P-frame reads (GOP only) ---
+    let has_reference = params.dpb.reference.is_some();
+    let (reference_slot_index, reference_std_info) = params
+        .dpb
+        .reference
+        .unwrap_or_else(|| (0, h264_params::build_reference_info(0, 0, true)));
+    let reference_resource = vk::VideoPictureResourceInfoKHR::builder()
+        .coded_offset(vk::Offset2D { x: 0, y: 0 })
+        .coded_extent(params.coded_extent)
+        .base_array_layer(reference_slot_index as u32)
+        .image_view_binding(resources.dpb_image_view);
+    // Two separate `StdVideoEncodeH264DpbSlotInfoKHR` locals (not one reused
+    // for both arrays below): each `push_next` call takes an exclusive
+    // borrow, and both the `begin_slots` and `encode_info.reference_slots`
+    // arrays must stay alive simultaneously through the unsafe calls below.
+    let mut begin_reference_dpb_slot_info = vk::VideoEncodeH264DpbSlotInfoKHR::builder()
+        .std_reference_info(&reference_std_info)
+        .build();
+    let mut encode_reference_dpb_slot_info = vk::VideoEncodeH264DpbSlotInfoKHR::builder()
+        .std_reference_info(&reference_std_info)
+        .build();
+    let begin_reference_slot = vk::VideoReferenceSlotInfoKHR::builder()
+        .slot_index(reference_slot_index)
+        .picture_resource(&reference_resource)
+        .push_next(&mut begin_reference_dpb_slot_info);
+    let encode_reference_slot = vk::VideoReferenceSlotInfoKHR::builder()
+        .slot_index(reference_slot_index)
+        .picture_resource(&reference_resource)
+        .push_next(&mut encode_reference_dpb_slot_info);
+    let begin_slots_array = [begin_setup_slot, begin_reference_slot];
+    let begin_slots = if has_reference {
+        &begin_slots_array[..]
+    } else {
+        &begin_slots_array[..1]
+    };
+    let encode_reference_slots_array = [encode_reference_slot];
+
+    // --- rate control: `DISABLED` fixed-QP (Stage 1's exact shape) or CBR ---
+    let rate_control_layer = params
+        .rate_control
+        .as_ref()
+        .map(|rc| {
+            vk::VideoEncodeRateControlLayerInfoKHR::builder()
+                .average_bitrate(rc.average_bitrate_bps)
+                .max_bitrate(rc.max_bitrate_bps)
+                .frame_rate_numerator(rc.frame_rate_numerator)
+                .frame_rate_denominator(rc.frame_rate_denominator)
+                .build()
+        })
+        .unwrap_or_default();
+    let rate_control_layers = [rate_control_layer];
 
     // SAFETY: `resources.encode_feedback_query_pool` has exactly 1 query slot
     // (`create_encode_feedback_query_pool`); resetting before use is required
@@ -287,15 +478,27 @@ fn record_video_coding(
     unsafe {
         device.cmd_reset_query_pool(command_buffer, resources.encode_feedback_query_pool, 0, 1);
     }
-    let mut rate_control = vk::VideoEncodeRateControlInfoKHR::builder()
-        .rate_control_mode(vk::VideoEncodeRateControlModeFlagsKHR::DISABLED);
+    let mut rate_control = params.rate_control.as_ref().map_or_else(
+        || {
+            vk::VideoEncodeRateControlInfoKHR::builder()
+                .rate_control_mode(vk::VideoEncodeRateControlModeFlagsKHR::DISABLED)
+        },
+        |rc| {
+            vk::VideoEncodeRateControlInfoKHR::builder()
+                .rate_control_mode(vk::VideoEncodeRateControlModeFlagsKHR::CBR)
+                .layers(&rate_control_layers)
+                .virtual_buffer_size_in_ms(rc.virtual_buffer_size_in_ms)
+                .initial_virtual_buffer_size_in_ms(rc.virtual_buffer_size_in_ms)
+        },
+    );
     let begin_info = vk::VideoBeginCodingInfoKHR::builder()
         .video_session(resources.session)
         .video_session_parameters(resources.session_parameters)
-        .reference_slots(&begin_slots)
+        .reference_slots(begin_slots)
         .push_next(&mut rate_control);
-    // SAFETY: `begin_info` and its chained `rate_control`/`begin_slots` stay
-    // alive for this call; `command_buffer` is currently recording.
+    // SAFETY: `begin_info` and its chained `rate_control`/`begin_slots` (and
+    // everything `begin_slots`' entries themselves chain) stay alive for
+    // this call; `command_buffer` is currently recording.
     unsafe {
         device.cmd_begin_video_coding_khr(command_buffer, &begin_info);
     }
@@ -305,13 +508,24 @@ fn record_video_coding(
         .coded_extent(params.coded_extent)
         .base_array_layer(0)
         .image_view_binding(resources.input_image_view);
-    let encode_info = vk::VideoEncodeInfoKHR::builder()
-        .dst_buffer(resources.dst_buffer)
-        .dst_buffer_offset(0)
-        .dst_buffer_range(params.dst_size)
-        .src_picture_resource(src_resource)
-        .setup_reference_slot(&setup_slot)
-        .push_next(params.picture_info_pnext);
+    let encode_info = if has_reference {
+        vk::VideoEncodeInfoKHR::builder()
+            .dst_buffer(resources.dst_buffer)
+            .dst_buffer_offset(0)
+            .dst_buffer_range(params.dst_size)
+            .src_picture_resource(src_resource)
+            .setup_reference_slot(&setup_slot)
+            .reference_slots(&encode_reference_slots_array)
+            .push_next(params.picture_info_pnext)
+    } else {
+        vk::VideoEncodeInfoKHR::builder()
+            .dst_buffer(resources.dst_buffer)
+            .dst_buffer_offset(0)
+            .dst_buffer_range(params.dst_size)
+            .src_picture_resource(src_resource)
+            .setup_reference_slot(&setup_slot)
+            .push_next(params.picture_info_pnext)
+    };
     // SAFETY: `command_buffer` is inside the active video-coding scope opened
     // above; query 0 was just reset and is not currently active.
     unsafe {
@@ -323,10 +537,10 @@ fn record_video_coding(
         );
     }
     // SAFETY: `encode_info` and everything it chains/borrows
-    // (`src_resource`/`setup_slot`/`dpb_resource`/the H.264 picture-info
-    // chain built by the caller) stay alive for this call; `command_buffer`
-    // is inside an active video-coding scope from the `cmd_begin_video_coding_khr`
-    // call immediately above.
+    // (`src_resource`/`setup_slot`/`encode_reference_slots_array`/the H.264
+    // picture-info chain built by the caller) stay alive for this call;
+    // `command_buffer` is inside an active video-coding scope from the
+    // `cmd_begin_video_coding_khr` call immediately above.
     unsafe {
         device.cmd_encode_video_khr(command_buffer, &encode_info);
     }

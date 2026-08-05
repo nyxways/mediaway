@@ -8,6 +8,10 @@
 | [web-gpu-frame](web-gpu-frame.md) | Web: WebGPU-backed `VideoFrame` — no `GPUTexture` ctor, canvas path, honesty label |
 | [web-real-chrome-bugs](web-real-chrome-bugs.md) | Web: 3 real bugs found only via real Chrome + CDP (arg order, description, AAC flush) |
 | [../platform/linux-encode](../platform/linux-encode.md) | Linux: VA-API H.264 CPU-upload (`cros-libva`); zero HW verification caveat |
+| [../platform/vulkan-encode](../platform/vulkan-encode.md) | Vulkan: probe/H.264/HEVC/AV1 + GOP (H.264+HEVC) / CBR (H.264 only) rate control — hardware-verified |
+| [vulkan-h264-gop](vulkan-h264-gop.md) | Vulkan H.264 GOP/CBR detail: `GopState`/DPB ring, barrier fix, FFI chaining |
+| [vulkan-hevc-gop](vulkan-hevc-gop.md) | Vulkan HEVC GOP detail: separate `GopState`, picture-embedded short-term RPS, CBR stays H.264-only |
+| [vulkan-av1-gop](vulkan-av1-gop.md) | Vulkan AV1 GOP detail: `order_hint`-keyed `GopState`, implemented but **unverifiable** (base encode already driver-broken) |
 | [../license/sw-opus](../license/sw-opus.md) | `mediaway-sw::opus` — real Opus encode via `unsafe-libopus`; closes the only-platform-with-zero-Opus-encode gap |
 
 Codec matrices: root [`README.md`](../../../../README.md#codec-support) · wiki pointer [support-matrix](../platform/support-matrix.md).  

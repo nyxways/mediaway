@@ -24,6 +24,8 @@ fn open_rejects_zero_copy_gpu_this_stage() {
         pixel_format: PixelFormat::Nv12,
         input: VideoInputPreference::ZeroCopyGpu,
         gpu_device: None,
+        gop_size: 1,
+        rate_control: None,
     };
     // Real oneVPL Zero-Copy D3D11 surfaces are deferred (adr/0001) — every
     // build (with or without a real oneVPL runtime) must reject this input
@@ -51,6 +53,8 @@ fn public_api_real_encode_or_skips() {
         pixel_format: PixelFormat::Nv12,
         input: VideoInputPreference::CpuUploadOk,
         gpu_device: None,
+        gop_size: 1,
+        rate_control: None,
     };
 
     let mut encoder = match QuickSyncVideoEncoder::open(&config) {

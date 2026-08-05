@@ -209,6 +209,8 @@ fn d3d12_native_h264_encode_or_skip() {
         pixel_format: PixelFormat::Nv12,
         input: VideoInputPreference::CpuUploadOk,
         gpu_device: Some(GpuDeviceHandle::DirectX12(handle)),
+        gop_size: 1,
+        rate_control: None,
     };
 
     let mut enc = match D3d12VideoEncoder::open(&cfg) {
@@ -286,6 +288,8 @@ fn d3d12_native_hevc_encode_or_skip() {
         pixel_format: PixelFormat::Nv12,
         input: VideoInputPreference::CpuUploadOk,
         gpu_device: Some(GpuDeviceHandle::DirectX12(handle)),
+        gop_size: 1,
+        rate_control: None,
     };
 
     let mut enc = match D3d12VideoEncoder::open(&cfg) {
@@ -414,6 +418,8 @@ fn d3d12_native_av1_encode_or_skip() {
         pixel_format: PixelFormat::Nv12,
         input: VideoInputPreference::CpuUploadOk,
         gpu_device: Some(GpuDeviceHandle::DirectX12(handle)),
+        gop_size: 1,
+        rate_control: None,
     };
 
     let mut enc = match D3d12VideoEncoder::open(&cfg) {

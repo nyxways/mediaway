@@ -303,6 +303,8 @@ mod tests {
             pixel_format: PixelFormat::Nv12,
             input: VideoInputPreference::CpuUploadOk,
             gpu_device: None,
+            gop_size: 1,
+            rate_control: None,
         };
         let mut enc = match WindowsVideoEncoder::open(&cfg) {
             Ok(e) => e,
@@ -373,6 +375,8 @@ mod tests {
             pixel_format: PixelFormat::Nv12,
             input: VideoInputPreference::ZeroCopyGpu,
             gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
+            gop_size: 1,
+            rate_control: None,
         };
         let mut enc = match WindowsVideoEncoder::open(&cfg) {
             Ok(e) => e,
@@ -438,6 +442,8 @@ mod tests {
                 pixel_format: PixelFormat::Nv12,
                 input: VideoInputPreference::CpuUploadOk,
                 gpu_device: None,
+                gop_size: 1,
+                rate_control: None,
             };
             let mut enc = match WindowsVideoEncoder::open(&cfg) {
                 Ok(e) => e,
@@ -539,6 +545,8 @@ mod tests {
                 pixel_format: PixelFormat::Nv12,
                 input: VideoInputPreference::ZeroCopyGpu,
                 gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
+                gop_size: 1,
+                rate_control: None,
             };
             let mut enc = match WindowsVideoEncoder::open(&cfg) {
                 Ok(e) => e,

@@ -152,6 +152,8 @@ fn wgpu_dx12_bridge_encodes_h264_or_skip() {
         pixel_format: PixelFormat::Bgra8,
         input: VideoInputPreference::ZeroCopyGpu,
         gpu_device: Some(gpu_device),
+        gop_size: 1,
+        rate_control: None,
     };
     let mut enc = match WindowsVideoEncoder::open(&vcfg) {
         Ok(e) => e,

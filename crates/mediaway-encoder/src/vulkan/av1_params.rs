@@ -13,10 +13,19 @@
 //! motion (all point at real, all-disabled structs on
 //! [`StdVideoEncodeAV1PictureInfo`] — see [`build_key_frame_picture_info`]'s
 //! doc for why these are never left null), fixed constant `base_q_idx`, one
-//! operating point, no decoder-model info, `PRIMARY_REF_NONE` (no CDF
-//! reference between frames — every pushed frame is an independent key
-//! frame, same scope cut as H.264/HEVC's "no GOP/P-frames" this crate
-//! already makes).
+//! operating point, no decoder-model info.
+//!
+//! ADR-0002's AV1 follow-up adds real single-forward-reference `INTER_FRAME`
+//! construction ([`InterFramePrediction`]/[`build_inter_frame_picture_info`],
+//! driven by [`crate::vulkan::av1_gop::GopState`]) alongside this module's
+//! original `KEY_FRAME`-only path — **implemented but unverifiable**: this
+//! crate's AV1 base (IDR-only) per-frame encode is already
+//! hardware-verified not to produce a valid OBU on this crate's reference
+//! GPU (a driver-maturity limitation, not this crate's bug — see
+//! `adr/0001`'s AV1 addendum), so GOP mode built on top of it inherits the
+//! same unverifiable status. `PRIMARY_REF_NONE` (no CDF forward reference
+//! between frames) stays true for both `KEY_FRAME` and `INTER_FRAME` — see
+//! [`build_inter_frame_picture_info`]'s doc for why.
 //!
 //! Unlike H.264/HEVC, fetching the header needs no codec-specific `pNext`
 //! struct on `VkVideoEncodeSessionParametersGetInfoKHR` — the Vulkan registry
@@ -110,6 +119,27 @@ pub(crate) const fn build_timing_info() -> native::StdVideoAV1TimingInfo {
     }
 }
 
+/// GOP-dependent sequence-header field (ADR-0002's AV1 follow-up) —
+/// [`Av1SeqGopParams::IDR_ONLY`] (`6`) reproduces the original hardcoded
+/// `order_hint_bits_minus_1` value exactly; GOP mode widens to
+/// [`super::av1_gop::ORDER_HINT_BITS_MINUS_1_GOP`] — see that constant's doc
+/// for why AV1's own spec caps how far this can widen (unlike H.264/HEVC's
+/// `log2_max_frame_num_minus4`/`log2_max_pic_order_cnt_lsb_minus4`, which can
+/// both reach a 65536-frame-equivalent ceiling).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Av1SeqGopParams {
+    pub(crate) order_hint_bits_minus_1: u8,
+}
+
+impl Av1SeqGopParams {
+    /// The original hardcoded value — every frame is an independent key
+    /// frame, so `order_hint` never advances past `0` and the field's exact
+    /// width is otherwise unobservable.
+    pub(crate) const IDR_ONLY: Self = Self {
+        order_hint_bits_minus_1: 6,
+    };
+}
+
 /// `StdVideoAV1SequenceHeader` — Main profile, a **full** (not
 /// `reduced_still_picture_header`) sequence header with `enable_order_hint`
 /// set. An earlier draft used `reduced_still_picture_header` (AV1's
@@ -120,17 +150,16 @@ pub(crate) const fn build_timing_info() -> native::StdVideoAV1TimingInfo {
 /// `adr/0001`'s AV1 addendum). `FFmpeg`'s own real, hardware-tested
 /// `vulkan_encode_av1.c` never uses `reduced_still_picture_header` at all;
 /// this crate now mirrors that working reference instead: `enable_order_hint
-/// = 1` with a fixed small `order_hint_bits_minus_1`, matching `FFmpeg`'s
-/// `av_log2(gop_size)`-derived value for this crate's own "every frame is an
-/// independent key frame" case (no real GOP, so any legal value works — `6`
-/// mirrors a typical `FFmpeg` default GOP size's derived bit count). Single
-/// 64x64 superblock size (`use_128x128_superblock = 0`), no optional coding
-/// tool (`enable_*` beyond order hint all `0`).
+/// = 1` with `gop`-selected `order_hint_bits_minus_1` (see
+/// [`Av1SeqGopParams`]). Single 64x64 superblock size
+/// (`use_128x128_superblock = 0`), no optional coding tool (`enable_*` beyond
+/// order hint all `0`).
 pub(crate) fn build_sequence_header(
     width: u32,
     height: u32,
     color_config: &native::StdVideoAV1ColorConfig,
     timing_info: &native::StdVideoAV1TimingInfo,
+    gop: Av1SeqGopParams,
 ) -> native::StdVideoAV1SequenceHeader {
     let mut flags = native::StdVideoAV1SequenceHeaderFlags {
         _bitfield_align_1: [],
@@ -167,7 +196,7 @@ pub(crate) fn build_sequence_header(
         max_frame_height_minus_1: max_frame_height_minus_1 as u16,
         delta_frame_id_length_minus_2: 0,
         additional_frame_id_length_minus_1: 0,
-        order_hint_bits_minus_1: 6,
+        order_hint_bits_minus_1: gop.order_hint_bits_minus_1,
         // `SELECT_SCREEN_CONTENT_TOOLS`/`SELECT_INTEGER_MV` (value `2`) — this
         // crate always "chooses" (opts to signal per-frame rather than fixing
         // a sequence-wide value), matching `FFmpeg`'s reference computation.
@@ -202,23 +231,33 @@ pub(crate) fn build_operating_point() -> native::StdVideoEncodeAV1OperatingPoint
     }
 }
 
-/// `StdVideoEncodeAV1ReferenceInfo` describing this `KEY_FRAME` itself, for
-/// `VkVideoEncodeAV1DpbSlotInfoKHR::pStdReferenceInfo` on the setup reference
-/// slot — every AV1 reference-name mapping this key frame's
-/// `refresh_frame_flags = 0xFF` (see [`build_key_frame_picture_info`])
-/// refreshes needs a real `RefFrameId`/`frame_type`/`OrderHint` to associate
-/// with those slots. `disable_frame_end_update_cdf` mirrors
-/// [`build_key_frame_picture_info`]'s own flag of the same name (`0`,
+/// `StdVideoEncodeAV1ReferenceInfo` describing one already-encoded (or
+/// about-to-be-encoded) picture, for whichever DPB slot it lives in — built
+/// both for a frame's own setup slot (so a *future* frame's read of that
+/// slot has real data — see
+/// [`crate::vulkan::session_command_av1::DpbRecordParamsAv1`], ADR-0002's AV1
+/// follow-up) and for the active `LAST_FRAME` reference being read this frame
+/// ([`crate::vulkan::av1_gop::DpbSlot`] already tracks exactly the
+/// `order_hint`/`is_key` pair this needs per slot). `RefFrameId` stays `0`
+/// always — only meaningful when `frame_id_numbers_present_flag == 1`, which
+/// [`build_sequence_header`] never sets. `disable_frame_end_update_cdf`
+/// mirrors [`build_key_frame_picture_info`]'s own flag of the same name (`0`,
 /// matching `FFmpeg`'s real, hardware-tested reference — see that function's
 /// doc for why an earlier draft's `1` was wrong). `extension_header` is
 /// never null (matching `FFmpeg`'s reference), same reasoning as
-/// [`build_key_frame_picture_info`]'s `pExtensionHeader`.
+/// [`build_key_frame_picture_info`]'s `pExtensionHeader`. Every caller this
+/// pass (`session_command_av1.rs`'s IDR-only fallback, `encoder.rs`'s real
+/// GOP setup/reference slots) still passes `order_hint: 0, is_key: true` for
+/// the base (`gop_size == 1`) path, reproducing the original hardcoded
+/// `KEY_FRAME`/`OrderHint: 0` values byte-for-byte.
 #[allow(
     clippy::trivially_copy_pass_by_ref,
     reason = "the returned struct embeds a pointer to `extension_header` itself, so it must \
               borrow caller-owned memory rather than take (and drop) an owned copy"
 )]
 pub(crate) fn build_reference_info(
+    order_hint: u8,
+    is_key: bool,
     extension_header: &native::StdVideoEncodeAV1ExtensionHeader,
 ) -> native::StdVideoEncodeAV1ReferenceInfo {
     let mut flags = native::StdVideoEncodeAV1ReferenceInfoFlags {
@@ -230,8 +269,12 @@ pub(crate) fn build_reference_info(
     native::StdVideoEncodeAV1ReferenceInfo {
         flags,
         RefFrameId: 0,
-        frame_type: native::STD_VIDEO_AV1_FRAME_TYPE_KEY,
-        OrderHint: 0,
+        frame_type: if is_key {
+            native::STD_VIDEO_AV1_FRAME_TYPE_KEY
+        } else {
+            native::STD_VIDEO_AV1_FRAME_TYPE_INTER
+        },
+        OrderHint: order_hint,
         reserved1: [0; 3],
         pExtensionHeader: extension_header,
     }
@@ -453,6 +496,145 @@ pub(crate) fn build_key_frame_picture_info(
         delta_lf_res: 0,
         ref_order_hint: [0; 8],
         ref_frame_idx: [-1; 7],
+        reserved1: [0; 3],
+        delta_frame_id_minus_1: [0; 7],
+        pTileInfo: std::ptr::null(),
+        pQuantization: &raw const optionals.quantization,
+        pSegmentation: &raw const optionals.segmentation,
+        pLoopFilter: &raw const optionals.loop_filter,
+        pCDEF: &raw const optionals.cdef,
+        pLoopRestoration: &raw const optionals.loop_restoration,
+        pGlobalMotion: &raw const optionals.global_motion,
+        pExtensionHeader: &raw const optionals.extension_header,
+        pBufferRemovalTimes: std::ptr::null(),
+    }
+}
+
+/// GOP-mode single-forward-reference parameters for one AV1 `INTER_FRAME`
+/// (ADR-0002's AV1 follow-up, mirroring [`h264_params::FrameStdStructs`](super::h264_params::FrameStdStructs)'s
+/// GOP-decision-to-struct-fields role) — bundled so
+/// [`build_inter_frame_picture_info`] doesn't trip `clippy::too_many_arguments`,
+/// same reasoning as [`PictureInfoOptionals`]'s own bundling.
+pub(crate) struct InterFramePrediction {
+    /// This frame's own `order_hint` ([`crate::vulkan::av1_gop::GopState::decide`]'s output).
+    pub(crate) order_hint: u8,
+    /// DPB ring slot this frame's own picture is written into — doubles as
+    /// the AV1 std bitstream's virtual reference-frame-slot number this
+    /// frame's `refresh_frame_flags` marks (`1 << setup_slot`). This crate
+    /// ties one physical Vulkan DPB slot to one AV1 ref-frame slot number
+    /// 1:1 (see [`crate::vulkan::av1_gop`]'s module doc) rather than
+    /// maintaining two independent numbering spaces.
+    pub(crate) setup_slot: u8,
+    /// DPB ring slot the sole `LAST_FRAME` reference is read from —
+    /// mirrored into `ref_frame_idx[LAST_FRAME - LAST_FRAME] == ref_frame_idx[0]`
+    /// (the std bitstream field); the caller separately mirrors the same
+    /// value into `VkVideoEncodeAV1PictureInfoKHR::reference_name_slot_indices[0]`
+    /// (the Vulkan-level field), matching `FFmpeg`'s reference keeping both
+    /// in lockstep.
+    pub(crate) ref_slot: i8,
+    /// The `order_hint` the referenced picture itself carried when written —
+    /// mirrored into `ref_order_hint[ref_slot as usize]`; every other of the
+    /// 8 entries stays `0` (unused — this crate's narrow
+    /// single-forward-reference scope never enables `use_ref_frame_mvs`/
+    /// `skip_mode_present`, the only AV1 tools that read the other seven).
+    pub(crate) ref_order_hint: u8,
+}
+
+/// `StdVideoEncodeAV1PictureInfo` for one `INTER_FRAME` predicted from the
+/// sole `LAST_FRAME` reference described by `prediction` (ADR-0002's AV1
+/// follow-up) — sibling of [`build_key_frame_picture_info`], differing only
+/// in `frame_type`/`order_hint`/`refresh_frame_flags`/`ref_frame_idx`/
+/// `ref_order_hint`; every other flag/field (optional-tool disables,
+/// `error_resilient_mode`, `disable_cdf_update`, `pTileInfo` null, …) is
+/// identical, same reasoning as that function's doc.
+///
+/// `primary_ref_frame` stays [`vulkanalia::vk::video::STD_VIDEO_AV1_PRIMARY_REF_NONE`]
+/// here too (not the referenced slot's `ref_frame_idx` position) — this
+/// crate's motion-compensated prediction still reads pixels from the
+/// `LAST_FRAME` reference via `ref_frame_idx`/`reference_name_slot_indices`
+/// regardless; `primary_ref_frame` only controls whether this frame's CDF
+/// context starts from a previous frame's forward-adapted state or AV1's
+/// spec-default CDFs. Carrying CDF state across this crate's DPB ring
+/// (`WORKSPACE_DPB_CAP` physical slots reused for the wider 8-slot AV1
+/// reference-name space) adds real bookkeeping this crate cannot itself
+/// verify against real hardware (AV1's base per-frame encode is already
+/// known-broken on this crate's reference GPU — see this module's/
+/// `av1_gop`'s module doc) for no benefit provable on this hardware, so this
+/// pass keeps the simpler, already-established `PRIMARY_REF_NONE` choice
+/// [`build_key_frame_picture_info`] uses, rather than speculatively adding
+/// untestable CDF-carry-forward complexity.
+pub(crate) fn build_inter_frame_picture_info(
+    width: u32,
+    height: u32,
+    prediction: &InterFramePrediction,
+    optionals: &PictureInfoOptionals,
+) -> native::StdVideoEncodeAV1PictureInfo {
+    let mut flags = native::StdVideoEncodeAV1PictureInfoFlags {
+        _bitfield_align_1: [],
+        _bitfield_1: native::__BindgenBitfieldUnit::new([0u8; 4]),
+    };
+    // Same flag values as `build_key_frame_picture_info` throughout (no
+    // optional coding tool this crate's narrow scope enables) — only
+    // `error_resilient_mode` stays legal here for the same reason it is on a
+    // key frame: `primary_ref_frame == PRIMARY_REF_NONE` (see this
+    // function's doc) means this frame's display order still doesn't depend
+    // on any carried-forward CDF state.
+    flags.set_error_resilient_mode(1);
+    flags.set_disable_cdf_update(0);
+    flags.set_use_superres(0);
+    flags.set_render_and_frame_size_different(0);
+    flags.set_allow_screen_content_tools(0);
+    flags.set_is_filter_switchable(0);
+    flags.set_force_integer_mv(0);
+    flags.set_frame_size_override_flag(0);
+    flags.set_buffer_removal_time_present_flag(0);
+    flags.set_allow_intrabc(0);
+    flags.set_frame_refs_short_signaling(0);
+    flags.set_allow_high_precision_mv(0);
+    flags.set_is_motion_mode_switchable(0);
+    flags.set_use_ref_frame_mvs(0);
+    flags.set_disable_frame_end_update_cdf(0);
+    flags.set_allow_warped_motion(0);
+    flags.set_reduced_tx_set(0);
+    flags.set_skip_mode_present(0);
+    flags.set_delta_q_present(0);
+    flags.set_delta_lf_present(0);
+    flags.set_delta_lf_multi(0);
+    flags.set_segmentation_enabled(0);
+    flags.set_segmentation_update_map(0);
+    flags.set_segmentation_temporal_update(0);
+    flags.set_segmentation_update_data(0);
+    flags.set_UsesLr(0);
+    flags.set_usesChromaLr(0);
+    flags.set_show_frame(1);
+    flags.set_showable_frame(0);
+
+    let mut ref_frame_idx = [-1i8; 7];
+    ref_frame_idx[0] = prediction.ref_slot;
+    let mut ref_order_hint = [0u8; 8];
+    if let Ok(slot) = usize::try_from(prediction.ref_slot) {
+        if let Some(entry) = ref_order_hint.get_mut(slot) {
+            *entry = prediction.ref_order_hint;
+        }
+    }
+
+    native::StdVideoEncodeAV1PictureInfo {
+        flags,
+        frame_type: native::STD_VIDEO_AV1_FRAME_TYPE_INTER,
+        frame_presentation_time: 0,
+        current_frame_id: 0,
+        order_hint: prediction.order_hint,
+        primary_ref_frame: native::STD_VIDEO_AV1_PRIMARY_REF_NONE as u8,
+        refresh_frame_flags: 1u8 << prediction.setup_slot,
+        coded_denom: 0,
+        render_width_minus_1: (width - 1) as u16,
+        render_height_minus_1: (height - 1) as u16,
+        interpolation_filter: native::STD_VIDEO_AV1_INTERPOLATION_FILTER_EIGHTTAP,
+        TxMode: native::STD_VIDEO_AV1_TX_MODE_SELECT,
+        delta_q_res: 0,
+        delta_lf_res: 0,
+        ref_order_hint,
+        ref_frame_idx,
         reserved1: [0; 3],
         delta_frame_id_minus_1: [0; 7],
         pTileInfo: std::ptr::null(),

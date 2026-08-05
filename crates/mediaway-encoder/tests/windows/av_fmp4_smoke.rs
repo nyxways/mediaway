@@ -45,6 +45,8 @@ fn av_fmp4_smoke_roundtrip() {
         pixel_format: PixelFormat::Nv12,
         input: VideoInputPreference::CpuUploadOk,
         gpu_device: None,
+        gop_size: 1,
+        rate_control: None,
     };
     let mut venc = match WindowsVideoEncoder::open(&vcfg) {
         Ok(e) => e,

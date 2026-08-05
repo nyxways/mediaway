@@ -28,6 +28,22 @@
   `SwOpusAudioEncoder` already existing at the Rust level. Cross-platform
   (`mediaway-sw` has no OS dependency); round-trip-verified
   (`tests/audio_decode_smoke.rs`).
+- `mediaway-encoder`: multi-frame GOP (P-frame prediction) for the Vulkan
+  H.264 and HEVC encode backends, plus CBR rate control for H.264
+  (`adr/vulkan/0002-vulkan-gop-rate-control.md`). New
+  `VideoEncoderConfig::gop_size`/`rate_control` fields (cross-backend; only
+  Vulkan H.264/HEVC read them so far, CBR only on H.264). Capability-gated
+  (`Capabilities::supports_p_frames`/`supports_cbr`) — falls back to today's
+  IDR-only/fixed-QP behavior with no error when the driver can't honor a
+  request. Defaults (`gop_size: 1`, `rate_control: None`) keep every
+  existing caller's output byte-identical. Hardware-verified on a real RTX
+  4090: real IDR/P NAL cadence for both codecs, real CBR bitstream output
+  for H.264. `VideoEncoderConfig::gop_size` now also reaches the Vulkan AV1
+  backend's internal wiring, but this is **not a working feature** — AV1's
+  underlying per-frame encode is already blocked by the same
+  driver-maturity bug as its base (IDR-only) path (`adr/0001`'s AV1
+  addendum), so the GOP request is capability-gated but its output cannot
+  currently be verified.
 
 ### Changed
 

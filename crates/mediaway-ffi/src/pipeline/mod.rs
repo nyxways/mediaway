@@ -27,6 +27,7 @@
 mod audio;
 mod audio_decoder;
 mod buffer;
+#[cfg(any(feature = "camera", feature = "desktop"))]
 mod capture_bridge;
 mod config;
 mod decoder;
@@ -49,10 +50,10 @@ pub use audio_decoder::{
     mediaway_decoded_audio_frame_free,
 };
 pub use buffer::mediaway_pipeline_ffi_buffer_free;
-pub use capture_bridge::{
-    mediaway_encode_session_write_frame_from_camera_capture,
-    mediaway_encode_session_write_frame_from_desktop_capture,
-};
+#[cfg(feature = "camera")]
+pub use capture_bridge::mediaway_encode_session_write_frame_from_camera_capture;
+#[cfg(feature = "desktop")]
+pub use capture_bridge::mediaway_encode_session_write_frame_from_desktop_capture;
 pub use config::{
     mediaway_audio_decode_config_opus, mediaway_audio_encode_config_aac,
     mediaway_audio_encode_config_opus, mediaway_auto_video_decode_config_new,

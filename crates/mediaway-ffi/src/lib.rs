@@ -8,4 +8,5 @@
 pub mod common;
 pub mod container;
 pub mod device;
+#[cfg(feature = "pipeline")]
 pub mod pipeline;

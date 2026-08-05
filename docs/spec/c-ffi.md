@@ -1,43 +1,54 @@
 # C-FFI (C ABI) surface
 
-Canonical decision: [`docs/adr/0004-c-ffi.md`](../adr/0004-c-ffi.md).
+Canonical decision: [`docs/adr/0004-c-ffi.md`](../adr/0004-c-ffi.md) — **packaging superseded
+2026-08-03** by [`docs/adr/0021-workspace-consolidation.md`](../adr/0021-workspace-consolidation.md).
 
-Mediaway will expose a **C ABI** so non-Rust languages can call into the stack. The Rust API stays primary; FFI is a dedicated edge.
+Mediaway exposes a **C ABI** so non-Rust languages can call into the stack. The Rust API stays primary; FFI is a dedicated edge.
 
-## Packaging (split + optional umbrella features)
+## Packaging (single crate, feature-gated modules)
 
-Do **not** ship one fat FFI that always links every capability.
+> ADR-0021 merged the four `mediaway-*-ffi` crates (`mediaway-common-ffi`,
+> `mediaway-container-ffi`, `mediaway-device-ffi`, and the standalone
+> `mediaway-ffi`) into **one** `mediaway-ffi` crate. The selectivity goal ADR-0004
+> set out is unchanged — it now lives in **Cargo features on that single crate**
+> instead of separate crate boundaries. Do not add a second `-ffi` crate for a new
+> capability; add a module + feature(s) to `mediaway-ffi` instead.
 
-| Kind | Pattern | Role |
-|------|---------|------|
-| Per-capability FFI | `mediaway-<capability>-ffi` | Primary unit — e.g. `mediaway-container-ffi` |
-| Shared C types (optional) | `mediaway-common-ffi` | Value-type mirrors (`Rational`, `CodecKind`, …) + buffer leak/reclaim helper impl only — **not** a shared status/error-code enum; `rlib`-only, no C symbols of its own (ADR-0015) |
-| Umbrella (optional) | `mediaway-ffi` | One `cdylib` built with **Cargo features** that enable selected `-ffi` crates |
+`mediaway-ffi` ships one `cdylib`/`staticlib`, one header set
+(`include/mediaway/{common,container,device,pipeline}.h`), and four modules:
+
+| Module | Cargo feature(s) | Rust dep(s) gated by that feature |
+|--------|-------------------|-------------------------------------|
+| `common` | always compiled | `mediaway-common` |
+| `container` (mux/demux) | `mux`, `demux` | `mediaway-container` — `mux`/`demux` propagate to the matching `mediaway-container/{mux,demux,audio,video}` sub-features (feature unification), not a hardcoded full build |
+| `device` (camera/desktop/audio capture/hotplug) | `camera`, `desktop`, `audio`, `hotplug` | `mediaway-device` |
+| `pipeline` (auto encode/decode, Opus audio decode) | `pipeline` | `mediaway`, `mediaway-encoder`, `mediaway-decoder`, `mediaway-sw` (all `optional = true`) |
 
 ```text
 [host language]
-    → mediaway-container-ffi.mdylib      (slim: container mux/demux)
-    → or mediaway-ffi + features=["container","encoder"]   (one lib, still selective)
+    → mediaway_ffi.dll/.so/.dylib built with features=["mux","demux"]                 (slim: container-only)
+    → or features=["mux","demux","camera","desktop","audio","hotplug","pipeline"]     (full — current default)
         → Rust facades / sans-io / platform crates
 [Rust apps] → facades / platform crates directly (preferred)
 ```
 
-### Feature rules (umbrella)
+### Feature rules
 
-- **Default features = none** (or documentation-only) — enabling the crate alone must not pull encoders/devices.
-- Each feature enables **exactly** the corresponding `-ffi` / platform dep (e.g. `container` → `mediaway-container-ffi`, `encoder-windows` → encoder FFI + windows backend).
-- CI builds at least one **slim** feature set (e.g. mux-only) and one fuller set.
+- Each capability's features gate **both** the FFI wrapper module (`#[cfg(feature = "…")]` on the `pub mod` / `pub use`) **and** the underlying Rust dependency (`optional = true` + feature propagation) — enabling one capability must not pull another's heavy deps (e.g. `mux`+`demux` alone must not link `mediaway-encoder`/`mediaway-decoder`/`mediaway-sw`).
+- `default` currently enables every feature (`mux`, `demux`, `camera`, `desktop`, `audio`, `hotplug`, `pipeline`) — the pre-ADR-0021 full build, kept as the default so existing consumers see no behavior change.
+- A symbol that spans two capabilities (e.g. the capture→encode bridge, which needs both `pipeline` and `camera`/`desktop`) is gated on the conjunction of both features, not just one.
+- CI builds at least one **slim** feature set (e.g. mux-only) and one fuller set. *(Not wired into CI yet — the crate-level feature gating this describes is a prerequisite, not yet a CI job.)*
 
 ### About `mediaway-common`
 
-Depending on `mediaway-common` from an FFI crate is **expected and fine** — it is shared types, kept small. Avoid linking unrelated **capability/platform** crates; that is what per-capability `-ffi` (+ features) prevents.
+Depending on `mediaway-common` is **expected and fine** — it is shared types, kept small, and always compiled. Avoid linking a capability's deps at a feature level fuller than what's actually enabled; that is what per-module features prevent.
 
 ### Artifacts
 
 | Item | Value |
 |------|--------|
-| Crate crate-types | `cdylib` + `staticlib` as needed |
-| Headers | Per crate (`mediaway_container.h`, …); umbrella may emit an amalgam when features are on |
+| Crate crate-types | `rlib` + `cdylib` + `staticlib` |
+| Headers | `include/mediaway/{common,container,device,pipeline}.h` |
 | Depends | Downward only onto Rust capability crates — **never** the reverse |
 
 ## Planned language support
@@ -94,7 +105,7 @@ So JS/TS has **two** planned hosts: **Node → C ABI**, **browser → WASM**. Do
 
 ## When
 
-After a Windows-oriented Rust capability is wrappable (likely container first → `mediaway-container-ffi`). Not a scaffold-day deliverable. Each `-ffi` crate gets its own `docs/roadmap.md` when created.
+Landed: `mediaway-ffi` ships the `common`/`container`/`device`/`pipeline` modules today (ADR-0021). No header/ABI has been released yet — pre-1.0, breaking changes expected (see [`status.md`](status.md)). See `crates/mediaway-ffi/docs/{common,container,device,pipeline}/roadmap.md` for module-level status.
 
 ## Out of scope (initially)
 

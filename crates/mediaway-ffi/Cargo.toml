@@ -15,36 +15,31 @@ crate-type = ["rlib", "cdylib", "staticlib"]
 [dependencies]
 mediaway-common = { workspace = true }
 
-# Pinned explicitly rather than inheriting mediaway-container's own `default = ["full"]` —
-# `audio`+`video` are both required for H.264/AAC sample-entry support (verified in
-# iso-bmff/Cargo.toml). See adr/0001-mp4-mux-demux-c-abi.md §9 for the documented gap this
-# does not fix (mediaway-container's other format cores are not feature-gated yet).
 # Not `workspace = true`: Cargo forbids a member from setting `default-features = false`
 # on an inherited dependency whose workspace entry doesn't already say so, so this crate's
 # explicit feature pin is spelled out directly (same path/version as the workspace entry).
-mediaway-container = { path = "../mediaway-container", version = "0.1.0", default-features = false, features = [
-    "mux",
-    "demux",
-    "audio",
-    "video",
-] }
+# Features are propagated from this crate's own `mux`/`demux` (see [features] below)
+# rather than hardcoded, so a `demux`-only build doesn't also link `iso-bmff`'s mux path.
+mediaway-container = { path = "../mediaway-container", version = "0.1.0", default-features = false }
 
 mediaway-device = { workspace = true }
 
+# `pipeline` module deps — optional so a container/device-only build (`pipeline` feature
+# off) doesn't link the encoder/decoder/software-codec graph.
 # Needed to match `mp4::Error` variants when converting `PipelineError::Mux` to a
 # status code (status.rs) — `mediaway` already pulls this in transitively
 # with the same default ("full") features, so this adds no new feature surface.
-mediaway-encoder = { workspace = true }
+mediaway-encoder = { workspace = true, optional = true }
 # Needed for `VideoDecoder`/`VideoDecoderConfig`/`DecodeError` (pipeline decode C ABI,
 # adr/pipeline/0004-auto-decode-c-abi.md) — `mediaway` already pulls this in
 # transitively, so this adds no new feature surface.
-mediaway-decoder = { workspace = true }
-mediaway = { workspace = true }
+mediaway-decoder = { workspace = true, optional = true }
+mediaway = { workspace = true, optional = true }
 # Needed for `mediaway_sw::opus::OpusDecoder` (audio decode C ABI,
 # adr/pipeline/0006-audio-decode-c-abi.md) — no `AudioDecoder` trait exists yet to
 # reach it through `mediaway-decoder`, so this crate depends on it directly. Default
 # features only (no `apm`/`vad`): the Opus module itself is unconditionally compiled.
-mediaway-sw = { workspace = true }
+mediaway-sw = { workspace = true, optional = true }
 
 
 [dev-dependencies]
@@ -67,13 +62,19 @@ windows = { workspace = true, features = [
 
 
 [features]
-default = ["mux", "demux", "camera", "desktop", "audio", "hotplug"]
-mux = []
-demux = []
+default = ["mux", "demux", "camera", "desktop", "audio", "hotplug", "pipeline"]
+# `audio`+`video` are both required on `mediaway-container` for H.264/AAC sample-entry
+# support (verified in iso-bmff/Cargo.toml) regardless of which of mux/demux is on. See
+# adr/0001-mp4-mux-demux-c-abi.md §9 for the documented gap this does not fix
+# (mediaway-container's other format cores are not feature-gated yet).
+mux = ["mediaway-container/mux", "mediaway-container/audio", "mediaway-container/video"]
+demux = ["mediaway-container/demux", "mediaway-container/audio", "mediaway-container/video"]
 camera = [] # device backends merged into mediaway-device (ADR-0021)
 desktop = []
 audio = []
 hotplug = []
+# `pipeline` module: auto encode/decode + Opus audio decode C ABI (adr/pipeline/*).
+pipeline = ["dep:mediaway", "dep:mediaway-encoder", "dep:mediaway-decoder", "dep:mediaway-sw"]
 
 [lints]
 workspace = true

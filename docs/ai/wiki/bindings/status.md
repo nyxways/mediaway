@@ -66,6 +66,22 @@ bindings were then implemented to satisfy those examples. Examples mirror the Ru
   release, never close, on the failure path (C++ `finish()` and the Node `finish()`
   both had release-after-consume bugs this pass; fixed).
 
+## FFI packaging fix (this pass)
+
+`docs/spec/c-ffi.md` (ADR-0004) still described the pre-merge per-capability
+`-ffi` crate split even though ADR-0021 (2026-08-03) merged everything into
+one `mediaway-ffi` crate — updated to document the current feature-gated
+module layout instead. Separately, the crate's own `pipeline` module
+(encode/decode/Opus — the heaviest part, pulling in `mediaway`/
+`mediaway-encoder`/`mediaway-decoder`/`mediaway-sw`) had **no** Cargo feature
+gate at all, unlike `container`/`device`; and the `mediaway-container`
+dependency's `mux`/`demux`/`audio`/`video` features were hardcoded rather
+than propagated from this crate's own `mux`/`demux` features. Both fixed:
+`pipeline` is now its own feature (in `default`, so behavior is unchanged),
+and `mediaway-container`'s sub-features are unified from this crate's
+`mux`/`demux` features. The capture→encode bridge (needs `pipeline` +
+`camera`/`desktop`) is gated per-function on the conjunction.
+
 ## Open items
 
 - Browser is DONE: `@mediaway/browser` ships (ADR-0020) — wasm mux/demux + WebCodecs

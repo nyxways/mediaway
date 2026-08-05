@@ -1,10 +1,12 @@
 # Browser binding (Web / WASM)
 
-> **Status: ✅ verified** — real `@mediaway/browser` npm package (ADR-0020,
+> **Status: ✅ verified** — real `@mediaway/browser` npm package (ADR-0020 +
+> [ADR-0022](../../docs/adr/0022-browser-decode-session-and-device-dx.md),
 > [`docs/adr/0020-browser-wasm-npm-package.md`](../../docs/adr/0020-browser-wasm-npm-package.md)):
-> WASM fMP4 mux/demux + WebCodecs encode-to-MP4, verified in real Chromium/Edge
-> (E2E specs under `tools/e2e-web`, `browser-package.spec.ts`). This README is
-> the **DX contract** the package implements, and what its examples demonstrate.
+> WASM fMP4 mux/demux + WebCodecs encode/decode round trips, verified in real
+> Chromium/Edge (E2E specs under `tools/e2e-web`,
+> `browser-package.spec.ts`). This README is the **DX contract** the package
+> implements, and what its examples demonstrate.
 
 The browser is a **Tier C host**: it reaches Mediaway through **WASM (`wasm-bindgen`)
 + native Web APIs, never the C ABI** (`docs/spec/c-ffi.md` § Tier C). This is the
@@ -48,7 +50,8 @@ classes wrapped in idiomatic JS (`packages/browser/`, built with
 - **`Uint8Array` for byte buffers**: `pollBytes(): Uint8Array`, `pushBytes(bytes)`,
   `sample.payload: Uint8Array`. Bytes are copied at the boundary.
 - Typed config objects (`Track`, `Sample`, `Rational = { num, den }`), `Error`
-  subclass `EncoderUnavailableError` for expected failures.
+  subclasses `EncoderUnavailableError` / `DecoderUnavailableError` for expected
+  failures.
 - **Codec config arrives late**: WebCodecs exposes avcC/AudioSpecificConfig only in
   the first output's metadata, so `EncodeSession` defers `begin()` until every planned
   track has its config — the browser analog of the C ABI's push → stream_info → mux
@@ -72,6 +75,8 @@ aspirational):
 | `device/capture-microphone.ts` | `getUserMedia` microphone, level capture | ✅ native Web API |
 | `pipeline/screen-record.ts` | `getDisplayMedia` + canvas bridge → WebCodecs encode → fMP4 | ✅ browser — the C-ABI hosts cannot screen-capture from C at all (device-ffi adr/0001 § Deferred) |
 | `device/capture-screen.ts` | `getDisplayMedia` screen capture, frame count | ✅ native Web API |
+| `device/list-and-watch-devices.ts` | `enumerateDevices()` list + `devicechange` hotplug — added/removed by `deviceId` (native analog of `mediaway-device`'s `DeviceId`/`Select`/hotplug, ADR-0005) | ✅ native Web API |
+| `pipeline/decode-roundtrip` (E2E harness: `browser-package.html` decode section) | demux fMP4 → WebCodecs `VideoDecoder`/`AudioDecoder` → decoded `VideoFrame`/`AudioData` (`DecodeSession`, ADR-0022) | ✅ WebCodecs-dependent (E2E-verified in `browser-package.spec.ts`; bundled Chromium may skip H.264/AAC — msedge-real covers it) |
 
 ## Rules
 

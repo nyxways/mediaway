@@ -11,9 +11,10 @@
       // Exercises the real npm package surface (dist + pkg served from
       // bindings/browser/packages/browser): wasm mux/demux roundtrip, then —
       // when the browser ships usable WebCodecs codecs — H.264 + AAC encode to
-      // fMP4 through EncodeSession. Results are published to window.mediawayE2e.browserPkg
-      // for the Playwright spec.
-      import { init, Muxer, Demuxer, EncodeSession } from "/mediaway-browser/dist/index.js";
+      // fMP4 through EncodeSession and decode back through DecodeSession.
+      // Results are published to window.mediawayE2e.browserPkg for the
+      // Playwright spec.
+      import { init, Muxer, Demuxer, EncodeSession, DecodeSession } from "/mediaway-browser/dist/index.js";
 
       window.mediawayE2e = window.mediawayE2e ?? {};
       const result = {};
@@ -84,6 +85,7 @@
           });
           if (!supported.supported) {
             result.video = { skipped: "avc1.42E01E unsupported" };
+            result.decodedVideo = { skipped: "avc1.42E01E unsupported" };
           } else {
             const muxer = new Muxer(1);
             const session = new EncodeSession(muxer);
@@ -117,6 +119,58 @@
             demuxer.free();
             muxer.free();
             result.video = { bytes: bytes.length, packets, codecs };
+
+            // ── 2b. DecodeSession round trip on the same H.264 bytes ───────
+            try {
+              const d = new Demuxer();
+              d.pushBytes(bytes);
+              const ds = new DecodeSession(d, {
+                // The harness encoded avc1.42E01E itself, so it knows the
+                // codec string statically — ADR-0022's resolveCodec escape
+                // hatch (the container only stores the generic "h264" name).
+                resolveCodec: () => "avc1.42E01E",
+              });
+              let frames = 0;
+              let last = null;
+              ds.onVideoFrame((frame) => {
+                frames += 1;
+                // coded* is the bitstream-aligned size (encoders may pad, e.g.
+                // 64 -> 66); display* is the visible geometry — assert that.
+                last = {
+                  width: frame.codedWidth,
+                  height: frame.codedHeight,
+                  displayWidth: frame.displayWidth,
+                  displayHeight: frame.displayHeight,
+                };
+                frame.close(); // decoder-owned frame — always close it
+              });
+              await ds.start();
+              let demuxed = 0;
+              for (;;) {
+                const sample = d.pollPacket();
+                if (sample === null) break;
+                ds.pushPacket(sample);
+                demuxed += 1;
+              }
+              await ds.finish();
+              d.free();
+              result.decodedVideo = {
+                packets: demuxed,
+                frames,
+                width: last?.width,
+                height: last?.height,
+                displayWidth: last?.displayWidth,
+                displayHeight: last?.displayHeight,
+              };
+            } catch (err) {
+              // Same honest-skip class as the encode section: a decoder that
+              // claims support but cannot actually decode here.
+              if (err.name === "DecoderUnavailableError" || (err instanceof DOMException && err.name === "OperationError")) {
+                result.decodedVideo = { skipped: String(err.message) };
+              } else {
+                result.decodedVideo = { error: String(err) };
+              }
+            }
           }
         } catch (err) {
           // Codec claimed support but this Chromium build cannot actually encode
@@ -125,8 +179,10 @@
           // the msedge-real project.
           if (err.name === "EncoderUnavailableError" || (err instanceof DOMException && err.name === "OperationError")) {
             result.video = { skipped: String(err.message) };
+            result.decodedVideo = { skipped: String(err.message) };
           } else {
             result.video = { error: String(err) };
+            result.decodedVideo = { error: String(err) };
           }
         }
 
@@ -139,6 +195,7 @@
           });
           if (!supported.supported) {
             result.audio = { skipped: "mp4a.40.2 unsupported" };
+            result.decodedAudio = { skipped: "mp4a.40.2 unsupported" };
           } else {
             const muxer = new Muxer(1);
             const session = new EncodeSession(muxer);
@@ -175,13 +232,58 @@
             demuxer.free();
             muxer.free();
             result.audio = { bytes: bytes.length, packets, codecs };
+
+            // ── 3b. DecodeSession round trip on the same AAC bytes ────────
+            try {
+              const d = new Demuxer();
+              d.pushBytes(bytes);
+              const ds = new DecodeSession(d, {
+                resolveCodec: () => "mp4a.40.2",
+              });
+              let frames = 0;
+              let last = null;
+              ds.onAudioData((data) => {
+                frames += 1;
+                last = {
+                  sampleRate: data.sampleRate,
+                  numberOfChannels: data.numberOfChannels,
+                };
+                data.close(); // decoder-owned data — always close it
+              });
+              await ds.start();
+              let demuxed = 0;
+              for (;;) {
+                const sample = d.pollPacket();
+                if (sample === null) break;
+                ds.pushPacket(sample);
+                demuxed += 1;
+              }
+              await ds.finish();
+              d.free();
+              result.decodedAudio = {
+                packets: demuxed,
+                frames,
+                sampleRate: last?.sampleRate,
+                numberOfChannels: last?.numberOfChannels,
+              };
+            } catch (err) {
+              // See the video section: OperationError = codec-class skip,
+              // not a bug.
+              if (err.name === "DecoderUnavailableError" || (err instanceof DOMException && err.name === "OperationError")) {
+                result.decodedAudio = { skipped: String(err.message) };
+              } else {
+                result.decodedAudio = { error: String(err) };
+              }
+            }
           }
         } catch (err) {
           // See the video section: OperationError = codec-class skip, not a bug.
           if (err.name === "EncoderUnavailableError" || (err instanceof DOMException && err.name === "OperationError")) {
             result.audio = { skipped: String(err.message) };
+            result.decodedAudio = { skipped: String(err.message) };
           } else {
             result.audio = { error: String(err) };
+            result.decodedAudio = { error: String(err) };
           }
         }
 

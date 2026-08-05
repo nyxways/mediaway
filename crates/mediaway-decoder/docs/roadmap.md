@@ -23,8 +23,8 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 
 ### 2 — Web
 
-- [ ] Add `mediaway-decoder-web`
-- [ ] WebCodecs decode + `VideoFrame` / WebGPU interop
+- [x] Add `mediaway-decoder-web`
+- [x] WebCodecs decode + `VideoFrame` / WebGPU interop
 
 ### 3 — Linux
 

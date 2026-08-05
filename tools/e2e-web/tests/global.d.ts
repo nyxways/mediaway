@@ -20,6 +20,8 @@ declare global {
         mux: { bytes: number; recovered: number; streams: string[] };
         video: { bytes?: number; packets?: number; codecs?: string[]; skipped?: string; error?: string };
         audio: { bytes?: number; packets?: number; codecs?: string[]; skipped?: string; error?: string };
+        decodedVideo: { packets?: number; frames?: number; width?: number; height?: number; displayWidth?: number; displayHeight?: number; skipped?: string; error?: string };
+        decodedAudio: { packets?: number; frames?: number; sampleRate?: number; numberOfChannels?: number; skipped?: string; error?: string };
       };
       iso: {
         wasm_mux_demux_smoke: () => number;

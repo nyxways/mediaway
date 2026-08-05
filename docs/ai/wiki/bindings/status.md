@@ -14,7 +14,7 @@ freestanding cores 0.1.1 (`ebml-webm` 0.2.1) · CPack `Mediaway-0.1.2-win64`.
 | Python | `bindings/python/mediaway/` ctypes package | ✅ verified — 7 examples run; encode output byte-identical to C/C++/Node (6253 B video; 27372 B audio) |
 | Node.js | `bindings/nodejs/packages/@mediaway/*` koffi FFI | ✅ verified — 7 examples run; napi-rs is the eventual official path |
 | C# | `bindings/csharp/src/` P/Invoke | ✅ verified (xUnit against native libs; ADR-0017/0018); 6 examples under `Container/`/`Device/`/`Pipeline/`, mirroring Node's layout |
-| Browser | WASM (`iso-bmff-wasm` + WebCodecs) | ✅ verified — `@mediaway/browser` (ADR-0020): wasm mux/demux + WebCodecs H.264/AAC encode to fMP4, E2E-verified in Chromium + real Edge (`tools/e2e-web`, `browser-package.spec.ts`) |
+| Browser | WASM (`iso-bmff-wasm` + WebCodecs) | ✅ verified — `@mediaway/browser` (ADR-0020 + ADR-0022): wasm mux/demux + WebCodecs H.264/AAC encode to fMP4 AND `DecodeSession` decode back (video + audio), E2E-verified in Chromium + real Edge (`tools/e2e-web`, `browser-package.spec.ts`) |
 
 ## DX-driven example flow
 
@@ -86,9 +86,11 @@ and `mediaway-container`'s sub-features are unified from this crate's
 
 ## Open items
 
-- Browser is DONE: `@mediaway/browser` ships (ADR-0020) — wasm mux/demux + WebCodecs
-  H.264/AAC encode; E2E specs in `tools/e2e-web/browser-package.spec.ts`. The browser
-  audio surface is WebCodecs `AudioEncoder` (native), not a wasm AAC codec.
+- Browser is DONE, both directions: `@mediaway/browser` ships (ADR-0020 + ADR-0022) —
+  wasm mux/demux + WebCodecs H.264/AAC encode, and `DecodeSession` decode back (video +
+  audio) via the browser's native `VideoDecoder`/`AudioDecoder`; E2E specs in
+  `tools/e2e-web/browser-package.spec.ts`. The browser codec surface is WebCodecs-native
+  (`AudioEncoder`/`AudioDecoder`/…), not a wasm codec implementation.
 - Official package-layout ADRs for the C++/Python/Node bindings (mirror ADR-0017/0018)
   before shipping — packaging is set up (`tools/scripts/*-package*.ts`, see
   `bindings/README.md` § Publishing), the ADRs are the remaining formality.

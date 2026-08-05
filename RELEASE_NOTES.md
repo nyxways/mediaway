@@ -53,6 +53,14 @@
   FU-A/FU fragmentation for NAL units larger than a caller-supplied payload
   budget. Closes the workspace's previous no-RTP gap for standard-interop
   low-latency streaming.
+- `@mediaway/browser` (ADR-0022): `DecodeSession` — demux-then-decode fMP4 via
+  the browser's native WebCodecs `VideoDecoder`/`AudioDecoder`, the decode-side
+  mirror of `EncodeSession`. Required `resolveCodec(track)` maps the
+  container's generic `Codec` name to the WebCodecs codec string;
+  `DecoderUnavailableError` for browsers without a usable decoder. E2E-verified
+  H.264 + AAC encode→mux→demux→decode round trips. Also new:
+  `examples/device/list-and-watch-devices.ts` (native `enumerateDevices()` +
+  `devicechange` hotplug demo).
 
 ### Changed
 

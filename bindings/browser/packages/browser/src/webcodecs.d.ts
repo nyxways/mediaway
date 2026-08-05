@@ -2,14 +2,22 @@
  * Minimal ambient types for the WebCodecs surface @mediaway/browser uses.
  *
  * TypeScript's lib.dom still lacks WebCodecs (microsoft/TypeScript#38603);
- * these cover only what this package touches: VideoEncoder / AudioEncoder,
- * their input/output chunk types, VideoFrame, and AudioData.
+ * these cover only what this package touches: the WebCodecs encoders and
+ * decoders, their input/output chunk types, VideoFrame, and AudioData.
  */
 declare global {
   // ── Video ────────────────────────────────────────────────────────────────
   type EncodedVideoChunkType = "key" | "delta";
 
+  interface EncodedVideoChunkInit {
+    type: EncodedVideoChunkType;
+    timestamp: number; // microseconds
+    duration?: number; // microseconds
+    data: BufferSource;
+  }
+
   class EncodedVideoChunk {
+    constructor(init: EncodedVideoChunkInit);
     readonly type: EncodedVideoChunkType;
     readonly timestamp: number; // microseconds
     readonly byteLength: number;
@@ -25,6 +33,23 @@ declare global {
     description?: AllowSharedBufferSource;
     codedWidth?: number;
     codedHeight?: number;
+  }
+
+  interface VideoDecoderInit {
+    output(frame: VideoFrame): void;
+    error(error: DOMException): void;
+  }
+
+  class VideoDecoder {
+    static isConfigSupported(
+      config: VideoDecoderConfig
+    ): Promise<{ supported: boolean; config?: VideoDecoderConfig }>;
+    constructor(init: VideoDecoderInit);
+    readonly state: "unconfigured" | "configured" | "closed";
+    configure(config: VideoDecoderConfig): void;
+    decode(chunk: EncodedVideoChunk): void;
+    flush(): Promise<void>;
+    close(): void;
   }
 
   interface VideoEncoderConfig {
@@ -76,7 +101,15 @@ declare global {
   // ── Audio ────────────────────────────────────────────────────────────────
   type EncodedAudioChunkType = "key" | "delta";
 
+  interface EncodedAudioChunkInit {
+    type: EncodedAudioChunkType;
+    timestamp: number; // microseconds
+    duration?: number; // microseconds
+    data: BufferSource;
+  }
+
   class EncodedAudioChunk {
+    constructor(init: EncodedAudioChunkInit);
     readonly type: EncodedAudioChunkType;
     readonly timestamp: number; // microseconds
     readonly duration?: number; // microseconds
@@ -93,6 +126,23 @@ declare global {
     sampleRate: number;
     numberOfChannels: number;
     description?: AllowSharedBufferSource;
+  }
+
+  interface AudioDecoderInit {
+    output(data: AudioData): void;
+    error(error: DOMException): void;
+  }
+
+  class AudioDecoder {
+    static isConfigSupported(
+      config: AudioDecoderConfig
+    ): Promise<{ supported: boolean; config?: AudioDecoderConfig }>;
+    constructor(init: AudioDecoderInit);
+    readonly state: "unconfigured" | "configured" | "closed";
+    configure(config: AudioDecoderConfig): void;
+    decode(chunk: EncodedAudioChunk): void;
+    flush(): Promise<void>;
+    close(): void;
   }
 
   interface AudioEncoderConfig {

@@ -26,6 +26,8 @@ fn h264_cfg(width: u32, height: u32) -> VideoEncoderConfig {
         pixel_format: PixelFormat::Nv12,
         input: VideoInputPreference::CpuUploadOk,
         gpu_device: None,
+        gop_size: 1,
+        rate_control: None,
     }
 }
 

@@ -65,10 +65,50 @@ Real session shape (types, ownership) mostly follows ADR-0001's original
 design sketch, minus the `VideoSession<S>` typestate (deferred — see the
 ADR's Stage 1 addendum "Deliberate scope cuts").
 
-### 2 — GOP / rate control (deferred)
+### 2 — GOP / rate control — H.264 + HEVC hardware-verified 2026-08-05 (see ADR-0002)
 
-- [ ] P-frame reference picture management, multi-slot DPB
-- [ ] Rate control modes beyond fixed QP
+- [x] H.264: P-frame reference picture management, multi-slot DPB
+      (`h264_gop.rs::GopState`/`Dpb`, `WORKSPACE_DPB_CAP = 4`) —
+      hardware-verified real `I P P I P P I` cadence for `gop_size = 3`
+- [x] H.264: CBR rate control (`session_command.rs`'s `DpbRecordParams`/
+      `RateControlParams`, capability-gated via
+      `Capabilities::supports_p_frames`/`supports_cbr`) — hardware-verified
+      real CBR bitstream output
+- [x] HEVC: same P-frame/DPB wiring — **hardware-verified 2026-08-05**
+      (same-day follow-up): `hevc_gop.rs::GopState`/`Dpb` (reuses
+      `h264_gop::WORKSPACE_DPB_CAP`), `hevc_params.rs`'s P-frame
+      picture-info/slice-segment-header/reference-list/short-term-RPS
+      builders, `session_command_hevc.rs`'s real setup/reference
+      `VkVideoReferenceSlotInfoKHR` + `VkVideoEncodeH265DpbSlotInfoKHR`
+      chaining — real `I P P I P P I` cadence for `gop_size = 3` (NAL type
+      19 IDR / type 1 TRAIL_R P-slice). CBR rate control stays H.264-only
+      this pass (ADR-0002's Decision section scopes it there); a
+      `rate_control` request on an HEVC config is safely and silently
+      ignored (falls back to fixed-QP, verified by
+      `push_hevc_frames_gop_with_rate_control_requested_or_skip`).
+- [x] AV1: same single-forward-reference P-frame/DPB wiring —
+      **implemented, capability-gated, but genuinely unverifiable** on this
+      crate's reference hardware (per an explicit later instruction to build
+      it anyway, honestly labeled): `av1_gop.rs::GopState`/`Dpb`
+      (`order_hint`-keyed, reuses `h264_gop::WORKSPACE_DPB_CAP`),
+      `av1_params.rs`'s `INTER_FRAME` picture-info/reference-info builders,
+      `session_command_av1.rs`'s real setup/reference
+      `VkVideoReferenceSlotInfoKHR` + `VkVideoEncodeAV1DpbSlotInfoKHR`
+      chaining, `Capabilities::supports_p_frames`'s AV1 floor check now real
+      (`maxSingleReferenceCount >= 1`, was previously skipped). AV1's base
+      (IDR-only) per-frame encode is already hardware-verified invalid on
+      this hardware (ADR-0001's AV1 addendum), so this wiring inherits the
+      same unverifiable status — `push_seven_av1_frames_gop_or_skip` hits
+      that same known-broken bitstream and honestly skips, exactly like
+      `push_three_av1_frames_or_skip` already does. No CBR for AV1 (same
+      "H.264-only" reasoning HEVC's own bullet above already gives).
+
+Design: [ADR-0002](../adr/vulkan/0002-vulkan-gop-rate-control.md) — P-frames
+only (B-frames a permanent non-goal, they add reorder latency), CBR rate
+control (H.264 only), capability-gated fallback to today's IDR-only/fixed-QP
+behavior. AV1's GOP/DPB wiring is implemented (see above) but stays
+unverifiable until its driver-blocked per-frame encode (ADR-0001 AV1
+addendum) is confirmed fixed.
 
 ### 3 — Zero-Copy GPU input (deferred)
 

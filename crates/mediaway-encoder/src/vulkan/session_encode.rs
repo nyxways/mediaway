@@ -29,13 +29,14 @@ use vulkanalia::vk::{
     KhrVideoQueueExtensionDeviceCommands,
 };
 
-use crate::vulkan::h264_params::{self, McAlignedExtent};
+use crate::vulkan::h264_params::{self, McAlignedExtent, SpsGopParams};
 use crate::vulkan::session::{
     Capabilities, DeviceGuard, EncodeDevice, EncodeProfile, EncodedFrame, InstanceGuard,
-    SessionResources, VulkanEncodeSessionError, create_instance, create_logical_device,
-    find_h264_encode_device, find_memory_type, query_capabilities, query_video_format,
+    SessionDpbConfig, SessionResources, VulkanEncodeSessionError, create_instance,
+    create_logical_device, find_h264_encode_device, find_memory_type, query_capabilities,
+    query_video_format,
 };
-use crate::vulkan::session_command::{RecordParams, record_and_submit};
+use crate::vulkan::session_command::{DpbRecordParams, RecordParams, record_and_submit};
 
 /// Runs the whole Stage 1 pipeline once on real hardware.
 ///
@@ -46,6 +47,12 @@ use crate::vulkan::session_command::{RecordParams, record_and_submit};
 /// # Errors
 /// Returns [`VulkanEncodeSessionError`] at the first failing Vulkan call —
 /// see that enum's `VkCall` variant for which call and `VkResult`.
+#[allow(
+    clippy::too_many_lines,
+    reason = "unchanged linear Stage 1 sequence — line count only grew because \
+              create_video_session/build_sps/create_images_and_buffers each gained one more \
+              ADR-0002 call-site argument (always Stage 1's own IDR-only/single-slot default)"
+)]
 pub fn encode_synthetic_intra_frame() -> Result<EncodedFrame, VulkanEncodeSessionError> {
     let (_entry, instance_guard) = create_instance()?;
     let InstanceGuard { instance } = &instance_guard;
@@ -98,11 +105,12 @@ pub fn encode_synthetic_intra_frame() -> Result<EncodedFrame, VulkanEncodeSessio
         coded_extent,
         input_format,
         dpb_format,
+        SessionDpbConfig::IDR_ONLY,
     )?;
     resources.session = session;
     resources.session_memories = session_memories;
 
-    let sps = h264_params::build_sps(mc_extent);
+    let sps = h264_params::build_sps(mc_extent, SpsGopParams::IDR_ONLY);
     let pps = h264_params::build_pps();
     resources.session_parameters = create_session_parameters(&encode_device, session, &sps, &pps)?;
     let header_bytes = get_encoded_headers(&encode_device, resources.session_parameters)?;
@@ -115,6 +123,7 @@ pub fn encode_synthetic_intra_frame() -> Result<EncodedFrame, VulkanEncodeSessio
         dpb_format,
         coded_extent,
         capabilities.min_bitstream_buffer_size_alignment,
+        1,
         &mut resources,
     )?;
     upload_to_host_memory(
@@ -147,6 +156,8 @@ pub fn encode_synthetic_intra_frame() -> Result<EncodedFrame, VulkanEncodeSessio
         coded_extent,
         dst_size,
         picture_info_pnext: &mut h264_picture_info,
+        dpb: DpbRecordParams::idr_only(),
+        rate_control: None,
     };
     let dst_bytes = record_and_submit(&encode_device, &mut resources, &mut record_params)?;
 
@@ -161,9 +172,10 @@ pub fn encode_synthetic_intra_frame() -> Result<EncodedFrame, VulkanEncodeSessio
     })
 }
 
-/// One IDR-baseline video session sized for `coded_extent`, plus every
-/// `VkDeviceMemory` `vkGetVideoSessionMemoryRequirementsKHR` asked for
-/// (device-local — codec-internal state, never mapped by the host).
+/// One video session sized for `coded_extent`, plus every `VkDeviceMemory`
+/// `vkGetVideoSessionMemoryRequirementsKHR` asked for (device-local —
+/// codec-internal state, never mapped by the host). `dpb_config` selects
+/// Stage 1's IDR-only single-slot session or ADR-0002's GOP-sized one.
 #[allow(
     clippy::too_many_arguments,
     reason = "internal helper, called once, clearer un-bundled"
@@ -176,6 +188,7 @@ pub(crate) fn create_video_session(
     coded_extent: vk::Extent2D,
     picture_format: vk::Format,
     reference_format: vk::Format,
+    dpb_config: SessionDpbConfig,
 ) -> Result<(vk::VideoSessionKHR, Vec<vk::DeviceMemory>), VulkanEncodeSessionError> {
     let device = encode_device.device;
     let profile_info = profile.info();
@@ -185,8 +198,8 @@ pub(crate) fn create_video_session(
         .picture_format(picture_format)
         .max_coded_extent(coded_extent)
         .reference_picture_format(reference_format)
-        .max_dpb_slots(1)
-        .max_active_reference_pictures(0)
+        .max_dpb_slots(dpb_config.max_dpb_slots)
+        .max_active_reference_pictures(dpb_config.max_active_reference_pictures)
         .std_header_version(&capabilities.std_header_version);
     // SAFETY: `create_info` and everything it chains/borrows are alive for
     // this single synchronous call; no allocator callbacks supplied.
@@ -462,6 +475,7 @@ pub(crate) fn create_images_and_buffers(
     dpb_format: vk::Format,
     coded_extent: vk::Extent2D,
     bitstream_alignment: vk::DeviceSize,
+    dpb_array_layers: u32,
     resources: &mut SessionResources,
 ) -> Result<vk::DeviceSize, VulkanEncodeSessionError> {
     let device = encode_device.device;
@@ -472,6 +486,7 @@ pub(crate) fn create_images_and_buffers(
         input_format,
         coded_extent,
         vk::ImageUsageFlags::VIDEO_ENCODE_SRC_KHR,
+        1,
     )?;
     resources.input_image = input_image;
     resources.input_image_memory = input_image_memory;
@@ -484,6 +499,7 @@ pub(crate) fn create_images_and_buffers(
         dpb_format,
         coded_extent,
         vk::ImageUsageFlags::VIDEO_ENCODE_DPB_KHR,
+        dpb_array_layers,
     )?;
     resources.dpb_image = dpb_image;
     resources.dpb_image_memory = dpb_image_memory;
@@ -541,7 +557,11 @@ fn bitstream_buffer_size(extent: vk::Extent2D, alignment: vk::DeviceSize) -> vk:
 /// device-local `VkImage` created inside `profile`'s profile list, its
 /// backing memory, and a whole-image `COLOR`-aspect view (this crate never
 /// sets `DISJOINT`, so per spec a combined-plane `COLOR` view is correct —
-/// see `session.rs`'s module doc).
+/// see `session.rs`'s module doc). `array_layers > 1` (ADR-0002's GOP-sized
+/// DPB image only — the input image always passes `1`) builds a
+/// `_2D_ARRAY` view instead of `_2D`, so a single `VkImageView` can back
+/// every DPB slot; callers select a specific slot per use via
+/// `VkVideoPictureResourceInfoKHR::baseArrayLayer`.
 fn create_video_image(
     encode_device: &EncodeDevice<'_>,
     memory_properties: &vk::PhysicalDeviceMemoryProperties,
@@ -549,6 +569,7 @@ fn create_video_image(
     format: vk::Format,
     extent: vk::Extent2D,
     usage: vk::ImageUsageFlags,
+    array_layers: u32,
 ) -> Result<(vk::Image, vk::DeviceMemory, vk::ImageView), VulkanEncodeSessionError> {
     let device = encode_device.device;
     let profile_info = profile.info();
@@ -565,7 +586,7 @@ fn create_video_image(
             depth: 1,
         })
         .mip_levels(1)
-        .array_layers(1)
+        .array_layers(array_layers)
         .samples(vk::SampleCountFlags::_1)
         .tiling(vk::ImageTiling::OPTIMAL)
         .usage(usage)
@@ -605,16 +626,21 @@ fn create_video_image(
             result,
         }
     })?;
+    let view_type = if array_layers > 1 {
+        vk::ImageViewType::_2D_ARRAY
+    } else {
+        vk::ImageViewType::_2D
+    };
     let view_info = vk::ImageViewCreateInfo::builder()
         .image(image)
-        .view_type(vk::ImageViewType::_2D)
+        .view_type(view_type)
         .format(format)
         .subresource_range(vk::ImageSubresourceRange {
             aspect_mask: vk::ImageAspectFlags::COLOR,
             base_mip_level: 0,
             level_count: 1,
             base_array_layer: 0,
-            layer_count: 1,
+            layer_count: array_layers,
         });
     // SAFETY: `image` is bound to memory above; `view_info` is valid.
     let view = unsafe { device.create_image_view(&view_info, None) }.map_err(|result| {

@@ -86,6 +86,8 @@ fn decode_real_encoder_produced_idr_or_skip() {
         pixel_format: PixelFormat::Nv12,
         input: VideoInputPreference::CpuUploadOk,
         gpu_device: None,
+        gop_size: 1,
+        rate_control: None,
     };
     let mut encoder = match VulkanVideoEncoder::open(&encoder_config) {
         Ok(encoder) => encoder,

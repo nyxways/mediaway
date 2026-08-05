@@ -41,6 +41,33 @@ pub struct VideoEncoderConfig {
     /// [`GpuBufferHandle::DirectX11`](mediaway_common::GpuBufferHandle) textures).
     /// `None` = unset → Zero-Copy open fails.
     pub gpu_device: Option<GpuDeviceHandle>,
+    /// Frames between forced IDR refreshes. `1` = IDR-only (every frame an
+    /// independent key frame — the `Default`/`h264()`/`hevc()`/`av1()`/`vp9()`
+    /// constructor value, zero behavior change for existing callers). `0` is
+    /// rejected by backends that read this field (an explicit value avoids
+    /// silent unbounded drift; see each backend's `open`/`EncodeError` docs)
+    /// rather than treated as "infinite GOP". A backend that cannot honor a
+    /// value `> 1` (no multi-slot DPB / P-frame support) falls back to
+    /// IDR-only and must document that fallback on its own encoder type's
+    /// rustdoc, per `caveats-and-clarity.md`.
+    pub gop_size: u32,
+    /// Target bitrate ceiling for CBR-style rate control. `None` keeps
+    /// fixed-QP encoding (today's only behavior). `Some(_)` is a request,
+    /// not a guarantee — a backend that cannot honor CBR (capability-gated)
+    /// falls back to fixed-QP and must document that fallback on its own
+    /// encoder type's rustdoc, per `caveats-and-clarity.md`.
+    pub rate_control: Option<RateControlConfig>,
+}
+
+/// Target bitrate + optional VBV buffer size for CBR-style rate control
+/// (see [`VideoEncoderConfig::rate_control`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RateControlConfig {
+    /// Target bitrate in bits per second.
+    pub target_bitrate_bps: u32,
+    /// VBV buffer size in bytes. `None` lets the backend pick a
+    /// driver-suggested default rather than this crate guessing one.
+    pub vbv_buffer_size_bytes: Option<u32>,
 }
 
 impl VideoEncoderConfig {
@@ -56,6 +83,8 @@ impl VideoEncoderConfig {
             pixel_format: PixelFormat::Nv12,
             input: VideoInputPreference::ZeroCopyGpu,
             gpu_device: None,
+            gop_size: 1,
+            rate_control: None,
         }
     }
 
@@ -71,6 +100,8 @@ impl VideoEncoderConfig {
             pixel_format: PixelFormat::Nv12,
             input: VideoInputPreference::ZeroCopyGpu,
             gpu_device: None,
+            gop_size: 1,
+            rate_control: None,
         }
     }
 
@@ -86,6 +117,8 @@ impl VideoEncoderConfig {
             pixel_format: PixelFormat::Nv12,
             input: VideoInputPreference::ZeroCopyGpu,
             gpu_device: None,
+            gop_size: 1,
+            rate_control: None,
         }
     }
 
@@ -101,6 +134,8 @@ impl VideoEncoderConfig {
             pixel_format: PixelFormat::Nv12,
             input: VideoInputPreference::ZeroCopyGpu,
             gpu_device: None,
+            gop_size: 1,
+            rate_control: None,
         }
     }
 }

@@ -60,29 +60,41 @@ VPS/SPS/PPS + slice-segment encode. `picture_access_granularity` is **32x32**
 on this driver, not 16x16 like H.264 — query per codec, never assume equal.
 
 AV1: `av1_params.rs`/`session_command_av1.rs`, implemented but **blocked on
-the RTX 4090** — device/session/session-parameters/sequence-header
-are all real and hardware-verified (`vkGetEncodedVideoSessionParametersKHR`
-returns a genuine `OBU_SEQUENCE_HEADER`), but every `vkCmdEncodeVideoKHR`
-frame's own output is not a valid OBU stream. Independently confirmed **not**
-this crate's bug: `ffmpeg -c:v av1_vulkan` on the same test machine produces AV1
-`dav1d` itself rejects (decode error rate up to 73%) — a driver-maturity
-limitation. See ADR-0001's AV1 addendum for the full field-by-field
-debugging trail (6 real bugs found + fixed by diffing against FFmpeg's
-`vulkan_encode_av1.c`) before this conclusion. `push_three_av1_frames_or_skip`
-self-documents and skips rather than hard-fails.
+the RTX 4090** — device/session/session-parameters/sequence-header are all
+real and hardware-verified (`vkGetEncodedVideoSessionParametersKHR` returns a
+genuine `OBU_SEQUENCE_HEADER`), but every `vkCmdEncodeVideoKHR` frame's own
+output is not a valid OBU stream. Independently confirmed **not** this
+crate's bug: `ffmpeg -c:v av1_vulkan` on the same machine produces AV1
+`dav1d` itself rejects (up to 73% decode error rate) — a driver-maturity
+limitation; see ADR-0001's AV1 addendum for the full debugging trail (6 real
+bugs found/fixed by diffing against FFmpeg's `vulkan_encode_av1.c`).
+`push_three_av1_frames_or_skip` self-documents and skips rather than
+hard-fails.
 
 ## Scope cuts (all documented in code + ADR)
 
 - No `VK_LAYER_KHRONOS_validation` (not installed, no Vulkan SDK on the test
   machine) — validated instead against `vulkanalia`'s generated `Extends*KHR`
   marker traits (compiler-checked, generated from the Vulkan registry).
-- No exact-byte-count query-pool feedback for Stage 1's one-shot diagnostic
-  (fixed for the real `VideoEncoder` impl via `VK_QUERY_TYPE_VIDEO_ENCODE_FEEDBACK_KHR`).
+- No exact-byte-count query-pool feedback for Stage 1's one-shot diagnostic (fixed for the real `VideoEncoder` impl via `VK_QUERY_TYPE_VIDEO_ENCODE_FEEDBACK_KHR`).
 - No per-object RAII on error paths in the Stage 1 diagnostic — single-shot,
   not a reusable session (the real `VideoEncoder` impl tears down explicitly).
 - Coarse (not perf-tuned) `sync2` barriers.
 
+## GOP / rate control (Stage 2 — H.264 + HEVC hardware-verified; AV1 unverifiable)
+
+[ADR-0002](../../../../crates/mediaway-encoder/adr/vulkan/0002-vulkan-gop-rate-control.md):
+multi-slot DPB + P-frame single-forward-reference prediction for H.264, HEVC,
+and AV1 (each a separate `GopState` type), plus CBR for **H.264 only**.
+Capability-gated, falls back to key-frame-only/fixed-QP with no error.
+**B-frames are a permanent non-goal.** Real hardware: `gop_size = 3` over 7
+frames produced the exact `I P P I P P I` cadence for H.264/HEVC, plus real
+CBR for H.264 — [vulkan-h264-gop](../encode/vulkan-h264-gop.md) /
+[vulkan-hevc-gop](../encode/vulkan-hevc-gop.md). AV1's wiring is real and
+capability-gated the same way but **genuinely unverifiable** — built on the
+already-broken AV1 base above, it hits the same wall — see
+[vulkan-av1-gop](../encode/vulkan-av1-gop.md).
+
 ## Related
 
-- [linux-encode](linux-encode.md), [windows-encode](windows-encode.md) — OS-suffixed sibling backends
-- README § GPU — by API, Vulkan column
+- [linux-encode](linux-encode.md), [windows-encode](windows-encode.md) — OS-suffixed siblings; README § GPU (Vulkan column)

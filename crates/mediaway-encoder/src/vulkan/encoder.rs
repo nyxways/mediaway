@@ -12,8 +12,15 @@
 //! upload/record/submit/readback repeats, mirroring
 //! `mediaway-encoder-windows`'s `D3d12VideoEncoder` session shape. CPU-upload
 //! NV12 input only (this crate's Stage 3 Zero-Copy external-memory import is
-//! still deferred); every pushed frame is an independent key frame (no GOP,
-//! no P/B-frames, no DPB reference reuse — same scope cut as Stage 1).
+//! still deferred). Every pushed frame is an independent key frame by
+//! default (`gop_size == 1`); ADR-0002 adds capability-gated multi-frame GOP
+//! with real P-frame DPB reference reuse for H.264 and HEVC, plus (its AV1
+//! follow-up) real `LAST_FRAME` single-forward-reference cycling for AV1 too
+//! — **implemented but unverifiable on this crate's reference hardware**,
+//! since AV1's underlying per-frame encode is already hardware-verified
+//! invalid there (driver-maturity limitation, `adr/0001`'s AV1 addendum).
+//! Never B-frames, any codec — see ADR-0002. CBR rate control stays
+//! H.264-only.
 
 #![allow(unsafe_code)]
 #![allow(
@@ -31,17 +38,26 @@ use mediaway_common::{
 use vulkanalia::vk;
 use vulkanalia::vk::{DeviceV1_0, HasBuilder, InstanceV1_0};
 
-use crate::vulkan::av1_params;
-use crate::vulkan::h264_params::{self, McAlignedExtent};
-use crate::vulkan::hevc_params::{self, CtuAlignedExtent};
+use crate::vulkan::av1_gop::{self, FrameRequest as Av1FrameRequest, GopState as Av1GopState};
+use crate::vulkan::av1_params::{self, Av1SeqGopParams, InterFramePrediction};
+use crate::vulkan::h264_gop::{FrameRequest, GopState, WORKSPACE_DPB_CAP};
+use crate::vulkan::h264_params::{self, McAlignedExtent, SpsGopParams};
+use crate::vulkan::hevc_gop::{FrameRequest as HevcFrameRequest, GopState as HevcGopState};
+use crate::vulkan::hevc_params::{self, CtuAlignedExtent, SpsGopParams as HevcSpsGopParams};
 use crate::vulkan::session::{
-    DeviceGuard, EncodeDevice, EncodeProfile, InstanceGuard, SessionResources,
+    DeviceGuard, EncodeDevice, EncodeProfile, InstanceGuard, SessionDpbConfig, SessionResources,
     VulkanEncodeSessionError, create_instance, create_logical_device, find_av1_encode_device,
     find_h264_encode_device, find_hevc_encode_device, query_capabilities, query_video_format,
 };
-use crate::vulkan::session_command::{RecordParams, record_and_submit};
-use crate::vulkan::session_command_av1::{RecordParamsAv1, record_and_submit_av1};
-use crate::vulkan::session_command_hevc::{RecordParamsHevc, record_and_submit_hevc};
+use crate::vulkan::session_command::{
+    DpbRecordParams, RateControlParams, RecordParams, record_and_submit,
+};
+use crate::vulkan::session_command_av1::{
+    DpbRecordParamsAv1, RecordParamsAv1, record_and_submit_av1,
+};
+use crate::vulkan::session_command_hevc::{
+    DpbRecordParamsHevc, RecordParamsHevc, record_and_submit_hevc,
+};
 use crate::vulkan::session_encode::{
     allocate_command_buffer, create_command_pool, create_encode_feedback_query_pool, create_fence,
     create_images_and_buffers, create_session_parameters, create_session_parameters_av1,
@@ -49,8 +65,10 @@ use crate::vulkan::session_encode::{
     get_encoded_headers_av1, get_encoded_headers_hevc, nv12_byte_size, upload_to_host_memory,
 };
 
-/// Fixed intra `constant_qp` (all-intra CQP) — rate-control tuning is
-/// deferred, mirrors `mediaway-encoder-windows`'s D3D12 backend's `FIXED_QP`.
+/// Fixed intra `constant_qp` (all-intra CQP) — this crate's only mode when
+/// rate control is disabled (`DISABLED` fixed-QP, mirrors
+/// `mediaway-encoder-windows`'s D3D12 backend's `FIXED_QP`) or for HEVC/AV1
+/// (unconditionally, ADR-0002 scopes CBR to H.264 this pass).
 const FIXED_QP: i32 = 26;
 
 /// A real, reusable, hardware-backed `VK_KHR_video_encode_queue` H.264 or HEVC session.
@@ -87,6 +105,49 @@ pub struct VulkanVideoEncoder {
     pending: VecDeque<Packet>,
     flushed: bool,
     frame_counter: u32,
+
+    // --- ADR-0002: GOP / rate control (H.264 + HEVC GOP, H.264-only CBR) ---
+    /// Owned unconditionally (even for a non-H.264 session, where it stays
+    /// at its `gop_size == 1` default and is never read for HEVC/AV1
+    /// sessions) — cheaper and simpler than an `Option<GopState>` whose
+    /// `None`/`Some` split would just mirror `codec == H264`, per this
+    /// crate's own "no `Option` wrapping an invariant the type system could
+    /// express directly" preference.
+    gop_state: GopState,
+    /// HEVC sibling of `gop_state` — same "owned unconditionally, idle
+    /// unless `codec == Hevc`" reasoning; a separate field (not shared with
+    /// `gop_state`) since [`GopState`]/[`HevcGopState`] are distinct types
+    /// (see `hevc_gop.rs`'s module doc for why they aren't unified).
+    hevc_gop_state: HevcGopState,
+    /// AV1 sibling of `gop_state`/`hevc_gop_state` (ADR-0002's AV1
+    /// follow-up) — same "owned unconditionally, idle unless `codec == Av1`"
+    /// reasoning; a separate type from both since AV1's `order_hint`-keyed
+    /// reference model has no `frame_num`/`PicOrderCnt` equivalent (see
+    /// `av1_gop.rs`'s module doc). Real, capability-gated GOP wiring built on
+    /// top of an already-known-broken AV1 base encode — see that module doc
+    /// for the honest "implemented but unverifiable" status.
+    av1_gop_state: Av1GopState,
+    /// `true` for an H.264, HEVC, or AV1 session where
+    /// `capabilities.supports_p_frames` and `config.gop_size > 1` were both
+    /// true at `open()` time — gates every GOP-specific FFI shape (DPB slot
+    /// info chaining, multi-layer DPB image, non-`DISABLED`-shaped session/SPS
+    /// params) so the default path reproduces the original all-key-frame call
+    /// shape untouched. AV1's own GOP path is real and capability-gated the
+    /// same way, but unverifiable on this crate's reference hardware — see
+    /// `av1_gop.rs`'s module doc.
+    gop_enabled: bool,
+    /// `resources.dpb_image`/`dpb_image_view`'s actual array layer count —
+    /// `1` unless `gop_enabled`.
+    dpb_layer_count: u32,
+    /// Whether `resources.dpb_image` still needs its one-time
+    /// `UNDEFINED -> VIDEO_ENCODE_DPB_KHR` layout transition (see
+    /// `session_command::record_pre_encode_barriers`'s doc). Set after the
+    /// first successful `push_frame` call.
+    dpb_transitioned: bool,
+    /// `Some` (H.264 only, capability- and config-gated — ADR-0002 scopes
+    /// CBR to H.264 this pass) replaces every pushed frame's
+    /// `RATE_CONTROL_MODE_DISABLED` with real `CBR`.
+    rate_control_params: Option<RateControlParams>,
 }
 
 // SAFETY: every field is an owned Vulkan handle/`ash` wrapper (thread-safe
@@ -106,9 +167,19 @@ impl VulkanVideoEncoder {
     ///   this host advertises an encode queue family for the requested
     ///   codec, or the driver reports no usable video-encode image format.
     /// - [`EncodeError::InvalidInput`] — zero/invalid dimensions, zero
-    ///   `time_base` denominator, or `config.width`/`height` falls outside
-    ///   this driver's reported coded-extent bounds/alignment.
+    ///   `time_base` denominator, `config.gop_size == 0` (ADR-0002 — `0` is
+    ///   rejected, never treated as "unlimited GOP"), or
+    ///   `config.width`/`height` falls outside this driver's reported
+    ///   coded-extent bounds/alignment.
     /// - [`EncodeError::Backend`] — a Vulkan object-creation call failed.
+    ///
+    /// `config.gop_size > 1` (multi-frame GOP with P-frame prediction) is a
+    /// capability-gated request for H.264 or HEVC (ADR-0002); `config.rate_control.is_some()`
+    /// (CBR) stays a capability-gated, H.264-only request this pass. A
+    /// driver/profile that cannot honor either falls back to today's
+    /// IDR-only, fixed-QP `DISABLED` behavior with no error
+    /// (`Capabilities::supports_p_frames`/`supports_cbr`). AV1 never honors
+    /// GOP or CBR, unconditionally (out of scope — see ADR-0002).
     #[allow(
         clippy::too_many_lines,
         reason = "linear session-construction sequence (instance -> device -> capabilities -> \
@@ -146,6 +217,97 @@ impl VulkanVideoEncoder {
         let coded_extent = vk::Extent2D {
             width: config.width,
             height: config.height,
+        };
+
+        // ADR-0002 (+ its AV1 follow-up): GOP falls back to the original
+        // all-key-frame shape whenever the caller left `gop_size` at its
+        // default, or the driver can't honor the request
+        // (`capabilities.supports_p_frames`, no error, a documented
+        // degradation per `caveats-and-clarity.md`). AV1's own GOP request is
+        // real and capability-gated the same way as H.264/HEVC — but
+        // unverifiable end to end on this crate's reference hardware, since
+        // AV1's base per-frame encode is already known-broken there (see
+        // `adr/0001`'s AV1 addendum and `av1_gop.rs`'s module doc). CBR stays
+        // H.264-only this pass — see `rate_control_params` below.
+        let is_h264 = !is_hevc && !is_av1;
+        let supports_gop_for_codec =
+            (is_h264 || is_hevc || is_av1) && capabilities.supports_p_frames;
+        let effective_gop_size = if supports_gop_for_codec {
+            config.gop_size
+        } else {
+            1
+        };
+        let gop_enabled = effective_gop_size > 1;
+        let dpb_layer_count = if gop_enabled {
+            capabilities
+                .max_dpb_slots
+                .min(u32::try_from(WORKSPACE_DPB_CAP).unwrap_or(4))
+                .max(2)
+        } else {
+            1
+        };
+        let dpb_config = if gop_enabled {
+            SessionDpbConfig {
+                max_dpb_slots: dpb_layer_count,
+                // This crate only ever requests one active L0 reference
+                // (single forward reference, never multi-reference search —
+                // see `h264_gop.rs`'s module doc).
+                max_active_reference_pictures: 1,
+            }
+        } else {
+            SessionDpbConfig::IDR_ONLY
+        };
+        let sps_gop = if gop_enabled {
+            SpsGopParams {
+                log2_max_frame_num_minus4: crate::vulkan::h264_gop::LOG2_MAX_FRAME_NUM_MINUS4,
+                max_num_ref_frames: 1,
+            }
+        } else {
+            SpsGopParams::IDR_ONLY
+        };
+        let hevc_sps_gop = if gop_enabled {
+            HevcSpsGopParams {
+                log2_max_pic_order_cnt_lsb_minus4:
+                    crate::vulkan::hevc_gop::LOG2_MAX_PIC_ORDER_CNT_LSB_MINUS4,
+            }
+        } else {
+            HevcSpsGopParams::IDR_ONLY
+        };
+        let av1_sps_gop = if gop_enabled {
+            Av1SeqGopParams {
+                order_hint_bits_minus_1: av1_gop::ORDER_HINT_BITS_MINUS_1_GOP,
+            }
+        } else {
+            Av1SeqGopParams::IDR_ONLY
+        };
+        // ADR-0002 scopes CBR to H.264 only this pass — HEVC always stays on
+        // today's fixed-QP `DISABLED` path (`session_command_hevc.rs`'s
+        // `record_video_coding_hevc` never reads `rate_control_params`).
+        let rate_control_params = if is_h264 && capabilities.supports_cbr {
+            config.rate_control.map(|rc| {
+                let vbv_ms = rc.vbv_buffer_size_bytes.map_or(0, |bytes| {
+                    // bits = bytes * 8; ms = bits * 1000 / bitrate_bps. `0`
+                    // (unset `vbv_buffer_size_bytes`, or a degenerate
+                    // `target_bitrate_bps == 0`) lets the driver pick its own
+                    // default VBV size instead of this crate guessing one.
+                    let bits = u64::from(bytes) * 8;
+                    if rc.target_bitrate_bps == 0 {
+                        0
+                    } else {
+                        u32::try_from(bits.saturating_mul(1000) / u64::from(rc.target_bitrate_bps))
+                            .unwrap_or(u32::MAX)
+                    }
+                });
+                RateControlParams {
+                    average_bitrate_bps: u64::from(rc.target_bitrate_bps),
+                    max_bitrate_bps: u64::from(rc.target_bitrate_bps),
+                    frame_rate_numerator: config.time_base.den,
+                    frame_rate_denominator: u32::try_from(config.time_base.num).unwrap_or(1),
+                    virtual_buffer_size_in_ms: vbv_ms,
+                }
+            })
+        } else {
+            None
         };
 
         let input_format = query_video_format(
@@ -189,6 +351,7 @@ impl VulkanVideoEncoder {
             coded_extent,
             input_format,
             dpb_format,
+            dpb_config,
         )
         .map_err(map_err)?;
         resources.session = session;
@@ -202,6 +365,7 @@ impl VulkanVideoEncoder {
                 coded_extent.height,
                 &color_config,
                 &timing_info,
+                av1_sps_gop,
             );
             let operating_point = av1_params::build_operating_point();
             resources.session_parameters = create_session_parameters_av1(
@@ -219,9 +383,16 @@ impl VulkanVideoEncoder {
             let extent = CtuAlignedExtent::from_pixels(coded_extent.width, coded_extent.height)
                 .ok_or(EncodeError::InvalidInput)?;
             let ptl = hevc_params::profile_tier_level_main();
-            let dpb_mgr = hevc_params::dec_pic_buf_mgr_no_refs();
+            // ADR-0002: GOP mode needs a DPB deep enough for one active
+            // reference (`dec_pic_buf_mgr_single_ref`); Stage 1's IDR-only
+            // shape (`dec_pic_buf_mgr_no_refs`) is unchanged otherwise.
+            let dpb_mgr = if gop_enabled {
+                hevc_params::dec_pic_buf_mgr_single_ref()
+            } else {
+                hevc_params::dec_pic_buf_mgr_no_refs()
+            };
             let vps = hevc_params::build_vps(&ptl, &dpb_mgr);
-            let sps = hevc_params::build_sps(extent, &ptl, &dpb_mgr);
+            let sps = hevc_params::build_sps(extent, &ptl, &dpb_mgr, hevc_sps_gop);
             let pps = hevc_params::build_pps();
             resources.session_parameters =
                 create_session_parameters_hevc(&encode_device, session, &vps, &sps, &pps)
@@ -231,7 +402,7 @@ impl VulkanVideoEncoder {
         } else {
             let extent = McAlignedExtent::from_pixels(coded_extent.width, coded_extent.height)
                 .ok_or(EncodeError::InvalidInput)?;
-            let sps = h264_params::build_sps(extent);
+            let sps = h264_params::build_sps(extent, sps_gop);
             let pps = h264_params::build_pps();
             resources.session_parameters =
                 create_session_parameters(&encode_device, session, &sps, &pps).map_err(map_err)?;
@@ -246,6 +417,7 @@ impl VulkanVideoEncoder {
             dpb_format,
             coded_extent,
             capabilities.min_bitstream_buffer_size_alignment,
+            dpb_layer_count,
             &mut resources,
         )
         .map_err(map_err)?;
@@ -274,6 +446,13 @@ impl VulkanVideoEncoder {
             pending: VecDeque::new(),
             flushed: false,
             frame_counter: 0,
+            gop_state: GopState::new(effective_gop_size),
+            hevc_gop_state: HevcGopState::new(effective_gop_size),
+            av1_gop_state: Av1GopState::new(effective_gop_size),
+            gop_enabled,
+            dpb_layer_count,
+            dpb_transitioned: false,
+            rate_control_params,
         })
     }
 }
@@ -314,40 +493,136 @@ impl VideoEncoder for VulkanVideoEncoder {
             queue: self.queue,
             queue_family_index: self.queue_family_index,
         };
-        let dst_bytes = if self.codec == CodecKind::Av1 {
+        let (dst_bytes, is_keyframe) = if self.codec == CodecKind::Av1 {
+            // ADR-0002's AV1 follow-up: `self.av1_gop_state.decide`
+            // reproduces the original all-key-frame sequencing exactly when
+            // `!self.gop_enabled` (`Av1GopState::new` was constructed with
+            // `effective_gop_size == 1` in that case, so every call returns
+            // `is_key: true, order_hint: 0, reference: None` — see that
+            // type's doc) — mirrors the H.264/HEVC branches' identical
+            // reasoning below. **Implemented but unverifiable**: AV1's
+            // underlying per-frame encode is already hardware-verified
+            // invalid on this crate's reference GPU regardless of GOP mode
+            // (`adr/0001`'s AV1 addendum) — this branch exists so the
+            // capability gate and FFI shape are real, not because its output
+            // can currently be confirmed correct.
+            let decision = self.av1_gop_state.decide(Av1FrameRequest::Auto);
             let optionals = av1_params::PictureInfoOptionals::new();
-            let picture_info = av1_params::build_key_frame_picture_info(
-                self.coded_extent.width,
-                self.coded_extent.height,
-                &optionals,
-            );
+            let (picture_info, prediction_mode, rate_control_group, reference_name_slot_indices) =
+                match decision.reference {
+                    None => {
+                        let info = av1_params::build_key_frame_picture_info(
+                            self.coded_extent.width,
+                            self.coded_extent.height,
+                            &optionals,
+                        );
+                        (
+                            info,
+                            vk::VideoEncodeAV1PredictionModeKHR::VIDEO_ENCODE_AV1_PREDICTION_MODE_INTRA_ONLY,
+                            vk::VideoEncodeAV1RateControlGroupKHR::VIDEO_ENCODE_AV1_RATE_CONTROL_GROUP_INTRA,
+                            [-1i32; 7],
+                        )
+                    }
+                    Some((ref_slot, ref_dpb_slot)) => {
+                        let ref_slot_i8 = i8::try_from(ref_slot).unwrap_or(0);
+                        let prediction = InterFramePrediction {
+                            order_hint: decision.order_hint,
+                            setup_slot: u8::try_from(decision.setup_slot).unwrap_or(0),
+                            ref_slot: ref_slot_i8,
+                            ref_order_hint: ref_dpb_slot.order_hint,
+                        };
+                        let info = av1_params::build_inter_frame_picture_info(
+                            self.coded_extent.width,
+                            self.coded_extent.height,
+                            &prediction,
+                            &optionals,
+                        );
+                        let mut ref_indices = [-1i32; 7];
+                        ref_indices[0] = i32::from(ref_slot_i8);
+                        (
+                            info,
+                            vk::VideoEncodeAV1PredictionModeKHR::VIDEO_ENCODE_AV1_PREDICTION_MODE_SINGLE_REFERENCE,
+                            vk::VideoEncodeAV1RateControlGroupKHR::VIDEO_ENCODE_AV1_RATE_CONTROL_GROUP_PREDICTIVE,
+                            ref_indices,
+                        )
+                    }
+                };
             let mut av1_picture_info = vk::VideoEncodeAV1PictureInfoKHR::builder()
-                .prediction_mode(vk::VideoEncodeAV1PredictionModeKHR::VIDEO_ENCODE_AV1_PREDICTION_MODE_INTRA_ONLY)
-                .rate_control_group(vk::VideoEncodeAV1RateControlGroupKHR::VIDEO_ENCODE_AV1_RATE_CONTROL_GROUP_INTRA)
+                .prediction_mode(prediction_mode)
+                .rate_control_group(rate_control_group)
                 .constant_q_index(u32::from(av1_params::FIXED_Q_INDEX))
                 .std_picture_info(&picture_info)
-                .reference_name_slot_indices([-1; 7])
+                .reference_name_slot_indices(reference_name_slot_indices)
                 .primary_reference_cdf_only(false)
                 .generate_obu_extension_header(false)
                 .build();
             self.frame_counter = self.frame_counter.wrapping_add(1);
+
+            // Every GOP-specific FFI shape stays gated on `self.gop_enabled`
+            // — mirrors the H.264/HEVC branches' identical
+            // `DpbRecordParams*` construction below.
+            let transition = !self.gop_enabled || !self.dpb_transitioned;
+            let reference_extension_header = av1_params::build_extension_header();
+            let setup_reference_info = self.gop_enabled.then(|| {
+                av1_params::build_reference_info(
+                    decision.order_hint,
+                    decision.is_key,
+                    &reference_extension_header,
+                )
+            });
+            let reference = if self.gop_enabled {
+                decision.reference.map(|(slot, dpb_slot)| {
+                    let info = av1_params::build_reference_info(
+                        dpb_slot.order_hint,
+                        dpb_slot.is_key,
+                        &reference_extension_header,
+                    );
+                    (i32::try_from(slot).unwrap_or(0), info)
+                })
+            } else {
+                None
+            };
+            let dpb = DpbRecordParamsAv1 {
+                layer_count: self.dpb_layer_count,
+                transition,
+                setup_slot: i32::try_from(decision.setup_slot).unwrap_or(0),
+                setup_reference_info,
+                reference,
+            };
 
             let mut record_params = RecordParamsAv1 {
                 command_buffer: self.command_buffer,
                 coded_extent: self.coded_extent,
                 dst_size: self.dst_size,
                 picture_info_pnext: &mut av1_picture_info,
+                dpb,
             };
-            record_and_submit_av1(&encode_device, &mut self.resources, &mut record_params)
-                .map_err(map_err)?
+            let bytes =
+                record_and_submit_av1(&encode_device, &mut self.resources, &mut record_params)
+                    .map_err(map_err)?;
+            self.dpb_transitioned = true;
+            (bytes, decision.is_key)
         } else if self.codec == CodecKind::Hevc {
-            let ref_lists = hevc_params::build_empty_reference_lists();
-            let mut picture_info = hevc_params::build_idr_picture_info();
-            picture_info.pRefLists = &raw const ref_lists;
-            let slice_header = hevc_params::build_idr_slice_segment_header();
+            // ADR-0002: `self.hevc_gop_state.decide` reproduces Stage 1's
+            // all-IDR sequencing exactly when `!self.gop_enabled`
+            // (`HevcGopState::new` was constructed with `effective_gop_size
+            // == 1` in that case, so every call returns `is_idr: true,
+            // reference: None` — see that type's doc) — mirrors the H.264
+            // branch's identical reasoning above.
+            let decision = self.hevc_gop_state.decide(HevcFrameRequest::Auto);
+            let reference_slot = decision
+                .reference
+                .map(|(slot, _)| u8::try_from(slot).unwrap_or(0));
+            let structs =
+                hevc_params::build_frame_structs(decision.poc, decision.is_idr, reference_slot);
+            let mut picture_info = structs.picture_info;
+            picture_info.pRefLists = &raw const structs.reference_lists;
+            if let Some(short_term_ref_pic_set) = &structs.short_term_ref_pic_set {
+                picture_info.pShortTermRefPicSet = &raw const *short_term_ref_pic_set;
+            }
             let nalu_slice_entries = [vk::VideoEncodeH265NaluSliceSegmentInfoKHR::builder()
                 .constant_qp(FIXED_QP)
-                .std_slice_segment_header(&slice_header)
+                .std_slice_segment_header(&structs.slice_segment_header)
                 .build()];
             let mut hevc_picture_info = vk::VideoEncodeH265PictureInfoKHR::builder()
                 .nalu_slice_segment_entries(&nalu_slice_entries)
@@ -355,23 +630,71 @@ impl VideoEncoder for VulkanVideoEncoder {
                 .build();
             self.frame_counter = self.frame_counter.wrapping_add(1);
 
+            // Every GOP-specific FFI shape stays gated on `self.gop_enabled`
+            // — mirrors the H.264 branch's identical `DpbRecordParams`
+            // construction below, `StdVideoEncodeH265*` in place of
+            // `StdVideoEncodeH264*`.
+            let transition = !self.gop_enabled || !self.dpb_transitioned;
+            let setup_reference_info = self.gop_enabled.then_some(structs.setup_reference_info);
+            let reference = if self.gop_enabled {
+                decision.reference.map(|(slot, dpb_slot)| {
+                    let info = hevc_params::build_reference_info(dpb_slot.poc, dpb_slot.is_idr);
+                    (i32::try_from(slot).unwrap_or(0), info)
+                })
+            } else {
+                None
+            };
+            let dpb = DpbRecordParamsHevc {
+                layer_count: self.dpb_layer_count,
+                transition,
+                setup_slot: i32::try_from(decision.setup_slot).unwrap_or(0),
+                setup_reference_info,
+                reference,
+            };
+
             let mut record_params = RecordParamsHevc {
                 command_buffer: self.command_buffer,
                 coded_extent: self.coded_extent,
                 dst_size: self.dst_size,
                 picture_info_pnext: &mut hevc_picture_info,
+                dpb,
             };
-            record_and_submit_hevc(&encode_device, &mut self.resources, &mut record_params)
-                .map_err(map_err)?
+            let bytes =
+                record_and_submit_hevc(&encode_device, &mut self.resources, &mut record_params)
+                    .map_err(map_err)?;
+            self.dpb_transitioned = true;
+            (bytes, decision.is_idr)
         } else {
-            let ref_lists = h264_params::build_empty_reference_lists();
-            let mut picture_info = h264_params::build_idr_picture_info();
-            picture_info.idr_pic_id = self.frame_counter as u16;
-            picture_info.pRefLists = &raw const ref_lists;
-            let slice_header = h264_params::build_idr_slice_header();
+            // ADR-0002: `self.gop_state.decide` reproduces Stage 1's
+            // all-IDR sequencing exactly when `!self.gop_enabled`
+            // (`GopState::new` was constructed with `effective_gop_size ==
+            // 1` in that case, so every call returns `is_idr: true,
+            // reference: None` — see that type's doc) — this crate always
+            // routes H.264 through the same GOP-aware path regardless of
+            // `gop_size`, rather than keeping a separate legacy branch.
+            let decision = self.gop_state.decide(FrameRequest::Auto);
+            let reference_slot = decision
+                .reference
+                .map(|(slot, _)| u8::try_from(slot).unwrap_or(0));
+            let structs = h264_params::build_frame_structs(
+                decision.frame_num,
+                decision.poc,
+                decision.idr_pic_id,
+                decision.is_idr,
+                reference_slot,
+            );
+            let mut picture_info = structs.picture_info;
+            picture_info.pRefLists = &raw const structs.reference_lists;
+            // VUID-VkVideoEncodeH264NaluSliceInfoKHR-constantQp: must be `0`
+            // whenever rate control is not `DISABLED`.
+            let constant_qp = if self.rate_control_params.is_some() {
+                0
+            } else {
+                FIXED_QP
+            };
             let nalu_slice_entries = [vk::VideoEncodeH264NaluSliceInfoKHR::builder()
-                .constant_qp(FIXED_QP)
-                .std_slice_header(&slice_header)
+                .constant_qp(constant_qp)
+                .std_slice_header(&structs.slice_header)
                 .build()];
             let mut h264_picture_info = vk::VideoEncodeH264PictureInfoKHR::builder()
                 .nalu_slice_entries(&nalu_slice_entries)
@@ -380,14 +703,46 @@ impl VideoEncoder for VulkanVideoEncoder {
                 .build();
             self.frame_counter = self.frame_counter.wrapping_add(1);
 
+            // Every GOP-specific FFI shape stays gated on `self.gop_enabled`
+            // — the default (`gop_size == 1`) path builds the exact same
+            // `DpbRecordParams` Stage 1's diagnostic uses
+            // (`DpbRecordParams::idr_only()`), just re-derived here instead
+            // of imported, since `layer_count`/`transition` still need this
+            // session's own state.
+            let transition = !self.gop_enabled || !self.dpb_transitioned;
+            let setup_reference_info = self.gop_enabled.then_some(structs.setup_reference_info);
+            let reference = if self.gop_enabled {
+                decision.reference.map(|(slot, dpb_slot)| {
+                    let info = h264_params::build_reference_info(
+                        dpb_slot.frame_num,
+                        dpb_slot.poc,
+                        dpb_slot.is_idr,
+                    );
+                    (i32::try_from(slot).unwrap_or(0), info)
+                })
+            } else {
+                None
+            };
+            let dpb = DpbRecordParams {
+                layer_count: self.dpb_layer_count,
+                transition,
+                setup_slot: i32::try_from(decision.setup_slot).unwrap_or(0),
+                setup_reference_info,
+                reference,
+            };
+
             let mut record_params = RecordParams {
                 command_buffer: self.command_buffer,
                 coded_extent: self.coded_extent,
                 dst_size: self.dst_size,
                 picture_info_pnext: &mut h264_picture_info,
+                dpb,
+                rate_control: self.rate_control_params,
             };
-            record_and_submit(&encode_device, &mut self.resources, &mut record_params)
-                .map_err(map_err)?
+            let bytes = record_and_submit(&encode_device, &mut self.resources, &mut record_params)
+                .map_err(map_err)?;
+            self.dpb_transitioned = true;
+            (bytes, decision.is_idr)
         };
 
         let mut payload = self.header_bytes.clone(); // clone: own Packet payload built from the persistent per-session SPS/PPS(+VPS) bytes
@@ -398,7 +753,7 @@ impl VideoEncoder for VulkanVideoEncoder {
             pts: frame.pts,
             dts: frame.pts,
             duration: frame.duration,
-            is_keyframe: true,
+            is_keyframe,
             is_discard: false,
             payload: Bytes::from(payload),
         });
@@ -442,6 +797,13 @@ fn validate_common(config: &VideoEncoderConfig) -> Result<(), EncodeError> {
         return Err(EncodeError::InvalidInput);
     }
     if config.time_base.den == 0 {
+        return Err(EncodeError::InvalidInput);
+    }
+    // ADR-0002: `0` is rejected at `open()` time (runtime `EncodeError`, not
+    // a `debug_assert!`) since `VideoEncoderConfig` is a cross-backend,
+    // caller-mutable struct — a release build must reject it too, not
+    // silently treat it as "unlimited GOP".
+    if config.gop_size == 0 {
         return Err(EncodeError::InvalidInput);
     }
     Ok(())

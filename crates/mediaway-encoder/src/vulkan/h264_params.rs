@@ -105,10 +105,34 @@ const fn reference_lists_info_flags() -> native::StdVideoEncodeH264ReferenceList
     }
 }
 
+/// GOP-dependent SPS fields (ADR-0002) — [`SpsGopParams::IDR_ONLY`] (`0`/`0`)
+/// reproduces Stage 1's SPS bytes exactly; [`crate::vulkan::h264_gop`]'s GOP
+/// mode uses [`LOG2_MAX_FRAME_NUM_MINUS4`](crate::vulkan::h264_gop::LOG2_MAX_FRAME_NUM_MINUS4)
+/// and one active reference frame.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SpsGopParams {
+    pub(crate) log2_max_frame_num_minus4: u8,
+    pub(crate) max_num_ref_frames: u8,
+}
+
+impl SpsGopParams {
+    /// Stage 1's exact values — every frame is an independent IDR, never
+    /// referenced.
+    pub(crate) const IDR_ONLY: Self = Self {
+        log2_max_frame_num_minus4: 0,
+        max_num_ref_frames: 0,
+    };
+}
+
 /// Baseline-profile SPS for one macroblock-aligned coded picture size.
-/// `seq_parameter_set_id = 0`; POC type 2 (no explicit POC signaling needed);
-/// `max_num_ref_frames = 0` (this crate's frame is never referenced).
-pub(crate) fn build_sps(extent: McAlignedExtent) -> native::StdVideoH264SequenceParameterSet {
+/// `seq_parameter_set_id = 0`; POC type 2 (no explicit POC signaling needed
+/// — also why this design can never carry B-slices, matching ADR-0002's
+/// permanent B-frame exclusion). `gop` selects Stage 1's IDR-only SPS fields
+/// or ADR-0002's GOP-enabled ones — see [`SpsGopParams`].
+pub(crate) fn build_sps(
+    extent: McAlignedExtent,
+    gop: SpsGopParams,
+) -> native::StdVideoH264SequenceParameterSet {
     native::StdVideoH264SequenceParameterSet {
         flags: sps_flags(true, true),
         profile_idc: native::STD_VIDEO_H264_PROFILE_IDC_BASELINE,
@@ -117,13 +141,13 @@ pub(crate) fn build_sps(extent: McAlignedExtent) -> native::StdVideoH264Sequence
         seq_parameter_set_id: 0,
         bit_depth_luma_minus8: 0,
         bit_depth_chroma_minus8: 0,
-        log2_max_frame_num_minus4: 0,
+        log2_max_frame_num_minus4: gop.log2_max_frame_num_minus4,
         pic_order_cnt_type: native::STD_VIDEO_H264_POC_TYPE_2,
         offset_for_non_ref_pic: 0,
         offset_for_top_to_bottom_field: 0,
         log2_max_pic_order_cnt_lsb_minus4: 0,
         num_ref_frames_in_pic_order_cnt_cycle: 0,
-        max_num_ref_frames: 0,
+        max_num_ref_frames: gop.max_num_ref_frames,
         reserved1: 0,
         pic_width_in_mbs_minus1: extent.width_mbs - 1,
         pic_height_in_map_units_minus1: extent.height_mbs - 1,
@@ -216,5 +240,149 @@ pub(crate) const fn build_idr_slice_header() -> native::StdVideoEncodeH264SliceH
         cabac_init_idc: native::StdVideoH264CabacInitIdc(0),
         disable_deblocking_filter_idc: native::StdVideoH264DisableDeblockingFilterIdc(0),
         pWeightTable: core::ptr::null(),
+    }
+}
+
+/// `is_reference` set, `IdrPicFlag` unset — every frame in this crate's
+/// single-forward-reference GOP design becomes a candidate reference for the
+/// frame immediately after it (see [`crate::vulkan::h264_gop::GopState`]).
+fn p_picture_info_flags() -> native::StdVideoEncodeH264PictureInfoFlags {
+    let mut flags = native::StdVideoEncodeH264PictureInfoFlags {
+        _bitfield_align_1: [],
+        _bitfield_1: native::__BindgenBitfieldUnit::new([0u8; 4]),
+    };
+    flags.set_is_reference(1);
+    flags
+}
+
+/// P-slice header covering the whole picture — otherwise identical to
+/// [`build_idr_slice_header`] (full-picture single slice, default
+/// deblocking, no weighted prediction); only `slice_type` differs.
+pub(crate) const fn build_p_slice_header() -> native::StdVideoEncodeH264SliceHeader {
+    native::StdVideoEncodeH264SliceHeader {
+        flags: slice_header_flags(),
+        first_mb_in_slice: 0,
+        slice_type: native::STD_VIDEO_H264_SLICE_TYPE_P,
+        slice_alpha_c0_offset_div2: 0,
+        slice_beta_offset_div2: 0,
+        slice_qp_delta: 0,
+        reserved1: 0,
+        cabac_init_idc: native::StdVideoH264CabacInitIdc(0),
+        disable_deblocking_filter_idc: native::StdVideoH264DisableDeblockingFilterIdc(0),
+        pWeightTable: core::ptr::null(),
+    }
+}
+
+/// `StdVideoEncodeH264ReferenceListsInfo` with exactly one active L0 entry
+/// pointing at `ref_slot` (a DPB slot index, matching
+/// `STD_VIDEO_H264_NO_REFERENCE_PICTURE` (`0xFF`) sentinel semantics
+/// [`build_empty_reference_lists`] already relies on for its unused
+/// entries) — this crate's single forward-reference design: no L1, no
+/// reference-list modification.
+pub(crate) const fn build_single_reference_list(
+    ref_slot: u8,
+) -> native::StdVideoEncodeH264ReferenceListsInfo {
+    let mut list = build_empty_reference_lists();
+    list.num_ref_idx_l0_active_minus1 = 0;
+    list.RefPicList0[0] = ref_slot;
+    list
+}
+
+/// `StdVideoEncodeH264ReferenceInfo` describing one already-encoded (or
+/// about-to-be-encoded) picture, for whichever DPB slot it lives in — built
+/// both for a frame's own setup slot (so a *future* frame's read of that
+/// slot has real data — see [`crate::vulkan::session_command::DpbRecordParams`])
+/// and for an active reference slot being read this frame
+/// ([`crate::vulkan::h264_gop::DpbSlot`] already tracks exactly these three
+/// fields per slot).
+pub(crate) const fn build_reference_info(
+    frame_num: u32,
+    poc: i32,
+    is_idr: bool,
+) -> native::StdVideoEncodeH264ReferenceInfo {
+    native::StdVideoEncodeH264ReferenceInfo {
+        flags: reference_info_flags(),
+        primary_pic_type: if is_idr {
+            native::STD_VIDEO_H264_PICTURE_TYPE_IDR
+        } else {
+            native::STD_VIDEO_H264_PICTURE_TYPE_P
+        },
+        FrameNum: frame_num,
+        PicOrderCnt: poc,
+        long_term_pic_num: 0,
+        long_term_frame_idx: 0,
+        temporal_id: 0,
+    }
+}
+
+/// All-zero: no long-term marking.
+const fn reference_info_flags() -> native::StdVideoEncodeH264ReferenceInfoFlags {
+    native::StdVideoEncodeH264ReferenceInfoFlags {
+        _bitfield_align_1: [],
+        _bitfield_1: native::__BindgenBitfieldUnit::new([0u8; 4]),
+    }
+}
+
+/// One frame's full set of `StdVideoH264*` per-frame structs, resolved from
+/// [`crate::vulkan::h264_gop::GopState::decide`]'s output. `gop_size == 1`
+/// callers always pass `is_idr: true, reference_slot: None` (every
+/// `GopState::decide` call under `gop_size == 1` returns exactly that),
+/// reproducing Stage 1's [`build_idr_picture_info`]/
+/// [`build_empty_reference_lists`]/[`build_idr_slice_header`] byte-for-byte —
+/// see each field below.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FrameStdStructs {
+    pub(crate) picture_info: native::StdVideoEncodeH264PictureInfo,
+    pub(crate) reference_lists: native::StdVideoEncodeH264ReferenceListsInfo,
+    pub(crate) slice_header: native::StdVideoEncodeH264SliceHeader,
+    /// This frame's own `StdVideoEncodeH264ReferenceInfo`, for the DPB slot
+    /// it is about to occupy — always populated (even for `gop_size == 1`,
+    /// where no later frame ever reads it back) so
+    /// [`crate::vulkan::session_command::DpbRecordParams`] has one shape
+    /// regardless of GOP mode.
+    pub(crate) setup_reference_info: native::StdVideoEncodeH264ReferenceInfo,
+}
+
+pub(crate) fn build_frame_structs(
+    frame_num: u32,
+    poc: i32,
+    idr_pic_id: u16,
+    is_idr: bool,
+    reference_slot: Option<u8>,
+) -> FrameStdStructs {
+    let primary_pic_type = if is_idr {
+        native::STD_VIDEO_H264_PICTURE_TYPE_IDR
+    } else {
+        native::STD_VIDEO_H264_PICTURE_TYPE_P
+    };
+    let picture_info = native::StdVideoEncodeH264PictureInfo {
+        flags: if is_idr {
+            idr_picture_info_flags()
+        } else {
+            p_picture_info_flags()
+        },
+        seq_parameter_set_id: 0,
+        pic_parameter_set_id: 0,
+        idr_pic_id,
+        primary_pic_type,
+        frame_num,
+        PicOrderCnt: poc,
+        temporal_id: 0,
+        reserved1: [0; 3],
+        pRefLists: core::ptr::null(),
+    };
+    let reference_lists =
+        reference_slot.map_or_else(build_empty_reference_lists, build_single_reference_list);
+    let slice_header = if is_idr {
+        build_idr_slice_header()
+    } else {
+        build_p_slice_header()
+    };
+    let setup_reference_info = build_reference_info(frame_num, poc, is_idr);
+    FrameStdStructs {
+        picture_info,
+        reference_lists,
+        slice_header,
+        setup_reference_info,
     }
 }

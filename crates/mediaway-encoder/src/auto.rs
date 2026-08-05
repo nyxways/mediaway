@@ -157,6 +157,8 @@ impl AutoVideoEncodeConfig {
             pixel_format: self.pixel_format,
             input,
             gpu_device,
+            gop_size: 1,
+            rate_control: None,
         }
     }
 }

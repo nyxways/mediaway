@@ -419,6 +419,50 @@ pub(crate) struct Capabilities {
     /// Required alignment for the destination bitstream buffer's byte size.
     pub(crate) min_bitstream_buffer_size_alignment: vk::DeviceSize,
     pub(crate) std_header_version: vk::ExtensionProperties,
+    /// Driver-reported `VkVideoCapabilitiesKHR::maxDpbSlots` ceiling (ADR-0002).
+    /// GOP encode requests `min(max_dpb_slots, h264_gop::WORKSPACE_DPB_CAP)`
+    /// slots — see `VulkanVideoEncoder::open`.
+    pub(crate) max_dpb_slots: u32,
+    /// `true` iff this driver/profile reports `maxDpbSlots >= 2` and
+    /// `maxActiveReferencePictures >= 1`, plus a per-codec floor:
+    /// `maxPPictureL0ReferenceCount >= 1` on `VkVideoEncodeH264CapabilitiesKHR`
+    /// (H.264) / `VkVideoEncodeH265CapabilitiesKHR` (HEVC), or
+    /// `maxSingleReferenceCount >= 1` on `VkVideoEncodeAV1CapabilitiesKHR`
+    /// (AV1, ADR-0002's AV1 follow-up — this crate only ever requests AV1's
+    /// `SINGLE_REFERENCE` prediction mode, never uni-/bidirectional-compound,
+    /// so this is the matching floor check). This is the floor
+    /// ADR-0002's single-forward-reference P-frame design needs for every
+    /// codec it covers. `false` means GOP encode falls back to key-frame-only
+    /// with no error (documented degradation, not silent — callers can
+    /// inspect this field). This gate is real and driver-queried for AV1 too,
+    /// even though AV1's underlying per-frame encode is separately
+    /// known-broken on this crate's reference hardware (see `adr/0001`'s AV1
+    /// addendum): the gate answers whether this driver would honor the
+    /// request, not whether the resulting bitstream decodes.
+    pub(crate) supports_p_frames: bool,
+    /// `true` iff `VkVideoEncodeCapabilitiesKHR::rateControlModes` includes
+    /// `CBR` (ADR-0002). `false` means rate control falls back to today's
+    /// fixed-QP `DISABLED` mode regardless of `VideoEncoderConfig::rate_control`.
+    pub(crate) supports_cbr: bool,
+}
+
+/// DPB sizing for [`crate::vulkan::session_encode::create_video_session`]
+/// (ADR-0002) — [`Self::IDR_ONLY`] reproduces Stage 1's exact session-create
+/// values; GOP mode requests more slots/active references (see
+/// `VulkanVideoEncoder::open`).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SessionDpbConfig {
+    pub(crate) max_dpb_slots: u32,
+    pub(crate) max_active_reference_pictures: u32,
+}
+
+impl SessionDpbConfig {
+    /// Stage 1's exact values: one slot, zero active references (every
+    /// frame is an independent IDR, never referenced).
+    pub(crate) const IDR_ONLY: Self = Self {
+        max_dpb_slots: 1,
+        max_active_reference_pictures: 0,
+    };
 }
 
 impl Capabilities {
@@ -514,12 +558,33 @@ pub(crate) fn query_capabilities(
             height: caps.min_coded_extent.height,
         });
     }
+    // ADR-0002 (+ its AV1 follow-up): `h264_caps`/`hevc_caps`/`av1_caps` are
+    // only meaningfully populated when this query's profile matches their own
+    // codec — a query for a different codec leaves that struct at its zero
+    // default (each is chained conditionally above), so only the floor check
+    // matching this query's actual profile is read.
+    let per_codec_p_frame_floor_ok = if is_av1 {
+        av1_caps.max_single_reference_count >= 1
+    } else if is_hevc {
+        hevc_caps.max_p_picture_l0_reference_count >= 1
+    } else {
+        h264_caps.max_p_picture_l0_reference_count >= 1
+    };
+    let supports_p_frames = caps.max_dpb_slots >= 2
+        && caps.max_active_reference_pictures >= 1
+        && per_codec_p_frame_floor_ok;
+    let supports_cbr = encode_caps
+        .rate_control_modes
+        .contains(vk::VideoEncodeRateControlModeFlagsKHR::CBR);
     Ok(Capabilities {
         min_coded_extent: caps.min_coded_extent,
         max_coded_extent: caps.max_coded_extent,
         picture_access_granularity: caps.picture_access_granularity,
         min_bitstream_buffer_size_alignment: caps.min_bitstream_buffer_size_alignment,
         std_header_version: caps.std_header_version,
+        max_dpb_slots: caps.max_dpb_slots,
+        supports_p_frames,
+        supports_cbr,
     })
 }
 

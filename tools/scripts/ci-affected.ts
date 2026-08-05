@@ -14,9 +14,17 @@
  *   bun tools/scripts/ci-affected.ts --files "crates/iso-bmff/src/lib.rs Cargo.lock"
  *   bun tools/scripts/ci-affected.ts --one-line | --names | --json
  *
+ * Cargo.lock changes are diffed rather than treated as a blanket trigger: the
+ * lockfile's [[package]] entries at merge-base vs. HEAD are parsed (smol-toml) and
+ * compared identity-by-identity (name+version, then checksum/dependencies for a
+ * same-identity change) — only the package names that actually moved seed the
+ * reverse-dependents BFS below, same as a changed source file would. Falls back to
+ * ALL only when the diff can't be trusted (parse failure, lockfile format-version
+ * bump, or `--files` debug mode with no git ref to diff against).
+ *
  * Output contract (for CI):
  *   NONE            no affected crates (skip clippy/test)
- *   ALL             everything affected (root manifest / lockfile / unknown rust)
+ *   ALL             everything affected (root manifest / unparseable lockfile diff / unknown rust)
  *   pkg1 pkg2 …     space-separated affected package names (one line)
  *
  * Wired into ci.yml: PRs run clippy + tests on the affected set; main pushes
@@ -24,7 +32,8 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { dirname, join, normalize, relative, sep } from "node:path";
+import { dirname, normalize, relative, sep } from "node:path";
+import { parse as parseToml } from "smol-toml";
 
 interface Dep {
   name: string;
@@ -43,7 +52,10 @@ interface Metadata {
   packages: Package[];
 }
 
-const ALL_TRIGGERS = [/^Cargo\.toml$/, /^Cargo\.lock$/, /\.cargo\//, /^rust-toolchain(\.toml)?$/, /^\.github\//];
+// Cargo.lock is deliberately NOT here — it gets a real diff (lockfileChangedNames)
+// instead of a blanket trigger, since a single new dependency edge (the common case)
+// only ever touches a handful of [[package]] entries, not the whole workspace.
+const ALL_TRIGGERS = [/^Cargo\.toml$/, /\.cargo\//, /^rust-toolchain(\.toml)?$/, /^\.github\//];
 
 function usage(): never {
   console.error(`Usage: bun tools/scripts/ci-affected.ts [--base <ref> | --files "a b c"] [--one-line|--names|--json]
@@ -110,6 +122,85 @@ function loadMetadata(): Metadata {
   };
 }
 
+interface LockPackage {
+  name: string;
+  version: string;
+  checksum?: string;
+  dependencies?: string[];
+}
+
+interface LockDoc {
+  formatVersion: unknown; // top-level `version = N`; undefined for an empty/missing lockfile
+  packages: LockPackage[];
+}
+
+/** `git show <ref>:<path>`, but a missing path/ref (e.g. lockfile didn't exist yet at
+ * the merge-base) returns `""` instead of failing the whole script — a real, expected
+ * case (new lockfile), not an error. */
+function gitShowOrEmpty(ref: string, path: string): string {
+  const r = spawnSync("git", ["show", `${ref}:${path}`], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  return r.status === 0 ? (r.stdout ?? "") : "";
+}
+
+/** Parses Cargo.lock's TOML into its `[[package]]` array. `null` means "could not be
+ * trusted" (malformed) — the caller falls back to ALL rather than guessing. */
+function parseLockPackages(src: string): LockDoc | null {
+  if (!src.trim()) return { formatVersion: undefined, packages: [] };
+  try {
+    const doc = parseToml(src) as { version?: unknown; package?: LockPackage[] };
+    return { formatVersion: doc.version, packages: doc.package ?? [] };
+  } catch {
+    return null;
+  }
+}
+
+function lockEntryKey(p: LockPackage): string {
+  return `${p.name}@${p.version}`;
+}
+
+/**
+ * Diffs Cargo.lock's [[package]] entries between merge-base(base, HEAD) and HEAD,
+ * returning the set of package NAMES (workspace or external — the reverse-dependents
+ * BFS in `main` climbs from either) whose lock entry was added, removed, or changed
+ * (version, checksum, or dependency list — the last one is what catches a workspace
+ * crate gaining a new dependency edge with no version bump, this tool's original
+ * motivating case).
+ *
+ * Returns the literal string "ALL" when the diff can't be trusted: a parse failure on
+ * either side, or the lockfile format version itself changing (`version = N` in
+ * Cargo.lock's header) — a format change could mean this function's own field
+ * assumptions no longer hold, so it defers to the old conservative behavior rather
+ * than silently under-reporting.
+ */
+function lockfileChangedNames(base: string): Set<string> | "ALL" {
+  const mergeBase = run("git", ["merge-base", base, "HEAD"]).trim();
+  const oldDoc = parseLockPackages(gitShowOrEmpty(mergeBase, "Cargo.lock"));
+  const newDoc = parseLockPackages(gitShowOrEmpty("HEAD", "Cargo.lock"));
+  if (!oldDoc || !newDoc) return "ALL";
+  if (oldDoc.formatVersion !== undefined && newDoc.formatVersion !== undefined && oldDoc.formatVersion !== newDoc.formatVersion) {
+    return "ALL";
+  }
+
+  const oldByKey = new Map(oldDoc.packages.map((p) => [lockEntryKey(p), p]));
+  const newByKey = new Map(newDoc.packages.map((p) => [lockEntryKey(p), p]));
+  const changed = new Set<string>();
+
+  for (const [key, p] of newByKey) {
+    const prev = oldByKey.get(key);
+    if (!prev) {
+      changed.add(p.name); // new identity: added package, or a version/source bump
+      continue;
+    }
+    const sameChecksum = (prev.checksum ?? null) === (p.checksum ?? null);
+    const sameDeps = JSON.stringify(prev.dependencies ?? []) === JSON.stringify(p.dependencies ?? []);
+    if (!sameChecksum || !sameDeps) changed.add(p.name);
+  }
+  for (const [key, p] of oldByKey) {
+    if (!newByKey.has(key)) changed.add(p.name); // identity removed at this version
+  }
+  return changed;
+}
+
 function main(): void {
   const opts = parseArgs(process.argv.slice(2));
   const files = changedFiles(opts);
@@ -122,6 +213,7 @@ function main(): void {
   let all = false;
   for (const f of files) {
     const path = toSlash(f);
+    if (path === "Cargo.lock") continue; // handled separately below (real diff, not a blanket trigger)
     if (ALL_TRIGGERS.some((re) => re.test(path))) {
       all = true;
       break;
@@ -149,20 +241,44 @@ function main(): void {
     // is not Rust workspace code — ignore.
   }
 
+  // --- Cargo.lock: diff package identities instead of a blanket trigger ---
+  if (!all && files.includes("Cargo.lock")) {
+    if (opts.files) {
+      // --files debug/testing mode has no git ref to diff the lockfile's old side
+      // against — keep the old conservative behavior rather than guessing.
+      all = true;
+    } else {
+      const seed = lockfileChangedNames(opts.base ?? "origin/main");
+      if (seed === "ALL") {
+        all = true;
+      } else {
+        for (const name of seed) changedPkgs.add(name);
+      }
+    }
+  }
+
   // --- reverse graph: dependent -> set of crates it depends on ------------
   const byName = new Map<string, Package>();
   for (const p of meta.packages) byName.set(p.name, p);
-  // reverse edges over ALL kinds (normal + build + dev), target-gated included
+  // Reverse edges over ALL kinds (normal + build + dev), target-gated included.
+  // `byName.has(d.name)` spans the FULL resolved graph — cargo metadata's `packages`
+  // already lists every external crate too, not just workspace members — so this
+  // only actually skips a dep name that's declared but never resolved (e.g. an
+  // optional/platform-gated dep no active feature set pulls in).
   const dependents = new Map<string, Set<string>>();
   for (const p of meta.packages) {
     for (const d of p.deps) {
-      if (!byName.has(d.name)) continue; // registry dep
+      if (!byName.has(d.name)) continue;
       if (!dependents.has(d.name)) dependents.set(d.name, new Set());
       dependents.get(d.name)!.add(p.name);
     }
   }
 
   // --- BFS closure over dependents ----------------------------------------
+  // changedPkgs may now include external crate names (from the lockfile diff above,
+  // e.g. a transitive registry crate's version bump) — the BFS climbs through them
+  // the same way it climbs through a changed workspace crate; the workspace-only
+  // filter happens at output time below.
   const affected = new Set<string>(changedPkgs);
   const queue = [...changedPkgs];
   while (queue.length > 0) {
@@ -174,6 +290,8 @@ function main(): void {
       }
     }
   }
+  const workspaceNames = new Set(byDir.values());
+  const workspaceAffected = new Set([...affected].filter((n) => workspaceNames.has(n)));
 
   // --- output ---------------------------------------------------------------
   if (all) {
@@ -184,7 +302,7 @@ function main(): void {
     }
     return;
   }
-  if (affected.size === 0) {
+  if (workspaceAffected.size === 0) {
     if (opts.mode === "json") {
       console.log(JSON.stringify({ affected: [], all: false, none: true, files: files.length }));
     } else {
@@ -192,7 +310,7 @@ function main(): void {
     }
     return;
   }
-  const names = [...affected].sort();
+  const names = [...workspaceAffected].sort();
   if (opts.mode === "json") {
     console.log(JSON.stringify({ affected: names, all: false, none: false, files: files.length }));
   } else if (opts.mode === "names") {

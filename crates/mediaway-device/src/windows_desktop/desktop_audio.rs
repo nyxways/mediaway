@@ -1,11 +1,10 @@
 //! Desktop audio capture (loopback / process-loopback) — a thin wrapper over
-//! `mediaway-device-windows-audio`'s shared WASAPI engine
-//! ([`crate::windows_audio::WindowsWasapiCapture`]).
+//! [`crate::windows_audio::WindowsWasapiCapture`]'s shared WASAPI engine.
 //!
 //! Loopback/process-loopback and microphone capture share one WASAPI capture-loop
-//! implementation (`mediaway-device/adr/0007-domain-crate-split.md`'s "(b)" decision) — this
-//! crate does not reimplement it, only translates [`DesktopAudioCaptureConfig`] into the
-//! shared engine's internal config and delegates every [`DesktopAudioCapture`] method.
+//! implementation — this module does not reimplement it, only translates
+//! [`DesktopAudioCaptureConfig`] into the shared engine's internal config and delegates every
+//! [`DesktopAudioCapture`] method.
 
 #![allow(unsafe_code)]
 

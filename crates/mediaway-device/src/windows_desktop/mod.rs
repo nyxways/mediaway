@@ -3,8 +3,7 @@
 //! ([`WindowsWindowCapture`]) — both implement `crate::desktop::DesktopVideoCapture`
 //! — and desktop audio (loopback / process-loopback) via
 //! [`WindowsDesktopAudioCapture`] — implements `crate::desktop::DesktopAudioCapture`
-//! by wrapping `mediaway-device-windows-audio`'s shared WASAPI engine. Split out of
-//! `mediaway-device-windows` — see `mediaway-device/adr/0007-domain-crate-split.md`.
+//! by wrapping [`crate::windows_audio`]'s shared WASAPI engine.
 
 #![allow(clippy::too_long_first_doc_paragraph)] // crate-root doc became module doc (ADR-0021 merge)
 #![cfg_attr(windows, allow(unsafe_code))]
@@ -39,8 +38,8 @@ pub use host_stub::{
 };
 
 /// Serializes tests that touch real hardware (DXGI/WGC). Mirrors
-/// `mediaway-device-windows`'s `HARDWARE_TEST_LOCK` — each split-out backend crate needs its
-/// own, since Rust's default test harness runs `#[test]`s concurrently on separate threads.
+/// [`crate::windows`]'s `HARDWARE_TEST_LOCK` — each hardware-touching module needs its own,
+/// since Rust's default test harness runs `#[test]`s concurrently on separate threads.
 #[cfg(all(test, windows))]
 pub(crate) static HARDWARE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 

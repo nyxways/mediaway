@@ -1,10 +1,9 @@
 //! Microphone capture config and [`AudioCapture`] trait — the input half of this
 //! crate's "Audio I/O" ([`crate::audio::AudioPlayback`] is the output half).
 //!
-//! Split out of `mediaway-device`'s former unified `audio.rs` — see
-//! `mediaway-device/adr/0007-domain-crate-split.md`. Narrowed to microphone only:
-//! loopback/process-loopback ("what's playing") moved to `mediaway-device-desktop`,
-//! since those capture desktop output, not a real audio input device.
+//! Narrowed to microphone only: loopback/process-loopback ("what's playing") lives in
+//! [`crate::desktop`] instead, since those capture desktop output, not a real audio input
+//! device.
 
 #![forbid(unsafe_code)]
 

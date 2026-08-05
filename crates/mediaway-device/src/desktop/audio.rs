@@ -1,11 +1,10 @@
 //! Desktop audio capture config (loopback / process-loopback — "what's playing") and
 //! [`DesktopAudioCapture`] trait.
 //!
-//! Split out of `mediaway-device`'s former unified `audio.rs` — see
-//! `mediaway-device/adr/0007-domain-crate-split.md`. Grouped with screen/window video
-//! capture (this crate), not with `mediaway-device-audio`'s microphone/playback "Audio
-//! I/O", because loopback/process-loopback capture *what the desktop is already
-//! rendering* — a desktop-capture concept, not a real audio input/output device.
+//! Grouped with screen/window video capture (this module), not with [`crate::audio`]'s
+//! microphone/playback "Audio I/O", because loopback/process-loopback capture *what the
+//! desktop is already rendering* — a desktop-capture concept, not a real audio input/output
+//! device.
 
 #![forbid(unsafe_code)]
 

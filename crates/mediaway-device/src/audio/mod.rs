@@ -1,14 +1,12 @@
 //! Audio I/O facade: microphone capture ([`AudioCapture`]) and render-endpoint playback
-//! ([`AudioPlayback`]) — "Audio" here means both I/O directions, not capture alone. Split
-//! out of `mediaway-device`'s former unified facade — see
-//! `mediaway-device/adr/0007-domain-crate-split.md`.
+//! ([`AudioPlayback`]) — "Audio" here means both I/O directions, not capture alone.
 //!
 //! Desktop audio (loopback / process-loopback — capturing what the desktop is already
-//! rendering) lives in `mediaway-device-desktop` instead: it is a desktop-capture
-//! concept, not a real audio input/output device.
+//! rendering) lives in [`crate::desktop`] instead: it is a desktop-capture concept, not a
+//! real audio input/output device.
 //!
-//! - **Low-level:** [`AudioCapture`] / [`AudioPlayback`] — OS sessions in
-//!   `mediaway-device-windows-audio` (and future platform crates).
+//! - **Low-level:** [`AudioCapture`] / [`AudioPlayback`] — OS sessions in the
+//!   `windows_audio` module (and future platform modules).
 
 #![allow(clippy::too_long_first_doc_paragraph)] // crate-root doc became module doc (ADR-0021 merge)
 #![forbid(unsafe_code)]

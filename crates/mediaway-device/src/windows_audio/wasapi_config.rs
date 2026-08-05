@@ -1,11 +1,10 @@
 //! Internal WASAPI capture config — shared by every audio-domain source (microphone,
-//! render-endpoint loopback, process loopback) since [`crate::windows_audio::WindowsWasapiCapture`]'s
-//! engine is one shared implementation (`mediaway-device/adr/0007-domain-crate-split.md`'s
-//! confirmed "(b): keep the WASAPI engine shared, wrap it per domain" decision).
+//! render-endpoint loopback, process loopback) since
+//! [`crate::windows_audio::WindowsWasapiCapture`]'s engine is one shared implementation,
+//! wrapped per domain rather than duplicated.
 //!
-//! Structurally identical to the pre-split facade's `AudioCaptureConfig`/
-//! `AudioCaptureSource`/`ProcessTreeScope` — this crate now owns that shape internally.
-//! `mediaway-device-windows-audio` (microphone) and `mediaway-device-windows-desktop`
+//! Structurally identical to the top-level `AudioCaptureConfig`/`AudioCaptureSource`/
+//! `ProcessTreeScope`. [`crate::windows_audio`] (microphone) and [`crate::windows_desktop`]
 //! (loopback/process-loopback) each translate their own public, domain-narrowed config
 //! type into this one before calling [`crate::windows_audio::WindowsWasapiCapture::open`].
 

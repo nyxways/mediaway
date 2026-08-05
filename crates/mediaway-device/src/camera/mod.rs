@@ -1,7 +1,7 @@
-//! Camera video capture facade — split out of `mediaway-device`'s former unified video
-//! capture surface. See `mediaway-device/adr/0007-domain-crate-split.md`.
+//! Camera video capture facade.
 //!
-//! - **Low-level:** [`CameraCapture`] — OS capture sessions in `mediaway-device-<platform>`.
+//! - **Low-level:** [`CameraCapture`] — OS capture sessions in the platform modules
+//!   (`windows_camera`, `linux`).
 
 #![forbid(unsafe_code)]
 

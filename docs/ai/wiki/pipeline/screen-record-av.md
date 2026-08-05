@@ -7,15 +7,23 @@ video, not this test's Zero-Copy DX11 capture — see its own doc comment).
 
 Test: `crates/mediaway/tests/screen_mic_av_smoke.rs`.
 
-## Composition — not an `EncodeSession` extension
+## Composition — via `EncodeSession::open_with_audio`
 
-ADR-0014 scopes `EncodeSession` to **video-only, single-track**; extending its public
-shape for a second track needs a new ADR "if the shape changes materially" (see ADR-0014
-§ Alternatives, roadmap Stage 1b). This test is the first real two-track caller, but it
-does **not** touch `EncodeSession` — it composes the audio track directly against a
-shared `mediaway_container::mp4::Muxer` (`Muxer::with_fragment_batch` → `add_track` ×2 →
-`begin` → interleaved `push_packet`), the exact pattern already proven in
-`crates/mediaway-encoder/tests/windows/av_fmp4_smoke.rs`. Smaller diff, no new ADR triggered.
+ADR-0014 originally scoped `EncodeSession` to video-only, single-track ("extend … when a
+real caller needs it — new ADR at that point if the shape changes materially"); this
+test was that first real two-track caller and initially hand-composed the audio track
+against a shared `mediaway_container::mp4::Muxer` (`Muxer::with_fragment_batch` →
+`add_track` ×2 → `begin` → `push_packet`, the pattern from
+`crates/mediaway-encoder/tests/windows/av_fmp4_smoke.rs`) rather than change the
+session's shape. ADR-0003 (2026-08-01, roadmap Stage 1b) then added the audio track:
+`open_with_audio` registers both tracks (video 0, audio 1) before the muxer's
+`begin()`, the loop feeds capture frames via `write_frame`/`write_audio_frame` (the
+session drains encoded packets into the shared muxer on every push), and `finish()`
+flushes both encoders and returns the two-track fMP4 bytes. The test now uses that
+path — the hand-rolled muxer composition is gone. Consequence: packet counts are no
+longer observable through the session, so the demux assertions bound per-track demuxed
+packets against pushed frames (video: 1 packet per H.264 frame; audio: ≥1 demuxed
+packet).
 
 ```mermaid
 flowchart LR
@@ -27,11 +35,14 @@ flowchart LR
         VE[platform::AutoEncoder::open\nH.264 DX11 Zero-Copy]
         AE[WindowsAudioEncoder\nAAC]
     end
+    subgraph session [EncodeSession::open_with_audio]
+        MUX[mp4::Muxer 2 tracks]
+    end
     SC -- VideoFrame Gpu Bgra8 --> VE
     MC -- AudioFrame F32 --> AE
-    VE -- Packet track 0 --> MUX[mp4::Muxer 2 tracks]
-    AE -- Packet track 1 --> MUX
-    MUX --> DEMUX[mp4::Demuxer: assert 2 streams]
+    VE -- write_frame: track 0 --> MUX
+    AE -- write_audio_frame: track 1 --> MUX
+    MUX -- finish() fMP4 bytes --> DEMUX[mp4::Demuxer: assert 2 streams]
 ```
 
 ## BGRA straight into the encoder — no manual color convert

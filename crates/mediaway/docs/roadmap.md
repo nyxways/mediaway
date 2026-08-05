@@ -24,9 +24,9 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 - [x] Screen-record composed through this crate end-to-end (`platform::ScreenCapture::open`
       + `platform::Microphone::open` + `platform::AutoEncoder::open` DX11 Zero-Copy H.264 +
       `WindowsAudioEncoder` AAC → shared two-track `mediaway_container::mp4::Muxer`) —
-      `tests/screen_mic_av_smoke.rs`. `EncodeSession` itself stays untouched (see 1b); the
-      second track is composed directly against the muxer, mirroring
-      `mediaway-encoder-windows/tests/av_fmp4_smoke.rs`
+      `tests/screen_mic_av_smoke.rs` (composed through `EncodeSession::open_with_audio`
+      since 1b — see below; it previously hand-rolled the second track against the
+      muxer, mirroring `mediaway-encoder-windows/tests/av_fmp4_smoke.rs`)
 - [x] Decode → trim → splice → re-encode round trip through real mux/demux —
       `tests/trim_and_splice_windows.rs` + `examples/pipeline/trim_and_splice.rs`; this is what
       surfaced and drove the AVCC/Annex-B extradata fix in `mediaway-decoder-windows`
@@ -41,8 +41,11 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
       `VoiceActivityDetector`) wiring — `attach_audio_processor`/`attach_vad`,
       `poll_vad_score`; unit-tested with synthetic PCM (`src/session_tests.rs`), no real
       mic needed
-- [ ] Migrate `tests/screen_mic_av_smoke.rs` off its hand-rolled second-track muxing
-      onto `EncodeSession::open_with_audio` directly (now possible, not yet done)
+- [x] Migrate `tests/screen_mic_av_smoke.rs` off its hand-rolled second-track muxing
+      onto `EncodeSession::open_with_audio` directly — the test now opens the session
+      with both encoders, feeds capture frames through
+      `write_frame`/`write_audio_frame`, and takes the finished two-track fMP4 from
+      `finish()`
 
 ### 2 — Web / 3 — Linux / 4 — Other
 

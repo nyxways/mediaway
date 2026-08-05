@@ -81,8 +81,9 @@ impl<E: VideoEncoder> EncodeSession<E> {
     /// encoders both typically report `id: 0` by default (unlike
     /// [`open`](Self::open)'s single-track case, where that default is never a
     /// conflict). This renumbers explicitly (video `0`, audio `1`) rather than trusting
-    /// each encoder's own default, the same renumbering `tests/screen_mic_av_smoke.rs`
-    /// already does by hand via `StreamInfo::with_id`.
+    /// each encoder's own default — the same renumbering `tests/screen_mic_av_smoke.rs`
+    /// used to do by hand via `StreamInfo::with_id` before migrating onto this
+    /// constructor.
     ///
     /// # Errors
     ///
@@ -187,7 +188,7 @@ impl<E: VideoEncoder> EncodeSession<E> {
     ///
     /// With no [`attach_audio_processor`](Self::attach_audio_processor) call, `frame`
     /// goes straight to the audio encoder (the fast path `tests/screen_mic_av_smoke.rs`
-    /// hand-rolls today). With a processor attached, `frame` is pushed into it and every
+    /// now exercises via this method). With a processor attached, `frame` is pushed into it and every
     /// resulting processed 10ms block (zero, one, or several — `AudioProcessor`
     /// re-blocks internally) is scored by [`attach_vad`](Self::attach_vad)'s detector,
     /// if any, then pushed to the audio encoder. See

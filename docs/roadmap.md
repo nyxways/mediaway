@@ -52,10 +52,10 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
 ## Active & Planned Work Items (Wiki & Architecture Backlog)
 
 ### 1. High-Level Pipeline & FFI Bindings
-- [ ] **Multi-track `EncodeSession`**: native two-track (video + audio) support landed
+- [x] **Multi-track `EncodeSession`**: native two-track (video + audio) support landed
       (`EncodeSession::open_with_audio` / `write_audio_frame`, `crates/mediaway/src/session.rs`);
-      remaining gap is migrating `tests/screen_mic_av_smoke.rs` off its hand-rolled second-track
-      muxing onto the native API.
+      `tests/screen_mic_av_smoke.rs` migrated onto the native API — its hand-rolled
+      second-track muxing is gone (Stage 1b in `crates/mediaway/docs/roadmap.md`).
 - [ ] **C ABI facade**: container + device C ABI mature and hardware-verified. `mediaway-ffi`'s
       pipeline module now covers encode, decode (`AutoDecoder`,
       `adr/pipeline/0004-auto-decode-c-abi.md`), and a capture-to-encode convenience bridge

@@ -43,8 +43,8 @@
 )]
 
 use mediaway_common::{Bytes, Packet, PixelFormat, Rational};
+use mediaway_decoder::vulkan::VulkanVideoDecoder;
 use mediaway_decoder::{VideoDecoder, VideoDecoderConfig, VideoOutputPreference};
-use mediaway_decoder_vulkan::VulkanVideoDecoder;
 
 const WIDTH: u32 = 64;
 const HEIGHT: u32 = 16;

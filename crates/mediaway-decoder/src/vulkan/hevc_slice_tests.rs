@@ -75,6 +75,11 @@ fn make_sps(log2_max_pic_order_cnt_lsb: u32) -> HevcSps {
         max_transform_hierarchy_depth_intra: 0,
         general_profile_idc: 1,
         general_level_idc: 60,
+        general_tier_flag: false,
+        general_progressive_source_flag: true,
+        general_interlaced_source_flag: false,
+        general_non_packed_constraint_flag: true,
+        general_frame_only_constraint_flag: true,
         amp_enabled_flag: false,
         sample_adaptive_offset_enabled_flag: false,
         sps_temporal_mvp_enabled_flag: false,
@@ -104,6 +109,7 @@ fn make_pps(num_extra_slice_header_bits: u32, output_flag_present_flag: bool) ->
         weighted_pred_flag: false,
         weighted_bipred_flag: false,
         transquant_bypass_enabled_flag: false,
+        pps_loop_filter_across_slices_enabled_flag: false,
     }
 }
 

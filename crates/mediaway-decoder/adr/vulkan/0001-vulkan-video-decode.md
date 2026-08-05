@@ -1036,3 +1036,188 @@ asserting on decoded pixel values. `cargo test -p mediaway-decoder-vulkan`
 is green (62 lib + 2 integration tests, one hard-passing H.264, one
 soft-skipping HEVC). Flip `hardware_hevc_decode.rs`'s check back to a hard
 assertion once the remaining bug is found. AV1 remains untouched.
+
+## Addendum (2026-08-05): HEVC all-zero decode — root cause found and fixed, real decode hardware-verified
+
+Picked up the two open hypotheses this addendum's own predecessor flagged
+("signaled level too low" and "hardcoded `StdVideoH265ProfileTierLevel`
+constraint bits"), tested both for real against the RTX 4090, found neither
+was the actual root cause, then found a third, previously-undiscovered bug
+that was. Note: this crate now lives at `mediaway-decoder::vulkan` (module,
+not a separate `mediaway-decoder-vulkan` crate — see ADR-0021's crate merge,
+2026-08-03); commands below use the current crate name.
+
+### Prerequisite fix: the hardware tests had silently stopped compiling/running
+
+Before any of the hypothesis testing below could happen, two real,
+independent regressions from ADR-0021's crate-merge commit (`953d6a3`,
+2026-08-03) had to be fixed:
+
+1. **`Cargo.toml` had no `[[test]]` entries for either Vulkan hardware
+   test.** The merge moved `hardware_h264_decode.rs`/`hardware_hevc_decode.rs`
+   into a `tests/vulkan/` subdirectory, but Cargo's default `tests/*.rs`
+   auto-discovery does not descend into subdirectories — only the sibling
+   `tests/cpu_roundtrip.rs` (top-level) was ever compiled or run.
+   `cargo test -p mediaway-decoder` had been silently skipping **both**
+   Vulkan hardware tests, including the "hard-passing, hardware-verified"
+   H.264 one, since the merge — nobody would have caught a regression there.
+   Fixed: added explicit `[[test]] name = "hardware_h264_decode"` /
+   `"hardware_hevc_decode"` entries with `path = "tests/vulkan/..."`.
+2. **Both test files still imported the pre-merge crate name**
+   (`use mediaway_decoder_vulkan::VulkanVideoDecoder;`), which no longer
+   exists as a separate crate. Fixed to
+   `use mediaway_decoder::vulkan::VulkanVideoDecoder;`.
+
+With both fixed, `cargo test -p mediaway-decoder --test hardware_h264_decode`
+was re-run first as a sanity check: **still hard-passes** with the same real
+pixel-value assertions the 2026-07-30 addendum describes — confirms the
+crate merge did not silently break the already-working H.264 path, and
+confirms this session has genuine hardware access.
+
+### Hypothesis 1 (signaled level too low) — tested for real, ruled out
+
+`mediaway-encoder`'s own HEVC PPS/SPS construction
+(`crates/mediaway-encoder/src/vulkan/hevc_params.rs`) hardcodes
+`LEVEL_IDC_1_0` (`STD_VIDEO_H265_LEVEL_IDC_1_0`) unconditionally, regardless
+of picture size — confirmed by reading that file directly. Level 1's own
+`MaxLumaPs` (36864 samples, ITU-T H.265 Annex A Table A.1) is smaller than
+this test's 256×192 = 49152-sample picture, a genuine out-of-spec signal.
+Tested directly: temporarily forced `HevcSps::general_level_idc = 93` (Level
+3.1, comfortably sufficient) immediately before session-parameters
+construction in `decoder_hevc.rs::build_session_hevc`, re-ran
+`hardware_hevc_decode.rs` — **output was still all-zero, byte-identical to
+before the override** (`nonzero_luma=0/49152`). The override was reverted
+immediately after (not a real fix, a one-shot diagnostic). **Conclusively
+ruled out**: this driver does not use `general_level_idc` to gate whether
+decode actually runs.
+
+### Hypothesis 2 (hardcoded PTL/constraint-flag bits) — real bug found, fixed, but not the root cause
+
+Fetched FFmpeg's real `libavcodec/vulkan_hevc.c` (`set_sps`/`set_vps`)
+directly and found it routes `general_level_idc` through its own
+`ff_vk_h265_level_to_vk()` conversion function rather than a raw cast, and
+echoes `general_tier_flag`/`general_progressive_source_flag`/
+`general_interlaced_source_flag`/`general_non_packed_constraint_flag`/
+`general_frame_only_constraint_flag` from the real parsed
+`profile_tier_level()` bits. Cross-checking this crate's own
+`HevcSps::to_std_profile_tier_level` against that found a real, confirmed
+bug distinct from what the predecessor addendum's hypothesis literally
+named: `StdVideoH265LevelIdc` is **not** the raw ITU-T H.265
+`general_level_idc` byte (`30 * level_number`, e.g. `93` for Level 3.1) —
+it is vulkanalia-sys's own small sequential ordinal
+(`STD_VIDEO_H265_LEVEL_IDC_1_0 == 0`, `..._3_1 == 4`, `..._6_2 == 12`,
+confirmed by reading `vulkanalia-sys-0.35.0/src/video.rs` directly). This
+crate's original code did `StdVideoH265LevelIdc(i32::from(self.general_level_idc))`
+— a raw cast, building `StdVideoH265LevelIdc(30)` for a real Level-1.0
+stream, an enum value with no defined meaning (H.264's `level_idc` field has
+the exact same raw-cast shape, `StdVideoH264LevelIdc(30)` for a Level-3.0
+test stream that raw-encodes as `30` — and that already-hardware-verified
+path tolerates it fine, which is what predicted hypothesis 1's failure
+above and is consistent with hypothesis 2 also not being load-bearing).
+Fixed anyway, since it is real and spec-incorrect regardless of whether it
+explains this bug: added `std_level_idc()` (`hevc_params.rs`), a real
+lookup table (Table A.1's 13 defined levels) converting the raw byte to the
+correct ordinal, plus parsed-and-echoed (not hardcoded)
+`general_tier_flag`/`general_progressive_source_flag`/
+`general_interlaced_source_flag`/`general_non_packed_constraint_flag`/
+`general_frame_only_constraint_flag` on `HevcSps`. Re-ran the hardware
+test after this fix alone (before hypothesis 1's forced-level experiment
+above): **still all-zero**. **Real fix, kept, but not the root cause.**
+
+### The actual root cause: `pps_loop_filter_across_slices_enabled_flag` was never read, and it does gate a real slice-header bit
+
+Neither hypothesis explained the bug, so the search moved beyond the
+predecessor addendum's two named hypotheses. `HevcPps::parse`'s own module
+comment claimed: *"`pps_loop_filter_across_slices_enabled_flag` + deblocking-
+override fields + scaling-list/extension fields follow — none of these add
+or remove slice/CTU-level bitstream syntax elements."* This claim was
+**checked against FFmpeg's real source and found to be wrong**. Fetched
+`libavcodec/hevc/ps.c` (`ff_hevc_decode_nal_pps`) directly: confirms
+`seq_loop_filter_across_slices_enabled_flag` (FFmpeg's name for the same
+ITU-T H.265 `pps_loop_filter_across_slices_enabled_flag` syntax element) is
+read right after the tiles-conditional block. Then fetched
+`libavcodec/hevc/hevcdec.c` (`hls_slice_header`) and found the real
+conditional read:
+
+```c
+if (pps->seq_loop_filter_across_slices_enabled_flag &&
+    (sh->slice_sample_adaptive_offset_flag[0] ||
+     sh->slice_sample_adaptive_offset_flag[1] ||
+     !sh->disable_deblocking_filter_flag)) {
+    sh->slice_loop_filter_across_slices_enabled_flag = get_bits1(gb);
+} else {
+    sh->slice_loop_filter_across_slices_enabled_flag = pps->seq_loop_filter_across_slices_enabled_flag;
+}
+```
+
+This **is** a real, conditional slice-header bitstream syntax element — the
+module comment's claim was simply incorrect. `mediaway-encoder`'s own HEVC
+PPS construction (`crates/mediaway-encoder/src/vulkan/hevc_params.rs::build_pps`)
+sets `flags.set_pps_loop_filter_across_slices_enabled_flag(1)` — confirmed
+by reading that file directly — so the real encoder's actual slice headers
+almost certainly contain this bit (PPS flag is `1`, and either SAO is active
+per-slice or deblocking is not disabled, satisfying the OR condition). This
+crate's own `HevcPps::parse`, however, **never read this bit at all** — it
+stopped parsing right after `entropy_coding_sync_enabled_flag`, before
+reaching it, so `HevcPps::to_std`'s `StdVideoH265PictureParameterSet` always
+reported `pps_loop_filter_across_slices_enabled_flag = 0` (default) to the
+driver regardless of what the real bitstream's PPS actually signaled. A
+driver session parameters object claiming this PPS flag is `0` expects
+**no** `slice_loop_filter_across_slices_enabled_flag` bit in the slice
+header; a real bitstream produced with the flag `1` **has** that bit —
+exactly a one-bit slice-header misalignment right before CTU/CABAC data
+begins, the same *class* of bug (and the same "runs with zero `VkResult`
+errors, reconstructs garbage/zero" symptom) as the two `Std*Flags` bugs the
+predecessor addendum already found and fixed, just one field further into
+the PPS than either of those two rounds had read.
+
+Fixed: `HevcPps::parse` now reads `pps_loop_filter_across_slices_enabled_flag`
+and `deblocking_filter_control_present_flag` (rejecting the latter as
+`Unsupported` if `1`, since this crate does not yet build the
+`deblocking_filter_control_present_flag`/`deblocking_filter_override_enabled_flag`/
+`pps_deblocking_filter_disabled_flag`/`pps_beta_offset_div2`/`pps_tc_offset_div2`
+sub-fields its presence would require); `HevcPps` gained a
+`pps_loop_filter_across_slices_enabled_flag` field, echoed into
+`StdVideoH265PpsFlags` in `to_std`. The incorrect module comment was
+corrected in place.
+
+The hypothesis-2 fixes above (the new `ProfileTierLevel`/`parse_profile_tier_level`/
+`std_level_idc` machinery) pushed `hevc_params.rs` over this workspace's
+1000-line-per-source-file rule; split into a new `hevc_params/hevc_ptl.rs`
+submodule (`mod hevc_ptl;` inside `hevc_params.rs`, mirroring
+`windows/d3d12_video_decode.rs`'s own per-concern `mod`-per-file split for
+the same reason) with its own sibling `hevc_ptl_tests.rs` — a file-size
+split, not a different architecture; `hevc_params.rs` is 926 lines after
+the split.
+
+### Verified fix
+
+`cargo test -p mediaway-decoder --test hardware_hevc_decode -- --nocapture`
+now passes with **hard** `assert_ne!`/`assert!` (no soft skip, no
+`eprintln!` skip path reached): a real, driver-produced HEVC IDR bitstream
+(via this workspace's own hardware-verified HEVC encoder) decodes to
+`nonzero_luma=49152/49152` (every luma byte is nonzero — real reconstructed
+content, not zero-fill) and the center luma sample reads back exactly `128`,
+an **exact** match to the flat mid-gray source frame. Re-ran 4 times total
+(once with instrumented diagnostic output, three more with the final hard
+assertions) — stable, not flaky. `tests/hardware_hevc_decode.rs`'s
+soft-skip branch (encoder/decoder-open/push/poll failures) is unchanged and
+still present for genuine "no decode-capable device" environments; only the
+final pixel-value check moved from soft-skip to hard assertion, mirroring
+`hardware_h264_decode.rs`'s own convention.
+
+### Honest status (current)
+
+Sans-io HEVC logic: unchanged in shape, gained one more real parsed/echoed
+PPS field and five more real parsed/echoed SPS PTL fields (22 HEVC-specific
+lib tests now, up from 19; `cargo test -p mediaway-decoder --lib` passes
+120/120 total across the whole crate). **The Vulkan Video HEVC decode pipeline now genuinely works
+and is hardware-verified for IDR pictures** — `cargo check --workspace
+--all-targets` and `cargo clippy -p mediaway-decoder --all-targets -- -D
+warnings` are clean, and `tests/hardware_hevc_decode.rs` passes with hard
+pixel-value assertions against a real decode-capable GPU, chaining this
+workspace's own hardware-verified HEVC encoder into this crate's decoder.
+P/B-slice HEVC hardware verification remains an explicit, unchanged
+follow-up (`decoder_hevc.rs::decode_slice_hevc` still only reaches a real
+decode call for IDR pictures — see the 2026-07-30 addendum's scope-cut
+section, unchanged by this round). AV1 remains untouched.

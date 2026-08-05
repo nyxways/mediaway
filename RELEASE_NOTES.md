@@ -61,6 +61,16 @@
   `cargo test` never discovered) now actually compiles and runs; found a real,
   unresolved bug in `WindowsVideoDecoder`'s CPU H.264 decode path — left
   `#[ignore]`d with the finding documented, not silently passing.
+- `mediaway-decoder::vulkan`'s HEVC GPU decode no longer produces an all-zero
+  picture: `HevcPps` was missing `pps_loop_filter_across_slices_enabled_flag`,
+  which gates a real conditional bit in every slice header, desyncing the
+  driver's CABAC parser one bit before CTU data; also fixed a
+  `general_level_idc` raw-byte-vs-enum-ordinal encoding bug and several
+  hardcoded `profile_tier_level` constraint flags. `tests/vulkan/hardware_h264_decode.rs`
+  and `tests/vulkan/hardware_hevc_decode.rs` (moved under `tests/vulkan/` by
+  an earlier crate merge but never wired into `Cargo.toml`, so `cargo test`
+  silently never ran either) are now real `[[test]]` targets again; HEVC's
+  hardware test hard-asserts on decoded pixel values instead of soft-skipping.
 
 ### Removed
 

@@ -30,12 +30,22 @@
 //! P/B-slice HEVC hardware verification remains a follow-up, same as the ADR
 //! addendum states.
 //!
-//! **Status (2026-07-30): known unresolved bug, soft-skips rather than hard
-//! asserts.** This test found and fixed two real bugs (SPS/PPS flags
-//! `HevcSps`/`HevcPps::to_std` were silently echoing as disabled regardless
-//! of what the real encoder actually signaled), but the decoded picture still
-//! reads back all-zero after both fixes — see `adr/0001`'s 2026-07-30
-//! addendum for the full honest account and ruled-out/open hypotheses.
+//! **Status (2026-08-05): root cause found and fixed — real decode
+//! hardware-verified, hard assertions.** This test found and fixed a chain of
+//! real bugs across three separate rounds of investigation: `HevcSps`/
+//! `HevcPps::to_std` silently echoing several `Std*Flags` bits as disabled
+//! regardless of what the real encoder actually signaled (2026-07-30), a
+//! `general_level_idc`/profile-tier-level constraint-flag encoding bug
+//! (raw ITU-T byte cast directly into `StdVideoH265LevelIdc`'s small ordinal
+//! enum instead of converted), and — the bug that actually mattered —
+//! `HevcPps::parse` stopping *before* reading
+//! `pps_loop_filter_across_slices_enabled_flag`, which really does gate a
+//! conditional `slice_loop_filter_across_slices_enabled_flag` bit in every
+//! slice header (confirmed against `FFmpeg`'s `libavcodec/hevc/hevcdec.c`
+//! `hls_slice_header`), desyncing the driver's own CABAC parser by one bit
+//! right before CTU data. See `adr/0001`'s 2026-08-05 addendum for the full
+//! account, including the two hypotheses that were tested and ruled out
+//! before this was found.
 
 #![allow(
     clippy::unwrap_used,
@@ -45,8 +55,8 @@
 )]
 
 use mediaway_common::{Bytes, CodecKind, PixelFormat, Rational, VideoFrame, VideoFrameStorage};
+use mediaway_decoder::vulkan::VulkanVideoDecoder;
 use mediaway_decoder::{VideoDecoder, VideoDecoderConfig, VideoOutputPreference};
-use mediaway_decoder_vulkan::VulkanVideoDecoder;
 use mediaway_encoder::vulkan::VulkanVideoEncoder;
 use mediaway_encoder::{VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 
@@ -188,15 +198,16 @@ fn decode_real_encoder_produced_idr_or_skip() {
     // back to a hard assertion once the remaining bug is found and fixed.
     let luma_len = WIDTH as usize * HEIGHT as usize;
     let luma_sample = data[(HEIGHT as usize / 2) * WIDTH as usize + WIDTH as usize / 2];
-    if luma_sample.abs_diff(128) >= 40 {
-        eprintln!(
-            "skip: decoded center luma sample {luma_sample} is not close to the flat gray (128) \
-             source — known unresolved HEVC GPU decode bug, see adr/0001's 2026-07-30 addendum \
-             (nonzero luma bytes: {}/{luma_len})",
-            data[..luma_len].iter().filter(|&&b| b != 0).count()
-        );
-        return;
-    }
+    let nonzero_luma = data[..luma_len].iter().filter(|&&b| b != 0).count();
+    assert_ne!(
+        nonzero_luma, 0,
+        "decoded picture is all-zero — real HEVC GPU decode regression"
+    );
+    assert!(
+        luma_sample.abs_diff(128) < 40,
+        "decoded center luma sample {luma_sample} is not close to the flat gray (128) source \
+         (nonzero luma bytes: {nonzero_luma}/{luma_len})"
+    );
 
     let _ = decoder.flush();
     let _ = encoder.flush();

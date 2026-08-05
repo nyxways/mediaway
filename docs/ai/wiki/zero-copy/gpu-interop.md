@@ -64,17 +64,30 @@ Canonical: [`docs/spec/gpu-interop.md`](../../../spec/gpu-interop.md) · ADR-000
   a caller's later `create_view` on the returned texture, not for
   `WgpuDx12DecodeBridge::new`'s own `create_texture_from_hal` wrap (which
   bypasses that validation, same as the encode bridge's BGRA8 wrap).
-  Hardware-verified this session beyond a graceful skip:
-  `WgpuDx12DecodeBridge::new` genuinely succeeded end to end (HAL extraction
-  → `D3d11SharedDecodeBridge::open` → `create_texture_from_hal`) against a
-  real wgpu DX12 device + same-adapter `ID3D11Device` pair
-  (`tests/dx12_decode_smoke.rs`) — also confirms `D3D11_BIND_SHADER_RESOURCE`-only
-  is sufficient for `wgpu` to accept the shared resource (ADR-0003's own
-  residual risk #5, resolved positively). Still unverified: a full decode →
-  `copy_from_decoded` → `import_decoded_texture` round trip with real pixel
-  content, and per-plane (`TextureAspect::Plane0`/`Plane1`) view/sampling —
-  both blocked on the lack of a working H.264 decode HW MFT in testing so
-  far. See `crates/mediaway/adr/wgpu/0002-decode-to-wgpu-texture-bridge.md`,
+  Hardware-verified: `WgpuDx12DecodeBridge::new` succeeds end to end (HAL
+  extraction → `D3d11SharedDecodeBridge::open` → `create_texture_from_hal`)
+  against a real wgpu DX12 device + same-adapter `ID3D11Device` pair
+  (`tests/wgpu/dx12_decode_smoke.rs`) — confirms `D3D11_BIND_SHADER_RESOURCE`-only
+  is sufficient for `wgpu` to accept the shared resource (ADR-0003 residual
+  risk #5, resolved positively). **Full pixel round trip now hardware-verified
+  too** (2026-08-05, `tests/wgpu/dx12_decode_pixel_roundtrip.rs`): a stand-in
+  D3D11 NV12 texture (real decoder output has the same shape the bridge cares
+  about, not who produced it) written with a known pattern →
+  `import_decoded_texture` → byte-exact readback, 6144/6144 bytes matching on
+  an RTX 4090. Real bug found: `wgpu-hal` 26.0.6's DX12 backend
+  (`calc_subresource_for_copy`) has no match arm for `FormatAspects::PLANE_0`/
+  `PLANE_1` — `unreachable!()` panics on **any** `copy_texture_to_buffer`/
+  `copy_texture_to_texture` (even `TextureAspect::All`) against a
+  multi-planar (NV12) texture on this backend/version, confirmed by source.
+  Worked around in the test via the reverse hop (`ID3D12Device::CreateSharedHandle`
+  → `ID3D11Device1::OpenSharedResource1` → D3D11 staging `Map`) instead of
+  `wgpu`'s own copy API — `create_view`/per-plane sampling remains genuinely
+  unverified (narrower gap now, not the whole round trip). Also found: both
+  `tests/wgpu/*.rs` files had **never actually compiled** — not wired into
+  `Cargo.toml` (`[[test]]` needed; subdirectory files aren't auto-discovered)
+  and referencing a stale `mediaway_wgpu` extern crate from before the
+  ADR-0021 crate merge (now `mediaway::wgpu`) — both fixed. See
+  `crates/mediaway/adr/wgpu/0002-decode-to-wgpu-texture-bridge.md`,
   `crates/mediaway-decoder/adr/windows/0003-d3d11-shared-decode-bridge.md`.
 - Browser: WebGPU; native C/C++: Dawn has **zero** video-encode code in its
   entire repo (confirmed via a direct code search) — no HAL-style escape

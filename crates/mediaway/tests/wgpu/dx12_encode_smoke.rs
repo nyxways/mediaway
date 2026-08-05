@@ -25,10 +25,10 @@
     reason = "integration test: one linear device -> bridge -> encode -> verify smoke test"
 )]
 
+use mediaway::wgpu::WgpuDx12Bridge;
 use mediaway_common::{CodecKind, PixelFormat, Rational, VideoFrame, VideoFrameStorage};
 use mediaway_encoder::windows::WindowsVideoEncoder;
 use mediaway_encoder::{VideoEncoder, VideoEncoderConfig, VideoInputPreference};
-use mediaway_wgpu::WgpuDx12Bridge;
 
 /// `true` if `payload` contains an Annex-B NAL unit (00 00 01 / 00 00 00 01
 /// start code) whose header byte's low 5 bits equal `nal_type`.
@@ -106,7 +106,7 @@ fn wgpu_dx12_bridge_encodes_h264_or_skip() {
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: mediaway_wgpu::BRIDGE_FORMAT,
+        format: mediaway::wgpu::BRIDGE_FORMAT,
         usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });

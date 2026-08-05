@@ -27,8 +27,8 @@
     reason = "integration test: one linear device -> bridge construction smoke test"
 )]
 
+use mediaway::wgpu::WgpuDx12DecodeBridge;
 use mediaway_common::{GpuDeviceHandle, NativeHandle};
-use mediaway_wgpu::WgpuDx12DecodeBridge;
 use windows::Win32::Foundation::HMODULE;
 use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_UNKNOWN;
 use windows::Win32::Graphics::Direct3D11::{

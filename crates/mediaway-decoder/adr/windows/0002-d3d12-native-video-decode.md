@@ -725,3 +725,26 @@ expected value — **before** spending another real hardware TDR on it.
 session's explicit scope, the hang itself remains unverified against real hardware;
 Bugs 4 and 5 narrow the "opaque blob content" hypothesis space but do not confirm or
 rule out that either one is *the* hang's cause.
+
+### Hardware re-verification (2026-08-05, same-day follow-up): hang persists
+
+With Bugs 4 and 5 applied, `windows::d3d12_video_decode::tests::
+h264_decode_idr_and_p_frame_or_skip` was run for real against the same RTX 4090:
+
+```
+D3D12 InfoQueue[1]: ID3D12Device::RemoveDevice: Device removal has been triggered
+for the following reason (DXGI_ERROR_DEVICE_HUNG: ...)
+skip: push_packet failed on packet 0 (Backend, is_keyframe=true)
+test windows::d3d12_video_decode::tests::h264_decode_idr_and_p_frame_or_skip ... ok
+```
+
+**The hang reproduces identically** — same `DXGI_ERROR_DEVICE_HUNG` on the very first
+(IDR) packet. Bugs 4/5 are real, reference-grounded fixes (kept — they were wrong
+either way, independent of whether they cause this hang) but are **ruled out as the
+hang's sole cause**. The test's own honest-skip convention correctly did not hard-fail.
+
+This is the 7th real hardware TDR this bug has caused across sessions. Per this
+workspace's "each real hardware attempt has a real cost" judgment call, no further
+hardware attempts should be made without first resolving the `BitOffsetToSliceData`
+ambiguity above via the CPU-only synthetic-stream approach already recommended —
+that is now the clearest remaining lead.

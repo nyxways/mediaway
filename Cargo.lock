@@ -1489,6 +1489,7 @@ dependencies = [
  "mediaway-decoder",
  "mediaway-device",
  "mediaway-encoder",
+ "mediaway-sw",
  "windows 0.62.2",
 ]
 

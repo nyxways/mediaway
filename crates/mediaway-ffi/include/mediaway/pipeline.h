@@ -1,9 +1,10 @@
 /*
  * pipeline.h — mediaway-ffi: C ABI facade over Mediaway's auto video/audio
  * encode -> fragmented MP4 convenience layer, auto video decode
- * (adr/0004-auto-decode-c-abi.md), and a capture-to-encode bridge
+ * (adr/0004-auto-decode-c-abi.md), a capture-to-encode bridge
  * (adr/0005-capture-encode-bridge-c-abi.md) that wires device.h capture handles
- * directly into an encode session.
+ * directly into an encode session, and Opus audio decode + Opus wired into the
+ * audio encode surface (adr/pipeline/0006-audio-decode-c-abi.md).
  *
  * Hand-written (not cbindgen-generated) — see adr/0001-auto-encode-c-abi.md §8.
  * Design rules: docs/spec/c-ffi.md (ADR-0004).
@@ -73,7 +74,7 @@
 #ifndef MEDIAWAY_PIPELINE_H
 #define MEDIAWAY_PIPELINE_H
 
-#define MEDIAWAY_PIPELINE_FFI_ABI_VERSION 4 /* bump on any breaking change; pre-1.0, no stability promise */
+#define MEDIAWAY_PIPELINE_FFI_ABI_VERSION 5 /* bump on any breaking change; pre-1.0, no stability promise */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -93,6 +94,7 @@ typedef struct mediaway_auto_encoder mediaway_auto_encoder_t;
 typedef struct mediaway_encode_session mediaway_encode_session_t;
 typedef struct mediaway_audio_encode_session mediaway_audio_encode_session_t; /* adr/0003 — the session IS the encoder; no intermediate handle */
 typedef struct mediaway_decode_session mediaway_decode_session_t; /* adr/0004 — the session IS the decoder; no intermediate handle */
+typedef struct mediaway_audio_decode_session mediaway_audio_decode_session_t; /* adr/pipeline/0006 — wraps OpusDecoder directly, no intermediate handle */
 
 /* Forward declarations only (adr/0005-capture-encode-bridge-c-abi.md): the real
  * definitions live in device.h. Guarded so this header still compiles standalone
@@ -271,10 +273,11 @@ void mediaway_pipeline_ffi_buffer_free(uint8_t *data, size_t len);
  * a version bump. */
 
 /* Config for mediaway_audio_encoder_open — plain value struct, no handle, no heap
- * allocation, no free function. codec is AAC today (any other kind is a runtime
- * MEDIAWAY_PIPELINE_STATUS_UNSUPPORTED); sample_format is F32 today. */
+ * allocation, no free function. codec is AAC (Windows only) or Opus (cross-platform,
+ * mediaway-sw) today — any other kind is a runtime MEDIAWAY_PIPELINE_STATUS_UNSUPPORTED;
+ * sample_format is F32 today (adr/pipeline/0006-audio-decode-c-abi.md § Encode side). */
 typedef struct mediaway_audio_encode_config {
-    mediaway_pipeline_codec_kind_t codec;  /* output codec (AAC today) */
+    mediaway_pipeline_codec_kind_t codec;  /* output codec: AAC or Opus */
     uint32_t sample_rate;                  /* input sample rate in Hz, non-zero */
     uint16_t channels;                     /* input channel count, non-zero */
     mediaway_sample_format_t sample_format; /* input PCM format (F32 today) */
@@ -283,10 +286,16 @@ typedef struct mediaway_audio_encode_config {
 } mediaway_audio_encode_config_t;
 
 /* Build a stereo AAC config (F32 input, backend-default bitrate) — the only
- * combination the real backend accepts today, kept as the ergonomic sugar. The
- * general form exists as the struct itself; no general constructor is exported. */
+ * combination the real Windows backend accepts today, kept as the ergonomic sugar.
+ * The general form exists as the struct itself; no general constructor is exported. */
 mediaway_audio_encode_config_t mediaway_audio_encode_config_aac(
     uint32_t sample_rate, mediaway_rational_t time_base);
+
+/* Build an Opus config (F32 input, backend-default bitrate, cross-platform
+ * mediaway-sw backend). Unlike the AAC sugar, channels is caller-chosen — Opus
+ * voice use is commonly mono (adr/pipeline/0006-audio-decode-c-abi.md § 1). */
+mediaway_audio_encode_config_t mediaway_audio_encode_config_opus(
+    uint32_t sample_rate, uint16_t channels, mediaway_rational_t time_base);
 
 /* Input to mediaway_audio_encode_session_push_pcm — BORROWED view, valid for the
  * call only (same ownership direction as mediaway_video_frame_t's raw_bytes). */
@@ -377,6 +386,75 @@ void mediaway_pipeline_ffi_packet_free(mediaway_audio_packet_t *packet);
  * extra_data fields afterward, making a double-free a visible no-op. Always safe to
  * call, including with info == NULL. */
 void mediaway_pipeline_ffi_stream_info_free(mediaway_audio_stream_info_t *info);
+
+/* ── Audio decode (adr/pipeline/0006-audio-decode-c-abi.md) ─────────────────────── */
+
+/* Config for mediaway_audio_decode_session_open. codec is Opus only today (any other
+ * kind is a runtime MEDIAWAY_PIPELINE_STATUS_UNSUPPORTED). No extra_data field —
+ * unlike video codecs, Opus needs no out-of-band codec config to open a decoder.
+ * Output PCM is always F32 (opus_decode_float). */
+typedef struct mediaway_audio_decode_config {
+    mediaway_pipeline_codec_kind_t codec; /* input codec (Opus today) */
+    uint32_t sample_rate;                 /* Hz, non-zero */
+    uint16_t channels;                    /* non-zero */
+    mediaway_rational_t time_base;        /* frame duration; also the decode buffer's per-frame sample cap */
+} mediaway_audio_decode_config_t;
+
+/* Build an Opus decode config for `sample_rate`/`channels`/`time_base`. */
+mediaway_audio_decode_config_t mediaway_audio_decode_config_opus(
+    uint32_t sample_rate, uint16_t channels, mediaway_rational_t time_base);
+
+/* Output of mediaway_audio_decode_session_poll_frame — OWNED; release with
+ * mediaway_decoded_audio_frame_free. New, pipeline-scoped name: distinct ownership
+ * direction from mediaway_audio_frame_view_t (borrowed encode *input* there vs.
+ * owned decode *output* here), same naming precedent as mediaway_decoded_video_frame_t
+ * vs. mediaway_video_frame_t. */
+typedef struct mediaway_decoded_audio_frame {
+    int64_t pts;
+    uint64_t duration;                      /* 0 if unknown */
+    uint32_t sample_rate;
+    uint16_t channels;
+    mediaway_sample_format_t sample_format; /* always F32 for Opus */
+    uint8_t *data;                          /* OWNED interleaved PCM; NULL after mediaway_decoded_audio_frame_free */
+    size_t data_len;
+} mediaway_decoded_audio_frame_t;
+
+/* Open an Opus decode session for `config` — single step, the handle IS the decoder
+ * (mirrors mediaway_decode_session_t's video shape; no muxer to wire, no
+ * consumption trap). MEDIAWAY_PIPELINE_STATUS_UNSUPPORTED for any codec other than
+ * Opus. *out_session is NULL on any non-OK status (a normal Err, or a caught panic). */
+mediaway_pipeline_status_t mediaway_audio_decode_session_open(
+    const mediaway_audio_decode_config_t *config,
+    mediaway_audio_decode_session_t **out_session);
+
+/* Push one compressed Opus packet. Reuses mediaway_decode_packet_view_t (the video
+ * decode packet type — already codec-agnostic, see adr/pipeline/0006 §4). An empty
+ * payload (NULL or payload_len == 0) is Opus's packet-loss-concealment hint for a
+ * lost frame, not an error — pass it whenever a frame is known lost. May produce
+ * zero or more frames (drain via mediaway_audio_decode_session_poll_frame). */
+mediaway_pipeline_status_t mediaway_audio_decode_session_push_packet(
+    mediaway_audio_decode_session_t *session, const mediaway_decode_packet_view_t *packet);
+
+/* Pull the next decoded PCM frame, if any is ready. *out_has_frame == false is a
+ * valid "nothing ready" result, not an error. When true, release *out_frame with
+ * mediaway_decoded_audio_frame_free. */
+mediaway_pipeline_status_t mediaway_audio_decode_session_poll_frame(
+    mediaway_audio_decode_session_t *session, mediaway_decoded_audio_frame_t *out_frame,
+    bool *out_has_frame);
+
+/* Signal end-of-input; drain remaining frames with
+ * mediaway_audio_decode_session_poll_frame afterward. */
+mediaway_pipeline_status_t mediaway_audio_decode_session_flush(
+    mediaway_audio_decode_session_t *session);
+
+/* Close and free an audio decode-session handle. Always safe to call, including on a
+ * poisoned handle or with session == NULL — this surface has no consumption trap. */
+void mediaway_audio_decode_session_close(mediaway_audio_decode_session_t *session);
+
+/* Free a frame returned by mediaway_audio_decode_session_poll_frame. Nulls
+ * data/data_len afterward, making a double-free a visible no-op. Always safe to
+ * call, including with frame == NULL. */
+void mediaway_decoded_audio_frame_free(mediaway_decoded_audio_frame_t *frame);
 
 /* ── Video decode (adr/0004-auto-decode-c-abi.md) ────────────────────────────────── */
 

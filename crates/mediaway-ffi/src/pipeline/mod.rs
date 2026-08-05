@@ -1,5 +1,5 @@
 //! C ABI facade over [`mediaway`] (auto video/audio encode -> fragmented MP4, auto
-//! video decode).
+//! video decode, and Opus audio decode).
 //!
 //! Design: `adr/0001-auto-encode-c-abi.md` — opaque handles (`AutoEncoderHandle`
 //! needs no `poisoned` flag; `EncodeSessionHandle` does), a 15-value
@@ -10,8 +10,10 @@
 //! This crate's `pipeline` module (formerly the standalone `mediaway-ffi` crate,
 //! merged by ADR-0021). Wraps `mediaway`'s `platform::AutoEncoder` + `EncodeSession`
 //! (auto-selected OS/GPU encoder wired straight into a fragmented-MP4 muxer),
-//! `platform::AutoDecoder` (`adr/0004-auto-decode-c-abi.md`), and `AudioEncoder`
-//! (`adr/0003-auto-audio-encode-c-abi.md`) over a C ABI: opaque handles + integer
+//! `platform::AutoDecoder` (`adr/0004-auto-decode-c-abi.md`), `AudioEncoder`
+//! (`adr/0003-auto-audio-encode-c-abi.md`, AAC on Windows + cross-platform Opus via
+//! `mediaway-sw`), and `mediaway_sw::opus::OpusDecoder`
+//! (`adr/pipeline/0006-audio-decode-c-abi.md`) over a C ABI: opaque handles + integer
 //! error codes, no panics/unwinding across the boundary.
 //!
 //! `gpu_device` is reachable from C for encode input (`adr/0002-gpu-frame-input-c-abi.md`),
@@ -23,6 +25,7 @@
 #![allow(unsafe_code)] // FFI crate — see docs/conventions/code-style.md § unsafe
 
 mod audio;
+mod audio_decoder;
 mod buffer;
 mod capture_bridge;
 mod config;
@@ -39,13 +42,20 @@ pub use audio::{
     mediaway_audio_encoder_open, mediaway_pipeline_ffi_packet_free,
     mediaway_pipeline_ffi_stream_info_free,
 };
+pub use audio_decoder::{
+    AudioDecodeSessionHandle, mediaway_audio_decode_session_close,
+    mediaway_audio_decode_session_flush, mediaway_audio_decode_session_open,
+    mediaway_audio_decode_session_poll_frame, mediaway_audio_decode_session_push_packet,
+    mediaway_decoded_audio_frame_free,
+};
 pub use buffer::mediaway_pipeline_ffi_buffer_free;
 pub use capture_bridge::{
     mediaway_encode_session_write_frame_from_camera_capture,
     mediaway_encode_session_write_frame_from_desktop_capture,
 };
 pub use config::{
-    mediaway_audio_encode_config_aac, mediaway_auto_video_decode_config_new,
+    mediaway_audio_decode_config_opus, mediaway_audio_encode_config_aac,
+    mediaway_audio_encode_config_opus, mediaway_auto_video_decode_config_new,
     mediaway_auto_video_encode_config_h264, mediaway_auto_video_encode_config_new,
 };
 pub use decoder::{
@@ -60,12 +70,12 @@ pub use session::{
 };
 pub use status::MediawayPipelineStatus;
 pub use types::{
-    MediawayAudioEncodeConfig, MediawayAudioFrameView, MediawayAudioPacket,
-    MediawayAudioStreamInfo, MediawayAutoVideoDecodeConfig, MediawayAutoVideoEncodeConfig,
-    MediawayDecodePacketView, MediawayDecodedVideoFrame, MediawayGpuBufferHandle,
-    MediawayGpuBufferKind, MediawayGpuDeviceHandle, MediawayGpuDeviceKind,
-    MediawayPipelineCodecKind, MediawayPixelFormat, MediawayRational, MediawaySampleFormat,
-    MediawayVideoFrame, MediawayVideoFrameStorageKind,
+    MediawayAudioDecodeConfig, MediawayAudioEncodeConfig, MediawayAudioFrameView,
+    MediawayAudioPacket, MediawayAudioStreamInfo, MediawayAutoVideoDecodeConfig,
+    MediawayAutoVideoEncodeConfig, MediawayDecodePacketView, MediawayDecodedAudioFrame,
+    MediawayDecodedVideoFrame, MediawayGpuBufferHandle, MediawayGpuBufferKind,
+    MediawayGpuDeviceHandle, MediawayGpuDeviceKind, MediawayPipelineCodecKind, MediawayPixelFormat,
+    MediawayRational, MediawaySampleFormat, MediawayVideoFrame, MediawayVideoFrameStorageKind,
 };
 
 /// Runtime ABI version, matching `MEDIAWAY_PIPELINE_FFI_ABI_VERSION` in
@@ -82,7 +92,9 @@ pub use types::{
 /// (`adr/0004-auto-decode-c-abi.md`).
 /// Bumped `3` -> `4`: added the capture-to-encode bridge
 /// (`adr/0005-capture-encode-bridge-c-abi.md`).
+/// Bumped `4` -> `5`: added the Opus audio decode surface and wired `CodecKind::Opus`
+/// into the existing audio encode surface (`adr/pipeline/0006-audio-decode-c-abi.md`).
 #[unsafe(no_mangle)]
 pub const extern "C" fn mediaway_pipeline_ffi_abi_version() -> u32 {
-    4
+    5
 }

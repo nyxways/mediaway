@@ -48,3 +48,10 @@ C ABI facade over `mediaway`'s auto video encode -> fragmented MP4 convenience l
   (`docs/adr/0016-cbindgen-ffi-headers.md`'s 2026-08-05 addendum); this
   module's `include/mediaway/pipeline.h` itself is not yet migrated (still
   hand-written).
+- ~~Opus audio decode + Opus reachable from the audio encode C ABI~~ —
+  implemented (`adr/pipeline/0006-audio-decode-c-abi.md`,
+  `mediaway_audio_decode_session_*` + `mediaway_audio_encode_config_opus`,
+  ABI v5), hardware-independent (`mediaway-sw`'s pure-Rust backend, no OS
+  dependency), round-trip-verified (`tests/audio_decode_smoke.rs`).
+  Sequence tracking / jitter buffering / FEC scheduling for a real-time voice
+  transport stay out of scope — application-side, not a codec concern.

@@ -19,6 +19,15 @@
   Camera/Screen capture frame straight into an encode session with no
   intermediate frame struct and no extra copy (Screen is Zero-Copy end-to-end).
   Hardware-verified with a real USB camera.
+- `mediaway-ffi`: Opus audio decode C ABI (`mediaway_audio_decode_session_open/
+  push_packet/poll_frame/flush/close`, `adr/pipeline/0006-audio-decode-c-abi.md`),
+  wrapping `mediaway_sw::opus::OpusDecoder` directly. Empty-payload packets are
+  Opus packet-loss concealment, not an error. `CodecKind::Opus` is also now
+  reachable from the existing audio encode C ABI
+  (`mediaway_audio_encode_config_opus`) — previously AAC-only despite
+  `SwOpusAudioEncoder` already existing at the Rust level. Cross-platform
+  (`mediaway-sw` has no OS dependency); round-trip-verified
+  (`tests/audio_decode_smoke.rs`).
 
 ### Changed
 

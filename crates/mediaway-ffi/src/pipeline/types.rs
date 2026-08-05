@@ -136,13 +136,15 @@ pub type MediawaySampleFormat = crate::common::types::SampleFormat;
 /// Config for [`crate::pipeline::audio::mediaway_audio_encoder_open`] — plain value struct,
 /// no handle, no heap allocation, no free function.
 ///
-/// `codec` is `Aac` today; passing any other kind is a runtime
+/// `codec` is `Aac` or `Opus` today (`adr/pipeline/0006-audio-decode-c-abi.md` §
+/// Encode side); passing any other kind is a runtime
 /// [`crate::pipeline::MediawayPipelineStatus::Unsupported`]. `sample_format` is `F32`
-/// today (the format the real WASAPI capture backends deliver).
+/// today (the format the real WASAPI capture backends deliver, and the only format
+/// `mediaway-sw`'s Opus backend accepts).
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MediawayAudioEncodeConfig {
-    /// Output codec (AAC today).
+    /// Output codec (AAC or Opus).
     pub codec: MediawayPipelineCodecKind,
     /// Input sample rate (Hz). Must be non-zero.
     pub sample_rate: u32,
@@ -315,6 +317,56 @@ pub struct MediawayDecodedVideoFrame {
     pub pixel_format: MediawayPixelFormat,
     /// Owned plane bytes. `NULL` after
     /// [`crate::pipeline::mediaway_decoded_video_frame_free`].
+    pub data: *mut u8,
+    /// Length of `data` in bytes.
+    pub data_len: usize,
+}
+
+// ── Audio decode (`../../adr/pipeline/0006-audio-decode-c-abi.md`) ───────────────
+
+/// Config for [`crate::pipeline::mediaway_audio_decode_session_open`] — plain value
+/// struct, no handle, no free function.
+///
+/// `codec` is `Opus` only today; passing any other kind is a runtime
+/// [`crate::pipeline::MediawayPipelineStatus::Unsupported`]. Output PCM is always
+/// `F32` (`unsafe-libopus`'s `opus_decode_float`) — no `sample_format` field to
+/// mismatch, unlike [`MediawayAudioEncodeConfig`].
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MediawayAudioDecodeConfig {
+    /// Input codec (Opus today).
+    pub codec: MediawayPipelineCodecKind,
+    /// Sample rate (Hz). Must be non-zero.
+    pub sample_rate: u32,
+    /// Channel count. Must be non-zero.
+    pub channels: u16,
+    /// Frame duration timebase — also the upper bound on one decoded frame's PCM
+    /// sample count (`crate::opus::OpusDecoder::push_packet`'s costly-path doc).
+    pub time_base: MediawayRational,
+}
+
+/// Output of [`crate::pipeline::mediaway_audio_decode_session_poll_frame`] — OWNED;
+/// release with [`crate::pipeline::mediaway_decoded_audio_frame_free`].
+///
+/// New, pipeline-scoped name, distinct ownership direction from
+/// [`MediawayAudioFrameView`] (borrowed encode *input* there vs. owned decode
+/// *output* here) — same naming precedent as [`MediawayDecodedVideoFrame`] vs.
+/// [`MediawayVideoFrame`].
+#[repr(C)]
+#[derive(Debug)]
+pub struct MediawayDecodedAudioFrame {
+    /// Presentation timestamp in the stream timebase.
+    pub pts: i64,
+    /// Duration in timebase units (`0` if unknown).
+    pub duration: u64,
+    /// Sample rate (Hz).
+    pub sample_rate: u32,
+    /// Channel count.
+    pub channels: u16,
+    /// PCM sample format (always `F32` for Opus).
+    pub sample_format: MediawaySampleFormat,
+    /// Owned interleaved PCM bytes. `NULL` after
+    /// [`crate::pipeline::mediaway_decoded_audio_frame_free`].
     pub data: *mut u8,
     /// Length of `data` in bytes.
     pub data_len: usize,

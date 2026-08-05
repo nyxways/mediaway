@@ -44,6 +44,10 @@
   driver-maturity bug as its base (IDR-only) path (`adr/0001`'s AV1
   addendum), so the GOP request is capability-gated but its output cannot
   currently be verified.
+- `mediaway-decoder`: `AudioDecoder` trait, mirroring `VideoDecoder`
+  (`adr/0003-audio-decoder-trait.md`). Implemented for the WMF Opus decoder
+  (`windows::WmfOpusDecoder`) and `mediaway-sw`'s software Opus decoder
+  (`SwOpusAudioDecoder`, wrapping `mediaway_sw::opus::OpusDecoder`).
 
 ### Changed
 

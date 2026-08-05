@@ -92,8 +92,12 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
       cause not found (`docs/ai/wiki/platform/windows-decode.md` § CPU decode bug).
 - [x] **Opus Audio Codec Integration (encode)**: `WindowsAudioEncoder` dispatches `CodecKind::Opus`
       to `mediaway-sw`'s `SwOpusAudioEncoder` as a real `AudioEncoder` backend
-      (`crates/mediaway-encoder/src/windows/mod.rs`). Decode side still open — `mediaway-decoder`
-      has no facade `AudioDecoder` trait yet, so `WmfOpusDecoder` only works standalone.
+      (`crates/mediaway-encoder/src/windows/mod.rs`).
+- [x] **Opus Audio Codec Integration (decode)**: `mediaway-decoder` gained an `AudioDecoder`
+      trait mirroring `VideoDecoder` (ADR-0003), implemented for `WmfOpusDecoder` (Windows) and
+      `mediaway-sw`'s `SwOpusAudioDecoder` (cross-platform). No audio `auto`-dispatch
+      (`WindowsAudioDecoder`-style backend switcher) exists yet — same follow-up gap as video's
+      D3D12 decode integration.
 - [ ] **Pure Rust SW Codec Extensions**: Add CABAC, P-slice, and B-slice decoding to `mediaway-sw` H.264 decoder (currently Baseline CAVLC I-slice only).
 
 ### 3. Media Containers, Protocols & Image Formats

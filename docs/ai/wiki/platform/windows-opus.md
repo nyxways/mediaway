@@ -3,7 +3,8 @@
 - **Session**: inbox WMF Opus decoder MFT (`CLSID_MSOpusDecoder` / `CMSOpusDecMFT`,
   `{63E17C10-2D43-4C42-8FE3-8D8B63E46A6A}`), Float32 PCM out.
 - **Entry**: `mediaway_decoder::windows::WmfOpusDecoder` (+ `OpusDecoderConfig`) —
-  low-level first-class (no facade `AudioDecoder` trait yet). `decoder_support(Opus)`
+  implements the facade `AudioDecoder` trait ([ADR-0003](../../../crates/mediaway-decoder/adr/0003-audio-decoder-trait.md))
+  and stays usable standalone (low-level first-class, inherent methods kept). `decoder_support(Opus)`
   probes it live.
 - **No encoder MFT**: `MFTEnumEx` returns zero Opus encoder results; encode is wired
   through `mediaway-sw` in `WindowsAudioEncoder` (README codec table, Windows row).

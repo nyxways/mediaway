@@ -6,10 +6,13 @@
 
 #![allow(unsafe_code)]
 
+mod audio;
 pub mod capability;
 mod error;
 mod video;
 
+pub use audio::AudioDecoder;
+pub use audio::sw_opus::SwOpusAudioDecoder;
 pub use error::DecodeError;
 pub use video::{VideoDecoder, VideoDecoderConfig, VideoOutputPreference};
 

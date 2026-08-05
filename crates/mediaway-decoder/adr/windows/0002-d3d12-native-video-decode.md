@@ -610,10 +610,9 @@ value, an incorrect `wBitFields` bit, or a subtly wrong reference/POC field woul
 surface as a debug-layer message at all, only as wrong pixels or (for some driver
 implementations) a hardware fault deep in the decode microcode, which is exactly
 consistent with a silent hang. **Six real hardware runs were made this session, each
-triggering a genuine `DXGI_ERROR_DEVICE_HUNG` TDR** (a real, disruptive GPU/display
-reset) — stopping further blind hardware iteration here rather than continuing to
-reset the GPU on speculation, per this workspace's existing "each real
-hardware attempt has a real cost" judgment call.
+triggering a genuine `DXGI_ERROR_DEVICE_HUNG` TDR** — stopping further blind hardware
+iteration here rather than continuing to reset the GPU on speculation, per this
+workspace's existing "each real hardware attempt has a real cost" judgment call.
 
 **Not yet tried, real candidates for a follow-up session**: (1) a byte-for-byte diff of
 this backend's `DXVA_PicParams_H264` fill against a **working** reference — e.g.

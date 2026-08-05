@@ -36,6 +36,8 @@ bindings were then implemented to satisfy those examples. Examples mirror the Ru
   — hardware-verified: 96 synthetic PCM frames → 96 AAC packets → 27376-byte audio-only fMP4,
   matching Node's own `encode-audio.ts` output (27372 B) to within container-padding noise.
 - **Screen capture not from C**: needs a live `ID3D11Device*` with no CPU fallback; Screen + `NONE` gpu → `INVALID_INPUT`, Window → `UNSUPPORTED` (both verified). Browser host: `getDisplayMedia` is native and real.
+- **C# Screen capture hardware-verified** — `CaptureTests` gained a test-only raw
+  `D3D11CreateDevice` P/Invoke; the new test polls real GPU-backed 2560×1440 frames end to end.
 
 ## Audio encode learnings (this pass)
 
@@ -92,5 +94,5 @@ and `mediaway-container`'s sub-features are unified from this crate's
   `bindings/README.md` § Publishing), the ADRs are the remaining formality.
 - Multi-platform native assets: all language packages ship Windows x64 GNU DLLs
   today; macOS/Linux native packages need per-platform builds in CI.
-- Screen capture from C remains the only hardware gap (audio encode landed; screen
-  needs the live GPU-device-handle ADR).
+- Screen capture from C (the raw C ABI end-to-end example) remains the only hardware gap;
+  C# is covered now (Capability truth) — the C gap still needs the live GPU-device-handle ADR.

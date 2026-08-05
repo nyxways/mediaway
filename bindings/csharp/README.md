@@ -58,9 +58,9 @@ What must NOT run at RC:
   test's own doc comment). Encoder availability is not guaranteed on CI
   runners, so this suite is local-build/dev-machine verified only and stays out
   of the RC gate.
-- **`tests/Mediaway.Device.Tests`** (`CaptureTests`) — requires real camera and
-  microphone hardware (see the test's own doc comment). Hardware is never
-  available in CI; excluded from the RC gate by design.
+- **`tests/Mediaway.Device.Tests`** (`CaptureTests`) — requires real camera,
+  microphone, and display (Screen/D3D11) hardware (see the test's own doc
+  comment). Hardware is never available in CI; excluded from the RC gate by design.
 
 Run the full local (non-hardware) check on a dev machine with an encoder
 backend with:

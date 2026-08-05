@@ -53,7 +53,10 @@ pub fn to_avcc(data: &[u8]) -> AvccOut {
     }
 }
 
-fn is_annex_b(data: &[u8]) -> bool {
+/// True when `data` starts with an Annex-B start code (`00 00 01` or `00 00 00 01`) —
+/// i.e. the payload is already Annex-B-framed rather than AVCC length-prefixed.
+#[must_use]
+pub fn is_annex_b(data: &[u8]) -> bool {
     matches!(find_start_code(data), Some((0, _)))
 }
 

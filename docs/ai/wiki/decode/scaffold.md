@@ -6,13 +6,17 @@
   - `VideoOutputPreference::CpuFramesOk` — software (sync) H.264 decoder MFT, no GPU/device
     manager at all; NV12 copied straight from the MFT's system-memory buffer
     (`IMF2DBuffer::Lock2D` stride-aware, contiguous `Lock` fallback) — see `wmf/cpu.rs`
-- Verified end-to-end via `crates/mediaway-decoder/tests/windows/cpu_roundtrip.rs`: encodes through
+- Verified end-to-end via `crates/mediaway-decoder/tests/cpu_roundtrip.rs` (2026-08-05: was
+  returning zero frames — AVCC/Annex-B mismatch, fixed; see
+  [platform/windows-decode](../platform/windows-decode.md) § CPU decode bug): encodes through
   `mediaway-encoder::windows`'s CPU-upload H.264 path, decodes through the CPU path above —
-  no committed media, no GPU needed for either side (no mux/demux; Annex-B throughout)
+  no committed media, no GPU needed for either side (no mux/demux)
 - AVCC↔Annex-B: demuxed MP4 samples are AVCC length-prefixed with an
   `AVCDecoderConfigurationRecord` `extra_data`, but WMF's decoder MFTs expect Annex-B.
   `open_dx11`/`open_cpu` detect this (`iso_bmff::bitstream::avc::parse_avc_decoder_config`)
-  and convert both `extra_data` and every packet payload before reaching the MFT — see
+  and convert both `extra_data` and AVCC-framed packet payloads before reaching the MFT —
+  per-packet Annex-B start-code probe, since a direct encoder feed already emits Annex-B
+  packets with an avcC `extra_data` (that mismatch was the CPU-decode bug above) — see
   ADR-0001 and `mediaway`'s `tests/trim_and_splice_windows.rs` for the real
   encode→mux→demux→decode proof that found this gap
 - README: OS · GPU / D3D11 decode 🆗; CPU path 🆗 (SW, no HW offload)

@@ -2,17 +2,19 @@
 //! [`VideoOutputPreference::CpuFramesOk`] software decode path, with no GPU device anywhere
 //! in the chain. Skips (does not fail) when Media Foundation itself is unavailable.
 //!
-//! **Currently `#[ignore]`d.** This file previously lived at `tests/windows/cpu_roundtrip.rs`,
-//! a path `cargo test` never discovers (only direct `tests/*.rs` files are auto-registered as
-//! test binaries) — moved to `tests/cpu_roundtrip.rs` and its imports fixed for the current
-//! (post-ADR-0021 merge) crate layout while investigating `mediaway-ffi`'s decode C ABI
-//! (`adr/pipeline/0004-auto-decode-c-abi.md`). Running it for real (not just compiling it) found
-//! a genuine, pre-existing bug: `decoder.poll_frame()` returns zero frames for a real, valid
-//! H.264 bitstream — same underlying `WindowsVideoDecoder` CPU path that a fuller round trip
-//! (`mediaway-ffi/tests/decode_smoke.rs`, muxed/demuxed multi-frame input) crashes the process on
-//! (`Alignment::new_unchecked requires a power of two`, unwind-proof abort). Left `#[ignore]`d,
-//! not deleted or silently passing, until that root cause is found — see
-//! `docs/ai/wiki/decode/index.md`/`docs/roadmap.md`.
+//! This file previously lived at `tests/windows/cpu_roundtrip.rs`, a path `cargo test` never
+//! discovers (only direct `tests/*.rs` files are auto-registered as test binaries) — moved to
+//! `tests/cpu_roundtrip.rs` and its imports fixed for the current (post-ADR-0021 merge) crate
+//! layout while investigating `mediaway-ffi`'s decode C ABI
+//! (`adr/pipeline/0004-auto-decode-c-abi.md`). Running it for real found a genuine,
+//! pre-existing bug: `decoder.poll_frame()` returned **zero frames** for a real, valid H.264
+//! bitstream straight from a WMF encoder, with no error at all. Root cause (fixed in
+//! `wmf/shared.rs`'s `packet_to_sample`): a Media Foundation H.264 encoder emits Annex-B
+//! packet payloads but normalizes `extra_data` to an avcC record (for the container), so the
+//! decoder's AVCC→Annex-B conversion — keyed on `extra_data` alone — corrupted the already
+//! Annex-B packets and the decoder MFT never produced output. The conversion now probes each
+//! payload for an Annex-B start code (same test the muxer's `to_avcc` uses) and passes
+//! Annex-B packets through unchanged; demuxed AVCC packets still convert.
 
 #![cfg(all(windows, feature = "video"))]
 #![allow(
@@ -32,7 +34,6 @@ const WIDTH: u32 = 64;
 const HEIGHT: u32 = 64;
 
 #[test]
-#[ignore = "real, pre-existing WindowsVideoDecoder CPU-decode bug — see module doc comment"]
 fn encode_cpu_then_decode_cpu_round_trip() {
     let nv12_len = (WIDTH * HEIGHT + WIDTH * HEIGHT / 2) as usize;
     let enc_cfg = VideoEncoderConfig {

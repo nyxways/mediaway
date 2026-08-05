@@ -13,7 +13,7 @@ caller → open_with_audio(video_encoder, audio_encoder)
 
 caller → write_audio_frame(&AudioFrame)
               │
-   no processor attached? ──yes──► audio_encoder.push_frame(frame)   (today's
+   no processor attached? ──yes──► audio_encoder.push_frame(frame)   (the former
               │no                                                     manual fast path)
               ▼
    processor.push_capture_frame(frame)
@@ -65,6 +65,5 @@ caller → write_audio_frame(&AudioFrame)
 See also: [audio/apm](../audio/apm.md) (the crate this integrates),
 [frame-filter-hook](frame-filter-hook.md) (the video-side precedent this
 design deliberately diverges from for the push/poll reasons above),
-[screen-record-av](screen-record-av.md) (the hand-rolled two-track pattern
-this formalizes — not yet migrated onto `open_with_audio`, tracked in
-`docs/roadmap.md` Stage 1b).
+[screen-record-av](screen-record-av.md) (the previously hand-rolled
+two-track pattern this formalizes — since migrated onto `open_with_audio`).

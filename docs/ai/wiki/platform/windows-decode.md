@@ -2,8 +2,8 @@
 
 - Module: `mediaway-decoder::windows`
 - Codecs: H.264 / HEVC / AV1 / VP9 HW decoder MFT → DX11 `GpuBufferHandle` (Nv12)
-- CPU out (`VideoOutputPreference::CpuFramesOk`): implemented but not verified working for
-  H.264 on this reference machine — see § CPU decode bug below.
+- CPU out (`VideoOutputPreference::CpuFramesOk`): verified working for H.264 (2026-08-05) —
+  see § CPU decode bug below.
 - README: OS · GPU / D3D11 decode 🆗 (open may skip without HW MFT)
 - ADR: [0001](../../../../crates/mediaway-decoder/adr/windows/0001-wmf-h264-dx11-out.md)
 - Benches: [`docs/benchmarks.md`](../../../../crates/mediaway-decoder/docs/windows/benchmarks.md)
@@ -13,24 +13,23 @@
   `ffmpeg h264_cuvid`/NVDEC decodes fine outside MF — `zc_wmf_h264_dx11` came back
   N/A there, consistent with `open_dx11_zero_copy_or_skip`'s own graceful skip.
 
-## CPU decode bug (found 2026-08-05, unresolved)
+## CPU decode bug (found + fixed 2026-08-05)
 
-Found while adding `mediaway-ffi`'s decode C ABI
-(`crates/mediaway-ffi/adr/pipeline/0004-auto-decode-c-abi.md`) — a real, pre-existing bug in
-`WindowsVideoDecoder`'s `CpuFramesOk` H.264 path, not a defect in that new FFI wrapper:
+Found while adding `mediaway-ffi`'s decode C ABI (`adr/pipeline/0004-auto-decode-c-abi.md`):
+two real bugs, both fixed — both tests un-`#[ignore]`d:
 
-- `crates/mediaway-decoder/tests/windows/cpu_roundtrip.rs` (WMF H.264 CPU encode→decode
-  round-trip) existed but was **never actually running** — nested `tests/<dir>/*.rs` paths
-  aren't auto-discovered by `cargo test`, and its imports (pre-ADR-0021 names) didn't compile
-  either. Moved to `tests/cpu_roundtrip.rs` and fixed — same gap class as other nested test
-  files workspace-wide, not yet audited.
-- Run for real for the first time: `decoder.poll_frame()` returns **zero frames** for a real,
-  valid single-packet H.264 bitstream — no error, just nothing to poll. A fuller round trip via
-  `mediaway-ffi`'s C ABI (`mediaway-ffi/tests/decode_smoke.rs`) hits a **worse** symptom on the
-  same path: `poll_frame` triggers a Rust std UB precondition check and **aborts the process**
-  (not catchable — `catch_unwind` can't turn it into a status code).
-- Root cause not found; both test files `#[ignore]`d with the reason in their doc comments —
-  tracked, not silently passed. Next: bisect single-packet vs. multi-packet-from-demux inputs.
+- `cpu_roundtrip.rs` (moved from `tests/windows/` — nested `tests/<dir>/*.rs` files aren't
+  auto-discovered by `cargo test`) returned **zero frames** for a real WMF-encoder H.264
+  stream, no error. Root cause: the WMF encoder emits **Annex-B packets but an avcC
+  `extra_data`** (normalized for the container), so the decoder's AVCC→Annex-B conversion
+  — keyed on `extra_data` alone — corrupted the Annex-B packets and the MFT never emitted.
+  Fix (`wmf/shared.rs::packet_to_sample`): per-payload Annex-B start-code probe
+  (`iso_bmff::bitstream::avc::is_annex_b`, the muxer's own test); AVCC packets still convert.
+- `decode_smoke.rs` (mux → demux → decode, 10 frames) looked like a `poll_frame` abort
+  (`Alignment::new_unchecked requires a power of two`) but traced to a **double-free in
+  the test**: `mediaway_encode_session_finish` consumes the encode session; the test then
+  called `mediaway_encode_session_close(session)` anyway — stray close removed; all 10
+  frames decoded fine. The std-`Alignment` attribution was wrong.
 
 ## D3D12 native decode (H.264 implemented, unregistered — ADR-0002)
 

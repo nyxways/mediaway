@@ -3,14 +3,16 @@
 //! muxed into one two-track fMP4 — proves the Stage 1 roadmap item
 //! "Screen-record example composed through this crate end-to-end".
 //!
-//! [`mediaway::EncodeSession`] stays video-only / single-track per
-//! ADR-0014 ("extend … when a real caller needs it — new ADR at that point if
-//! the shape changes materially"); this test is that first real caller, but it
-//! composes the second (audio) track directly against a shared
-//! [`mediaway_container::mp4::Muxer`] instead of changing `EncodeSession`'s
-//! public shape — the same multi-track pattern already used in
-//! `mediaway-encoder-windows/tests/av_fmp4_smoke.rs`. No new ADR needed since
-//! `EncodeSession` itself is untouched.
+//! Both tracks are composed through [`mediaway::EncodeSession`]:
+//! [`EncodeSession::open_with_audio`] registers the video and audio encoders as MP4
+//! tracks 0 and 1 on one shared `mp4::Muxer` before `begin()` (ADR-0003 — the
+//! muxer's typestate means the audio track must be declared at construction),
+//! the record loop feeds capture frames in via
+//! `write_frame`/`write_audio_frame` (the session drains encoded packets into the
+//! muxer on every push), and `finish()` flushes both encoders and returns the complete
+//! two-track fMP4 bytes. This used to hand-roll that muxer composition
+//! (`Muxer::with_fragment_batch` → `add_track` ×2 → `begin` → `push_packet`) — possible
+//! through the session since ADR-0003, migrated per roadmap Stage 1b.
 //!
 //! The captured DXGI surface is BGRA — fed straight into the H.264 encoder's
 //! Zero-Copy path via `PixelFormat::Bgra8` (the "live-recorder" ARGB32 input
@@ -28,12 +30,12 @@
 
 use std::time::{Duration, Instant};
 
+use mediaway::EncodeSession;
 use mediaway::platform;
 use mediaway_common::{
-    CodecKind, GpuDeviceHandle, NativeHandle, Packet, PixelFormat, Rational, SampleFormat,
-    StreamInfo,
+    CodecKind, GpuDeviceHandle, NativeHandle, PixelFormat, Rational, SampleFormat,
 };
-use mediaway_container::mp4::{Demuxer, Muxer};
+use mediaway_container::mp4::Demuxer;
 use mediaway_device::Select;
 use mediaway_device::audio::{AudioCapture, AudioCaptureConfig};
 use mediaway_device::desktop::{
@@ -41,7 +43,7 @@ use mediaway_device::desktop::{
 };
 use mediaway_encoder::auto::{AutoVideoEncodeConfig, EncodePathClass};
 use mediaway_encoder::windows::WindowsAudioEncoder;
-use mediaway_encoder::{AudioEncoder, AudioEncoderConfig, VideoEncoder};
+use mediaway_encoder::{AudioEncoderConfig, VideoEncoder};
 use windows::Win32::Foundation::{HMODULE, POINT};
 use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
 use windows::Win32::Graphics::Direct3D11::{
@@ -107,7 +109,7 @@ fn screen_and_mic_to_fmp4_two_tracks() {
             Rational::new(1, 30),
         )
     };
-    let mut venc = match platform::AutoEncoder::open(&venc_cfg) {
+    let venc = match platform::AutoEncoder::open(&venc_cfg) {
         Ok(e) => e,
         Err(e) => {
             eprintln!("skip: video encoder unavailable ({e:?})");
@@ -125,7 +127,7 @@ fn screen_and_mic_to_fmp4_two_tracks() {
         time_base: Rational::new(1, sample_rate),
         bitrate_bps: 128_000,
     };
-    let mut aenc = match WindowsAudioEncoder::open(&aenc_cfg) {
+    let aenc = match WindowsAudioEncoder::open(&aenc_cfg) {
         Ok(e) => e,
         Err(e) => {
             eprintln!("skip: audio encoder unavailable ({e:?})");
@@ -135,27 +137,26 @@ fn screen_and_mic_to_fmp4_two_tracks() {
         }
     };
 
-    let (mut vpackets, mut apackets) = record_loop(&mut *screen, &mut *mic, &mut venc, &mut aenc);
+    // ADR-0003: both tracks registered before the muxer's `begin()`, video 0 /
+    // audio 1 — the session also flushes both encoders in `finish()`.
+    let mut session = EncodeSession::open_with_audio(venc, aenc).expect("open_with_audio");
+
+    let (video_frames, audio_frames) = record_loop(&mut *screen, &mut *mic, &mut session);
 
     screen.close().ok();
     mic.close().ok();
-    venc.flush().expect("video flush");
-    drain_video(&mut venc, &mut vpackets);
-    aenc.flush().expect("audio flush");
-    drain_audio(&mut aenc, &mut apackets);
 
-    if vpackets.is_empty() {
+    if video_frames == 0 {
         eprintln!("skip: no video frames captured during the recording window");
         return;
     }
     assert!(
-        !apackets.is_empty(),
-        "expected at least one AAC packet from mic capture"
+        audio_frames > 0,
+        "expected at least one mic frame during the recording window"
     );
 
-    let vinfo = venc.stream_info().clone().with_id(0);
-    let ainfo = aenc.stream_info().clone().with_id(1);
-    assert_two_track_fmp4(vinfo, ainfo, vpackets, apackets);
+    let bytes = session.finish().expect("session finish");
+    assert_two_track_fmp4(&bytes, video_frames, audio_frames);
 }
 
 /// Own D3D11 device shared by screen capture and the video encoder's
@@ -185,17 +186,19 @@ fn open_shared_d3d11_device() -> Option<(ID3D11Device, NativeHandle)> {
     Some((device, handle))
 }
 
-/// Bounded capture→encode loop: polls screen + mic, pushes frames into the
-/// respective encoders, and returns every encoded packet. Terminates at
+/// Bounded capture→encode loop: polls screen + mic and pushes each captured
+/// frame into the shared [`EncodeSession`], which encodes and muxes both
+/// tracks internally. Returns the per-track count of frames successfully
+/// pushed — the session is opaque for packet counts (packets drain straight
+/// into its muxer), so the callers assert on frames instead. Terminates at
 /// [`CAPTURE_SECS`] regardless of activity — not "until Ctrl+C".
 fn record_loop<E: VideoEncoder>(
     screen: &mut dyn DesktopVideoCapture,
     mic: &mut dyn AudioCapture,
-    venc: &mut E,
-    aenc: &mut WindowsAudioEncoder,
-) -> (Vec<Packet>, Vec<Packet>) {
-    let mut vpackets = Vec::new();
-    let mut apackets = Vec::new();
+    session: &mut EncodeSession<E>,
+) -> (usize, usize) {
+    let mut video_frames = 0usize;
+    let mut audio_frames = 0usize;
     let mut video_pts = 0i64;
     let mut toggle = false;
     let mut origin = POINT::default();
@@ -212,14 +215,14 @@ fn record_loop<E: VideoEncoder>(
             Ok(Some(mut frame)) => {
                 frame.pts = video_pts;
                 video_pts += 1;
-                let pushed = venc.push_frame(&frame);
-                // Release only after the encoder has consumed the texture
-                // (push_frame's DX11 path drains synchronously) — matches
+                let pushed = session.write_frame(&frame);
+                // Release only after the session has consumed the texture
+                // (write_frame's DX11 path drains synchronously) — matches
                 // real hardware-encode pacing instead of releasing early.
                 let _ = screen.release_frame();
                 match pushed {
-                    Ok(()) => drain_video(venc, &mut vpackets),
-                    Err(e) => eprintln!("screen_mic_av_smoke: video push error ({e:?})"),
+                    Ok(()) => video_frames += 1,
+                    Err(e) => eprintln!("screen_mic_av_smoke: video write error ({e:?})"),
                 }
             }
             Ok(None) => {}
@@ -230,9 +233,9 @@ fn record_loop<E: VideoEncoder>(
         }
 
         while let Ok(Some(frame)) = mic.poll_frame() {
-            match aenc.push_frame(&frame) {
-                Ok(()) => drain_audio(aenc, &mut apackets),
-                Err(e) => eprintln!("screen_mic_av_smoke: audio push error ({e:?})"),
+            match session.write_audio_frame(&frame) {
+                Ok(()) => audio_frames += 1,
+                Err(e) => eprintln!("screen_mic_av_smoke: audio write error ({e:?})"),
             }
         }
 
@@ -243,7 +246,7 @@ fn record_loop<E: VideoEncoder>(
     unsafe {
         let _ = SetCursorPos(origin.x, origin.y);
     }
-    (vpackets, apackets)
+    (video_frames, audio_frames)
 }
 
 /// Jitter the cursor by one pixel and back. DXGI Desktop Duplication's
@@ -260,43 +263,15 @@ fn nudge_cursor(origin: POINT, toggle: &mut bool) {
     }
 }
 
-fn drain_video<E: VideoEncoder>(enc: &mut E, out: &mut Vec<Packet>) {
-    while let Some(p) = enc.poll_packet().expect("poll video packet") {
-        out.push(p);
-    }
-}
-
-fn drain_audio<E: AudioEncoder>(enc: &mut E, out: &mut Vec<Packet>) {
-    while let Some(p) = enc.poll_packet().expect("poll audio packet") {
-        out.push(p);
-    }
-}
-
-/// Mux both tracks into one fMP4, write it to a temp file, demux it back, and
-/// assert real output properties: non-trivial size, exactly 2 tracks, and a
-/// demuxed packet count at least matching what was encoded.
-fn assert_two_track_fmp4(
-    vinfo: StreamInfo,
-    ainfo: StreamInfo,
-    mut vpackets: Vec<Packet>,
-    mut apackets: Vec<Packet>,
-) {
-    let mut open = Muxer::with_fragment_batch(2);
-    open.add_track(vinfo).expect("video track");
-    open.add_track(ainfo).expect("audio track");
-    let mut mux = open.begin();
-    for p in &mut vpackets {
-        p.stream_id = 0;
-        mux.push_packet(p).expect("mux video packet");
-    }
-    for p in &mut apackets {
-        p.stream_id = 1;
-        mux.push_packet(p).expect("mux audio packet");
-    }
-    mux.flush();
-
-    let mut bytes = Vec::new();
-    mux.poll_bytes(&mut bytes);
+/// Write the finished two-track fMP4 to a temp file, demux it back, and
+/// assert real output properties: non-trivial size, exactly 2 tracks, and
+/// per-track demuxed packet counts consistent with what was pushed through
+/// the session. The session drains encoded packets into its own muxer, so the
+/// test can no longer observe packet counts: the video bound is exact (the
+/// WMF H.264 encoder emits one packet per input frame — 1:1, flushed by
+/// `finish()`), the audio bound is existence (each AAC packet consumes ~2.13
+/// 480-sample capture frames, so no honest 1:1 frame→packet bound exists).
+fn assert_two_track_fmp4(bytes: &[u8], video_frames: usize, audio_frames: usize) {
     assert!(
         bytes.len() > 1_000,
         "fmp4 output implausibly small: {} bytes",
@@ -305,36 +280,46 @@ fn assert_two_track_fmp4(
     assert_eq!(&bytes[4..8], b"ftyp");
 
     let path = std::env::temp_dir().join("mediaway_screen_mic_av_smoke.mp4");
-    std::fs::write(&path, &bytes).expect("write fmp4 to disk");
+    std::fs::write(&path, bytes).expect("write fmp4 to disk");
     let written_len = std::fs::metadata(&path).expect("stat written fmp4").len();
     assert!(written_len > 1_000, "written file implausibly small");
 
     let mut demux = Demuxer::new();
-    demux.push_bytes(&bytes);
+    demux.push_bytes(bytes);
     assert_eq!(
         demux.streams().len(),
         2,
         "expected exactly 2 demuxed tracks"
     );
 
-    let mut demuxed = 0usize;
-    while demux.poll_packet().is_some() {
-        demuxed += 1;
+    // The session muxed video as track 0 and audio as track 1 (ADR-0003
+    // renumbers explicitly), so demuxed packets carry those ids back out.
+    let mut demuxed_video = 0usize;
+    let mut demuxed_audio = 0usize;
+    while let Some(p) = demux.poll_packet() {
+        match p.stream_id {
+            0 => demuxed_video += 1,
+            1 => demuxed_audio += 1,
+            _ => {}
+        }
     }
     assert!(
-        demuxed >= vpackets.len() + apackets.len(),
-        "demuxed {demuxed} packets, expected >= {} (video) + {} (audio)",
-        vpackets.len(),
-        apackets.len()
+        demuxed_video >= video_frames,
+        "demuxed {demuxed_video} video packets, expected >= {video_frames} (video frames pushed)"
+    );
+    assert!(
+        demuxed_audio >= 1,
+        "expected at least one demuxed audio packet (audio frames pushed: {audio_frames})"
     );
 
     std::fs::remove_file(&path).ok();
 
     eprintln!(
-        "screen_and_mic_to_fmp4_two_tracks: video={} audio={} demuxed={} bytes={}",
-        vpackets.len(),
-        apackets.len(),
-        demuxed,
+        "screen_and_mic_to_fmp4_two_tracks: video_frames={} audio_frames={} demuxed_video={} demuxed_audio={} bytes={}",
+        video_frames,
+        audio_frames,
+        demuxed_video,
+        demuxed_audio,
         bytes.len()
     );
 }

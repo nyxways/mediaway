@@ -151,12 +151,18 @@ pub(super) fn packet_to_sample(
         return Err(DecodeError::InvalidInput);
     }
     // AVCC-framed packets (demuxed MP4 samples) need converting to Annex-B before the
-    // MFT can find NAL start codes; Annex-B packets (e.g. straight from an encoder)
-    // pass through unchanged.
-    let annex_b_payload = nal_length_size.map_or_else(
-        || packet.payload.clone(), // clone: Bytes ref-count bump, not a payload copy
-        |n| iso_bmff::bitstream::avc::avcc_payload_to_annex_b(&packet.payload, n),
-    );
+    // MFT can find NAL start codes; Annex-B packets pass through unchanged. `extra_data`
+    // being AVCC does not imply the packets are: a Media Foundation H.264 encoder emits
+    // Annex-B samples but normalizes `extra_data` to an avcC record for the container
+    // (`mediaway-encoder`'s `refresh_extradata`), so a direct encoder→decoder feed has
+    // AVCC `extra_data` with already-Annex-B packets — converting those as AVCC corrupts
+    // them. Detect per-packet (same start-code probe the muxer's `to_avcc` uses).
+    let annex_b_payload = match nal_length_size {
+        Some(n) if !iso_bmff::bitstream::avc::is_annex_b(&packet.payload) => {
+            iso_bmff::bitstream::avc::avcc_payload_to_annex_b(&packet.payload, n)
+        }
+        _ => packet.payload.clone(), // clone: Bytes ref-count bump, not a payload copy
+    };
     if annex_b_payload.is_empty() {
         return Err(DecodeError::InvalidInput);
     }

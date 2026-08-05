@@ -66,10 +66,6 @@
 
 ### Fixed
 
-- `mediaway-decoder/tests/cpu_roundtrip.rs` (moved from a `tests/windows/` subpath
-  `cargo test` never discovered) now actually compiles and runs; found a real,
-  unresolved bug in `WindowsVideoDecoder`'s CPU H.264 decode path — left
-  `#[ignore]`d with the finding documented, not silently passing.
 - `mediaway-decoder::vulkan`'s HEVC GPU decode no longer produces an all-zero
   picture: `HevcPps` was missing `pps_loop_filter_across_slices_enabled_flag`,
   which gates a real conditional bit in every slice header, desyncing the
@@ -80,6 +76,15 @@
   an earlier crate merge but never wired into `Cargo.toml`, so `cargo test`
   silently never ran either) are now real `[[test]]` targets again; HEVC's
   hardware test hard-asserts on decoded pixel values instead of soft-skipping.
+- `mediaway-decoder` (Windows): `WindowsVideoDecoder`'s CPU H.264 path (`CpuFramesOk`)
+  silently decoded **zero frames** for streams fed straight from a WMF encoder (Annex-B
+  packets + avcC `extra_data` were treated as AVCC-framed and corrupted). `packet_to_sample`
+  now probes each payload for an Annex-B start code and passes Annex-B packets through
+  unchanged; demuxed AVCC streams still convert. `tests/cpu_roundtrip.rs` un-`#[ignore]`d.
+- `mediaway-ffi`: `mediaway_decode_session_close` teardown crashed the process in
+  `tests/decode_smoke.rs` because the test called `mediaway_encode_session_close` after
+  `mediaway_encode_session_finish` had already consumed the session (double-free) — stray
+  call removed, test un-`#[ignore]`d and passing end-to-end.
 
 ### Removed
 

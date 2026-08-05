@@ -35,6 +35,10 @@ mediaway-device = { workspace = true }
 # status code (status.rs) — `mediaway` already pulls this in transitively
 # with the same default ("full") features, so this adds no new feature surface.
 mediaway-encoder = { workspace = true }
+# Needed for `VideoDecoder`/`VideoDecoderConfig`/`DecodeError` (pipeline decode C ABI,
+# adr/pipeline/0004-auto-decode-c-abi.md) — `mediaway` already pulls this in
+# transitively, so this adds no new feature surface.
+mediaway-decoder = { workspace = true }
 mediaway = { workspace = true }
 
 

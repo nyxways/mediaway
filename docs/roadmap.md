@@ -55,9 +55,19 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
       (`EncodeSession::open_with_audio` / `write_audio_frame`, `crates/mediaway/src/session.rs`);
       remaining gap is migrating `tests/screen_mic_av_smoke.rs` off its hand-rolled second-track
       muxing onto the native API.
-- [ ] **C ABI facade**: container + device C ABI mature and hardware-verified; `mediaway-ffi`'s
-      pipeline module still defers screen/camera capture + decode, `cbindgen` migration and a
-      shared `mediaway-common-ffi` header are still open (see `crates/mediaway-ffi/docs/*/roadmap.md`).
+- [ ] **C ABI facade**: container + device C ABI mature and hardware-verified. `mediaway-ffi`'s
+      pipeline module now covers encode, decode (`AutoDecoder`,
+      `adr/pipeline/0004-auto-decode-c-abi.md`), and a capture-to-encode convenience bridge
+      (`adr/pipeline/0005-capture-encode-bridge-c-abi.md`, hardware-verified with a real USB
+      camera). Decode's C ABI is implemented and compiles/clippy clean but its own integration
+      test is `#[ignore]`d — blocked on a real, pre-existing `WindowsVideoDecoder` CPU-decode
+      bug found while adding it (`docs/roadmap.md` § Windows CPU Decode Bug), not a defect in
+      the FFI wrapper itself. Shared header types are consolidated into
+      `include/mediaway/common.h` (`adr/common/0001-shared-header-consolidation.md`). `cbindgen`
+      tooling adopted crate-wide (`docs/adr/0016-cbindgen-ffi-headers.md`) — generates a
+      clean-compiling header for the whole crate; the three real `include/mediaway/*.h` headers
+      are still hand-written, per-header migration tracked separately (see
+      `crates/mediaway-ffi/docs/*/roadmap.md`).
 - [ ] **Game Engine & Seamless DX Wrappers**: `mediaway::wgpu` exists (Windows DX12 only) — encode
       bridge hardware-verified, decode bridge construction-only (no pixel round trip yet); no
       `Three.js`/WebGPU or Godot wrapper exists.
@@ -76,6 +86,10 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
       pixels (root cause not found); AV1 encode is structurally hardware-verified but every
       frame's OBU output is invalid — confirmed driver-maturity limitation, not a Mediaway bug;
       AV1 decode has not been started.
+- [ ] **Windows CPU Decode Bug**: `WindowsVideoDecoder`'s `CpuFramesOk` H.264 path produces no
+      frames (single-packet input) or aborts the process on a Rust std UB check (multi-frame
+      muxed/demuxed input) — found 2026-08-05 while adding `mediaway-ffi`'s decode C ABI; root
+      cause not found (`docs/ai/wiki/platform/windows-decode.md` § CPU decode bug).
 - [x] **Opus Audio Codec Integration (encode)**: `WindowsAudioEncoder` dispatches `CodecKind::Opus`
       to `mediaway-sw`'s `SwOpusAudioEncoder` as a real `AudioEncoder` backend
       (`crates/mediaway-encoder/src/windows/mod.rs`). Decode side still open — `mediaway-decoder`

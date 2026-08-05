@@ -20,8 +20,12 @@ use crate::pipeline::types::{MediawayVideoFrame, MediawayVideoFrameStorageKind};
 /// Thread-confined by convention: may be moved between threads, but must not be
 /// used from two threads concurrently without external synchronization.
 pub struct EncodeSessionHandle {
-    poisoned: bool,
-    inner: EncodeSession<AutoEncoderHandle>,
+    // `pub(crate)`, not private: the capture-to-encode bridge
+    // (`adr/pipeline/0005-capture-encode-bridge-c-abi.md`, `capture_bridge.rs`)
+    // pushes frames into this handle directly from a sibling module — still
+    // fully opaque to C callers regardless of Rust-level visibility.
+    pub(crate) poisoned: bool,
+    pub(crate) inner: EncodeSession<AutoEncoderHandle>,
 }
 
 /// Register `encoder`'s stream as an MP4 track and begin streaming.

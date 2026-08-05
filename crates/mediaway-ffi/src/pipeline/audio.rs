@@ -10,7 +10,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 use std::slice;
 
-use mediaway_common::{AudioFrame, Bytes, CodecKind, SampleFormat, StreamInfo};
+use mediaway_common::{AudioFrame, Bytes, CodecKind, Packet, SampleFormat, StreamInfo};
 use mediaway_encoder::{AudioEncoder, AudioEncoderConfig, EncodeError};
 
 use crate::pipeline::buffer::{leak_boxed_slice, reclaim_boxed_slice};
@@ -20,13 +20,37 @@ use crate::pipeline::types::{
     MediawayAudioStreamInfo, MediawayPipelineCodecKind, MediawayRational, MediawaySampleFormat,
 };
 
-/// The encode session handle — `Box<dyn AudioEncoder>`, the same thin-pointer
-/// pattern as `AutoEncoderHandle` (`adr/0001` §3).
+/// The encode session handle — a `#[repr(transparent)]` newtype over
+/// `Box<dyn AudioEncoder>`, the same shape as `AutoEncoderHandle` (`adr/0001` §3).
+///
+/// Not a bare `Box<dyn AudioEncoder>` type alias — `cbindgen`
+/// (`docs/adr/0016-cbindgen-ffi-headers.md`) can forward-declare a newtype struct as
+/// an opaque C handle but has no way to do the same for a type alias to a trait
+/// object. Same layout as the alias it replaces (a boxed fat pointer, 2 words).
 ///
 /// Needs no `poisoned` flag: `close` is always safe, and every other function's
 /// failure path returns a status without destroying the handle (the caller
 /// chooses to close).
-pub type AudioEncodeSessionHandle = Box<dyn AudioEncoder>;
+#[repr(transparent)]
+pub struct AudioEncodeSessionHandle(Box<dyn AudioEncoder>);
+
+impl AudioEncoder for AudioEncodeSessionHandle {
+    fn stream_info(&self) -> &StreamInfo {
+        self.0.stream_info()
+    }
+
+    fn push_frame(&mut self, frame: &AudioFrame) -> Result<(), EncodeError> {
+        self.0.push_frame(frame)
+    }
+
+    fn poll_packet(&mut self) -> Result<Option<Packet>, EncodeError> {
+        self.0.poll_packet()
+    }
+
+    fn flush(&mut self) -> Result<(), EncodeError> {
+        self.0.flush()
+    }
+}
 
 /// Validate + translate a C config into the Rust `AudioEncoderConfig`.
 fn rust_config(
@@ -108,7 +132,7 @@ pub unsafe extern "C" fn mediaway_audio_encoder_open(
 
     match result {
         Ok(Ok(encoder)) => {
-            let handle: Box<AudioEncodeSessionHandle> = Box::new(encoder);
+            let handle: Box<AudioEncodeSessionHandle> = Box::new(AudioEncodeSessionHandle(encoder));
             // SAFETY: `out_session` is checked non-null above (function contract).
             unsafe { out_session.write(Box::into_raw(handle)) };
             MediawayPipelineStatus::Ok
@@ -141,7 +165,7 @@ pub unsafe extern "C" fn mediaway_audio_encode_session_stream_info(
 
     let result = catch_unwind(AssertUnwindSafe(|| {
         // SAFETY: caller guarantees `session` is a valid handle pointer (function contract).
-        let encoder = unsafe { &**session };
+        let encoder = unsafe { &*session };
         match encoder.stream_info() {
             StreamInfo::Audio {
                 codec,

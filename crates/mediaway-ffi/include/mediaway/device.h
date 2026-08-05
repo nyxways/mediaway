@@ -98,14 +98,26 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "common.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* ── Opaque handles ──────────────────────────────────────────────────────────────── */
 
+/* Guarded (not just declared bare): pipeline.h forward-declares these same two types
+ * for its capture-to-encode bridge (adr/pipeline/0005-capture-encode-bridge-c-abi.md)
+ * so it compiles standalone too — matching macro names here prevent a redefinition
+ * error when both headers are included in one translation unit, regardless of order. */
+#ifndef MEDIAWAY_CAMERA_CAPTURE_T_DEFINED
+#define MEDIAWAY_CAMERA_CAPTURE_T_DEFINED
 typedef struct mediaway_camera_capture mediaway_camera_capture_t;
+#endif
+#ifndef MEDIAWAY_DESKTOP_CAPTURE_T_DEFINED
+#define MEDIAWAY_DESKTOP_CAPTURE_T_DEFINED
 typedef struct mediaway_desktop_capture mediaway_desktop_capture_t;
+#endif
 typedef struct mediaway_audio_capture mediaway_audio_capture_t;
 typedef struct mediaway_desktop_audio_capture mediaway_desktop_audio_capture_t;
 typedef struct mediaway_device_hotplug mediaway_device_hotplug_t;
@@ -131,88 +143,10 @@ typedef enum mediaway_device_status {
 
 /* ── Shared value types ──────────────────────────────────────────────────────────── */
 
-#ifndef MEDIAWAY_RATIONAL_T_DEFINED
-#define MEDIAWAY_RATIONAL_T_DEFINED
-typedef struct mediaway_rational {
-    uint64_t num;
-    uint32_t den; /* must be non-zero */
-} mediaway_rational_t;
-#endif
-
-#ifndef MEDIAWAY_PIXEL_FORMAT_T_DEFINED
-#define MEDIAWAY_PIXEL_FORMAT_T_DEFINED
-typedef enum mediaway_pixel_format {
-    MEDIAWAY_PIXEL_FORMAT_NV12  = 0,
-    MEDIAWAY_PIXEL_FORMAT_I420  = 1,
-    MEDIAWAY_PIXEL_FORMAT_BGRA8 = 2,
-    MEDIAWAY_PIXEL_FORMAT_RGBA8 = 3,
-    MEDIAWAY_PIXEL_FORMAT_YUYV  = 4,
-} mediaway_pixel_format_t;
-#endif /* only NV12/BGRA8 exercised by the Windows backends today */
-
-/* Identical shape/values to mediaway-ffi's mediaway_sample_format_t —
- * reused, not re-derived, but a distinct header (no shared header exists yet).
- * Only F32 accepted by the real Windows WASAPI backend today. */
-#ifndef MEDIAWAY_SAMPLE_FORMAT_T_DEFINED
-#define MEDIAWAY_SAMPLE_FORMAT_T_DEFINED
-typedef enum mediaway_sample_format {
-    MEDIAWAY_SAMPLE_FORMAT_S16 = 0,
-    MEDIAWAY_SAMPLE_FORMAT_S32 = 1,
-    MEDIAWAY_SAMPLE_FORMAT_F32 = 2,
-} mediaway_sample_format_t;
-#endif
-
-/* ── GPU device/buffer handles (adr/0003) ────────────────────────────────────────── */
-
-#ifndef MEDIAWAY_GPU_DEVICE_KIND_T_DEFINED
-#define MEDIAWAY_GPU_DEVICE_KIND_T_DEFINED
-typedef enum mediaway_gpu_device_kind {
-    MEDIAWAY_GPU_DEVICE_NONE      = 0, /* safe zero-init default */
-    MEDIAWAY_GPU_DEVICE_DIRECTX11 = 1,
-    MEDIAWAY_GPU_DEVICE_DIRECTX12 = 2,
-    MEDIAWAY_GPU_DEVICE_VULKAN    = 3,
-    MEDIAWAY_GPU_DEVICE_METAL     = 4,
-    MEDIAWAY_GPU_DEVICE_WEBGPU    = 5,
-} mediaway_gpu_device_kind_t;
-#endif
-
-#ifndef MEDIAWAY_GPU_DEVICE_HANDLE_T_DEFINED
-#define MEDIAWAY_GPU_DEVICE_HANDLE_T_DEFINED
-/* Caller-supplied GPU device handle. Caller-owned; keep the underlying device
- * alive for at least the duration of the call that consumes it. Plain value. */
-typedef struct mediaway_gpu_device_handle {
-    mediaway_gpu_device_kind_t kind;
-    uintptr_t native;           /* ID3D11Device* / ID3D12Device* / VkDevice / MTLDevice bits; 0 for NONE/WebGpu */
-    uint64_t webgpu_device_id;  /* WebGpu only; 0 otherwise */
-} mediaway_gpu_device_handle_t;
-#endif
-
-#ifndef MEDIAWAY_GPU_BUFFER_KIND_T_DEFINED
-#define MEDIAWAY_GPU_BUFFER_KIND_T_DEFINED
-typedef enum mediaway_gpu_buffer_kind {
-    MEDIAWAY_GPU_BUFFER_DIRECTX11       = 0,
-    MEDIAWAY_GPU_BUFFER_DIRECTX12       = 1,
-    MEDIAWAY_GPU_BUFFER_DIRECTX_SHARED  = 2,
-    MEDIAWAY_GPU_BUFFER_METAL           = 3,
-    MEDIAWAY_GPU_BUFFER_ANDROID_SURFACE = 4,
-    MEDIAWAY_GPU_BUFFER_VULKAN          = 5,
-    MEDIAWAY_GPU_BUFFER_WEBGPU          = 6,
-    MEDIAWAY_GPU_BUFFER_UNKNOWN         = 255, /* decode-side catch-all */
-} mediaway_gpu_buffer_kind_t;
-#endif
-
-#ifndef MEDIAWAY_GPU_BUFFER_HANDLE_T_DEFINED
-#define MEDIAWAY_GPU_BUFFER_HANDLE_T_DEFINED
-/* Polled GPU frame storage — BORROWED, never freed by the caller. See the file
- * header's GPU HAZARDS section. */
-typedef struct mediaway_gpu_buffer_handle {
-    mediaway_gpu_buffer_kind_t kind;
-    uintptr_t native_a;         /* texture / resource / handle / buffer / image, per kind */
-    uintptr_t native_b;         /* Vulkan memory cookie only; 0 otherwise */
-    uint32_t subresource;       /* DirectX11 only; 0 otherwise */
-    uint64_t webgpu_texture_id; /* WebGpu only; 0 otherwise */
-} mediaway_gpu_buffer_handle_t;
-#endif
+/* mediaway_rational_t, mediaway_pixel_format_t, mediaway_sample_format_t, and the GPU
+ * device/buffer handle types (adr/device/0003-gpu-handle-c-abi.md) all come from
+ * common.h. Polled GPU frame storage here is BORROWED, never freed by the caller — see
+ * the file header's GPU HAZARDS section. */
 
 /* ── Camera (video, CPU-only) ────────────────────────────────────────────────────── */
 
@@ -267,13 +201,8 @@ typedef struct mediaway_desktop_capture_config {
     mediaway_gpu_device_handle_t gpu_device;
 } mediaway_desktop_capture_config_t;
 
-#ifndef MEDIAWAY_VIDEO_FRAME_STORAGE_KIND_T_DEFINED
-#define MEDIAWAY_VIDEO_FRAME_STORAGE_KIND_T_DEFINED
-typedef enum mediaway_video_frame_storage_kind {
-    MEDIAWAY_VIDEO_FRAME_STORAGE_CPU = 0, /* data/data_len valid */
-    MEDIAWAY_VIDEO_FRAME_STORAGE_GPU = 1, /* gpu_buffer valid, BORROWED */
-} mediaway_video_frame_storage_kind_t;
-#endif
+/* mediaway_video_frame_storage_kind_t comes from common.h (CPU: data/data_len valid;
+ * GPU: gpu_buffer valid, BORROWED here). */
 
 /* Output of mediaway_desktop_capture_poll_frame — release with
  * mediaway_desktop_frame_free. GPU storage is BORROWED (never freed — see the

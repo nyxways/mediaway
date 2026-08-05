@@ -1,6 +1,9 @@
 /*
- * pipeline.h — mediaway-ffi: C ABI facade over Mediaway's auto video
- * encode -> fragmented MP4 convenience layer (mediaway).
+ * pipeline.h — mediaway-ffi: C ABI facade over Mediaway's auto video/audio
+ * encode -> fragmented MP4 convenience layer, auto video decode
+ * (adr/0004-auto-decode-c-abi.md), and a capture-to-encode bridge
+ * (adr/0005-capture-encode-bridge-c-abi.md) that wires device.h capture handles
+ * directly into an encode session.
  *
  * Hand-written (not cbindgen-generated) — see adr/0001-auto-encode-c-abi.md §8.
  * Design rules: docs/spec/c-ffi.md (ADR-0004).
@@ -70,11 +73,13 @@
 #ifndef MEDIAWAY_PIPELINE_H
 #define MEDIAWAY_PIPELINE_H
 
-#define MEDIAWAY_PIPELINE_FFI_ABI_VERSION 2 /* bump on any breaking change; pre-1.0, no stability promise */
+#define MEDIAWAY_PIPELINE_FFI_ABI_VERSION 4 /* bump on any breaking change; pre-1.0, no stability promise */
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+
+#include "common.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -87,6 +92,21 @@ extern "C" {
 typedef struct mediaway_auto_encoder mediaway_auto_encoder_t;
 typedef struct mediaway_encode_session mediaway_encode_session_t;
 typedef struct mediaway_audio_encode_session mediaway_audio_encode_session_t; /* adr/0003 — the session IS the encoder; no intermediate handle */
+typedef struct mediaway_decode_session mediaway_decode_session_t; /* adr/0004 — the session IS the decoder; no intermediate handle */
+
+/* Forward declarations only (adr/0005-capture-encode-bridge-c-abi.md): the real
+ * definitions live in device.h. Guarded so this header still compiles standalone
+ * AND co-includes cleanly with device.h — same pattern common.h's types use. The
+ * capture-to-encode bridge functions below are only actually usable once linked
+ * against real Camera/Desktop capture handles opened via device.h's own functions. */
+#ifndef MEDIAWAY_CAMERA_CAPTURE_T_DEFINED
+#define MEDIAWAY_CAMERA_CAPTURE_T_DEFINED
+typedef struct mediaway_camera_capture mediaway_camera_capture_t;
+#endif
+#ifndef MEDIAWAY_DESKTOP_CAPTURE_T_DEFINED
+#define MEDIAWAY_DESKTOP_CAPTURE_T_DEFINED
+typedef struct mediaway_desktop_capture mediaway_desktop_capture_t;
+#endif
 
 /* ── Status codes ────────────────────────────────────────────────────────────────── */
 
@@ -104,21 +124,16 @@ typedef enum mediaway_pipeline_status {
     MEDIAWAY_PIPELINE_STATUS_MUX_INVALID_DATA        = 10, /* malformed container data */
     MEDIAWAY_PIPELINE_STATUS_UNKNOWN_ERROR           = 11, /* reserved for a future error variant */
     MEDIAWAY_PIPELINE_STATUS_INTERNAL_PANIC          = 12, /* this call caught a Rust panic; the handle is now poisoned */
+    MEDIAWAY_PIPELINE_STATUS_DECODER_BACKEND_FAILURE = 13, /* OS/API failure inside the decoder backend */
+    MEDIAWAY_PIPELINE_STATUS_DECODER_CLOSED          = 14, /* decode session already finished or not open */
 } mediaway_pipeline_status_t;
 
 /* ── Shared value types ──────────────────────────────────────────────────────────── */
 
-/* Identical shape to mediaway-container-ffi's mediaway_rational_t — reused, not
- * re-derived, but a distinct typedef name (no shared header exists yet). */
-#ifndef MEDIAWAY_RATIONAL_T_DEFINED
-#define MEDIAWAY_RATIONAL_T_DEFINED
-typedef struct mediaway_rational {
-    uint64_t num;
-    uint32_t den; /* must be non-zero */
-} mediaway_rational_t;
-#endif
+/* mediaway_rational_t, mediaway_pixel_format_t, mediaway_sample_format_t, and the GPU
+ * device/buffer handle types below all come from common.h. */
 
-/* Distinct type name from mediaway_codec_kind_t (mediaway-container-ffi), but numeric
+/* Distinct type name from mediaway_codec_kind_t (container.h), but numeric
  * values are deliberately mirrored 1:1 — both wrap the same shared Rust type
  * (mediaway_common::CodecKind) end-to-end. Passing a non-video codec (AAC..RAW_AUDIO)
  * to mediaway_auto_video_encode_config_new is a runtime
@@ -138,81 +153,11 @@ typedef enum mediaway_pipeline_codec_kind {
     MEDIAWAY_PIPELINE_CODEC_RAW_AUDIO = 11,
 } mediaway_pipeline_codec_kind_t; /* pre-1.0 — values may be renumbered */
 
-/* First definition of this enum in the workspace's C headers — no mirroring precedent
- * to reconcile against. Only NV12/BGRA8 are exercised by the current Windows
- * CPU-upload backend today (an existing Rust-level limitation, not a new FFI one);
- * passing another variant surfaces as MEDIAWAY_PIPELINE_STATUS_UNSUPPORTED. */
-#ifndef MEDIAWAY_PIXEL_FORMAT_T_DEFINED
-#define MEDIAWAY_PIXEL_FORMAT_T_DEFINED
-typedef enum mediaway_pixel_format {
-    MEDIAWAY_PIXEL_FORMAT_NV12  = 0,
-    MEDIAWAY_PIXEL_FORMAT_I420  = 1,
-    MEDIAWAY_PIXEL_FORMAT_BGRA8 = 2,
-    MEDIAWAY_PIXEL_FORMAT_RGBA8 = 3,
-    MEDIAWAY_PIXEL_FORMAT_YUYV  = 4,
-} mediaway_pixel_format_t;
-#endif
-
-/* Both mediaway_gpu_device_handle_t/mediaway_gpu_buffer_handle_t wrap Rust
- * data-carrying enums (mediaway_common::GpuDeviceHandle/GpuBufferHandle) — first
- * defined textually in mediaway-device-ffi's <mediaway/device.h>; declared again
- * here for the same known duplicate-typedef acceptance mediaway_rational_t/
- * mediaway_pixel_format_t already carry (both crates' Rust sides share one
- * definition in mediaway-common-ffi::gpu). Flat struct + discriminant, not a C
- * union — matches this header's existing mediaway_video_frame_t convention. */
-
-#ifndef MEDIAWAY_GPU_DEVICE_KIND_T_DEFINED
-#define MEDIAWAY_GPU_DEVICE_KIND_T_DEFINED
-typedef enum mediaway_gpu_device_kind {
-    MEDIAWAY_GPU_DEVICE_NONE      = 0, /* no device supplied — the safe zero-init default */
-    MEDIAWAY_GPU_DEVICE_DIRECTX11 = 1,
-    MEDIAWAY_GPU_DEVICE_DIRECTX12 = 2,
-    MEDIAWAY_GPU_DEVICE_VULKAN    = 3,
-    MEDIAWAY_GPU_DEVICE_METAL     = 4,
-    MEDIAWAY_GPU_DEVICE_WEBGPU    = 5,
-} mediaway_gpu_device_kind_t;
-#endif
-
-#ifndef MEDIAWAY_GPU_DEVICE_HANDLE_T_DEFINED
-#define MEDIAWAY_GPU_DEVICE_HANDLE_T_DEFINED
-/* Caller-supplied GPU device handle (mediaway_auto_video_encode_config_t.gpu_device).
- * The caller owns the underlying device and must keep it alive for at least the
- * duration of mediaway_auto_encoder_open. Plain value; no free function. */
-typedef struct mediaway_gpu_device_handle {
-    mediaway_gpu_device_kind_t kind;
-    uintptr_t native;           /* ID3D11Device* / ID3D12Device* / VkDevice / MTLDevice bits; 0 for NONE/WebGpu */
-    uint64_t webgpu_device_id;  /* WebGpu only; 0 otherwise */
-} mediaway_gpu_device_handle_t;
-#endif
-
-#ifndef MEDIAWAY_GPU_BUFFER_KIND_T_DEFINED
-#define MEDIAWAY_GPU_BUFFER_KIND_T_DEFINED
-typedef enum mediaway_gpu_buffer_kind {
-    MEDIAWAY_GPU_BUFFER_DIRECTX11       = 0, /* native_a = texture, subresource meaningful */
-    MEDIAWAY_GPU_BUFFER_DIRECTX12       = 1, /* native_a = resource */
-    MEDIAWAY_GPU_BUFFER_DIRECTX_SHARED  = 2, /* native_a = HANDLE */
-    MEDIAWAY_GPU_BUFFER_METAL           = 3, /* native_a = buffer/IOSurface token */
-    MEDIAWAY_GPU_BUFFER_ANDROID_SURFACE = 4, /* native_a = AHardwareBuffer* */
-    MEDIAWAY_GPU_BUFFER_VULKAN          = 5, /* native_a = VkImage, native_b = memory cookie */
-    MEDIAWAY_GPU_BUFFER_WEBGPU          = 6, /* webgpu_texture_id meaningful */
-    MEDIAWAY_GPU_BUFFER_UNKNOWN         = 255, /* GpuBufferHandle is #[non_exhaustive]; decode-side catch-all only */
-} mediaway_gpu_buffer_kind_t;
-#endif
-
-#ifndef MEDIAWAY_GPU_BUFFER_HANDLE_T_DEFINED
-#define MEDIAWAY_GPU_BUFFER_HANDLE_T_DEFINED
-/* mediaway_video_frame_t's GPU-storage input — BORROWED, not owned. See the file
- * header's GPU HAZARDS section for the full read-window / immediate-context
- * contract. Opposite ownership direction from mediaway-device-ffi's identically-shaped
- * type (that one is a borrowed OUTPUT; this one is a borrowed INPUT). */
-typedef struct mediaway_gpu_buffer_handle {
-    mediaway_gpu_buffer_kind_t kind;
-    uintptr_t native_a;         /* texture / resource / handle / buffer / image, per kind */
-    uintptr_t native_b;         /* Vulkan memory cookie only; 0 otherwise */
-    uint32_t subresource;       /* DirectX11 only; 0 otherwise */
-    uint64_t webgpu_texture_id; /* WebGpu only; 0 otherwise */
-} mediaway_gpu_buffer_handle_t;
-#endif
+/* mediaway_video_frame_t's GPU-storage input (mediaway_gpu_buffer_handle_t) is
+ * BORROWED, not owned. See the file header's GPU HAZARDS section for the full
+ * read-window / immediate-context contract. Opposite ownership direction from
+ * device.h's identically-shaped type (that one is a borrowed OUTPUT; this one is a
+ * borrowed INPUT). */
 
 /* Plain value type; no free function. gpu_device (adr/0002-gpu-frame-input-c-abi.md
  * §1) opts the session into the Zero-Copy/GPU-copy input path at open time;
@@ -228,13 +173,8 @@ typedef struct mediaway_auto_video_encode_config {
     mediaway_gpu_device_handle_t gpu_device; /* MEDIAWAY_GPU_DEVICE_NONE for CPU-only */
 } mediaway_auto_video_encode_config_t;
 
-#ifndef MEDIAWAY_VIDEO_FRAME_STORAGE_KIND_T_DEFINED
-#define MEDIAWAY_VIDEO_FRAME_STORAGE_KIND_T_DEFINED
-typedef enum mediaway_video_frame_storage_kind {
-    MEDIAWAY_VIDEO_FRAME_STORAGE_CPU = 0, /* raw_bytes/raw_bytes_len valid; gpu_buffer unused */
-    MEDIAWAY_VIDEO_FRAME_STORAGE_GPU = 1, /* gpu_buffer valid; raw_bytes == NULL, raw_bytes_len == 0 */
-} mediaway_video_frame_storage_kind_t;
-#endif
+/* mediaway_video_frame_storage_kind_t comes from common.h (CPU: raw_bytes/raw_bytes_len
+ * valid, gpu_buffer unused; GPU: gpu_buffer valid, raw_bytes == NULL, raw_bytes_len == 0). */
 
 /* Input to mediaway_encode_session_write_frame — borrowed view, valid for the call
  * only. storage_kind decides which of raw_bytes/gpu_buffer is read (see the file
@@ -326,19 +266,9 @@ void mediaway_pipeline_ffi_buffer_free(uint8_t *data, size_t len);
 
 /* ── Audio encode (adr/0003-auto-audio-encode-c-abi.md) ─────────────────────────── */
 
-/* Identical shape/values to mediaway-device-ffi's mediaway_sample_format_t —
- * reused, not re-derived, but a distinct header (no shared header exists yet).
- * First definition in this header is not guaranteed — include order decides.
- * Only F32 is accepted by the real Windows backend today; the other variants
- * exist so the enum can be extended without a version bump. */
-#ifndef MEDIAWAY_SAMPLE_FORMAT_T_DEFINED
-#define MEDIAWAY_SAMPLE_FORMAT_T_DEFINED
-typedef enum mediaway_sample_format {
-    MEDIAWAY_SAMPLE_FORMAT_S16 = 0, /* signed 16-bit LE interleaved PCM */
-    MEDIAWAY_SAMPLE_FORMAT_S32 = 1, /* signed 32-bit LE interleaved PCM */
-    MEDIAWAY_SAMPLE_FORMAT_F32 = 2, /* IEEE float32 interleaved PCM */
-} mediaway_sample_format_t;
-#endif
+/* mediaway_sample_format_t comes from common.h. Only F32 is accepted by the real
+ * Windows backend today; the other variants exist so the enum can be extended without
+ * a version bump. */
 
 /* Config for mediaway_audio_encoder_open — plain value struct, no handle, no heap
  * allocation, no free function. codec is AAC today (any other kind is a runtime
@@ -447,6 +377,115 @@ void mediaway_pipeline_ffi_packet_free(mediaway_audio_packet_t *packet);
  * extra_data fields afterward, making a double-free a visible no-op. Always safe to
  * call, including with info == NULL. */
 void mediaway_pipeline_ffi_stream_info_free(mediaway_audio_stream_info_t *info);
+
+/* ── Video decode (adr/0004-auto-decode-c-abi.md) ────────────────────────────────── */
+
+/* Config for mediaway_decode_session_open. extra_data (AVCC / SPS-PPS codec config)
+ * is a BORROWED input, valid for the duration of that call only — required at OPEN
+ * time (not supplied via the first pushed packet; see the ADR §1 for why the muxer-
+ * track analogy does not hold for the wrapped decoder). NULL/0 opens without a known
+ * codec config. GPU output stays deferred — always opens CpuFramesOk internally. */
+typedef struct mediaway_auto_video_decode_config {
+    mediaway_pipeline_codec_kind_t codec;
+    uint32_t width;              /* expected; may be refined from the bitstream */
+    uint32_t height;
+    mediaway_rational_t time_base;
+    mediaway_pixel_format_t pixel_format; /* preferred output format when the backend converts */
+    const uint8_t *extra_data;   /* BORROWED; valid for the open call only; NULL iff extra_data_len == 0 */
+    size_t extra_data_len;
+} mediaway_auto_video_decode_config_t;
+
+/* Input to mediaway_decode_session_push_packet — BORROWED view, valid for the call
+ * only. A new, pipeline-scoped type, not reused from container.h's
+ * mediaway_packet_view_t (adr/0004 §4). stream_id is accepted but unused by decode. */
+typedef struct mediaway_decode_packet_view {
+    uint32_t stream_id;    /* unused by decode; kept for call-site symmetry */
+    int64_t pts;
+    int64_t dts;
+    uint64_t duration;
+    bool is_keyframe;
+    bool is_discard;
+    const uint8_t *payload; /* BORROWED; valid for the call only; NULL iff payload_len == 0 */
+    size_t payload_len;
+} mediaway_decode_packet_view_t;
+
+/* Output of mediaway_decode_session_poll_frame — OWNED; release with
+ * mediaway_decoded_video_frame_free. CPU-only (no storage_kind/gpu_buffer — GPU
+ * decode output is deferred, adr/0004 §1/§5). */
+typedef struct mediaway_decoded_video_frame {
+    int64_t pts;
+    uint64_t duration;      /* 0 if unknown */
+    uint32_t width;
+    uint32_t height;
+    mediaway_pixel_format_t pixel_format;
+    uint8_t *data;           /* OWNED; NULL after mediaway_decoded_video_frame_free */
+    size_t data_len;
+} mediaway_decoded_video_frame_t;
+
+/* Build a decode config for `codec` at `width`x`height`/`time_base`. `extra_data`
+ * must remain valid until mediaway_decode_session_open is called. Defaults
+ * pixel_format to NV12. */
+mediaway_auto_video_decode_config_t mediaway_auto_video_decode_config_new(
+    mediaway_pipeline_codec_kind_t codec, uint32_t width, uint32_t height,
+    mediaway_rational_t time_base, const uint8_t *extra_data, size_t extra_data_len);
+
+/* Open the best available video decoder for `config` — single step, the handle IS
+ * the decoder (like audio encode; no muxer to wire, so no consumption trap).
+ * MEDIAWAY_PIPELINE_STATUS_NO_BACKEND is an expected graceful outcome; check for it
+ * and exit cleanly. *out_session is NULL on any non-OK status. */
+mediaway_pipeline_status_t mediaway_decode_session_open(
+    const mediaway_auto_video_decode_config_t *config,
+    mediaway_decode_session_t **out_session);
+
+/* Push one compressed packet. May produce zero or more frames (drain via
+ * mediaway_decode_session_poll_frame). `packet->payload` is a caller-owned borrow,
+ * valid for the call only. */
+mediaway_pipeline_status_t mediaway_decode_session_push_packet(
+    mediaway_decode_session_t *session, const mediaway_decode_packet_view_t *packet);
+
+/* Pull the next decoded frame, if any is ready. *out_has_frame == false is a valid
+ * "nothing ready" result, not an error. When true, release *out_frame with
+ * mediaway_decoded_video_frame_free. */
+mediaway_pipeline_status_t mediaway_decode_session_poll_frame(
+    mediaway_decode_session_t *session, mediaway_decoded_video_frame_t *out_frame,
+    bool *out_has_frame);
+
+/* Signal end-of-input; drain remaining frames with mediaway_decode_session_poll_frame
+ * afterward. */
+mediaway_pipeline_status_t mediaway_decode_session_flush(
+    mediaway_decode_session_t *session);
+
+/* Close and free a decode-session handle. Always safe to call, including on a
+ * poisoned handle or with session == NULL — this surface has no consumption trap. */
+void mediaway_decode_session_close(mediaway_decode_session_t *session);
+
+/* Free a frame returned by mediaway_decode_session_poll_frame. Nulls data/data_len
+ * afterward, making a double-free a visible no-op. Always safe to call, including
+ * with frame == NULL. */
+void mediaway_decoded_video_frame_free(mediaway_decoded_video_frame_t *frame);
+
+/* ── Capture-to-encode bridge (adr/0005-capture-encode-bridge-c-abi.md) ──────────── */
+
+/* Poll one frame from `capture` (a live mediaway_camera_capture_t* opened via
+ * device.h's mediaway_camera_capture_open) and push it into `session` — no
+ * intermediate mediaway_camera_frame_t exposed, no extra copy. *out_wrote_frame ==
+ * false is a valid "no new frame ready yet" result (the underlying poll returned
+ * nothing new), not an error — mirrors mediaway_camera_capture_poll_frame's own
+ * out_has_frame shape. Calls mediaway_camera_capture_release_frame internally after
+ * the push attempt (documented no-op for Camera today, called anyway for contract
+ * symmetry). Neither handle is closed or consumed by this function. */
+mediaway_pipeline_status_t mediaway_encode_session_write_frame_from_camera_capture(
+    mediaway_encode_session_t *session, mediaway_camera_capture_t *capture,
+    bool *out_wrote_frame);
+
+/* Same shape as mediaway_encode_session_write_frame_from_camera_capture, for a
+ * mediaway_desktop_capture_t* (Screen) instead of Camera. GPU frames pass through
+ * Zero-Copy: the polled frame's GPU handle moves straight into the encoder with no
+ * CPU copy. mediaway_desktop_capture_release_frame is called internally after the
+ * push attempt, success or failure — never left held into the next poll. */
+mediaway_pipeline_status_t mediaway_encode_session_write_frame_from_desktop_capture(
+    mediaway_encode_session_t *session, mediaway_desktop_capture_t *capture,
+    bool *out_wrote_frame);
 
 #ifdef __cplusplus
 }

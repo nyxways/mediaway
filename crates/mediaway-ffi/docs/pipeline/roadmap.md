@@ -28,6 +28,23 @@ C ABI facade over `mediaway`'s auto video encode -> fragmented MP4 convenience l
 
 ### Deferred (not this crate's first pass)
 
-- Screen/camera capture (`platform::ScreenCapture`/`Microphone`) — separate
-  capability, own ADR once this encode-only surface is real
-- Decode (`platform::AutoDecoder`) — separate capability
+- ~~Screen/camera capture (`platform::ScreenCapture`/`Microphone`)~~ — raw
+  capture itself is real and hardware-verified via this crate's `device`
+  module (`adr/device/0001-capture-c-abi.md`); the capture-to-encode
+  convenience bridge is also now implemented and hardware-verified
+  (`adr/pipeline/0005-capture-encode-bridge-c-abi.md`,
+  `mediaway_encode_session_write_frame_from_{camera,desktop}_capture`,
+  ABI v4) — real USB camera → real WMF H.264 → valid fMP4,
+  `tests/capture_encode_bridge_smoke.rs`. Microphone audio composition into
+  the same session is still the caller's job (out of this ADR's scope).
+- ~~Decode (`platform::AutoDecoder`)~~ — C ABI implemented
+  (`adr/pipeline/0004-auto-decode-c-abi.md`, `mediaway_decode_session_*`,
+  ABI v3), compiles/clippy clean, but its own integration test
+  (`tests/decode_smoke.rs`) is `#[ignore]`d — blocked on a real, pre-existing
+  `WindowsVideoDecoder` CPU-decode bug found while writing it, not a defect
+  in this FFI wrapper (`docs/ai/wiki/platform/windows-decode.md` § CPU
+  decode bug).
+- `cbindgen` migration — tooling adopted crate-wide
+  (`docs/adr/0016-cbindgen-ffi-headers.md`'s 2026-08-05 addendum); this
+  module's `include/mediaway/pipeline.h` itself is not yet migrated (still
+  hand-written).

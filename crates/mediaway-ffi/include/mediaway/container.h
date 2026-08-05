@@ -34,6 +34,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "common.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -61,13 +63,7 @@ typedef enum mediaway_status {
 
 /* ── Shared value types ──────────────────────────────────────────────────────────── */
 
-#ifndef MEDIAWAY_RATIONAL_T_DEFINED
-#define MEDIAWAY_RATIONAL_T_DEFINED
-typedef struct mediaway_rational {
-    uint64_t num;
-    uint32_t den; /* must be non-zero */
-} mediaway_rational_t;
-#endif
+/* mediaway_rational_t comes from common.h. */
 
 typedef enum mediaway_codec_kind {
     MEDIAWAY_CODEC_H264 = 0,

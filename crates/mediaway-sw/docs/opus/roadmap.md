@@ -24,7 +24,8 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 - [x] Frame-size + `SampleFormat::F32`-only input validation
 - [x] Real encode test: encode a synthetic PCM tone, assert non-trivial compressed output
   (no committed media — `docs/conventions/testing.md`)
-- [ ] Wire as `mediaway_encoder::AudioEncoder` SW fallback once a factory needs it
+- [x] Wired as `mediaway_encoder::AudioEncoder` SW fallback — `WindowsAudioEncoder` dispatches
+  `CodecKind::Opus` to `SwOpusAudioEncoder` (`crates/mediaway-encoder/src/windows/mod.rs`)
 
 ### 2 — Opus decode
 

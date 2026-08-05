@@ -7,20 +7,23 @@
 //! (`container.h`'s demuxer) rather than straight from the encoder — the actual shape
 //! a C caller decoding a downloaded/received file would have.
 //!
-//! **Currently `#[ignore]`d — real, pre-existing bug found while writing this test,
-//! not a missing-hardware skip.** Every step through `mediaway_decode_session_flush`
-//! succeeds and returns plausible values (verified by hand with tracing prints during
-//! development), but `mediaway_decode_session_poll_frame` hits a Rust std UB
-//! precondition check (`Alignment::new_unchecked requires a power of two`) inside the
-//! wrapped `WindowsVideoDecoder`'s CPU output path and **aborts the process** — not a
-//! catchable panic, so no `catch_unwind` in this crate's own FFI code can turn it into
-//! a status code. `mediaway-decoder/tests/cpu_roundtrip.rs` (fixed and re-verified
-//! alongside this file) reaches the same backend through pure Rust, no FFI at all,
-//! with a single directly-encoder-polled packet instead of a muxed/demuxed multi-frame
-//! stream, and does not crash — it silently decodes zero frames instead. Both are real
-//! symptoms of the same underlying, pre-existing `WindowsVideoDecoder` CPU-decode bug
-//! (crate `mediaway-decoder`), not a defect in this crate's C ABI wrapper. See
-//! `docs/ai/wiki/decode/index.md` and `docs/roadmap.md` for tracking.
+//! Was `#[ignore]`d while a crash was investigated; un-ignored once both real bugs
+//! underneath were fixed:
+//!
+//! 1. `mediaway_decode_session_poll_frame` appeared to hit a Rust std UB precondition
+//!    check (`Alignment::new_unchecked requires a power of two`) and abort the process.
+//!    Re-investigation (tracing the full poll/teardown sequence) showed the decode path
+//!    itself worked — all 10 frames decoded — and the crash was actually a **double-free
+//!    in this test**: `mediaway_encode_session_finish` consumes the encode session
+//!    unconditionally (see its doc comment: "do **not** call
+//!    `mediaway_encode_session_close` on it afterward"), but this test called
+//!    `mediaway_encode_session_close(session)` afterward anyway, so `Box::from_raw` ran
+//!    on freed memory and dropped garbage. The stray close call is removed below.
+//! 2. `mediaway-decoder/tests/cpu_roundtrip.rs` reached the same
+//!    `WindowsVideoDecoder` CPU path with a directly-encoder-polled packet and silently
+//!    decoded zero frames — a real pre-existing decoder bug (AVCC/Annex-B framing
+//!    mismatch in `wmf/shared.rs`'s `packet_to_sample`), fixed in crate
+//!    `mediaway-decoder`; this test's demuxed AVCC input never hit it.
 
 #![cfg(all(windows, feature = "pipeline"))]
 #![allow(unsafe_code)]
@@ -45,9 +48,9 @@ use mediaway_ffi::pipeline::{
     mediaway_auto_video_encode_config_new, mediaway_decode_session_close,
     mediaway_decode_session_flush, mediaway_decode_session_open,
     mediaway_decode_session_poll_frame, mediaway_decode_session_push_packet,
-    mediaway_decoded_video_frame_free, mediaway_encode_session_close,
-    mediaway_encode_session_finish, mediaway_encode_session_open,
-    mediaway_encode_session_write_frame, mediaway_pipeline_ffi_buffer_free,
+    mediaway_decoded_video_frame_free, mediaway_encode_session_finish,
+    mediaway_encode_session_open, mediaway_encode_session_write_frame,
+    mediaway_pipeline_ffi_buffer_free,
 };
 use mediaway_ffi::pipeline::{MediawayVideoFrame, MediawayVideoFrameStorageKind};
 
@@ -56,7 +59,6 @@ const HEIGHT: u32 = 64;
 const FRAME_COUNT: u32 = 10;
 
 #[test]
-#[ignore = "real, pre-existing WindowsVideoDecoder CPU-decode bug — see module doc comment"]
 fn encode_mux_demux_decode_round_trips() {
     // ── encode + mux (mid-gray NV12, no real capture needed) ──────────────
     let config = mediaway_auto_video_encode_config_new(
@@ -201,7 +203,7 @@ fn encode_mux_demux_decode_round_trips() {
         eprintln!("skip: no decode backend compiled in");
         unsafe { mediaway_stream_info_free(&raw mut stream_info) };
         unsafe { mediaway_demuxer_close(demuxer) };
-        unsafe { mediaway_encode_session_close(session) };
+        // The encode session is already gone: `finish` consumed it (see its doc comment).
         return;
     }
     assert_eq!(
@@ -259,8 +261,9 @@ fn encode_mux_demux_decode_round_trips() {
     assert!(decoded > 0, "expected at least one decoded frame");
 
     // ── teardown ────────────────────────────────────────────────────────────
+    // No `mediaway_encode_session_close(session)` here: `finish` already consumed and
+    // freed the encode session (its doc comment forbids closing it afterward).
     unsafe { mediaway_decode_session_close(decode_session) };
     unsafe { mediaway_stream_info_free(&raw mut stream_info) };
     unsafe { mediaway_demuxer_close(demuxer) };
-    unsafe { mediaway_encode_session_close(session) };
 }

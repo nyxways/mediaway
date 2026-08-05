@@ -81,10 +81,10 @@ over — [ADR-0016](../../../adr/0016-cbindgen-ffi-headers.md)'s 2026-08-05 adde
 `mediaway`'s unconditional decode/device Cargo deps (same class of gap as
 `mediaway-container`'s unconditional format-core deps); GPU decode output
 (ADR-0004 §1); Microphone audio composed into the same capture-bridge session
-(ADR-0005 — still the caller's own job). Decode's own integration test is
-`#[ignore]`d — real, pre-existing `WindowsVideoDecoder` CPU-decode bug, not a
-defect here — see [`platform/windows-decode.md`](../platform/windows-decode.md)
-§ CPU decode bug.
+(ADR-0005 — still the caller's own job). Decode's own integration test
+(`tests/decode_smoke.rs`, mux → demux → decode) was un-`#[ignore]`d — two real
+bugs underneath fixed (`WindowsVideoDecoder` AVCC/Annex-B framing + a test
+double-free) — see [`platform/windows-decode.md`](../platform/windows-decode.md) § CPU decode bug.
 
 Shared value types (`mediaway_rational_t`, GPU handle types, …) are consolidated into
 `include/mediaway/common.h` — no longer a per-header duplication concern, see

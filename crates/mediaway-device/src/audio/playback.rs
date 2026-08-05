@@ -1,7 +1,5 @@
 //! Audio playback config and [`AudioPlayback`] trait — the output half of this crate's
 //! "Audio I/O" ([`crate::audio::AudioCapture`] is the input half).
-//!
-//! Moved from `mediaway-device` unchanged — see `mediaway-device/adr/0007-domain-crate-split.md`.
 
 #![forbid(unsafe_code)]
 

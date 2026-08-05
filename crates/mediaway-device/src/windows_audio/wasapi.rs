@@ -132,12 +132,11 @@ impl WindowsWasapiCapture {
 }
 
 impl WindowsWasapiCapture {
-    /// See `mediaway-device-audio::AudioCapture::stream_info`/
-    /// `mediaway-device-desktop::DesktopAudioCapture::stream_info` — each domain crate's
-    /// wrapper type delegates here. Inherent (not a trait impl): this engine is shared by
-    /// two different public traits in two different downstream crates
-    /// (`mediaway-device/adr/0007-domain-crate-split.md`'s "(b)" decision), so it cannot
-    /// itself implement either — the wrappers do.
+    /// See [`crate::audio::AudioCapture::stream_info`]/
+    /// [`crate::desktop::DesktopAudioCapture::stream_info`] — each domain's wrapper type
+    /// delegates here. Inherent (not a trait impl): this engine is shared by two different
+    /// public traits in two different domain modules, so it cannot itself implement either
+    /// — the wrappers do.
     #[must_use]
     pub fn stream_info(&self) -> &StreamInfo {
         #[allow(
@@ -204,11 +203,10 @@ impl Drop for WindowsWasapiCapture {
 }
 
 impl WindowsWasapiCapture {
-    /// Open microphone capture for `config` — the friendly, `mediaway-device-audio`-facing
+    /// Open microphone capture for `config` — the friendly, [`crate::audio`]-facing
     /// entry point. Translates into this engine's internal [`AudioCaptureConfig`]
-    /// (`WasapiCaptureConfig`) and calls [`Self::open`]. `mediaway-device-windows-desktop`
-    /// calls [`Self::open`] directly instead, with a `Loopback`/`ProcessLoopback` source —
-    /// see `mediaway-device/adr/0007-domain-crate-split.md`'s "(b)" decision.
+    /// (`WasapiCaptureConfig`) and calls [`Self::open`]. [`crate::windows_desktop`]
+    /// calls [`Self::open`] directly instead, with a `Loopback`/`ProcessLoopback` source.
     ///
     /// # Errors
     ///

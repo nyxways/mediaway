@@ -3,13 +3,10 @@
 //! render-endpoint playback ([`WindowsWasapiPlayback`], implements
 //! `crate::audio::AudioPlayback`).
 //!
-//! **Also hosts the shared WASAPI capture engine** `mediaway-device-windows-desktop`
+//! **Also hosts the shared WASAPI capture engine** [`crate::windows_desktop`]
 //! wraps for loopback/process-loopback capture — [`WindowsWasapiCapture::open`] and the
-//! internal [`wasapi_config`] types are `pub` for exactly that reason. See
-//! `mediaway-device/adr/0007-domain-crate-split.md`'s "(b)" decision: one shared engine,
+//! internal [`wasapi_config`] types are `pub` for exactly that reason: one shared engine,
 //! wrapped per domain, rather than duplicating the capture loop.
-//!
-//! Split out of `mediaway-device-windows` — same ADR.
 
 #![allow(clippy::too_long_first_doc_paragraph)] // crate-root doc became module doc (ADR-0021 merge)
 #![cfg_attr(windows, allow(unsafe_code))]
@@ -41,8 +38,8 @@ mod host_stub;
 pub use host_stub::{WindowsWasapiCapture, WindowsWasapiPlayback};
 
 /// Serializes tests that touch real hardware (WASAPI). Mirrors
-/// `mediaway-device-windows`'s `HARDWARE_TEST_LOCK` — each split-out backend crate needs its
-/// own, since Rust's default test harness runs `#[test]`s concurrently on separate threads.
+/// [`crate::windows`]'s `HARDWARE_TEST_LOCK` — each hardware-touching module needs its own,
+/// since Rust's default test harness runs `#[test]`s concurrently on separate threads.
 #[cfg(all(test, windows))]
 pub(crate) static HARDWARE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 

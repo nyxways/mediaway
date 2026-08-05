@@ -1,10 +1,9 @@
 //! Camera capture config and [`CameraCapture`] trait.
 //!
-//! Split out of `mediaway-device`'s former unified `video.rs` — see
-//! `mediaway-device/adr/0007-domain-crate-split.md`. Structurally close to
-//! `mediaway-device-desktop`'s `DesktopVideoCapture` (same method shapes), kept as a
-//! separate trait rather than a shared one so this crate can grow camera-specific methods
-//! (e.g. focus/exposure control) later without that leaking into desktop capture's surface.
+//! Structurally close to [`crate::desktop::DesktopVideoCapture`] (same method shapes), kept
+//! as a separate trait rather than a shared one so this module can grow camera-specific
+//! methods (e.g. focus/exposure control) later without that leaking into desktop capture's
+//! surface.
 
 #![forbid(unsafe_code)]
 

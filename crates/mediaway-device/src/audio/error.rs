@@ -1,6 +1,5 @@
-//! Audio playback errors — moved from `mediaway-device` (playback is Audio I/O-only,
-//! unlike `crate::CaptureError`, which every capture domain shares). See
-//! `mediaway-device/adr/0007-domain-crate-split.md`.
+//! Audio playback errors — playback is Audio I/O-only, unlike [`crate::CaptureError`],
+//! which every capture domain shares.
 
 #![forbid(unsafe_code)]
 

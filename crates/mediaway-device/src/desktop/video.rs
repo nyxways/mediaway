@@ -1,9 +1,7 @@
 //! Desktop video capture config (screen/window) and [`DesktopVideoCapture`] trait.
 //!
-//! Split out of `mediaway-device`'s former unified `video.rs` — see
-//! `mediaway-device/adr/0007-domain-crate-split.md`. Structurally close to
-//! `mediaway-device-camera`'s `CameraCapture` (same method shapes), kept as a separate
-//! trait so each domain can grow independently.
+//! Structurally close to [`crate::camera::CameraCapture`] (same method shapes), kept as a
+//! separate trait so each domain can grow independently.
 
 #![forbid(unsafe_code)]
 

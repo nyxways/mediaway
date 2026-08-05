@@ -52,8 +52,8 @@ use windows::Win32::Media::MediaFoundation::{
 use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx, CoTaskMemFree};
 use windows::core::{GUID, Interface, PWSTR};
 
-/// Per-call-scope COM init guard — a local copy rather than a cross-crate dependency on
-/// `mediaway-device-windows-audio` for three lines (`mediaway-device/adr/0007-domain-crate-split.md`).
+/// Per-call-scope COM init guard — a local copy rather than a cross-module dependency on
+/// [`crate::windows_audio`] for three lines.
 struct ComGuard;
 impl Drop for ComGuard {
     fn drop(&mut self) {

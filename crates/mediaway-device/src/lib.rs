@@ -1,18 +1,17 @@
-//! Shared device vocabulary: [`DeviceKind`]/[`DeviceId`]/[`Select`], capability/permission
-//! probing ([`Support`]/[`Unavailable`]/[`PermissionState`]), the shared [`CaptureError`], and
-//! the cross-domain [`DeviceHotplug`] trait.
+//! Device capture facade: shared vocabulary ([`DeviceKind`]/[`DeviceId`]/[`Select`]),
+//! capability/permission probing ([`Support`]/[`Unavailable`]/[`PermissionState`]), the shared
+//! [`CaptureError`], and the cross-domain [`DeviceHotplug`] trait — plus three domain modules
+//! built on top of them:
 //!
-//! **This crate is the base every capture domain crate depends on — it depends on none of
-//! them.** The three domain facades built on top of it:
+//! - [`camera`] — `CameraCapture`.
+//! - [`desktop`] — `DesktopVideoCapture` (screen/window) + `DesktopAudioCapture`
+//!   (loopback/process-loopback — "what's playing").
+//! - [`audio`] — `AudioCapture` (microphone) + `AudioPlayback` (render endpoint) — "Audio"
+//!   here means both I/O directions, not capture alone.
 //!
-//! - [`mediaway-device-camera`](https://docs.rs/mediaway-device-camera) — `CameraCapture`.
-//! - [`mediaway-device-desktop`](https://docs.rs/mediaway-device-desktop) — `DesktopVideoCapture`
-//!   (screen/window) + `DesktopAudioCapture` (loopback/process-loopback — "what's playing").
-//! - [`mediaway-device-audio`](https://docs.rs/mediaway-device-audio) — `AudioCapture`
-//!   (microphone) + `AudioPlayback` (render endpoint) — "Audio" here means both I/O
-//!   directions, not capture alone.
-//!
-//! See `adr/0007-domain-crate-split.md` for why this crate split from one unified facade.
+//! Platform backends (`windows`, `windows_audio`, `windows_camera`, `windows_desktop`,
+//! `linux`, `web`) are `#[cfg]`-gated modules in this same crate rather than separate crates —
+//! see [ADR-0021](https://github.com/nyxways/mediaway/blob/main/docs/adr/0021-workspace-consolidation.md).
 
 #![allow(unsafe_code)]
 

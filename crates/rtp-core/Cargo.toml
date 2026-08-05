@@ -1,0 +1,17 @@
+[package]
+name = "rtp-core"
+description = "Sans-IO RTP payloadization for H.264/HEVC (RFC 3550/6184/7798)"
+version = "0.1.0" # independent versioning — freestanding core (ADR-0021); brand new, no prior release
+publish = false # Proposed — see adr/0001-rtp-freestanding-core.md
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+bytes = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

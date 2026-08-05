@@ -8,7 +8,10 @@
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use crate::device::{CameraCaptureHandle, DesktopCaptureHandle};
+#[cfg(feature = "camera")]
+use crate::device::CameraCaptureHandle;
+#[cfg(feature = "desktop")]
+use crate::device::DesktopCaptureHandle;
 use crate::pipeline::session::EncodeSessionHandle;
 use crate::pipeline::status::MediawayPipelineStatus;
 
@@ -25,6 +28,7 @@ use crate::pipeline::status::MediawayPipelineStatus;
 ///
 /// `session`/`capture` must both be valid, live handle pointers.
 /// `out_wrote_frame` must be a valid, writable, non-null out-parameter.
+#[cfg(feature = "camera")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mediaway_encode_session_write_frame_from_camera_capture(
     session: *mut EncodeSessionHandle,
@@ -102,6 +106,7 @@ pub unsafe extern "C" fn mediaway_encode_session_write_frame_from_camera_capture
 ///
 /// `session`/`capture` must both be valid, live handle pointers.
 /// `out_wrote_frame` must be a valid, writable, non-null out-parameter.
+#[cfg(feature = "desktop")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mediaway_encode_session_write_frame_from_desktop_capture(
     session: *mut EncodeSessionHandle,

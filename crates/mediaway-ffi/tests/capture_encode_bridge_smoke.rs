@@ -5,7 +5,7 @@
 //! `bindings/c/examples/device/camera_record.c`'s hand-rolled poll+copy+write
 //! loop. Skips (does not fail) when no camera is attached.
 
-#![cfg(windows)]
+#![cfg(all(windows, feature = "pipeline", feature = "camera"))]
 #![allow(unsafe_code)]
 #![allow(
     clippy::unwrap_used,

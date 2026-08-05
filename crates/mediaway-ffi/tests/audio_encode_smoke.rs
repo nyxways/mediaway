@@ -9,7 +9,7 @@
 //! exercises the raw `#[unsafe(no_mangle)]` C surface a language binding calls
 //! — the same entry points the C/Python/Node/C++ wrappers use.
 
-#![cfg(windows)]
+#![cfg(all(windows, feature = "pipeline"))]
 #![allow(unsafe_code)]
 #![allow(
     clippy::unwrap_used,

@@ -22,7 +22,7 @@
 //! (crate `mediaway-decoder`), not a defect in this crate's C ABI wrapper. See
 //! `docs/ai/wiki/decode/index.md` and `docs/roadmap.md` for tracking.
 
-#![cfg(windows)]
+#![cfg(all(windows, feature = "pipeline"))]
 #![allow(unsafe_code)]
 #![allow(
     clippy::unwrap_used,

@@ -8,6 +8,7 @@
 //! unlike `audio_encode_smoke.rs` (AAC, Windows-only) this test has no `#![cfg(windows)]`
 //! guard.
 
+#![cfg(feature = "pipeline")]
 #![allow(unsafe_code)]
 #![allow(
     clippy::unwrap_used,

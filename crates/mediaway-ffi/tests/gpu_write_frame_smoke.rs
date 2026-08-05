@@ -12,7 +12,7 @@
 //! Rust-level `EncodeSession` API directly — this is the actual C surface a
 //! language binding (e.g. C#'s `Mediaway.Pipeline`) calls.
 
-#![cfg(windows)]
+#![cfg(all(windows, feature = "pipeline"))]
 #![allow(unsafe_code)]
 #![allow(
     clippy::unwrap_used,

@@ -395,6 +395,43 @@ was already known going in. `d3d12_native_hevc_gop_encode_or_skip` (same file), 
   all-intra-only. Zero-Copy GPU input, B-frames/multi-reference, and rate-control tuning
   remain real follow-up work, not implied to be "coming for free."
 
+## Addendum (2026-08-07): AV1 correction — `SUPPORT1` fixes the query, a real codec-configuration requirement remains
+
+The "AV1 addendum" above (2026-07-29) concluded this NVIDIA consumer driver does not
+implement AV1 through the D3D12 Video Encode API at all. That conclusion was **wrong** —
+it was reading the symptom of calling the *wrong feature query*, not a genuine absence of
+driver support. Consulting the official D3D12 AV1 encode spec (registered as
+`d3d12-video-encoding-av1`, see References) found two distinct, real findings:
+
+1. **`D3D12_FEATURE_VIDEO_ENCODER_SUPPORT` does not work for AV1 as *Codec* input at all** —
+   the spec states this plainly (§ 3.1.38): the call still returns `S_OK`, but with
+   `ValidationFlags = D3D12_VIDEO_ENCODER_VALIDATION_FLAG_CODEC_NOT_SUPPORTED`
+   unconditionally, "for every codec configuration tried" exactly as the 2026-07-29 finding
+   observed — and a debug-layer message points at the real, AV1-capable replacement,
+   `D3D12_FEATURE_VIDEO_ENCODER_SUPPORT1` (`D3D12_FEATURE_DATA_VIDEO_ENCODER_SUPPORT1`, a
+   strict superset of the old struct). [`av1::check_encoder_support`](../src/d3d12_video_encode/av1.rs)
+   now queries `_SUPPORT1` instead.
+2. **With the query fixed, this driver reports a real, different, and narrower rejection**:
+   `ValidationFlags = D3D12_VIDEO_ENCODER_VALIDATION_FLAG_CODEC_CONFIGURATION_NOT_SUPPORTED`
+   for this backend's all-`FEATURE_FLAG_NONE` [`av1::default_codec_config_av1`](../src/d3d12_video_encode/av1.rs)
+   — the codec itself is recognized now (`GENERAL_SUPPORT_OK` is reachable), but this exact
+   configuration isn't legal. `D3D12_FEATURE_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT`
+   (`pAV1Support`) on the same hardware (RTX 4090, same driver as the 2026-07-29 finding)
+   reports `RequiredFeatureFlags = D3D12_VIDEO_ENCODER_AV1_FEATURE_FLAG_AUTO_SEGMENTATION |
+   _CDEF_FILTERING | _LOOP_RESTORATION_FILTER` (`0x11400`) — this driver mandates those
+   three AV1 coding tools be enabled; `FEATURE_FLAG_NONE` was never going to be accepted.
+
+**Net effect**: real AV1 hardware encode through the native D3D12 API is very likely
+achievable on this GPU — a materially different conclusion than "blocked by this driver."
+Reaching it needs [`default_codec_config_av1`] to set the three required flags **and**
+[`bitstream_av1`](../src/d3d12_video_encode/bitstream_av1.rs)'s hand-written sequence/frame
+headers to correctly signal `enable_cdef`/`enable_restoration`/segmentation syntax to match
+what the driver will now actually apply (Rec. AV1 §§ 5.5.15, 5.9.14, 5.9.20) — each is a
+real coding tool with its own per-frame header fields this backend does not write today, not
+a flag flip. That bitstream work is deferred, not started; `d3d12_native_av1_encode_or_skip`
+still soft-skips honestly (now on `CODEC_CONFIGURATION_NOT_SUPPORTED` rather than
+`CODEC_NOT_SUPPORTED`) until it lands.
+
 ## References
 
 - FFmpeg `libavcodec/d3d12va_encode.c` / `d3d12va_encode_h264.c` (BSD-2-Clause,
@@ -409,6 +446,9 @@ was already known going in. `d3d12_native_hevc_gop_encode_or_skip` (same file), 
   (registry id `d3d12-video-encoding-h264-hevc`, `docs/standards/registry.toml`) — official
   D3D12 video-encode H.264/HEVC picture-control/reference-frame spec; source of the
   `USED_AS_REFERENCE_PICTURE` finding in the 2026-08-06 addendum
+- `local/standards/d3d12-video-encoding-av1/d3d12_video_encoding_av1.md` (registry id
+  `d3d12-video-encoding-av1`, `docs/standards/registry.toml`) — official D3D12 AV1 encode
+  spec; source of the `SUPPORT1`/`RequiredFeatureFlags` finding in the 2026-08-07 addendum
 - `adr/vulkan/0002-vulkan-gop-rate-control.md` — this workspace's Vulkan H.264 GOP/P-frame
   precedent (single forward reference, no B-frames), the design this addendum's H.264 GOP
   support mirrors for the D3D12 backend

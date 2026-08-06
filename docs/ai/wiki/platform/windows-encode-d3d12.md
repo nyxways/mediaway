@@ -27,14 +27,19 @@ a real, distinct encode API separate from feeding D3D12 textures into WMF, reach
   directly instead; (2) codec config needs fixed 32x32 CTU + full 4x4–32x32 TU range +
   `USE_ASYMETRIC_MOTION_PARTITION`, only surfaced via the debug layer at `CreateVideoEncoder`
   time, not the advisory query.
-- **AV1 extension (2026-07-29):** implemented — `av1.rs`/`ops_av1.rs`/`bitstream_av1.rs`.
-  **Blocked from a real hardware round-trip on the RTX 4090**: `D3D12_FEATURE_VIDEO_ENCODER_CODEC`
-  reports `IsSupported=true` (codec-presence probe), but the full
-  `D3D12_FEATURE_VIDEO_ENCODER_SUPPORT` query reports `CODEC_NOT_SUPPORTED` for every
-  configuration tried — this NVIDIA consumer driver doesn't appear to implement AV1 through
-  the D3D12 Video Encode API yet (the same GPU's separate NVENC SDK path does encode AV1,
-  see `mediaway-encoder::nvenc`). Re-confirmed 2026-08-06 via a step-by-step diagnostic —
-  same finding, not new. D3D12 Video Decode not attempted at all — distinct API surface.
+- **AV1 extension (2026-07-29), corrected (2026-08-07):** implemented —
+  `av1.rs`/`ops_av1.rs`/`bitstream_av1.rs`. The original "blocked by this driver" conclusion
+  was **wrong** — it was reading the wrong feature query. The official D3D12 AV1 spec states
+  `D3D12_FEATURE_VIDEO_ENCODER_SUPPORT` never works for AV1 (always `CODEC_NOT_SUPPORTED`,
+  regardless of driver); the real query is `D3D12_FEATURE_VIDEO_ENCODER_SUPPORT1`. Switching
+  to it on the RTX 4090 (same driver as the original finding) surfaces a real, different, and
+  narrower rejection instead: `CODEC_CONFIGURATION_NOT_SUPPORTED` for this backend's
+  all-`FEATURE_FLAG_NONE` config. `D3D12_FEATURE_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT`
+  reports this driver *requires* `AUTO_SEGMENTATION | CDEF_FILTERING |
+  LOOP_RESTORATION_FILTER` to be set — real AV1 hardware encode is very likely reachable
+  here, pending `bitstream_av1` gaining real CDEF/restoration/segmentation header support to
+  match (deferred, not started; each is a genuine AV1 coding tool, not a flag flip). D3D12
+  Video Decode not attempted at all — distinct API surface.
 - **H.264/HEVC GOP/P-frame support (2026-08-06):** `gop_size > 1` now real, single forward
   reference (mirrors Vulkan's own GOP design). New `gop.rs`/`gop_hevc.rs` (pure-Rust
   `H264GopState`/`HevcGopState`) + `setup::ReconPool` — **one** 2-slice texture array,
@@ -63,5 +68,5 @@ a real, distinct encode API separate from feeding D3D12 textures into WMF, reach
   removal, no invalid `EncodeFrame` reaching the driver) is confirmed correct.
 
 See [ADR-0007](../../../../crates/mediaway-encoder/adr/windows/0007-d3d12-native-video-encode.md)
-(+ its 2026-08-06 addendum) for full detail on every finding above, including how the debug
-layer (`ID3D12InfoQueue`) surfaced each one.
+(+ its 2026-08-06 and 2026-08-07 addenda) for full detail on every finding above, including
+how the debug layer (`ID3D12InfoQueue`) surfaced each one.

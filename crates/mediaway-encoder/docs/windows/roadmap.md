@@ -59,10 +59,14 @@ Platform order: **Windows first**. Workspace index: [`docs/roadmap.md`](../../..
       configuration: fixed `32x32` CTU, full `4x4..32x32` TU range,
       `USE_ASYMETRIC_MOTION_PARTITION` required. See ADR-0007 addendum.
 - [x] AV1 all-intra encode implemented (hand-written OBU temporal delimiter + sequence
-      header + frame header, see `bitstream_av1.rs`/`ops_av1.rs`) — still blocked from a
-      real-hardware round trip by the driver-level `CODEC_NOT_SUPPORTED` gap ADR-0007's
-      addendum already documented (re-confirmed via a step-by-step diagnostic 2026-08-06,
-      same finding, not new).
+      header + frame header, see `bitstream_av1.rs`/`ops_av1.rs`) — the original
+      `CODEC_NOT_SUPPORTED` driver-gap conclusion was **wrong**, corrected 2026-08-07: it
+      was calling the wrong feature query (`_SUPPORT` never works for AV1, per the official
+      spec). Switching to `_SUPPORT1` surfaces a real, narrower, likely-fixable rejection
+      instead — this driver requires `AUTO_SEGMENTATION | CDEF_FILTERING |
+      LOOP_RESTORATION_FILTER` in the codec configuration. Still not hardware round-tripped —
+      needs real CDEF/restoration/segmentation bitstream support in `bitstream_av1.rs` to
+      match. See ADR-0007's 2026-08-07 addendum.
 - [x] H.264 GOP/P-frame support (single forward reference, `gop_size > 1`) — real hardware
       verified (RTX 4090, real `IPPIPPI` NAL cadence). See ADR-0007's 2026-08-06 addendum.
 - [x] HEVC GOP/P-frame support — ported same session, same design, worked on the first

@@ -21,6 +21,8 @@
 - **D3D12 Video Encode API** (`ID3D12VideoDevice3`/`ID3D12VideoEncoder`) is a
   real, distinct native encode API — separate from feeding D3D12 textures
   into WMF. H.264/HEVC/AV1 all-intra, H.264/HEVC GOP + row-based intra
-  refresh, real hardware-verified on an RTX 4090; AV1 blocked by a real
-  driver gap. See [`windows-encode-d3d12.md`](windows-encode-d3d12.md) for
-  full detail (split out to stay under this page's 100-line limit).
+  refresh, real hardware-verified on an RTX 4090; AV1 needs real
+  CDEF/restoration/segmentation bitstream support to clear a driver
+  codec-configuration requirement (not the flat driver gap once believed).
+  See [`windows-encode-d3d12.md`](windows-encode-d3d12.md) for full detail
+  (split out to stay under this page's 100-line limit).

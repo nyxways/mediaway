@@ -278,17 +278,17 @@ Detail: `mediaway-encoder::{windows, web}` (`windows` = WMF + DX11 Zero-Copy; `w
 
 ### GPU — by API
 
-**Graphics interop** (D3D11, Vulkan, WebGPU, …) — which API your textures use. Orthogonal to OS · CPU/GPU. **Video only.**
+**Graphics interop** (D3D11, Vulkan, Metal, …) — which API your textures use. Orthogonal to OS · CPU/GPU. **Video only.**
 
-Adapters: [`mediaway`](crates/mediaway/README.md) `wgpu` module 🆗 (DX12 ↔ WMF `GpuCopy` bridges) · Dawn/`webgpu.h` ❌ — WebGPU's only video interop is *consuming* an already-decoded frame via `GPUExternalTexture`; the spec has no video-encode entry point at all, so the **WebGPU column is ❌ for every codec** below, not a "haven't gotten to it yet" 🛠️.
+Adapters: [`mediaway`](crates/mediaway/README.md) `wgpu` module 🆗 (DX12 ↔ WMF `GpuCopy` bridges).
 
 
-| Codec        | D3D11  | D3D12 | Vulkan | Metal | WebGPU |
-| ------------ | ------ | ----- | ------ | ----- | ------ |
-| H.264 / AVC  | ⚡ / 🆗 | 🆗 / 🛠️ | 🆗 / 🆗 | 👻    | ❌    |
-| HEVC / H.265 | 🆗 / 🆗 | 🆗 / 🛠️ | 🆗 / 🛠️ | 👻    | ❌    |
-| AV1          | 🆗 / 🆗 | 👻 / 🛠️ | 👻 / 🛠️ | 👻    | ❌    |
-| VP9          | 🆗 / 🆗 | 👻    | 👻     | 👻    | ❌    |
+| Codec        | D3D11  | D3D12 | Vulkan | Metal |
+| ------------ | ------ | ----- | ------ | ----- |
+| H.264 / AVC  | ⚡ / 🆗 | 🆗 / 🛠️ | 🆗 / 🆗 | 👻    |
+| HEVC / H.265 | 🆗 / 🆗 | 🆗 / 🛠️ | 🆗 / 🆗 | 👻    |
+| AV1          | 🆗 / 🆗 | 🛠️    | ❌ / 🛠️ | 👻    |
+| VP9          | 🆗 / 🆗 | 👻    | 👻     | 👻    |
 
 
 Detail: [`mediaway`](crates/mediaway/README.md) `wgpu` module · `mediaway-encoder::{windows, vulkan}` · `mediaway-decoder::{windows, vulkan}`.

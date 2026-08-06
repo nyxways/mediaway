@@ -14,7 +14,7 @@ freestanding cores 0.1.1 (`ebml-webm` 0.2.1) · CPack `Mediaway-0.1.2-win64`.
 | Python | `bindings/python/mediaway/` ctypes package | ✅ verified — 7 examples run; encode output byte-identical to C/C++/Node (6253 B video; 27372 B audio) |
 | Node.js | `bindings/nodejs/packages/@mediaway/*` koffi FFI | ✅ verified — 7 examples run; napi-rs is the eventual official path |
 | C# | `bindings/csharp/src/` P/Invoke | ✅ verified (xUnit against native libs; ADR-0017/0018); 6 examples under `Container/`/`Device/`/`Pipeline/`, mirroring Node's layout |
-| Browser | WASM (`iso-bmff-wasm` + WebCodecs) | ✅ verified — `@mediaway/browser` (ADR-0020): wasm mux/demux + WebCodecs H.264/AAC encode to fMP4, E2E-verified in Chromium + real Edge (`tools/e2e-web`, `browser-package.spec.ts`) |
+| Browser | WASM (`iso-bmff-wasm` + WebCodecs) | ✅ verified — `@mediaway/browser` (ADR-0020 + ADR-0022): wasm mux/demux + WebCodecs H.264/AAC encode to fMP4 AND `DecodeSession` decode back (video + audio), E2E-verified in Chromium + real Edge (`tools/e2e-web`, `browser-package.spec.ts`) |
 
 ## DX-driven example flow
 
@@ -39,16 +39,15 @@ bindings were then implemented to satisfy those examples. Examples mirror the Ru
 - **C# Screen capture hardware-verified** — `CaptureTests` gained a test-only raw
   `D3D11CreateDevice` P/Invoke; the new test polls real GPU-backed 2560×1440 frames end to end.
 
-## Audio encode learnings (this pass)
+## Audio encode learnings
 
-- **The WMF AAC MFT rejects hand-built output types with `MF_E_ATTRIBUTENOTFOUND`** — the
-  encoder only accepts types from its own catalog (`GetOutputAvailableType`), matched on
-  sample rate + channel count, with the bitrate overridden on a copy. Negotiate, don't assemble.
-- **F32 input must be `MFAudioFormat_Float`**, not `MFAudioFormat_PCM` + 32 bits/sample.
-- **The ASC arrives late**: `MF_MT_USER_DATA` on the output type is populated only after the
-  first input sample; the blob is a 14-byte WAVEFORMATEX-ish prefix whose trailing 2 bytes are
-  the AudioSpecificConfig (`asc_from_waveformatex` now handles both the 20-byte and 14-byte
-  shapes). The bindings' call order is push → stream_info → mux.
+- **WMF AAC MFT rejects hand-built output types** (`MF_E_ATTRIBUTENOTFOUND`) — negotiate
+  via `GetOutputAvailableType`, matched on sample rate + channels, bitrate overridden on
+  a copy. F32 input must be `MFAudioFormat_Float`, not `MFAudioFormat_PCM` + 32 bits/sample.
+- **The ASC arrives late**: `MF_MT_USER_DATA` populates only after the first input sample;
+  the blob is a 14-byte WAVEFORMATEX-ish prefix whose trailing 2 bytes are the
+  AudioSpecificConfig (`asc_from_waveformatex` handles both 20-byte/14-byte shapes). Call
+  order: push → stream_info → mux.
 
 ## FFI learnings (repo fixes this pass)
 
@@ -71,24 +70,25 @@ bindings were then implemented to satisfy those examples. Examples mirror the Ru
 ## FFI packaging fix (this pass)
 
 `docs/spec/c-ffi.md` (ADR-0004) still described the pre-merge per-capability
-`-ffi` crate split even though ADR-0021 (2026-08-03) merged everything into
-one `mediaway-ffi` crate — updated to document the current feature-gated
-module layout instead. Separately, the crate's own `pipeline` module
-(encode/decode/Opus — the heaviest part, pulling in `mediaway`/
-`mediaway-encoder`/`mediaway-decoder`/`mediaway-sw`) had **no** Cargo feature
-gate at all, unlike `container`/`device`; and the `mediaway-container`
-dependency's `mux`/`demux`/`audio`/`video` features were hardcoded rather
-than propagated from this crate's own `mux`/`demux` features. Both fixed:
-`pipeline` is now its own feature (in `default`, so behavior is unchanged),
-and `mediaway-container`'s sub-features are unified from this crate's
-`mux`/`demux` features. The capture→encode bridge (needs `pipeline` +
+`-ffi` crate split even though ADR-0021 (2026-08-03) merged everything into one
+`mediaway-ffi` crate — updated to document the current feature-gated module
+layout instead. Separately, the crate's own `pipeline` module (encode/decode/
+Opus — the heaviest part, pulling in `mediaway`/`mediaway-encoder`/
+`mediaway-decoder`/`mediaway-sw`) had **no** Cargo feature gate at all, unlike
+`container`/`device`; and `mediaway-container`'s `mux`/`demux`/`audio`/`video`
+features were hardcoded rather than propagated from this crate's own
+`mux`/`demux` features. Both fixed: `pipeline` is now its own feature (in
+`default`, unchanged behavior), and `mediaway-container`'s sub-features are
+unified from this crate's own. The capture→encode bridge (needs `pipeline` +
 `camera`/`desktop`) is gated per-function on the conjunction.
 
 ## Open items
 
-- Browser is DONE: `@mediaway/browser` ships (ADR-0020) — wasm mux/demux + WebCodecs
-  H.264/AAC encode; E2E specs in `tools/e2e-web/browser-package.spec.ts`. The browser
-  audio surface is WebCodecs `AudioEncoder` (native), not a wasm AAC codec.
+- Browser is DONE, both directions: `@mediaway/browser` ships (ADR-0020 + ADR-0022) —
+  wasm mux/demux + WebCodecs H.264/AAC encode, and `DecodeSession` decode back (video +
+  audio) via the browser's native `VideoDecoder`/`AudioDecoder`; E2E specs in
+  `tools/e2e-web/browser-package.spec.ts`. The browser codec surface is WebCodecs-native
+  (`AudioEncoder`/`AudioDecoder`/…), not a wasm codec implementation.
 - Official package-layout ADRs for the C++/Python/Node bindings (mirror ADR-0017/0018)
   before shipping — packaging is set up (`tools/scripts/*-package*.ts`, see
   `bindings/README.md` § Publishing), the ADRs are the remaining formality.

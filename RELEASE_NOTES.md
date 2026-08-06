@@ -69,6 +69,14 @@
   FU-A/FU fragmentation for NAL units larger than a caller-supplied payload
   budget. Closes the workspace's previous no-RTP gap for standard-interop
   low-latency streaming.
+- `@mediaway/browser` (ADR-0022): `DecodeSession` — demux-then-decode fMP4 via
+  the browser's native WebCodecs `VideoDecoder`/`AudioDecoder`, the decode-side
+  mirror of `EncodeSession`. Required `resolveCodec(track)` maps the
+  container's generic `Codec` name to the WebCodecs codec string;
+  `DecoderUnavailableError` for browsers without a usable decoder. E2E-verified
+  H.264 + AAC encode→mux→demux→decode round trips. Also new:
+  `examples/device/list-and-watch-devices.ts` (native `enumerateDevices()` +
+  `devicechange` hotplug demo).
 - `mediaway-ffi`/C#: `gop_size`/`rate_control` (GOP + CBR request) and live
   `set_bitrate` reach the auto-encode C ABI (`mediaway_auto_video_encode_config_t`
   gains 4 fields, ABI v5 → v6; new `mediaway_encode_session_set_bitrate`) and the

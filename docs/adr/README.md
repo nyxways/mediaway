@@ -28,5 +28,6 @@ See [`docs/conventions/docs-layout.md`](../conventions/docs-layout.md).
 | [0019](0019-csharp-device-package-split-and-hotplug-callback.md) | C# `Mediaway.Device.*` package split (mirrors Rust FFI ADR-0004) + real native hotplug callback | Accepted |
 | [0020](0020-browser-wasm-npm-package.md) | `@mediaway/browser` WASM + WebCodecs package — container in WASM, codecs from the host, capture from native Web APIs | Accepted |
 | [0021](0021-workspace-consolidation.md) | Merge the `mediaway-*` family — platform backends as `#[cfg]`-gated modules, single `mediaway-ffi`, umbrella `mediaway` (amends ADR-0003/0004) | Accepted |
+| [0022](0022-browser-decode-session-and-device-dx.md) | Browser decode session (video + audio) + device DX parity examples (amends ADR-0020) | Accepted |
 
 Template: [`template.md`](template.md)

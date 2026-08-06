@@ -50,7 +50,10 @@
   contract as the Vulkan GOP work above
   (`adr/windows/0007-d3d12-native-video-encode.md`'s 2026-08-06 addendum).
   Hardware-verified on a real RTX 4090: real `IPPIPPI` Annex-B NAL cadence for
-  both codecs. AV1 stays all-intra this pass.
+  both codecs. AV1 stays all-intra this pass. Also new:
+  `VideoEncoderConfig::intra_refresh_period` — row-based intra refresh (unbounded
+  GOP + continuous refresh waves instead of periodic IDR) for H.264/HEVC,
+  capability-gated on the driver's real `MaxIntraRefreshFrameDuration` cap.
 - `mediaway-decoder`: `AudioDecoder` trait, mirroring `VideoDecoder`
   (`adr/0003-audio-decoder-trait.md`). Implemented for the WMF Opus decoder
   (`windows::WmfOpusDecoder`) and `mediaway-sw`'s software Opus decoder

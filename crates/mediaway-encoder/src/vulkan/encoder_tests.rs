@@ -80,6 +80,7 @@ fn push_three_frames_or_skip() {
         gpu_device: None,
         gop_size: 1,
         rate_control: None,
+        intra_refresh_period: None,
     };
 
     let mut enc = match VulkanVideoEncoder::open(&cfg) {
@@ -155,6 +156,7 @@ fn push_three_hevc_frames_or_skip() {
         gpu_device: None,
         gop_size: 1,
         rate_control: None,
+        intra_refresh_period: None,
     };
 
     let mut enc = match VulkanVideoEncoder::open(&cfg) {
@@ -253,6 +255,7 @@ fn push_three_av1_frames_or_skip() {
         gpu_device: None,
         gop_size: 1,
         rate_control: None,
+        intra_refresh_period: None,
     };
 
     let mut enc = match VulkanVideoEncoder::open(&cfg) {
@@ -338,6 +341,7 @@ fn push_seven_frames_gop_or_skip() {
         gpu_device: None,
         gop_size: GOP_SIZE,
         rate_control: None,
+        intra_refresh_period: None,
     };
 
     let mut enc = match VulkanVideoEncoder::open(&cfg) {
@@ -436,6 +440,7 @@ fn push_frames_gop_with_rate_control_or_skip() {
             target_bitrate_bps: 500_000,
             vbv_buffer_size_bytes: Some(125_000),
         }),
+        intra_refresh_period: None,
     };
 
     let mut enc = match VulkanVideoEncoder::open(&cfg) {
@@ -520,6 +525,7 @@ fn push_seven_hevc_frames_gop_or_skip() {
         gpu_device: None,
         gop_size: GOP_SIZE,
         rate_control: None,
+        intra_refresh_period: None,
     };
 
     let mut enc = match VulkanVideoEncoder::open(&cfg) {
@@ -621,6 +627,7 @@ fn push_hevc_frames_gop_with_rate_control_requested_or_skip() {
             target_bitrate_bps: 500_000,
             vbv_buffer_size_bytes: Some(125_000),
         }),
+        intra_refresh_period: None,
     };
 
     let mut enc = match VulkanVideoEncoder::open(&cfg) {
@@ -708,6 +715,7 @@ fn push_seven_av1_frames_gop_or_skip() {
         gpu_device: None,
         gop_size: GOP_SIZE,
         rate_control: None,
+        intra_refresh_period: None,
     };
 
     let mut enc = match VulkanVideoEncoder::open(&cfg) {

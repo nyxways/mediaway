@@ -22,6 +22,7 @@ use windows::Win32::Media::MediaFoundation::{
     D3D12_VIDEO_ENCODER_FRAME_SUBREGION_LAYOUT_MODE_FULL_FRAME,
     D3D12_VIDEO_ENCODER_FRAME_TYPE_HEVC_IDR_FRAME, D3D12_VIDEO_ENCODER_FRAME_TYPE_HEVC_P_FRAME,
     D3D12_VIDEO_ENCODER_INTRA_REFRESH, D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_NONE,
+    D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_ROW_BASED,
     D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA,
     D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA_0,
     D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA_HEVC,
@@ -40,6 +41,7 @@ use windows::Win32::Media::MediaFoundation::{
     D3D12_VIDEO_ENCODER_RESOLVE_METADATA_INPUT_ARGUMENTS,
     D3D12_VIDEO_ENCODER_RESOLVE_METADATA_OUTPUT_ARGUMENTS,
     D3D12_VIDEO_ENCODER_SEQUENCE_CONTROL_DESC, D3D12_VIDEO_ENCODER_SEQUENCE_CONTROL_FLAG_NONE,
+    D3D12_VIDEO_ENCODER_SEQUENCE_CONTROL_FLAG_REQUEST_INTRA_REFRESH,
     D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE, D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_0,
     D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_HEVC,
 };
@@ -66,6 +68,7 @@ impl D3d12VideoEncoder {
         // default-reproduction contract, mirrored here for HEVC.
         let is_idr = decision.is_none_or(|d| d.is_idr);
         let poc = decision.map_or(0, |d| d.poc);
+        let intra_refresh_frame_index = decision.and_then(|d| d.intra_refresh_frame_index);
         let has_reference = !is_idr && self.recon_pool.is_some();
         let write_slot = self.recon_pool.as_ref().map(|pool| pool.write_slot);
         let read_slot = write_slot.map(|w| 1 - w);
@@ -240,13 +243,27 @@ impl D3d12VideoEncoder {
             }
         };
 
+        // See `ops::encode_frame_h264`'s sibling comment: the startup IDR of an
+        // intra-refresh session is a "non-IR frame" — flag/config stay off
+        // exactly when `intra_refresh_frame_index` is `None`.
+        let sequence_control_flags = if intra_refresh_frame_index.is_some() {
+            D3D12_VIDEO_ENCODER_SEQUENCE_CONTROL_FLAG_REQUEST_INTRA_REFRESH
+        } else {
+            D3D12_VIDEO_ENCODER_SEQUENCE_CONTROL_FLAG_NONE
+        };
+        let intra_refresh_config = D3D12_VIDEO_ENCODER_INTRA_REFRESH {
+            Mode: if intra_refresh_frame_index.is_some() {
+                D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_ROW_BASED
+            } else {
+                D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_NONE
+            },
+            IntraRefreshDuration: self.intra_refresh_period.unwrap_or(0),
+        };
+
         let input_args = D3D12_VIDEO_ENCODER_ENCODEFRAME_INPUT_ARGUMENTS {
             SequenceControlDesc: D3D12_VIDEO_ENCODER_SEQUENCE_CONTROL_DESC {
-                Flags: D3D12_VIDEO_ENCODER_SEQUENCE_CONTROL_FLAG_NONE,
-                IntraRefreshConfig: D3D12_VIDEO_ENCODER_INTRA_REFRESH {
-                    Mode: D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_NONE,
-                    IntraRefreshDuration: 0,
-                },
+                Flags: sequence_control_flags,
+                IntraRefreshConfig: intra_refresh_config,
                 RateControl: rc,
                 PictureTargetResolution: resolution,
                 SelectedLayoutMode: D3D12_VIDEO_ENCODER_FRAME_SUBREGION_LAYOUT_MODE_FULL_FRAME,
@@ -255,7 +272,7 @@ impl D3d12VideoEncoder {
                 CodecGopSequence: gop_desc,
             },
             PictureControlDesc: D3D12_VIDEO_ENCODER_PICTURE_CONTROL_DESC {
-                IntraRefreshFrameIndex: 0,
+                IntraRefreshFrameIndex: intra_refresh_frame_index.unwrap_or(0),
                 Flags: picture_control_flags,
                 PictureControlCodecData: pic_control_data,
                 ReferenceFrames: reference_frames,

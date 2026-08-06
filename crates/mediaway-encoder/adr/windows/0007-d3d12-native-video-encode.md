@@ -302,6 +302,55 @@ incidents was contained to that one test's own `ID3D12Device` (other tests' inde
 created devices were unaffected), never a full-system TDR, but real device-level corruption
 is not something to keep guessing against blind.
 
+### Row-based intra refresh (H.264 and HEVC)
+
+Extends the GOP work above with `VideoEncoderConfig::intra_refresh_period` — continuous,
+back-to-back row-based refresh waves instead of periodic full IDR frames: the session's
+*only* IDR is its first frame, every frame after that is a P frame with a cyclically
+advancing band of intra-coded rows, forever. Per the official spec (see the H.264 GOP
+section's References below), this **requires an unbounded GOP** (`GOPLength = 0`,
+`PPicturePeriod = 1`) — mutually exclusive with periodic-IDR GOP mode, so
+`intra_refresh_period` takes priority over `gop_size` when both are set on the same
+config. Reuses the GOP work's `ReconPool`/`USED_AS_REFERENCE_PICTURE` machinery
+unchanged — a P frame's single reference works identically whether the previous frame
+was a periodic-GOP P frame or an intra-refresh P frame.
+
+- `gop.rs`/`gop_hevc.rs`: `H264GopState`/`HevcGopState` gained a `new_intra_refresh(period)`
+  constructor (alongside the existing `new(gop_size)`) and an `intra_refresh_frame_index:
+  Option<u32>` output on `FrameDecision` — `Some(i)`, `i` in `[0, period)`, on every frame
+  of the session except its own startup IDR (`None` there, matching the spec's "disable
+  the flag on the non-IR frame").
+- `ops.rs`/`ops_hevc.rs`: `D3D12_VIDEO_ENCODER_SEQUENCE_CONTROL_FLAG_REQUEST_INTRA_REFRESH`
+  and `IntraRefreshConfig` (`Mode: ROW_BASED`, `IntraRefreshDuration: period`) are set on
+  every frame with `Some(_)` wave index; `PictureControlDesc.IntraRefreshFrameIndex` carries
+  the wave index every frame (`0` outside intra-refresh mode, matching the pre-existing
+  hardcoded value byte-for-byte).
+
+**Real-hardware finding: `GENERAL_SUPPORT_OK` passing is not sufficient** —
+`D3D12_FEATURE_DATA_VIDEO_ENCODER_RESOLUTION_SUPPORT_LIMITS.MaxIntraRefreshFrameDuration`
+(an output of the same `D3D12_FEATURE_VIDEO_ENCODER_SUPPORT` query, previously read and
+discarded by this backend) is the real, resolution-dependent cap — `0` means row-based
+intra refresh is unusable at *any* nonzero duration for that resolution, even though the
+coarser mode-level check already passed. Requesting a duration above this cap is only
+caught at the real `EncodeFrame` call (a clean, driver-reported "arguments are not
+supported" rejection, not a device-removal crash — the debug layer named the exact
+constraint verbatim: *"Intra refresh duration specified (N) exceeds the maximum supported
+number of intra refresh frames duration 0"*). `setup::check_encoder_support`/
+`hevc::check_encoder_support` now return this value alongside the suggested level, and
+`open` validates `period <= MaxIntraRefreshFrameDuration && MaxIntraRefreshFrameDuration >
+0` before committing to intra-refresh mode, falling back to periodic-GOP/IDR-only
+otherwise — the same capability-gated-fallback contract as everything else in this ADR.
+On this RTX 4090 at the test resolutions (176x144 H.264, 256x192 HEVC),
+`MaxIntraRefreshFrameDuration` reports `0` — intra-refresh mode is not actually usable
+here, so both hardware tests below exercise (and pass via) the documented fallback rather
+than a live refresh-wave cadence; the capability-gated code path itself is confirmed
+correct (no device removal, no invalid `EncodeFrame` call reaches the driver).
+
+`d3d12_native_h264_intra_refresh_encode_or_skip` / `d3d12_native_hevc_intra_refresh_encode_or_skip`
+(same test file) push 9 frames each at `intra_refresh_period: 4` and accept either a real
+single-IDR-forever cadence or the all-IDR fallback as passing outcomes — both ran clean on
+the RTX 4090 (2026-08-06), landing in the fallback branch per the finding above.
+
 ### Verified end-to-end on real hardware
 
 `d3d12_native_h264_gop_encode_or_skip` ([`d3d12_video_encode_tests.rs`](../src/d3d12_video_encode_tests.rs)),

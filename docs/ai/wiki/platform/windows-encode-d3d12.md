@@ -1,0 +1,67 @@
+# Windows encode — D3D12 native Video Encode API
+
+Split out of [`windows-encode.md`](windows-encode.md) (100-line limit) — this page covers
+only the **native D3D12 Video Encode API** path (`ID3D12VideoDevice3`/`ID3D12VideoEncoder`),
+a real, distinct encode API separate from feeding D3D12 textures into WMF, reachable with
+**zero new dependency cost** via `windows` features this crate already enables.
+
+- **Implemented 2026-07-29:**
+  [`d3d12_video_encode`](../../../../crates/mediaway-encoder/src/windows/d3d12_video_encode.rs)
+  — H.264 Main, CPU-upload NV12, all-intra, fixed CQP, hand-written Annex-B SPS/PPS (driver
+  only emits the slice NAL). **Not wired into the public API yet** (`auto.rs`/
+  `WindowsVideoEncoder`) — `lib.rs` declares a private `mod d3d12_video_encode;` so its
+  hardware-gated tests still compile/run under normal `cargo test`. **Real hardware encode
+  confirmed on an RTX 4090** — real SPS+IDR NALs out of a real `EncodeFrame`. Three
+  driver-real gotchas (ground-truthed against FFmpeg's `d3d12va_encode.c`, no code copied):
+  (1) `D3D12_FEATURE_VIDEO_ENCODER_OUTPUT_RESOLUTION` reports a real minimum resolution
+  (160x64 observed) — below it `CreateVideoEncoderHeap` fails `E_INVALIDARG` with no other
+  diagnostic; (2) `D3D12_HEAP_TYPE_READBACK` resources cannot be transitioned to
+  `VIDEO_ENCODE_WRITE`/`_READ` — resolve via `GetCustomHeapProperties` first; (3) a
+  hardcoded H.264 level reliably fails heap creation — must use
+  `D3D12_FEATURE_VIDEO_ENCODER_SUPPORT`'s driver-reported `SuggestedLevel`.
+- **HEVC extension (2026-07-29):** same module, HEVC Main profile
+  (`hevc.rs`/`ops_hevc.rs`/`bitstream_hevc.rs`). Real hardware encode confirmed — genuine
+  VPS(32)/SPS(33)/PPS(34)/IDR(19/20) Annex-B NALs. Two more gotchas: (1)
+  `D3D12_FEATURE_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT` reports unsupported
+  unconditionally for HEVC on this driver — sweep `D3D12_FEATURE_VIDEO_ENCODER_SUPPORT`
+  directly instead; (2) codec config needs fixed 32x32 CTU + full 4x4–32x32 TU range +
+  `USE_ASYMETRIC_MOTION_PARTITION`, only surfaced via the debug layer at `CreateVideoEncoder`
+  time, not the advisory query.
+- **AV1 extension (2026-07-29):** implemented — `av1.rs`/`ops_av1.rs`/`bitstream_av1.rs`.
+  **Blocked from a real hardware round-trip on the RTX 4090**: `D3D12_FEATURE_VIDEO_ENCODER_CODEC`
+  reports `IsSupported=true` (codec-presence probe), but the full
+  `D3D12_FEATURE_VIDEO_ENCODER_SUPPORT` query reports `CODEC_NOT_SUPPORTED` for every
+  configuration tried — this NVIDIA consumer driver doesn't appear to implement AV1 through
+  the D3D12 Video Encode API yet (the same GPU's separate NVENC SDK path does encode AV1,
+  see `mediaway-encoder::nvenc`). Re-confirmed 2026-08-06 via a step-by-step diagnostic —
+  same finding, not new. D3D12 Video Decode not attempted at all — distinct API surface.
+- **H.264/HEVC GOP/P-frame support (2026-08-06):** `gop_size > 1` now real, single forward
+  reference (mirrors Vulkan's own GOP design). New `gop.rs`/`gop_hevc.rs` (pure-Rust
+  `H264GopState`/`HevcGopState`) + `setup::ReconPool` — **one** 2-slice texture array,
+  ping-ponged, not two separate resources. **Real hardware `IPPIPPI` cadence confirmed on
+  the RTX 4090** for both codecs, reproduced repeatedly. Two real device-removal incidents
+  on the way there (H.264 only — HEVC reused the fix from the start and worked first try),
+  both root-caused via the official D3D12 spec (fetched to
+  `local/standards/d3d12-video-encoding-h264-hevc/` per
+  `docs/conventions/external-standards.md`) rather than more hardware guessing: (1)
+  `RECONSTRUCTED_FRAMES_REQUIRE_TEXTURE_ARRAYS` is set on this driver — separate individual
+  resources are invalid, not merely suboptimal; (2) the actual root cause —
+  `D3D12_VIDEO_ENCODER_PICTURE_CONTROL_FLAG_USED_AS_REFERENCE_PICTURE` must be set on every
+  frame providing a non-null `ReconstructedPicture` output; the resource alone, without the
+  flag, is undefined behavior.
+- **Row-based intra refresh (2026-08-06):** `VideoEncoderConfig::intra_refresh_period` —
+  unbounded GOP (`GOPLength = 0`) + continuous refresh waves instead of periodic IDR, for
+  H.264 and HEVC. Reuses the GOP work's `ReconPool`/`USED_AS_REFERENCE_PICTURE` wiring
+  unchanged. **Real-hardware finding:** `GENERAL_SUPPORT_OK` passing is not sufficient —
+  `D3D12_FEATURE_DATA_VIDEO_ENCODER_RESOLUTION_SUPPORT_LIMITS.MaxIntraRefreshFrameDuration`
+  (previously read and discarded by this backend) is the real, resolution-dependent cap;
+  `0` means unusable at any nonzero duration even though the coarser mode check passed.
+  `open` now validates `period <= MaxIntraRefreshFrameDuration && > 0` before committing,
+  falling back to periodic-GOP/IDR-only otherwise. On this RTX 4090 at the tested
+  resolutions that cap is `0`, so both hardware tests land in the documented fallback
+  rather than a live refresh cadence — the capability-gated path itself (no device
+  removal, no invalid `EncodeFrame` reaching the driver) is confirmed correct.
+
+See [ADR-0007](../../../../crates/mediaway-encoder/adr/windows/0007-d3d12-native-video-encode.md)
+(+ its 2026-08-06 addendum) for full detail on every finding above, including how the debug
+layer (`ID3D12InfoQueue`) surfaced each one.

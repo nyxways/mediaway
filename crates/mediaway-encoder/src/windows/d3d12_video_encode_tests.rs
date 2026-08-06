@@ -211,6 +211,7 @@ fn d3d12_native_h264_encode_or_skip() {
         gpu_device: Some(GpuDeviceHandle::DirectX12(handle)),
         gop_size: 1,
         rate_control: None,
+        intra_refresh_period: None,
     };
 
     let mut enc = match D3d12VideoEncoder::open(&cfg) {
@@ -293,6 +294,7 @@ fn d3d12_native_h264_gop_encode_or_skip() {
         gpu_device: Some(GpuDeviceHandle::DirectX12(handle)),
         gop_size: 3,
         rate_control: None,
+        intra_refresh_period: None,
     };
 
     let mut enc = match D3d12VideoEncoder::open(&cfg) {
@@ -348,8 +350,9 @@ fn d3d12_native_h264_gop_encode_or_skip() {
     let cadence: String = nal_type_cadence.iter().collect();
     // Either GOP mode landed (real `IPPIPPI` cadence) or the driver couldn't honor
     // `MaxReferenceFramesInDPB >= 1` and this backend silently fell back to IDR-only
-    // (`IIIIIII`) — both are valid, documented outcomes (ADR-0008); anything else (a
-    // cadence that isn't periodic-by-3 and isn't all-IDR) is a real bug.
+    // (`IIIIIII`) — both are valid, documented outcomes (ADR-0007's 2026-08-06
+    // addendum); anything else (a cadence that isn't periodic-by-3 and isn't
+    // all-IDR) is a real bug.
     let is_gop_cadence = cadence == "IPPIPPI";
     let is_idr_only_fallback = keyframe_flags.iter().all(|&k| k);
     assert!(
@@ -357,6 +360,100 @@ fn d3d12_native_h264_gop_encode_or_skip() {
         "unexpected I/P cadence {cadence:?} — neither GOP mode's IPPIPPI nor an all-IDR fallback"
     );
     eprintln!("d3d12 native h264 GOP encode ok: cadence {cadence:?}");
+}
+
+/// Real D3D12 device → real H.264 row-based intra-refresh (`intra_refresh_period: 4`) →
+/// real `EncodeFrame` submissions → only the very first packet is an IDR (type 5); every
+/// packet after that is a P slice (type 1) forever — an unbounded GOP, unlike
+/// [`d3d12_native_h264_gop_encode_or_skip`]'s periodic re-IDR. `Packet::is_keyframe` must
+/// agree. Falls back to the documented all-IDR outcome if the driver can't honor
+/// `D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_ROW_BASED` for this config (ADR-0007's
+/// 2026-08-06 addendum) — that's still a pass, not a failure.
+#[test]
+fn d3d12_native_h264_intra_refresh_encode_or_skip() {
+    let Some(device) = open_real_d3d12_device() else {
+        return;
+    };
+    let Some(handle) = NativeHandle::new(Interface::as_raw(&device) as usize) else {
+        eprintln!("skip: null D3D12 device pointer");
+        return;
+    };
+    let info_queue: Option<ID3D12InfoQueue> = device.cast().ok();
+
+    let cfg = VideoEncoderConfig {
+        codec: CodecKind::H264,
+        width: WIDTH,
+        height: HEIGHT,
+        time_base: Rational::new(1, 30),
+        bitrate_bps: 500_000,
+        pixel_format: PixelFormat::Nv12,
+        input: VideoInputPreference::CpuUploadOk,
+        gpu_device: Some(GpuDeviceHandle::DirectX12(handle)),
+        gop_size: 1,
+        rate_control: None,
+        intra_refresh_period: Some(4),
+    };
+
+    let mut enc = match D3d12VideoEncoder::open(&cfg) {
+        Ok(e) => e,
+        Err(e) => {
+            dump_d3d12_info_queue(info_queue.as_ref());
+            eprintln!(
+                "skip: D3d12VideoEncoder::open (intra-refresh) failed ({e:?}) — no D3D12 \
+                 H.264 video-encode support on this device/driver?"
+            );
+            return;
+        }
+    };
+
+    let mut nal_type_cadence = Vec::new();
+    for i in 0..9i64 {
+        let frame = nv12_frame(i);
+        if let Err(e) = enc.push_frame(&frame) {
+            dump_d3d12_info_queue(info_queue.as_ref());
+            eprintln!("skip: push_frame (intra-refresh) failed ({e:?})");
+            return;
+        }
+        let packet = match enc.poll_packet() {
+            Ok(Some(p)) => p,
+            Ok(None) => {
+                eprintln!("skip: no packet after push_frame {i} (intra-refresh)");
+                return;
+            }
+            Err(e) => {
+                eprintln!("skip: poll_packet (intra-refresh) failed ({e:?})");
+                return;
+            }
+        };
+        assert!(!packet.payload.is_empty(), "packet {i} payload is empty");
+        let types = nal_unit_types(&packet.payload);
+        let is_idr_nal = types.contains(&5);
+        let is_p_nal = types.contains(&1);
+        assert!(
+            is_idr_nal || is_p_nal,
+            "packet {i} has neither an IDR (type 5) nor a P (type 1) slice NAL; found {types:?}"
+        );
+        assert_eq!(
+            packet.is_keyframe, is_idr_nal,
+            "packet {i}: Packet::is_keyframe ({}) disagrees with its own NAL type {types:?}",
+            packet.is_keyframe
+        );
+        nal_type_cadence.push(if is_idr_nal { 'I' } else { 'P' });
+    }
+
+    enc.flush().expect("flush");
+    let cadence: String = nal_type_cadence.iter().collect();
+    // Either intra-refresh landed (real "IPPPPPPPP" — exactly one IDR, ever) or the
+    // driver couldn't honor row-based intra refresh and this backend fell back to
+    // IDR-only ("IIIIIIIII"); anything else is a real bug.
+    let is_intra_refresh_cadence = cadence == "IPPPPPPPP";
+    let is_idr_only_fallback = cadence == "IIIIIIIII";
+    assert!(
+        is_intra_refresh_cadence || is_idr_only_fallback,
+        "unexpected I/P cadence {cadence:?} — neither intra-refresh's single-IDR-forever \
+         nor an all-IDR fallback"
+    );
+    eprintln!("d3d12 native h264 intra-refresh encode ok: cadence {cadence:?}");
 }
 
 /// Real D3D12 device → real HEVC `ID3D12VideoDevice3` support check → real `EncodeFrame`
@@ -386,6 +483,7 @@ fn d3d12_native_hevc_encode_or_skip() {
         gpu_device: Some(GpuDeviceHandle::DirectX12(handle)),
         gop_size: 1,
         rate_control: None,
+        intra_refresh_period: None,
     };
 
     let mut enc = match D3d12VideoEncoder::open(&cfg) {
@@ -477,6 +575,7 @@ fn d3d12_native_hevc_gop_encode_or_skip() {
         gpu_device: Some(GpuDeviceHandle::DirectX12(handle)),
         gop_size: 3,
         rate_control: None,
+        intra_refresh_period: None,
     };
 
     let mut enc = match D3d12VideoEncoder::open(&cfg) {
@@ -538,6 +637,93 @@ fn d3d12_native_hevc_gop_encode_or_skip() {
         "unexpected I/P cadence {cadence:?} — neither GOP mode's IPPIPPI nor an all-IDR fallback"
     );
     eprintln!("d3d12 native hevc GOP encode ok: cadence {cadence:?}");
+}
+
+/// HEVC sibling of [`d3d12_native_h264_intra_refresh_encode_or_skip`] — see that test's
+/// doc for the shared design (unbounded GOP, single startup IDR, cadence assertion).
+#[test]
+fn d3d12_native_hevc_intra_refresh_encode_or_skip() {
+    let Some(device) = open_real_d3d12_device() else {
+        return;
+    };
+    let Some(handle) = NativeHandle::new(Interface::as_raw(&device) as usize) else {
+        eprintln!("skip: null D3D12 device pointer");
+        return;
+    };
+    let info_queue: Option<ID3D12InfoQueue> = device.cast().ok();
+
+    let cfg = VideoEncoderConfig {
+        codec: CodecKind::Hevc,
+        width: WIDTH_HEVC,
+        height: HEIGHT_HEVC,
+        time_base: Rational::new(1, 30),
+        bitrate_bps: 500_000,
+        pixel_format: PixelFormat::Nv12,
+        input: VideoInputPreference::CpuUploadOk,
+        gpu_device: Some(GpuDeviceHandle::DirectX12(handle)),
+        gop_size: 1,
+        rate_control: None,
+        intra_refresh_period: Some(4),
+    };
+
+    let mut enc = match D3d12VideoEncoder::open(&cfg) {
+        Ok(e) => e,
+        Err(e) => {
+            dump_d3d12_info_queue(info_queue.as_ref());
+            eprintln!(
+                "skip: D3d12VideoEncoder::open (HEVC intra-refresh) failed ({e:?}) — no D3D12 \
+                 HEVC video-encode support on this device/driver?"
+            );
+            return;
+        }
+    };
+
+    let mut nal_type_cadence = Vec::new();
+    for i in 0..9i64 {
+        let frame = nv12_frame_sized(i, WIDTH_HEVC, HEIGHT_HEVC);
+        if let Err(e) = enc.push_frame(&frame) {
+            dump_d3d12_info_queue(info_queue.as_ref());
+            eprintln!("skip: push_frame (HEVC intra-refresh) failed ({e:?})");
+            return;
+        }
+        let packet = match enc.poll_packet() {
+            Ok(Some(p)) => p,
+            Ok(None) => {
+                eprintln!("skip: no packet after push_frame {i} (HEVC intra-refresh)");
+                return;
+            }
+            Err(e) => {
+                eprintln!("skip: poll_packet (HEVC intra-refresh) failed ({e:?})");
+                return;
+            }
+        };
+        assert!(!packet.payload.is_empty(), "packet {i} payload is empty");
+        let types = nal_unit_types_hevc(&packet.payload);
+        let is_idr_nal = types.contains(&19) || types.contains(&20);
+        let is_p_nal = types.contains(&1);
+        assert!(
+            is_idr_nal || is_p_nal,
+            "packet {i} has neither an IDR (type 19/20) nor a P (type 1, TRAIL_R) slice NAL; \
+             found {types:?}"
+        );
+        assert_eq!(
+            packet.is_keyframe, is_idr_nal,
+            "packet {i}: Packet::is_keyframe ({}) disagrees with its own NAL type {types:?}",
+            packet.is_keyframe
+        );
+        nal_type_cadence.push(if is_idr_nal { 'I' } else { 'P' });
+    }
+
+    enc.flush().expect("flush");
+    let cadence: String = nal_type_cadence.iter().collect();
+    let is_intra_refresh_cadence = cadence == "IPPPPPPPP";
+    let is_idr_only_fallback = cadence == "IIIIIIIII";
+    assert!(
+        is_intra_refresh_cadence || is_idr_only_fallback,
+        "unexpected I/P cadence {cadence:?} — neither intra-refresh's single-IDR-forever \
+         nor an all-IDR fallback"
+    );
+    eprintln!("d3d12 native hevc intra-refresh encode ok: cadence {cadence:?}");
 }
 
 /// Parse AV1 `obu_type` values out of length-prefixed OBUs (`obu_has_size_field == 1`,
@@ -608,6 +794,7 @@ fn d3d12_native_av1_encode_or_skip() {
         gpu_device: Some(GpuDeviceHandle::DirectX12(handle)),
         gop_size: 1,
         rate_control: None,
+        intra_refresh_period: None,
     };
 
     let mut enc = match D3d12VideoEncoder::open(&cfg) {

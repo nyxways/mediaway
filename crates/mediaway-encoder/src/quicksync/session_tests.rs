@@ -109,6 +109,7 @@ fn real_encode_produces_annex_b_sps_and_idr_or_skips() {
         gpu_device: None,
         gop_size: 1,
         rate_control: None,
+        intra_refresh_period: None,
     };
 
     let mut session = match QuickSyncSession::open(&config) {
@@ -223,6 +224,7 @@ fn real_hevc_encode_produces_vps_sps_pps_idr_or_skips() {
         gpu_device: None,
         gop_size: 1,
         rate_control: None,
+        intra_refresh_period: None,
     };
 
     let mut session = match QuickSyncSession::open(&config) {
@@ -318,6 +320,7 @@ fn av1_encode_query_reports_real_hardware_result_or_skips() {
         gpu_device: None,
         gop_size: 1,
         rate_control: None,
+        intra_refresh_period: None,
     };
     validate(&config).expect("AV1 config should pass this crate's generic input validation");
 

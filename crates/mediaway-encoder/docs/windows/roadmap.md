@@ -68,6 +68,14 @@ Platform order: **Windows first**. Workspace index: [`docs/roadmap.md`](../../..
 - [x] HEVC GOP/P-frame support — ported same session, same design, worked on the first
       real-hardware attempt (root cause already known from H.264). Real hardware verified
       (RTX 4090, real `IPPIPPI` NAL cadence).
+- [x] Row-based intra refresh (`VideoEncoderConfig::intra_refresh_period`, H.264 + HEVC) —
+      unbounded GOP + continuous refresh waves instead of periodic IDR. Capability-gated on
+      `MaxIntraRefreshFrameDuration` (a real, resolution-dependent driver cap this backend
+      previously read and discarded); on this RTX 4090 at the tested resolutions that cap is
+      `0`, so both hardware tests exercise the documented IDR-only fallback rather than a
+      live refresh cadence — the capability-gated path itself is confirmed correct (no
+      device removal, no invalid `EncodeFrame` reaches the driver). See ADR-0007's
+      2026-08-06 addendum.
 - [ ] D3D12 Video Decode API (`ID3D12VideoDevice`/`ID3D12VideoDecoder`/
       `ID3D12VideoDecoderHeap`) — distinct API surface from encode, not started this pass.
 - [ ] Still not wired into `src/lib.rs` / `auto.rs` — self-contained, unregistered by

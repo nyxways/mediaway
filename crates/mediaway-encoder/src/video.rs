@@ -57,6 +57,20 @@ pub struct VideoEncoderConfig {
     /// falls back to fixed-QP and must document that fallback on its own
     /// encoder type's rustdoc, per `caveats-and-clarity.md`.
     pub rate_control: Option<RateControlConfig>,
+    /// Row-based intra-refresh wave period, in frames. `None` (the
+    /// `Default`/`h264()`/`hevc()`/`av1()`/`vp9()` constructor value, zero
+    /// behavior change for existing callers) disables it. `Some(n)` requests
+    /// continuous back-to-back refresh waves of `n` frames each instead of
+    /// periodic full IDR frames — every frame after the session's one
+    /// startup IDR stays a P frame, with a cyclically advancing band of
+    /// intra-coded rows standing in for a keyframe's bandwidth spike. Takes
+    /// priority over [`Self::gop_size`]'s periodic-IDR cadence when both are
+    /// set (a backend honoring intra-refresh needs an unbounded/"infinite"
+    /// GOP structure, which is incompatible with periodic forced IDRs). A
+    /// backend that cannot honor intra-refresh (capability-gated) falls back
+    /// to its `gop_size` behavior with no error and must document that
+    /// fallback on its own encoder type's rustdoc, per `caveats-and-clarity.md`.
+    pub intra_refresh_period: Option<u32>,
 }
 
 /// Target bitrate + optional VBV buffer size for CBR-style rate control
@@ -85,6 +99,7 @@ impl VideoEncoderConfig {
             gpu_device: None,
             gop_size: 1,
             rate_control: None,
+            intra_refresh_period: None,
         }
     }
 
@@ -102,6 +117,7 @@ impl VideoEncoderConfig {
             gpu_device: None,
             gop_size: 1,
             rate_control: None,
+            intra_refresh_period: None,
         }
     }
 
@@ -119,6 +135,7 @@ impl VideoEncoderConfig {
             gpu_device: None,
             gop_size: 1,
             rate_control: None,
+            intra_refresh_period: None,
         }
     }
 
@@ -136,6 +153,7 @@ impl VideoEncoderConfig {
             gpu_device: None,
             gop_size: 1,
             rate_control: None,
+            intra_refresh_period: None,
         }
     }
 }

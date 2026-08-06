@@ -159,6 +159,7 @@ impl AutoVideoEncodeConfig {
             gpu_device,
             gop_size: 1,
             rate_control: None,
+            intra_refresh_period: None,
         }
     }
 }

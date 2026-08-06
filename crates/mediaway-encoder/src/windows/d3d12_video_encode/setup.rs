@@ -32,7 +32,7 @@ use windows::Win32::Media::MediaFoundation::{
     D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_H264_SLICES_DEBLOCKING_MODE_0_ALL_LUMA_CHROMA_SLICE_BLOCK_EDGES_ALWAYS_FILTERED,
     D3D12_VIDEO_ENCODER_CODEC_H264, D3D12_VIDEO_ENCODER_DESC, D3D12_VIDEO_ENCODER_FLAG_NONE,
     D3D12_VIDEO_ENCODER_FRAME_SUBREGION_LAYOUT_MODE_FULL_FRAME, D3D12_VIDEO_ENCODER_HEAP_DESC,
-    D3D12_VIDEO_ENCODER_HEAP_FLAG_NONE, D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_NONE,
+    D3D12_VIDEO_ENCODER_HEAP_FLAG_NONE, D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE,
     D3D12_VIDEO_ENCODER_LEVEL_SETTING, D3D12_VIDEO_ENCODER_LEVEL_SETTING_0,
     D3D12_VIDEO_ENCODER_LEVELS_H264, D3D12_VIDEO_ENCODER_LEVELS_H264_51,
     D3D12_VIDEO_ENCODER_MOTION_ESTIMATION_PRECISION_MODE_MAXIMUM,
@@ -198,7 +198,12 @@ pub(super) const fn default_codec_config_h264() -> D3D12_VIDEO_ENCODER_CODEC_CON
 /// Query `D3D12_FEATURE_VIDEO_ENCODER_SUPPORT` for the exact codec/GOP/rate-control/
 /// resolution combination this session will use, returning the driver's `SuggestedLevel`
 /// (the level actually valid for this configuration on this hardware — a hardcoded guess
-/// reliably fails `CreateVideoEncoderHeap` with `E_INVALIDARG` on real drivers).
+/// reliably fails `CreateVideoEncoderHeap` with `E_INVALIDARG` on real drivers) and the
+/// resolution-dependent `MaxIntraRefreshFrameDuration` (real hardware finding: this is
+/// `0` — i.e. row-based intra refresh is unusable at *any* nonzero duration — at some
+/// resolutions even when the coarser mode-level `GENERAL_SUPPORT_OK` check above already
+/// passed; `EncodeFrame` itself then rejects the request, so callers must check this
+/// value, not just this function's `Ok`/`Err`, before committing to intra-refresh mode).
 pub(super) fn check_encoder_support(
     video_device: &ID3D12VideoDevice3,
     resolution: D3D12_VIDEO_ENCODER_PICTURE_RESOLUTION_DESC,
@@ -206,7 +211,8 @@ pub(super) fn check_encoder_support(
     rc_cqp: D3D12_VIDEO_ENCODER_RATE_CONTROL_CQP,
     frame_rate: (u32, u32),
     max_reference_frames_in_dpb: u32,
-) -> Result<D3D12_VIDEO_ENCODER_LEVELS_H264, EncodeError> {
+    intra_refresh: D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE,
+) -> Result<(D3D12_VIDEO_ENCODER_LEVELS_H264, u32), EncodeError> {
     let mut codec_conf_h264 = default_codec_config_h264();
     let mut resolution_limits =
         D3D12_FEATURE_DATA_VIDEO_ENCODER_RESOLUTION_SUPPORT_LIMITS::default();
@@ -243,7 +249,7 @@ pub(super) fn check_encoder_support(
                 Denominator: frame_rate.1,
             },
         },
-        IntraRefresh: D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_NONE,
+        IntraRefresh: intra_refresh,
         SubregionFrameEncoding: D3D12_VIDEO_ENCODER_FRAME_SUBREGION_LAYOUT_MODE_FULL_FRAME,
         ResolutionsListCount: 1,
         pResolutionList: &raw const resolution,
@@ -282,7 +288,10 @@ pub(super) fn check_encoder_support(
     {
         return Err(EncodeError::Unsupported);
     }
-    Ok(suggested_level_h264)
+    Ok((
+        suggested_level_h264,
+        resolution_limits.MaxIntraRefreshFrameDuration,
+    ))
 }
 
 pub(super) fn create_encoder(

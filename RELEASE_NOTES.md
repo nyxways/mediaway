@@ -1,144 +1,100 @@
-# Mediaway release notes
+# Mediaway v0.1.4
 
-<!-- Dev changes accumulate under ## Unreleased (AGENTS.md § 10). Finalize
-     with `/release-notes <version>`; reset this template with
-     `/release-notes reset`. See docs/ai/wiki/meta/release-notes.md. -->
-
-## Unreleased
+## What's new
 
 ### Added
 
-- `mediaway-ffi`: video decode C ABI (`mediaway_decode_session_open/push_packet/
-  poll_frame/flush/close`, `adr/pipeline/0004-auto-decode-c-abi.md`), wrapping
-  `mediaway::platform::AutoDecoder`. CPU output only this pass; blocked from
-  hardware verification by a real, pre-existing `WindowsVideoDecoder` bug found
-  while adding it (see Fixed).
-- `mediaway-ffi`: capture-to-encode bridge
-  (`mediaway_encode_session_write_frame_from_{camera,desktop}_capture`,
-  `adr/pipeline/0005-capture-encode-bridge-c-abi.md`) — pushes a polled
-  Camera/Screen capture frame straight into an encode session with no
-  intermediate frame struct and no extra copy (Screen is Zero-Copy end-to-end).
-  Hardware-verified with a real USB camera.
-- `mediaway-ffi`: Opus audio decode C ABI (`mediaway_audio_decode_session_open/
-  push_packet/poll_frame/flush/close`, `adr/pipeline/0006-audio-decode-c-abi.md`),
-  wrapping `mediaway_sw::opus::OpusDecoder` directly. Empty-payload packets are
-  Opus packet-loss concealment, not an error. `CodecKind::Opus` is also now
-  reachable from the existing audio encode C ABI
-  (`mediaway_audio_encode_config_opus`) — previously AAC-only despite
-  `SwOpusAudioEncoder` already existing at the Rust level. Cross-platform
-  (`mediaway-sw` has no OS dependency); round-trip-verified
-  (`tests/audio_decode_smoke.rs`).
-- `mediaway-encoder`: multi-frame GOP (P-frame prediction) for the Vulkan
-  H.264 and HEVC encode backends, plus CBR rate control for H.264
-  (`adr/vulkan/0002-vulkan-gop-rate-control.md`). New
-  `VideoEncoderConfig::gop_size`/`rate_control` fields (cross-backend; only
-  Vulkan H.264/HEVC read them so far, CBR only on H.264). Capability-gated
-  (`Capabilities::supports_p_frames`/`supports_cbr`) — falls back to today's
-  IDR-only/fixed-QP behavior with no error when the driver can't honor a
-  request. Defaults (`gop_size: 1`, `rate_control: None`) keep every
-  existing caller's output byte-identical. Hardware-verified on a real RTX
-  4090: real IDR/P NAL cadence for both codecs, real CBR bitstream output
-  for H.264. `VideoEncoderConfig::gop_size` now also reaches the Vulkan AV1
-  backend's internal wiring, but this is **not a working feature** — AV1's
-  underlying per-frame encode is already blocked by the same
-  driver-maturity bug as its base (IDR-only) path (`adr/0001`'s AV1
-  addendum), so the GOP request is capability-gated but its output cannot
-  currently be verified.
-- `mediaway-encoder`: D3D12 native video-encode backend (still self-contained,
-  not wired into the public API) gains real `gop_size > 1` support for H.264
-  and HEVC — single forward reference, same capability-gated-fallback
-  contract as the Vulkan GOP work above
-  (`adr/windows/0007-d3d12-native-video-encode.md`'s 2026-08-06 addendum).
-  Hardware-verified on a real RTX 4090: real `IPPIPPI` Annex-B NAL cadence for
-  both codecs. AV1 stays all-intra this pass. Also new:
-  `VideoEncoderConfig::intra_refresh_period` — row-based intra refresh (unbounded
-  GOP + continuous refresh waves instead of periodic IDR) for H.264/HEVC,
-  capability-gated on the driver's real `MaxIntraRefreshFrameDuration` cap.
-- `mediaway-encoder`: `VideoEncoder::set_bitrate` — live CBR bitrate retargeting mid-session,
-  no reopen. Implemented for Vulkan H.264 and the D3D12 native backend's H.264/HEVC (still
-  self-contained, not wired into the public API), which also gains real, capability-gated
-  CBR rate control (`VideoEncoderConfig::rate_control`). Hardware-verified on a real RTX
-  4090: real CBR selected and `set_bitrate` accepted live for both codecs on D3D12 and for
-  H.264 on Vulkan.
-- `mediaway-decoder`: `AudioDecoder` trait, mirroring `VideoDecoder`
-  (`adr/0003-audio-decoder-trait.md`). Implemented for the WMF Opus decoder
-  (`windows::WmfOpusDecoder`) and `mediaway-sw`'s software Opus decoder
-  (`SwOpusAudioDecoder`, wrapping `mediaway_sw::opus::OpusDecoder`).
-- New freestanding sans-io crate `rtp-core`: RTP payloadization for H.264/HEVC
-  (RFC 3550/6184/7798) — fixed header build/parse, single-NAL-unit packets, and
-  FU-A/FU fragmentation for NAL units larger than a caller-supplied payload
-  budget. Closes the workspace's previous no-RTP gap for standard-interop
-  low-latency streaming.
-- `@mediaway/browser` (ADR-0022): `DecodeSession` — demux-then-decode fMP4 via
-  the browser's native WebCodecs `VideoDecoder`/`AudioDecoder`, the decode-side
-  mirror of `EncodeSession`. Required `resolveCodec(track)` maps the
-  container's generic `Codec` name to the WebCodecs codec string;
-  `DecoderUnavailableError` for browsers without a usable decoder. E2E-verified
-  H.264 + AAC encode→mux→demux→decode round trips. Also new:
-  `examples/device/list-and-watch-devices.ts` (native `enumerateDevices()` +
-  `devicechange` hotplug demo).
-- `mediaway-ffi`/C#: `gop_size`/`rate_control` (GOP + CBR request) and live
-  `set_bitrate` reach the auto-encode C ABI (`mediaway_auto_video_encode_config_t`
-  gains 4 fields, ABI v5 → v6; new `mediaway_encode_session_set_bitrate`) and the
-  `Mediaway.Pipeline` C# package (`VideoEncodeConfig.GopSize`/`RateControl`,
-  `EncodeSession.SetBitrate`) — `adr/pipeline/0001-auto-encode-c-abi.md`'s
-  2026-08-07 addendum. Honestly scoped: `mediaway::platform::AutoEncoder` (what
-  every FFI/binding caller reaches) never resolves to the Vulkan backend that
-  actually reads `gop_size`/`rate_control` yet, so those two are a documented,
-  forward-compatible no-op through this path for now (same IDR-only/fixed-QP
-  output, no error); `set_bitrate` fails loudly instead
-  (`MEDIAWAY_PIPELINE_STATUS_UNSUPPORTED`) since the WMF backend it currently
-  reaches doesn't implement it either.
+- Video decode C ABI (`mediaway_decode_session_open/push_packet/poll_frame/flush/close`) wrapping the auto video decoder — CPU output only this pass
+- Capture-to-encode bridge C ABI — a polled Camera/Screen capture frame pushes straight into an encode session with no extra copy (Screen is Zero-Copy end-to-end)
+- Opus audio decode C ABI, and `CodecKind::Opus` wired into the existing audio encode C ABI (previously AAC-only)
+- Vulkan H.264/HEVC encode: multi-frame GOP (P-frame prediction) plus CBR rate control for H.264, hardware-verified on an RTX 4090
+- `VideoEncoder::set_bitrate` — live CBR bitrate retargeting mid-session with no reopen, implemented for Vulkan H.264
+- `AudioDecoder` trait in `mediaway-decoder`, implemented by the WMF Opus decoder and a cross-platform software Opus decoder
+- New freestanding sans-io crate `rtp-core` — RTP payloadization for H.264/HEVC (RFC 3550/6184/7798), closing the workspace's previous no-RTP gap
+- `@mediaway/browser`: `DecodeSession` — demux-then-decode fMP4 playback via the browser's native WebCodecs decoders, the decode-side mirror of `EncodeSession`
+- FFI + C#: GOP/CBR encode config and live `set_bitrate` now reach the C ABI (`mediaway_auto_video_encode_config_t`, ABI v5 → v6) and the `Mediaway.Pipeline` C# package
+- D3D12 native video-encode backend (internal, not yet wired into the public API) gains GOP support and row-based intra-refresh for H.264/HEVC
 
 ### Changed
 
-- `mediaway-ffi`: shared C header value types (`mediaway_rational_t`, pixel/sample
-  formats, GPU device/buffer handles) moved into a new `include/mediaway/common.h`,
-  included by `container.h`/`device.h`/`pipeline.h` instead of each redefining them.
-- `mediaway-ffi`: adopted `cbindgen` tooling (`cbindgen.toml`,
-  `tools/scripts/cbindgen-headers.ts generate|verify`) — produces a clean-compiling
-  generated header for the whole crate; the shipped `include/mediaway/*.h` headers
-  stay hand-written pending a separate per-header migration.
+- FFI: shared C header value types (`mediaway_rational_t`, pixel/sample formats, GPU handles) consolidated into a new `include/mediaway/common.h`
+- FFI: adopted `cbindgen` tooling for header generation; the shipped headers stay hand-written pending a follow-up migration
 
 ### Fixed
 
-- `mediaway-encoder`: D3D12 native AV1 backend (still self-contained, not wired into the
-  public API) — fixed a wrong-feature-query bug that made this driver's AV1 support look
-  entirely absent, plus a real `ReferenceFramesReconPictureDescriptors` DPB-index bug, an
-  undersized resolved-metadata buffer, and (later) a subregion-metadata extraction gap that
-  both blocked/risked corrupting `EncodeFrame` output. `EncodeFrame` now succeeds with a
-  structurally-valid bitstream, but real hardware output still fails `libdav1d` decode at a
-  100% error rate — confirmed by direct `ffmpeg`/`libdav1d` testing, root cause still open.
-  See ADR-0007's 2026-08-07 addenda for the full account.
-- `mediaway-decoder` (Windows): D3D12 native H.264 decode (still self-contained, not wired
-  into the public API) — `DXVA_Slice_H264_Long::BitOffsetToSliceData` was computed backwards
-  (translated into a raw-buffer-relative offset) against the official DXVA H.264 decoding
-  spec, which defines it as the de-emulated-RBSP-relative offset the accelerator itself
-  translates internally. Fixed; real hardware `DXGI_ERROR_DEVICE_HUNG` TDR still reproduces
-  (8th occurrence) — this was a real, spec-confirmed bug independent of the hang's actual
-  cause. See ADR-0002's 2026-08-07 addendum.
-- `mediaway-decoder::vulkan`'s HEVC GPU decode no longer produces an all-zero
-  picture: `HevcPps` was missing `pps_loop_filter_across_slices_enabled_flag`,
-  which gates a real conditional bit in every slice header, desyncing the
-  driver's CABAC parser one bit before CTU data; also fixed a
-  `general_level_idc` raw-byte-vs-enum-ordinal encoding bug and several
-  hardcoded `profile_tier_level` constraint flags. `tests/vulkan/hardware_h264_decode.rs`
-  and `tests/vulkan/hardware_hevc_decode.rs` (moved under `tests/vulkan/` by
-  an earlier crate merge but never wired into `Cargo.toml`, so `cargo test`
-  silently never ran either) are now real `[[test]]` targets again; HEVC's
-  hardware test hard-asserts on decoded pixel values instead of soft-skipping.
-- `mediaway-decoder` (Windows): `WindowsVideoDecoder`'s CPU H.264 path (`CpuFramesOk`)
-  silently decoded **zero frames** for streams fed straight from a WMF encoder (Annex-B
-  packets + avcC `extra_data` were treated as AVCC-framed and corrupted). `packet_to_sample`
-  now probes each payload for an Annex-B start code and passes Annex-B packets through
-  unchanged; demuxed AVCC streams still convert. `tests/cpu_roundtrip.rs` un-`#[ignore]`d.
-- `mediaway-ffi`: `mediaway_decode_session_close` teardown crashed the process in
-  `tests/decode_smoke.rs` because the test called `mediaway_encode_session_close` after
-  `mediaway_encode_session_finish` had already consumed the session (double-free) — stray
-  call removed, test un-`#[ignore]`d and passing end-to-end.
+- Vulkan HEVC GPU decode no longer produces an all-zero picture — a missing PPS slice-header flag was desyncing the driver's CABAC parser
+- Windows CPU H.264 decode silently produced zero frames for Annex-B streams from a WMF encoder — now decodes correctly
+- D3D12 native H.264 decode (internal): `BitOffsetToSliceData` corrected per the official DXVA spec
+- D3D12 native AV1 encode (internal): fixed a feature-query bug plus DPB-index, buffer-size, and subregion-metadata bugs — output is now structurally valid, though real hardware decode verification is still open
+- FFI: fixed a double-free crash during decode session teardown
 
-### Removed
+## Overview
 
-### Deprecated
+Mediaway is a cross-platform media toolkit built on Zero-Copy paths (GPU
+handles or shared CPU buffers), sans-io cores for mux/demux/bitstream/config,
+and low-level APIs as first-class entry points. The workspace ships 11
+freestanding, independently versioned core crates (`iso-bmff`, `ebml-webm`,
+`flv-core`, `adts-core`, `ogg-core`, `riff-wave-core`, `mpeg-ts-core`,
+`mpeg-audio`, `iso-cenc`, `rtmp`, `rtp-core`) plus one `mediaway` umbrella with
+five capability crates (`container`, `encoder`, `decoder`, `device`, `sw`) and
+a single C ABI (`mediaway-ffi`).
 
-### Breaking
+## Platforms
+
+- Windows (win64): primary target. Media Foundation capture/decode, NVENC,
+  QuickSync (VPL), and Vulkan Video encode/decode verified on an RTX 4090 and
+  Intel UHD 770 — Vulkan H.264 **and** HEVC GPU decode both hardware-verified
+  this release.
+- Linux: camera backends (pipewire/v4l), encoder scaffolding — compiles, not
+  hardware-verified.
+- Web (wasm32): `@mediaway/browser` ships `iso-bmff-wasm`, WebCodecs encode
+  **and** decode (`DecodeSession`); encoder/decoder/device crates build for
+  wasm32 via wasm-bindgen.
+- macOS / iOS / Android: not yet implemented.
+
+## Codecs
+
+- Encode: H.264 — NVENC, Vulkan Video (`VK_KHR_video_encode_queue`, now with
+  multi-frame GOP + CBR rate control and live `set_bitrate`), QuickSync (VPL);
+  AV1 — software (rav1e).
+- Decode: H.264/HEVC — Media Foundation and Vulkan Video, both
+  hardware-verified for GPU decode; AAC — software (ADTS). New auto video
+  decode C ABI (CPU output).
+- Audio: Opus — Windows decode via Media Foundation and a new cross-platform
+  software decoder (both behind the new `AudioDecoder` trait), software
+  encode/decode (`unsafe-libopus`); audio processing module (sonora); AAC —
+  software encode (C# `Mediaway.Pipeline.AudioEncoder`, ABI v2).
+- Containers: ISOBMFF/MP4, WebM, FLV, MPEG-TS, ADTS, Ogg, RIFF/WAVE, MPEG
+  audio — all verified playable in mpv; CENC encryption/decryption; RTMP
+  (proposed, unpublished); new `rtp-core` for RTP payloadization (H.264/HEVC).
+
+## Bindings
+
+- C: `mediaway_ffi.h` + CMake/CPack archives — video decode, capture-to-encode
+  bridge, and Opus audio decode/encode all newly reachable this release.
+- C#: `Mediaway.*` packages on NuGet (Trusted Publishing, OIDC) — GOP/CBR
+  encode config and live `SetBitrate` newly reachable this release.
+- Python: `mediaway` on PyPI (Trusted Publishing).
+- Node: `@mediaway/ffi`, `@mediaway/container`, `@mediaway/device`,
+  `@mediaway/encoder` on npm (OIDC Trusted Publishing).
+- Browser: `@mediaway/browser` (wasm, wasm-bindgen) — now decode-capable via
+  `DecodeSession`, not just encode.
+
+## Breaking changes
+
+`mediaway-ffi`'s pipeline C ABI version bumped 5 → 6 (new
+`mediaway_auto_video_encode_config_t` fields, new
+`mediaway_encode_session_set_bitrate` export) — recompile any C/C++ caller
+against the updated header. Pre-1.0; APIs may change without a major bump.
+
+## Maturity bar
+
+Not production-ready. Backends are stage 0/1: capability probes and minimal
+hardware-verified paths, not full rate-controlled multi-frame pipelines for
+every backend. GOP/CBR/live-bitrate-retargeting reach the FFI/C# surface this
+release but are honestly scoped: the auto-selected backend they resolve to
+today (WMF on Windows) does not yet implement them, so those fields are a
+documented no-op through that path — only the standalone Vulkan encoders
+honor them. Costly paths (CPU readback, SW fallbacks) are documented at each
+API (`docs/spec/caveats-and-clarity.md`). Sans-io cores carry the test weight;
+hardware paths are verified on specific GPUs only. See `docs/spec/status.md`.

@@ -50,6 +50,51 @@ public sealed class EncodeToMp4Tests
     }
 
     [Fact]
+    public void GopSizeAndRateControl_DoNotBreakEncode_ButAreNotYetHonoredByWmf()
+    {
+        // ABI v6: GopSize/RateControl reach the native config struct, but
+        // mediaway_auto_encoder_open on this machine always resolves to WMF, which
+        // ignores both fields (adr/0001-auto-encode-c-abi.md's 2026-08-07 addendum) —
+        // this asserts the honest "no-op, no crash, no error" contract, not that GOP/CBR
+        // actually took effect.
+        var config = MakeConfig() with
+        {
+            GopSize = 3,
+            RateControl = new RateControlConfig { TargetBitrateBps = 2_000_000 },
+        };
+        using var encoder = AutoVideoEncoder.Open(config);
+        using var session = EncodeSession.Open(encoder);
+
+        var nv12 = new byte[Width * Height + Width * Height / 2];
+        Array.Fill(nv12, (byte)128);
+        session.WriteFrame(new VideoFrame
+        {
+            Pts = 0,
+            Duration = 1,
+            Width = Width,
+            Height = Height,
+            PixelFormat = PixelFormat.Nv12,
+            Data = nv12,
+        });
+
+        using var mp4Bytes = session.Finish();
+        Assert.True(mp4Bytes.Memory.Length > 0, "Encoder produced no bytes after Finish().");
+    }
+
+    [Fact]
+    public void SetBitrate_OnWmfSession_ThrowsUnsupported()
+    {
+        // WMF's AutoVideoEncoder never overrides VideoEncoder::set_bitrate, so this is the
+        // honest failure mode set_bitrate promises for a non-CBR (or non-live-retargeting)
+        // backend — unlike GopSize/RateControl above, this does NOT silently no-op.
+        using var encoder = AutoVideoEncoder.Open(MakeConfig());
+        using var session = EncodeSession.Open(encoder);
+
+        var ex = Assert.Throws<MediawayPipelineException>(() => session.SetBitrate(1_000_000));
+        Assert.Equal(MediawayPipelineStatus.Unsupported, ex.Status);
+    }
+
+    [Fact]
     public void Dispose_AfterFinish_IsASafeNoOp()
     {
         using var encoder = AutoVideoEncoder.Open(MakeConfig());

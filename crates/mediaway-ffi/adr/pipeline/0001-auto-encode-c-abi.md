@@ -498,6 +498,54 @@ without evidence.
 - **COM/STA thread-affinity verification** for Windows backends (§10) — to
   be confirmed and documented precisely when `src/lib.rs` is implemented.
 
+## Addendum — 2026-08-07: `gop_size`/`rate_control`/`set_bitrate` reach the C ABI (ABI v6)
+
+`mediaway_encoder::VideoEncoderConfig::gop_size`/`rate_control` (GOP + CBR rate
+control) and `VideoEncoder::set_bitrate` (live CBR bitrate retargeting) landed at
+the Rust level for the Vulkan H.264/HEVC encoders
+(`adr/vulkan/0002-vulkan-gop-rate-control.md` in `mediaway-encoder`) and, for
+`set_bitrate`, as a trait method every `VideoEncoder` backend can opt into. This
+crate's `AutoVideoEncodeConfig`/`mediaway_auto_video_encode_config_t` had no way
+to request either, and `EncodeSessionHandle` had no `set_bitrate` C export at
+all — a real gap between what the Rust workspace could do and what a C/C#/etc.
+caller could reach.
+
+**`gop_size`/`rate_control` (config, not honored yet):** added to
+`AutoVideoEncodeConfig` (`mediaway-encoder::auto`) and threaded through
+`to_low_level` unconditionally (previously hardcoded to `1`/`None`).
+`mediaway_auto_video_encode_config_t` mirrors both fields — `rate_control`'s
+`Option<RateControlConfig>` flattens into `rate_control_enabled: bool` +
+`rate_control_target_bitrate_bps: u32` + `rate_control_vbv_buffer_size_bytes: u32`
+(`0` = driver default, same "0 means backend default" idiom this struct's own
+`bitrate_bps` already uses), consistent with this crate's existing no-C-union
+convention (`storage_kind`-tagged types elsewhere in this header). **Important
+scope limit, stated honestly rather than silently:** `mediaway::platform::AutoEncoder`
+(what `mediaway_auto_encoder_open` calls) never resolves to the Vulkan backend on
+any platform today — Vulkan Video isn't part of `BackendSelection` yet
+(`docs/ai/wiki/encode/backend-preference.md`). Setting these fields through this
+crate is therefore a forward-compatible no-op right now: the auto-selected
+backend (WMF on Windows, VA-API on Linux) ignores them and produces the same
+IDR-only/fixed-QP output as before, with no error — not a bug, the same
+capability-gated-fallback contract `VideoEncoderConfig::gop_size` itself
+documents, just currently gated at 100% on every backend this crate can open.
+Wiring Vulkan into the auto-select path (or exposing a Vulkan-specific open
+function) is tracked as a follow-up, not decided here.
+
+**`set_bitrate` (live, fails honestly instead of silently):** new
+`mediaway_encode_session_set_bitrate(session, bitrate_bps)` C export
+(`session.rs`), backed by a new `EncodeSession::set_bitrate` passthrough on the
+`mediaway` facade crate and a `set_bitrate` override on `AutoEncoderHandle`'s
+`VideoEncoder` impl (previously fell back to the trait's default
+`Err(EncodeError::Unsupported)` even though the boxed inner encoder might
+support it). Unlike `gop_size`/`rate_control`, this one does not silently no-op
+on the WMF path — `WindowsAutoVideoEncoder` doesn't override `set_bitrate`
+either, so calling this on the only backend `mediaway_auto_encoder_open` reaches
+today returns `MEDIAWAY_PIPELINE_STATUS_UNSUPPORTED`, an honest signal rather
+than a quiet ignore.
+
+ABI bump 5 → 6: new struct fields (breaking layout change) + one new exported
+symbol.
+
 ## References
 
 - [`crates/mediaway-ffi/README.md`](../README.md), [`docs/roadmap.md`](../docs/roadmap.md)

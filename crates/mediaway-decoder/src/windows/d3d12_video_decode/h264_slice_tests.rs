@@ -4,7 +4,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, reason = "unit tests")]
 
-use super::{RefPicListModOp, SliceType, parse_slice_header};
+use super::{RefPicListModOp, SliceType, bit_offset_to_slice_data, parse_slice_header};
 use crate::windows::d3d12_video_decode::h264_sps_pps::{Pps, Sps};
 use mediaway_sw::h264::NalUnitType;
 
@@ -202,4 +202,21 @@ fn parse_rejects_explicit_weighted_prediction() {
     let err = parse_slice_header(&bytes, NalUnitType::NonIdrSlice, 1, &sps, &pps)
         .expect_err("explicit weighted prediction must be rejected");
     assert_eq!(err, crate::DecodeError::Unsupported);
+}
+
+#[test]
+fn bit_offset_to_slice_data_passes_through_for_cavlc() {
+    // CAVLC (entropy_coding_mode_flag == false): DXVA_H264.pdf's BitOffsetToSliceData
+    // is the de-emulated RBSP bit count itself, no rounding required.
+    assert_eq!(bit_offset_to_slice_data(37, false), 37);
+    assert_eq!(bit_offset_to_slice_data(0, false), 0);
+}
+
+#[test]
+fn bit_offset_to_slice_data_byte_aligns_for_cabac() {
+    // CABAC (entropy_coding_mode_flag == true): the spec requires
+    // `BitOffsetToSliceData % 8 == 0` (rounds past cabac_alignment_one_bit()).
+    assert_eq!(bit_offset_to_slice_data(33, true), 40);
+    assert_eq!(bit_offset_to_slice_data(40, true), 40); // already aligned
+    assert_eq!(bit_offset_to_slice_data(1, true), 8);
 }

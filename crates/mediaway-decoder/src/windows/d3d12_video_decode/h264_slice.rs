@@ -295,49 +295,37 @@ pub(super) fn parse_slice_header(
     ))
 }
 
-/// Translate a bit offset measured in [`parse_slice_header`]'s **de-emulated** RBSP
-/// (what `mediaway_sw::h264::NalUnit::parse` hands to [`BitReader`], via
-/// `mediaway_sw::h264::nal`'s private `remove_emulation_prevention`) back into a bit
-/// offset in the **raw** NAL payload — the bytes actually written into the D3D12
-/// compressed-bitstream buffer, `emulation_prevention_three_byte` still present.
+/// Round a de-emulated-RBSP bit position up to `slice_data()`'s real start for
+/// `DXVA_Slice_H264_Long::BitOffsetToSliceData`.
 ///
-/// **Real hardware bug found and fixed this session** (see ADR-0002 Addendum): feeding
-/// `DXVA_Slice_H264_Long::BitOffsetToSliceData` a de-emulated bit count directly (with
-/// no translation) is wrong whenever any `00 00 03` escape byte occurs before
-/// `slice_data()` begins — the hardware decoder then starts parsing macroblocks from
-/// the wrong bit, which triggered a genuine GPU hang / `DXGI_ERROR_DEVICE_HUNG` TDR on
-/// real hardware, not just wrong pixels. This function walks `raw_nal_payload` (the NAL
-/// bytes *after* the 1-byte NAL header — i.e. exactly what
-/// `mediaway_sw::h264::nal::remove_emulation_prevention` was called on) applying the
-/// identical zero-run/`0x03`-skip algorithm, and returns the raw bit position
-/// corresponding to `deemulated_bit_count` bits into the de-emulated stream.
-pub(super) fn rbsp_bit_offset_to_raw_bit_offset(
-    raw_nal_payload: &[u8],
-    deemulated_bit_count: usize,
+/// **Corrected against the official spec** (`DXVA_H264.pdf`, "DirectX Video
+/// Acceleration Specification for H.264/AVC Decoding", § `BitOffsetToSliceData`,
+/// `docs/standards/registry.toml` id `dxva-h264-decoding`) — a prior session's "Bug 3"
+/// fix translated this value into a **raw** NAL bit offset (escape bytes counted back
+/// in), reasoning the accelerator needed a raw-buffer position. The spec says the
+/// opposite: `BitOffsetToSliceData` **is** the offset within the de-emulated RBSP,
+/// relative to `slice_header()`'s first bit — exactly what
+/// `parse_slice_header`'s returned bit count already is (slice NAL RBSP starts at
+/// `slice_header()`, nothing before it) — and the raw-buffer formula the spec also
+/// gives (`BSNALunitDataLocation + (BitOffsetToSliceData >> 3) + 4 + K`) is the
+/// **accelerator's own** internal translation, not the host's to perform. The prior
+/// translation was silently wrong on any slice header containing an escape byte and is
+/// a real candidate for the still-unresolved `DXGI_ERROR_DEVICE_HUNG` hang (ADR-0002
+/// Addendum 2026-07-30/08-05).
+///
+/// One real host-side requirement the spec does impose: for CABAC
+/// (`entropy_coding_mode_flag == 1`), the offset must land on the first bit *after*
+/// `cabac_alignment_one_bit()` — i.e. byte-aligned (`% 8 == 0`) — not merely the first
+/// bit of `slice_data()`.
+pub(super) fn bit_offset_to_slice_data(
+    deemulated_bits_read: usize,
+    entropy_coding_mode_flag: bool,
 ) -> u32 {
-    let deemulated_bytes_needed = deemulated_bit_count / 8;
-    let remainder_bits = deemulated_bit_count % 8;
-    let mut zero_run = 0u32;
-    let mut emitted = 0usize;
-    let mut raw_index = 0usize;
-    while raw_index < raw_nal_payload.len() {
-        let byte = raw_nal_payload[raw_index];
-        if zero_run >= 2 && byte == 0x03 {
-            // This raw byte is an emulation-prevention byte: consumed from the raw
-            // stream, but never emitted into the de-emulated stream.
-            zero_run = 0;
-            raw_index += 1;
-            continue;
-        }
-        if emitted == deemulated_bytes_needed {
-            let bits = raw_index.saturating_mul(8).saturating_add(remainder_bits);
-            return u32::try_from(bits).unwrap_or(u32::MAX);
-        }
-        zero_run = if byte == 0 { zero_run + 1 } else { 0 };
-        emitted += 1;
-        raw_index += 1;
-    }
-    let bits = raw_index.saturating_mul(8).saturating_add(remainder_bits);
+    let bits = if entropy_coding_mode_flag {
+        deemulated_bits_read.div_ceil(8) * 8
+    } else {
+        deemulated_bits_read
+    };
     u32::try_from(bits).unwrap_or(u32::MAX)
 }
 

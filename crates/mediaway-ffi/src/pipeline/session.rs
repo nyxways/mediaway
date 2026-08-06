@@ -151,6 +151,53 @@ pub unsafe extern "C" fn mediaway_encode_session_write_frame(
     }
 }
 
+/// Retarget the live CBR bitrate ceiling, taking effect from the next
+/// [`mediaway_encode_session_write_frame`] call — no session reopen, no dropped
+/// frames.
+///
+/// Only meaningful for a session whose underlying encoder was opened in CBR mode;
+/// a fixed-QP session (today's only reachable path through
+/// [`mediaway_auto_encoder_open`](crate::pipeline::mediaway_auto_encoder_open) — see
+/// [`crate::pipeline::MediawayAutoVideoEncodeConfig`]'s `rate_control_enabled` doc
+/// comment) returns [`MediawayPipelineStatus::Unsupported`].
+///
+/// # Safety
+///
+/// `session` must be a live pointer returned by [`mediaway_encode_session_open`] and
+/// not yet passed to [`mediaway_encode_session_finish`] or
+/// [`mediaway_encode_session_close`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mediaway_encode_session_set_bitrate(
+    session: *mut EncodeSessionHandle,
+    bitrate_bps: u32,
+) -> MediawayPipelineStatus {
+    if session.is_null() {
+        return MediawayPipelineStatus::InvalidArgument;
+    }
+    // SAFETY: caller guarantees `session` is a valid, live handle pointer
+    // (function contract).
+    let handle = unsafe { &mut *session };
+    if handle.poisoned {
+        return MediawayPipelineStatus::HandlePoisoned;
+    }
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        handle
+            .inner
+            .set_bitrate(bitrate_bps)
+            .map_err(MediawayPipelineStatus::from)
+    }));
+
+    match result {
+        Ok(Ok(())) => MediawayPipelineStatus::Ok,
+        Ok(Err(status)) => status,
+        Err(_) => {
+            handle.poisoned = true;
+            MediawayPipelineStatus::InternalPanic
+        }
+    }
+}
+
 /// Flush the encoder and muxer, returning the complete fMP4 byte stream.
 ///
 /// Consumes `session` **unconditionally** — success, failure, or a caught

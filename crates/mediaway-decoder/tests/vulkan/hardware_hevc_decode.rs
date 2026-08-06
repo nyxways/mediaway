@@ -86,6 +86,10 @@ fn gray_nv12_frame(pts: i64) -> VideoFrame {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "linear encode -> decode round-trip with soft-skip branches at each fallible step; splitting further fragments one straight-line test"
+)]
 fn decode_real_encoder_produced_idr_or_skip() {
     let encoder_config = VideoEncoderConfig {
         codec: CodecKind::Hevc,
@@ -98,6 +102,7 @@ fn decode_real_encoder_produced_idr_or_skip() {
         gpu_device: None,
         gop_size: 1,
         rate_control: None,
+        intra_refresh_period: None,
     };
     let mut encoder = match VulkanVideoEncoder::open(&encoder_config) {
         Ok(encoder) => encoder,

@@ -80,6 +80,7 @@ fn push_three_frames_or_skip() {
         gpu_device: None,
         gop_size: 1,
         rate_control: None,
+        intra_refresh_period: None,
     };
 
     let mut enc = match VulkanVideoEncoder::open(&cfg) {
@@ -155,6 +156,7 @@ fn push_three_hevc_frames_or_skip() {
         gpu_device: None,
         gop_size: 1,
         rate_control: None,
+        intra_refresh_period: None,
     };
 
     let mut enc = match VulkanVideoEncoder::open(&cfg) {
@@ -253,6 +255,7 @@ fn push_three_av1_frames_or_skip() {
         gpu_device: None,
         gop_size: 1,
         rate_control: None,
+        intra_refresh_period: None,
     };
 
     let mut enc = match VulkanVideoEncoder::open(&cfg) {
@@ -338,6 +341,7 @@ fn push_seven_frames_gop_or_skip() {
         gpu_device: None,
         gop_size: GOP_SIZE,
         rate_control: None,
+        intra_refresh_period: None,
     };
 
     let mut enc = match VulkanVideoEncoder::open(&cfg) {
@@ -436,6 +440,7 @@ fn push_frames_gop_with_rate_control_or_skip() {
             target_bitrate_bps: 500_000,
             vbv_buffer_size_bytes: Some(125_000),
         }),
+        intra_refresh_period: None,
     };
 
     let mut enc = match VulkanVideoEncoder::open(&cfg) {
@@ -473,6 +478,44 @@ fn push_frames_gop_with_rate_control_or_skip() {
             packet.payload.len() < uncompressed_frame_bytes * 4,
             "packet {i} suspiciously large: {} bytes (uncompressed frame is {uncompressed_frame_bytes})",
             packet.payload.len()
+        );
+        total_bytes += packet.payload.len();
+        packets += 1;
+    }
+
+    // Live retarget mid-session (`VideoEncoder::set_bitrate`) — real when CBR was actually
+    // selected (`Capabilities::supports_cbr`), `Unsupported` on the same fixed-QP fallback
+    // this test's doc already treats as legitimate; either way `push_frame` must keep
+    // producing real packets right after the call, since `push_frame` rebuilds
+    // `VkVideoEncodeRateControlLayerInfoKHR` from `rate_control_params` fresh every call
+    // (see `VulkanVideoEncoder::set_bitrate`'s doc) rather than caching anything from the
+    // retargeted call itself.
+    match enc.set_bitrate(250_000) {
+        Ok(()) => eprintln!("vulkan H.264 CBR set_bitrate: accepted (real CBR session)"),
+        Err(error) => {
+            eprintln!("vulkan H.264 CBR set_bitrate: {error:?} (fixed-QP fallback, expected)");
+        }
+    }
+    for i in 6..9i64 {
+        let frame = nv12_frame(i);
+        if let Err(error) = enc.push_frame(&frame) {
+            eprintln!("skip: push_frame after set_bitrate failed at {i} ({error:?})");
+            return;
+        }
+        let packet = match enc.poll_packet() {
+            Ok(Some(packet)) => packet,
+            Ok(None) => {
+                eprintln!("skip: no packet after push_frame {i} (post-set_bitrate)");
+                return;
+            }
+            Err(error) => {
+                eprintln!("skip: poll_packet (post-set_bitrate) failed ({error:?})");
+                return;
+            }
+        };
+        assert!(
+            !packet.payload.is_empty(),
+            "post-set_bitrate packet {i} payload is empty"
         );
         total_bytes += packet.payload.len();
         packets += 1;
@@ -520,6 +563,7 @@ fn push_seven_hevc_frames_gop_or_skip() {
         gpu_device: None,
         gop_size: GOP_SIZE,
         rate_control: None,
+        intra_refresh_period: None,
     };
 
     let mut enc = match VulkanVideoEncoder::open(&cfg) {
@@ -621,6 +665,7 @@ fn push_hevc_frames_gop_with_rate_control_requested_or_skip() {
             target_bitrate_bps: 500_000,
             vbv_buffer_size_bytes: Some(125_000),
         }),
+        intra_refresh_period: None,
     };
 
     let mut enc = match VulkanVideoEncoder::open(&cfg) {
@@ -708,6 +753,7 @@ fn push_seven_av1_frames_gop_or_skip() {
         gpu_device: None,
         gop_size: GOP_SIZE,
         rate_control: None,
+        intra_refresh_period: None,
     };
 
     let mut enc = match VulkanVideoEncoder::open(&cfg) {

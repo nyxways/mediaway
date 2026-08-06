@@ -31,6 +31,10 @@ public sealed class AutoVideoEncoder : IDisposable
             BitrateBps = config.BitrateBps,
             PixelFormat = config.PixelFormat,
             GpuDevice = config.GpuDevice,
+            GopSize = config.GopSize,
+            RateControlEnabled = (byte)(config.RateControl is null ? 0 : 1),
+            RateControlTargetBitrateBps = config.RateControl?.TargetBitrateBps ?? 0,
+            RateControlVbvBufferSizeBytes = config.RateControl?.VbvBufferSizeBytes ?? 0,
         };
 
         var status = NativeMethods.mediaway_auto_encoder_open(in native, out nint encoder);

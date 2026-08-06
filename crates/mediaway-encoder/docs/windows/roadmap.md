@@ -58,14 +58,44 @@ Platform order: **Windows first**. Workspace index: [`docs/roadmap.md`](../../..
       (not driver-queried — that query itself reports unsupported on this driver) codec
       configuration: fixed `32x32` CTU, full `4x4..32x32` TU range,
       `USE_ASYMETRIC_MOTION_PARTITION` required. See ADR-0007 addendum.
-- [x] AV1 encode support probed for real (`D3D12_FEATURE_VIDEO_ENCODER_CODEC`) — this
-      machine (Windows 11 24H2, RTX 4090) reports `IsSupported == true`. Encode itself
-      **not implemented** — AV1's OBU/sequence-header bitstream is substantially more
-      machinery than H.264/HEVC's NAL-based parameter sets; scoped as its own follow-up.
+- [x] AV1 all-intra encode implemented (hand-written OBU temporal delimiter + sequence
+      header + frame header, see `bitstream_av1.rs`/`ops_av1.rs`) — the original
+      `CODEC_NOT_SUPPORTED` driver-gap conclusion was **wrong**, corrected 2026-08-07: it
+      was calling the wrong feature query (`_SUPPORT` never works for AV1, per the official
+      spec). Switching to `_SUPPORT1` plus declaring this driver's `RequiredFeatureFlags`
+      (`AUTO_SEGMENTATION | CDEF_FILTERING | LOOP_RESTORATION_FILTER`) unblocked
+      `EncodeFrame` itself, surfacing (and fixing) two more real bugs: mandatory per-frame
+      `ENABLE_FRAME_SEGMENTATION_AUTO`, and a zeroed `ReferenceFramesReconPictureDescriptors`
+      default that looked like a valid DPB slot instead of the required "unused" sentinel.
+      A third bug (undersized AV1 resolved-metadata buffer) also found and fixed.
+      `EncodeFrame` now succeeds with a structurally-valid bitstream (`ffprobe` parses it),
+      but it's still not `libdav1d`-decodable (100% error rate, confirmed not a segmentation
+      mismatch) — root cause not yet found, no FFmpeg D3D12 AV1 reference exists to diff
+      against. See ADR-0007's 2026-08-07 addendum.
+- [x] H.264 GOP/P-frame support (single forward reference, `gop_size > 1`) — real hardware
+      verified (RTX 4090, real `IPPIPPI` NAL cadence). See ADR-0007's 2026-08-06 addendum.
+- [x] HEVC GOP/P-frame support — ported same session, same design, worked on the first
+      real-hardware attempt (root cause already known from H.264). Real hardware verified
+      (RTX 4090, real `IPPIPPI` NAL cadence).
+- [x] Row-based intra refresh (`VideoEncoderConfig::intra_refresh_period`, H.264 + HEVC) —
+      unbounded GOP + continuous refresh waves instead of periodic IDR. Capability-gated on
+      `MaxIntraRefreshFrameDuration` (a real, resolution-dependent driver cap this backend
+      previously read and discarded); on this RTX 4090 at the tested resolutions that cap is
+      `0`, so both hardware tests exercise the documented IDR-only fallback rather than a
+      live refresh cadence — the capability-gated path itself is confirmed correct (no
+      device removal, no invalid `EncodeFrame` reaches the driver). See ADR-0007's
+      2026-08-06 addendum.
 - [ ] D3D12 Video Decode API (`ID3D12VideoDevice`/`ID3D12VideoDecoder`/
       `ID3D12VideoDecoderHeap`) — distinct API surface from encode, not started this pass.
+- [x] Real, capability-gated CBR rate control (`VideoEncoderConfig::rate_control`) for
+      H.264/HEVC — one extra driver probe at the already-chosen GOP/intra-refresh tier,
+      falls back to fixed-QP with no error. Plus `VideoEncoder::set_bitrate` — live
+      mid-session bitrate retarget, no reopen. Hardware-verified on the RTX 4090: real CBR
+      selected and `set_bitrate` accepted for both codecs. See ADR-0007's 2026-08-07
+      addendum. AV1 stays out of scope (same cut Vulkan's ADR-0002 already made).
 - [ ] Still not wired into `src/lib.rs` / `auto.rs` — self-contained, unregistered by
       design until an integration pass decides how it fits `AutoVideoEncoder`'s path
       selection.
-- [ ] Zero-Copy GPU input, reference-frame/GOP support, rate-control tuning remain
-      deferred for both H.264 and HEVC.
+- [ ] Zero-Copy GPU input remains deferred for H.264/HEVC/AV1. Intra-refresh remains
+      deferred for AV1 (only meaningful once GOP/P-frame support exists for a codec —
+      all-intra streams have nothing to "refresh").

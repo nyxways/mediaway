@@ -31,6 +31,27 @@ public sealed record VideoEncodeConfig
     public GpuDeviceHandle GpuDevice { get; init; } = GpuDeviceHandle.None;
 
     /// <summary>
+    /// Frames between forced IDR refreshes. <c>1</c> (default) is IDR-only —
+    /// byte-identical to today's behavior for every existing caller.
+    /// <para>
+    /// <b>Not yet honored by the auto-selected backend on any platform this package
+    /// opens</b> (native ABI v6, <c>adr/0001-auto-encode-c-abi.md</c>'s 2026-08-07
+    /// addendum) — only the standalone Vulkan H.264/HEVC Rust encoders read this
+    /// today, and <see cref="AutoVideoEncoder"/> cannot reach them yet. Setting this
+    /// is a forward-compatible no-op for now: the auto-selected encoder (WMF here)
+    /// ignores it and keeps producing IDR-only output, with no error.
+    /// </para>
+    /// </summary>
+    public uint GopSize { get; init; } = 1;
+
+    /// <summary>
+    /// CBR-style rate control request. <c>null</c> (default) keeps fixed-QP encoding.
+    /// Same <b>not yet honored via auto-select</b> caveat as <see cref="GopSize"/>
+    /// applies here too.
+    /// </summary>
+    public RateControlConfig? RateControl { get; init; }
+
+    /// <summary>
     /// Explicit size and codec — resolution always comes from the caller, never a named
     /// preset. Defaults <see cref="BitrateBps"/> to <c>0</c> (backend default),
     /// <see cref="PixelFormat"/> to NV12, and <see cref="GpuDevice"/> to

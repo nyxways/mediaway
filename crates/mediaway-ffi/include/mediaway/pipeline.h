@@ -74,7 +74,7 @@
 #ifndef MEDIAWAY_PIPELINE_H
 #define MEDIAWAY_PIPELINE_H
 
-#define MEDIAWAY_PIPELINE_FFI_ABI_VERSION 5 /* bump on any breaking change; pre-1.0, no stability promise */
+#define MEDIAWAY_PIPELINE_FFI_ABI_VERSION 6 /* bump on any breaking change; pre-1.0, no stability promise */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -164,7 +164,17 @@ typedef enum mediaway_pipeline_codec_kind {
 /* Plain value type; no free function. gpu_device (adr/0002-gpu-frame-input-c-abi.md
  * §1) opts the session into the Zero-Copy/GPU-copy input path at open time;
  * MEDIAWAY_GPU_DEVICE_NONE (the zero value) keeps the existing CPU-only behavior.
- * backend/max_path_class stay deferred (see the file header comment above). */
+ * backend/max_path_class stay deferred (see the file header comment above).
+ *
+ * gop_size/rate_control_* (ABI v6, adr/0001-auto-encode-c-abi.md's 2026-08-07
+ * addendum) mirror mediaway_encoder::auto::AutoVideoEncodeConfig's gop_size/
+ * rate_control fields 1:1 (rate_control's Option<RateControlConfig> flattened into
+ * an enabled flag + two plain fields, no C union). NOT YET HONORED by the
+ * auto-selected backend on any platform this crate opens — only the standalone
+ * mediaway-encoder::vulkan H.264/HEVC encoders read them today, and this crate's
+ * mediaway_auto_encoder_open cannot reach them yet. Setting them is a
+ * forward-compatible no-op for now (falls back to today's IDR-only/fixed-QP
+ * output, byte-identical, no error). */
 typedef struct mediaway_auto_video_encode_config {
     mediaway_pipeline_codec_kind_t codec;
     uint32_t width;
@@ -173,6 +183,10 @@ typedef struct mediaway_auto_video_encode_config {
     uint32_t bitrate_bps;                 /* 0 = backend default */
     mediaway_pixel_format_t pixel_format;
     mediaway_gpu_device_handle_t gpu_device; /* MEDIAWAY_GPU_DEVICE_NONE for CPU-only */
+    uint32_t gop_size;                     /* frames between forced IDR refreshes; 1 = IDR-only (default) */
+    bool rate_control_enabled;             /* false (default) = fixed-QP */
+    uint32_t rate_control_target_bitrate_bps; /* only read when rate_control_enabled */
+    uint32_t rate_control_vbv_buffer_size_bytes; /* 0 = driver default; only read when rate_control_enabled */
 } mediaway_auto_video_encode_config_t;
 
 /* mediaway_video_frame_storage_kind_t comes from common.h (CPU: raw_bytes/raw_bytes_len
@@ -246,6 +260,15 @@ mediaway_pipeline_status_t mediaway_encode_session_open(
  * header's ownership summary and GPU HAZARDS section for the GPU case. */
 mediaway_pipeline_status_t mediaway_encode_session_write_frame(
     mediaway_encode_session_t *session, const mediaway_video_frame_t *frame);
+
+/* Retarget the live CBR bitrate ceiling, taking effect from the next
+ * mediaway_encode_session_write_frame call — no session reopen, no dropped frames.
+ * Only meaningful for a session whose underlying encoder was opened in CBR mode; a
+ * fixed-QP session (today's only reachable path through mediaway_auto_encoder_open —
+ * see mediaway_auto_video_encode_config_t's rate_control_enabled comment) returns
+ * MEDIAWAY_PIPELINE_STATUS_UNSUPPORTED. */
+mediaway_pipeline_status_t mediaway_encode_session_set_bitrate(
+    mediaway_encode_session_t *session, uint32_t bitrate_bps);
 
 /* Flush the encoder and muxer, returning the complete fMP4 byte stream. Consumes
  * `session` UNCONDITIONALLY — do not call mediaway_encode_session_close on it

@@ -29,6 +29,15 @@ internal struct NativeAutoVideoEncodeConfig
     public uint BitrateBps;
     public PixelFormat PixelFormat;
     public GpuDeviceHandle GpuDevice;
+
+    // gop_size/rate_control_* (ABI v6) — NOT YET HONORED by the auto-selected backend
+    // on any platform (WMF here) — see VideoEncodeConfig.GopSize/RateControl's doc
+    // comments. Native `bool` (1 byte) is `byte` here, same reasoning as
+    // NativeAudioPacket.IsKeyframe.
+    public uint GopSize;
+    public byte RateControlEnabled;
+    public uint RateControlTargetBitrateBps;
+    public uint RateControlVbvBufferSizeBytes;
 }
 
 [StructLayout(LayoutKind.Sequential)]

@@ -305,6 +305,7 @@ mod tests {
             gpu_device: None,
             gop_size: 1,
             rate_control: None,
+            intra_refresh_period: None,
         };
         let mut enc = match WindowsVideoEncoder::open(&cfg) {
             Ok(e) => e,
@@ -377,6 +378,7 @@ mod tests {
             gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
             gop_size: 1,
             rate_control: None,
+            intra_refresh_period: None,
         };
         let mut enc = match WindowsVideoEncoder::open(&cfg) {
             Ok(e) => e,
@@ -444,6 +446,7 @@ mod tests {
                 gpu_device: None,
                 gop_size: 1,
                 rate_control: None,
+                intra_refresh_period: None,
             };
             let mut enc = match WindowsVideoEncoder::open(&cfg) {
                 Ok(e) => e,
@@ -547,6 +550,7 @@ mod tests {
                 gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
                 gop_size: 1,
                 rate_control: None,
+                intra_refresh_period: None,
             };
             let mut enc = match WindowsVideoEncoder::open(&cfg) {
                 Ok(e) => e,

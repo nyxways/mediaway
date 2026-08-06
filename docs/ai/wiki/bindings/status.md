@@ -39,16 +39,15 @@ bindings were then implemented to satisfy those examples. Examples mirror the Ru
 - **C# Screen capture hardware-verified** — `CaptureTests` gained a test-only raw
   `D3D11CreateDevice` P/Invoke; the new test polls real GPU-backed 2560×1440 frames end to end.
 
-## Audio encode learnings (this pass)
+## Audio encode learnings
 
-- **The WMF AAC MFT rejects hand-built output types with `MF_E_ATTRIBUTENOTFOUND`** — the
-  encoder only accepts types from its own catalog (`GetOutputAvailableType`), matched on
-  sample rate + channel count, with the bitrate overridden on a copy. Negotiate, don't assemble.
-- **F32 input must be `MFAudioFormat_Float`**, not `MFAudioFormat_PCM` + 32 bits/sample.
-- **The ASC arrives late**: `MF_MT_USER_DATA` on the output type is populated only after the
-  first input sample; the blob is a 14-byte WAVEFORMATEX-ish prefix whose trailing 2 bytes are
-  the AudioSpecificConfig (`asc_from_waveformatex` now handles both the 20-byte and 14-byte
-  shapes). The bindings' call order is push → stream_info → mux.
+- **WMF AAC MFT rejects hand-built output types** (`MF_E_ATTRIBUTENOTFOUND`) — negotiate
+  via `GetOutputAvailableType`, matched on sample rate + channels, bitrate overridden on
+  a copy. F32 input must be `MFAudioFormat_Float`, not `MFAudioFormat_PCM` + 32 bits/sample.
+- **The ASC arrives late**: `MF_MT_USER_DATA` populates only after the first input sample;
+  the blob is a 14-byte WAVEFORMATEX-ish prefix whose trailing 2 bytes are the
+  AudioSpecificConfig (`asc_from_waveformatex` handles both 20-byte/14-byte shapes). Call
+  order: push → stream_info → mux.
 
 ## FFI learnings (repo fixes this pass)
 
@@ -71,17 +70,16 @@ bindings were then implemented to satisfy those examples. Examples mirror the Ru
 ## FFI packaging fix (this pass)
 
 `docs/spec/c-ffi.md` (ADR-0004) still described the pre-merge per-capability
-`-ffi` crate split even though ADR-0021 (2026-08-03) merged everything into
-one `mediaway-ffi` crate — updated to document the current feature-gated
-module layout instead. Separately, the crate's own `pipeline` module
-(encode/decode/Opus — the heaviest part, pulling in `mediaway`/
-`mediaway-encoder`/`mediaway-decoder`/`mediaway-sw`) had **no** Cargo feature
-gate at all, unlike `container`/`device`; and the `mediaway-container`
-dependency's `mux`/`demux`/`audio`/`video` features were hardcoded rather
-than propagated from this crate's own `mux`/`demux` features. Both fixed:
-`pipeline` is now its own feature (in `default`, so behavior is unchanged),
-and `mediaway-container`'s sub-features are unified from this crate's
-`mux`/`demux` features. The capture→encode bridge (needs `pipeline` +
+`-ffi` crate split even though ADR-0021 (2026-08-03) merged everything into one
+`mediaway-ffi` crate — updated to document the current feature-gated module
+layout instead. Separately, the crate's own `pipeline` module (encode/decode/
+Opus — the heaviest part, pulling in `mediaway`/`mediaway-encoder`/
+`mediaway-decoder`/`mediaway-sw`) had **no** Cargo feature gate at all, unlike
+`container`/`device`; and `mediaway-container`'s `mux`/`demux`/`audio`/`video`
+features were hardcoded rather than propagated from this crate's own
+`mux`/`demux` features. Both fixed: `pipeline` is now its own feature (in
+`default`, unchanged behavior), and `mediaway-container`'s sub-features are
+unified from this crate's own. The capture→encode bridge (needs `pipeline` +
 `camera`/`desktop`) is gated per-function on the conjunction.
 
 ## Open items
@@ -98,3 +96,5 @@ and `mediaway-container`'s sub-features are unified from this crate's
   today; macOS/Linux native packages need per-platform builds in CI.
 - Screen capture from C (the raw C ABI end-to-end example) remains the only hardware gap;
   C# is covered now (Capability truth) — the C gap still needs the live GPU-device-handle ADR.
+- GOP/CBR/`set_bitrate` reach the C ABI + C# now (ABI v6), no-op through auto-select
+  until Vulkan joins it — [gop-cbr-set-bitrate](gop-cbr-set-bitrate.md).

@@ -180,6 +180,7 @@ fn h264_decode_idr_and_p_frame_or_skip() {
         gpu_device: None,
         gop_size: 1,
         rate_control: None,
+        intra_refresh_period: None,
     };
     let mut encoder = match WindowsVideoEncoder::open(&enc_cfg) {
         Ok(e) => e,

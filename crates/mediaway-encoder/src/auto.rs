@@ -7,7 +7,7 @@
 
 #![forbid(unsafe_code)]
 
-use crate::video::{VideoEncoderConfig, VideoInputPreference};
+use crate::video::{RateControlConfig, VideoEncoderConfig, VideoInputPreference};
 use mediaway_common::{CodecKind, GpuDeviceHandle, PixelFormat, Rational};
 
 /// How pixels reached the encoder (benchmark / caveat labels).
@@ -122,6 +122,24 @@ pub struct AutoVideoEncodeConfig {
     pub gpu_device: Option<GpuDeviceHandle>,
     /// Which backend to use — defaults to [`BackendSelection::Auto`].
     pub backend: BackendSelection,
+    /// Frames between forced IDR refreshes, forwarded straight to
+    /// [`VideoEncoderConfig::gop_size`] — see its docs for the capability-gated
+    /// fallback contract. Defaults to `1` (IDR-only, byte-identical to every
+    /// existing caller).
+    ///
+    /// **Not yet honored by any backend `AutoEncoder::open` can currently
+    /// auto-select on Windows or Linux** — today only the standalone
+    /// `mediaway-encoder::vulkan` H.264/HEVC encoders read this field, and the
+    /// `mediaway::platform::AutoEncoder` facade never resolves to them (Vulkan
+    /// Video isn't part of [`BackendSelection`] yet). Setting this through the
+    /// facade is a forward-compatible no-op until that wiring lands; open the
+    /// Vulkan encoder directly today for a working GOP/CBR session.
+    pub gop_size: u32,
+    /// CBR-style rate control request, forwarded straight to
+    /// [`VideoEncoderConfig::rate_control`]. `None` (default) keeps
+    /// fixed-QP encoding. Same **not yet honored via auto-select** caveat as
+    /// [`Self::gop_size`] applies here too.
+    pub rate_control: Option<RateControlConfig>,
 }
 
 impl AutoVideoEncodeConfig {
@@ -138,6 +156,8 @@ impl AutoVideoEncodeConfig {
             max_path_class: EncodePathClass::CpuUpload,
             gpu_device: None,
             backend: BackendSelection::Auto,
+            gop_size: 1,
+            rate_control: None,
         }
     }
 
@@ -157,8 +177,9 @@ impl AutoVideoEncodeConfig {
             pixel_format: self.pixel_format,
             input,
             gpu_device,
-            gop_size: 1,
-            rate_control: None,
+            gop_size: self.gop_size,
+            rate_control: self.rate_control,
+            intra_refresh_period: None,
         }
     }
 }

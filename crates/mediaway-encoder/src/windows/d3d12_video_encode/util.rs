@@ -182,13 +182,31 @@ pub(super) const fn transition_barrier(
     before: D3D12_RESOURCE_STATES,
     after: D3D12_RESOURCE_STATES,
 ) -> D3D12_RESOURCE_BARRIER {
+    transition_barrier_subresource(
+        resource,
+        D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+        before,
+        after,
+    )
+}
+
+/// Like [`transition_barrier`] but for one specific subresource (e.g. one array slice
+/// of a texture-array reconstructed-picture pool) rather than every subresource —
+/// needed whenever different slices of the same resource are independently in
+/// different states at once (the GOP-mode recon pool's write/read slots).
+pub(super) const fn transition_barrier_subresource(
+    resource: &ID3D12Resource,
+    subresource: u32,
+    before: D3D12_RESOURCE_STATES,
+    after: D3D12_RESOURCE_STATES,
+) -> D3D12_RESOURCE_BARRIER {
     D3D12_RESOURCE_BARRIER {
         Type: D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
         Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
         Anonymous: D3D12_RESOURCE_BARRIER_0 {
             Transition: ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
                 pResource: borrow_resource(resource),
-                Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                Subresource: subresource,
                 StateBefore: before,
                 StateAfter: after,
             }),

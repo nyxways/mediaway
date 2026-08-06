@@ -37,6 +37,10 @@ pub const extern "C" fn mediaway_auto_video_encode_config_new(
             native: 0,
             webgpu_device_id: 0,
         },
+        gop_size: 1,
+        rate_control_enabled: false,
+        rate_control_target_bitrate_bps: 0,
+        rate_control_vbv_buffer_size_bytes: 0,
     }
 }
 

@@ -44,6 +44,22 @@
   driver-maturity bug as its base (IDR-only) path (`adr/0001`'s AV1
   addendum), so the GOP request is capability-gated but its output cannot
   currently be verified.
+- `mediaway-encoder`: D3D12 native video-encode backend (still self-contained,
+  not wired into the public API) gains real `gop_size > 1` support for H.264
+  and HEVC — single forward reference, same capability-gated-fallback
+  contract as the Vulkan GOP work above
+  (`adr/windows/0007-d3d12-native-video-encode.md`'s 2026-08-06 addendum).
+  Hardware-verified on a real RTX 4090: real `IPPIPPI` Annex-B NAL cadence for
+  both codecs. AV1 stays all-intra this pass. Also new:
+  `VideoEncoderConfig::intra_refresh_period` — row-based intra refresh (unbounded
+  GOP + continuous refresh waves instead of periodic IDR) for H.264/HEVC,
+  capability-gated on the driver's real `MaxIntraRefreshFrameDuration` cap.
+- `mediaway-encoder`: `VideoEncoder::set_bitrate` — live CBR bitrate retargeting mid-session,
+  no reopen. Implemented for Vulkan H.264 and the D3D12 native backend's H.264/HEVC (still
+  self-contained, not wired into the public API), which also gains real, capability-gated
+  CBR rate control (`VideoEncoderConfig::rate_control`). Hardware-verified on a real RTX
+  4090: real CBR selected and `set_bitrate` accepted live for both codecs on D3D12 and for
+  H.264 on Vulkan.
 - `mediaway-decoder`: `AudioDecoder` trait, mirroring `VideoDecoder`
   (`adr/0003-audio-decoder-trait.md`). Implemented for the WMF Opus decoder
   (`windows::WmfOpusDecoder`) and `mediaway-sw`'s software Opus decoder
@@ -61,6 +77,18 @@
   H.264 + AAC encode→mux→demux→decode round trips. Also new:
   `examples/device/list-and-watch-devices.ts` (native `enumerateDevices()` +
   `devicechange` hotplug demo).
+- `mediaway-ffi`/C#: `gop_size`/`rate_control` (GOP + CBR request) and live
+  `set_bitrate` reach the auto-encode C ABI (`mediaway_auto_video_encode_config_t`
+  gains 4 fields, ABI v5 → v6; new `mediaway_encode_session_set_bitrate`) and the
+  `Mediaway.Pipeline` C# package (`VideoEncodeConfig.GopSize`/`RateControl`,
+  `EncodeSession.SetBitrate`) — `adr/pipeline/0001-auto-encode-c-abi.md`'s
+  2026-08-07 addendum. Honestly scoped: `mediaway::platform::AutoEncoder` (what
+  every FFI/binding caller reaches) never resolves to the Vulkan backend that
+  actually reads `gop_size`/`rate_control` yet, so those two are a documented,
+  forward-compatible no-op through this path for now (same IDR-only/fixed-QP
+  output, no error); `set_bitrate` fails loudly instead
+  (`MEDIAWAY_PIPELINE_STATUS_UNSUPPORTED`) since the WMF backend it currently
+  reaches doesn't implement it either.
 
 ### Changed
 
@@ -74,6 +102,21 @@
 
 ### Fixed
 
+- `mediaway-encoder`: D3D12 native AV1 backend (still self-contained, not wired into the
+  public API) — fixed a wrong-feature-query bug that made this driver's AV1 support look
+  entirely absent, plus a real `ReferenceFramesReconPictureDescriptors` DPB-index bug, an
+  undersized resolved-metadata buffer, and (later) a subregion-metadata extraction gap that
+  both blocked/risked corrupting `EncodeFrame` output. `EncodeFrame` now succeeds with a
+  structurally-valid bitstream, but real hardware output still fails `libdav1d` decode at a
+  100% error rate — confirmed by direct `ffmpeg`/`libdav1d` testing, root cause still open.
+  See ADR-0007's 2026-08-07 addenda for the full account.
+- `mediaway-decoder` (Windows): D3D12 native H.264 decode (still self-contained, not wired
+  into the public API) — `DXVA_Slice_H264_Long::BitOffsetToSliceData` was computed backwards
+  (translated into a raw-buffer-relative offset) against the official DXVA H.264 decoding
+  spec, which defines it as the de-emulated-RBSP-relative offset the accelerator itself
+  translates internally. Fixed; real hardware `DXGI_ERROR_DEVICE_HUNG` TDR still reproduces
+  (8th occurrence) — this was a real, spec-confirmed bug independent of the hang's actual
+  cause. See ADR-0002's 2026-08-07 addendum.
 - `mediaway-decoder::vulkan`'s HEVC GPU decode no longer produces an all-zero
   picture: `HevcPps` was missing `pps_loop_filter_across_slices_enabled_flag`,
   which gates a real conditional bit in every slice header, desyncing the

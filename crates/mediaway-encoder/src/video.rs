@@ -57,6 +57,20 @@ pub struct VideoEncoderConfig {
     /// falls back to fixed-QP and must document that fallback on its own
     /// encoder type's rustdoc, per `caveats-and-clarity.md`.
     pub rate_control: Option<RateControlConfig>,
+    /// Row-based intra-refresh wave period, in frames. `None` (the
+    /// `Default`/`h264()`/`hevc()`/`av1()`/`vp9()` constructor value, zero
+    /// behavior change for existing callers) disables it. `Some(n)` requests
+    /// continuous back-to-back refresh waves of `n` frames each instead of
+    /// periodic full IDR frames — every frame after the session's one
+    /// startup IDR stays a P frame, with a cyclically advancing band of
+    /// intra-coded rows standing in for a keyframe's bandwidth spike. Takes
+    /// priority over [`Self::gop_size`]'s periodic-IDR cadence when both are
+    /// set (a backend honoring intra-refresh needs an unbounded/"infinite"
+    /// GOP structure, which is incompatible with periodic forced IDRs). A
+    /// backend that cannot honor intra-refresh (capability-gated) falls back
+    /// to its `gop_size` behavior with no error and must document that
+    /// fallback on its own encoder type's rustdoc, per `caveats-and-clarity.md`.
+    pub intra_refresh_period: Option<u32>,
 }
 
 /// Target bitrate + optional VBV buffer size for CBR-style rate control
@@ -85,6 +99,7 @@ impl VideoEncoderConfig {
             gpu_device: None,
             gop_size: 1,
             rate_control: None,
+            intra_refresh_period: None,
         }
     }
 
@@ -102,6 +117,7 @@ impl VideoEncoderConfig {
             gpu_device: None,
             gop_size: 1,
             rate_control: None,
+            intra_refresh_period: None,
         }
     }
 
@@ -119,6 +135,7 @@ impl VideoEncoderConfig {
             gpu_device: None,
             gop_size: 1,
             rate_control: None,
+            intra_refresh_period: None,
         }
     }
 
@@ -136,6 +153,7 @@ impl VideoEncoderConfig {
             gpu_device: None,
             gop_size: 1,
             rate_control: None,
+            intra_refresh_period: None,
         }
     }
 }
@@ -168,6 +186,26 @@ pub trait VideoEncoder {
     ///
     /// Returns [`EncodeError`] on backend failure.
     fn flush(&mut self) -> Result<(), EncodeError>;
+
+    /// Retarget the live CBR bitrate ceiling, taking effect from the next
+    /// [`push_frame`](Self::push_frame) call — no session reopen, no dropped frames.
+    ///
+    /// Only meaningful for a session opened with
+    /// [`VideoEncoderConfig::rate_control`] set (CBR-style rate control); a
+    /// fixed-QP session has no bitrate ceiling to retarget. The default
+    /// implementation always returns [`EncodeError::Unsupported`] — backends
+    /// that support live CBR retargeting override this method and must
+    /// document the honored range/granularity on their own encoder type's
+    /// rustdoc, per `caveats-and-clarity.md`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EncodeError::Unsupported`] when the session is not in CBR
+    /// mode or this backend cannot retarget bitrate live; [`EncodeError`] on
+    /// backend failure otherwise.
+    fn set_bitrate(&mut self, _bitrate_bps: u32) -> Result<(), EncodeError> {
+        Err(EncodeError::Unsupported)
+    }
 }
 
 /// Forwarding impl so `Box<dyn VideoEncoder>` (cross-platform dispatch) satisfies
@@ -189,5 +227,9 @@ impl<T: VideoEncoder + ?Sized> VideoEncoder for Box<T> {
 
     fn flush(&mut self) -> Result<(), EncodeError> {
         (**self).flush()
+    }
+
+    fn set_bitrate(&mut self, bitrate_bps: u32) -> Result<(), EncodeError> {
+        (**self).set_bitrate(bitrate_bps)
     }
 }

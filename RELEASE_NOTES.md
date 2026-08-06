@@ -82,6 +82,13 @@
 
 ### Fixed
 
+- `mediaway-encoder`: D3D12 native AV1 backend (still self-contained, not wired into the
+  public API) — fixed a wrong-feature-query bug that made this driver's AV1 support look
+  entirely absent, plus a real `ReferenceFramesReconPictureDescriptors` DPB-index bug and an
+  undersized resolved-metadata buffer that both blocked `EncodeFrame` from ever being
+  reached. `EncodeFrame` now succeeds with a structurally-valid bitstream, though it is not
+  yet independently decode-verified — see ADR-0007's 2026-08-07 addendum for the full
+  account and what's still open.
 - `mediaway-decoder::vulkan`'s HEVC GPU decode no longer produces an all-zero
   picture: `HevcPps` was missing `pps_loop_filter_across_slices_enabled_flag`,
   which gates a real conditional bit in every slice header, desyncing the

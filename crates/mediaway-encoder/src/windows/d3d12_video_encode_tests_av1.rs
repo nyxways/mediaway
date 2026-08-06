@@ -50,6 +50,14 @@ fn obu_types(payload: &[u8]) -> Vec<u8> {
 /// sequence header `== 1`, frame `== 6` present in every packet). Skips (does not fail) if
 /// this machine's adapter/driver lacks D3D12 native AV1 video-encode support (requires
 /// Windows 11 24H2+ / WDDM 3.2).
+///
+/// **Honesty caveat (2026-08-07, see ADR-0007's addendum):** these assertions only check
+/// structural OBU framing (right `obu_type`s in the right order), not actual decodability —
+/// `ffprobe` parses this test's real output correctly, but `libdav1d` still rejects the
+/// frame data at a 100% error rate on this crate's reference RTX 4090. A pass here means
+/// "the pipeline runs end to end and produces a plausible-looking AV1 stream," not "this
+/// stream decodes." Do not treat a pass as proof AV1 encode is fixed until a real decode
+/// oracle is added and passes too.
 #[test]
 fn d3d12_native_av1_encode_or_skip() {
     let Some(device) = open_real_d3d12_device() else {

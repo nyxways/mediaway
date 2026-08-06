@@ -3,10 +3,13 @@
 //! `D3D12_VIDEO_ENCODER_CODEC_AV1` / `D3D12_VIDEO_ENCODER_AV1_PROFILE_MAIN`. Kept as a
 //! separate file for the same C-union reasons [`super::hevc`]'s doc comment explains.
 //!
-//! This backend requests the most conservative AV1 codec configuration available —
-//! `D3D12_VIDEO_ENCODER_AV1_FEATURE_FLAG_NONE` (no optional tool enabled) — matching
+//! This backend declares the three AV1 coding tools this driver's `RequiredFeatureFlags`
+//! mandates (`AUTO_SEGMENTATION | CDEF_FILTERING | LOOP_RESTORATION_FILTER`, see finding 2
+//! below) as *available* at the session level — but every frame this backend actually
+//! encodes stays a plain all-intra, no-segmentation/CDEF/restoration bitstream, matching
 //! [`super::bitstream_av1`]'s sequence header, which disables every corresponding
-//! `enable_*` flag.
+//! `enable_*` flag. See [`default_codec_config_av1`]'s doc for why declaring a tool
+//! available and actually using it per frame are independent D3D12 concepts.
 //!
 //! **Two distinct real findings (2026-08-06/07), not one — the earlier "driver doesn't
 //! support AV1" conclusion was wrong:**
@@ -30,13 +33,15 @@
 //!    (`pAV1Support: D3D12_VIDEO_ENCODER_AV1_CODEC_CONFIGURATION_SUPPORT`) on this same
 //!    hardware reports `RequiredFeatureFlags = AUTO_SEGMENTATION | CDEF_FILTERING |
 //!    LOOP_RESTORATION_FILTER` (`0x11400`) — this driver mandates those three AV1 coding
-//!    tools be enabled; `FEATURE_FLAG_NONE` is not a legal configuration here. Real AV1
-//!    hardware encode is very likely achievable on this GPU, but only once
-//!    [`default_codec_config_av1`] sets those three required flags **and**
-//!    [`super::bitstream_av1`]'s hand-written sequence/frame headers correctly signal
-//!    `enable_cdef`/`enable_restoration`/segmentation syntax to match — each is a real AV1
-//!    coding tool with its own header fields (Rec. AV1 §5.5.15/§5.9.20/§5.9.14), not a flag
-//!    this backend can just flip. Deferred; see ADR-0007's addendum for the decision.
+//!    tools be declared *available* at the session level (`FEATURE_FLAG_NONE` is not a
+//!    legal configuration here); [`default_codec_config_av1`] now declares them. This is a
+//!    **session-level capability declaration only** — it does not force any single frame to
+//!    actually use segmentation/CDEF/restoration. `ENABLE_FRAME_SEGMENTATION_AUTO`/`_CUSTOM`
+//!    are separate, optional **per-frame** flags (spec § 4.1.1), and `enable_cdef 0`/
+//!    `enable_restoration 0` in our own hand-written sequence header (§ 5.5.1) make
+//!    `cdef_params()`/`lr_params()` read zero bits regardless of what the session declared
+//!    supported — so this backend's real per-frame bitstream stays exactly as conservative
+//!    as before this change.
 //!
 //! See `local/standards/d3d12-video-encoding-av1/d3d12_video_encoding_av1.md` §§ 3.1.24,
 //! 3.1.38 for both structs.
@@ -49,14 +54,17 @@ use windows::Win32::Media::MediaFoundation::{
     D3D12_FEATURE_DATA_VIDEO_ENCODER_RESOURCE_REQUIREMENTS,
     D3D12_FEATURE_DATA_VIDEO_ENCODER_SUPPORT1, D3D12_FEATURE_VIDEO_ENCODER_RESOURCE_REQUIREMENTS,
     D3D12_FEATURE_VIDEO_ENCODER_SUPPORT1, D3D12_VIDEO_ENCODER_AV1_CODEC_CONFIGURATION,
-    D3D12_VIDEO_ENCODER_AV1_FEATURE_FLAG_NONE, D3D12_VIDEO_ENCODER_AV1_LEVEL_TIER_CONSTRAINTS,
-    D3D12_VIDEO_ENCODER_AV1_PROFILE, D3D12_VIDEO_ENCODER_AV1_PROFILE_MAIN,
-    D3D12_VIDEO_ENCODER_AV1_SEQUENCE_STRUCTURE, D3D12_VIDEO_ENCODER_CODEC_AV1,
-    D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION, D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_0,
-    D3D12_VIDEO_ENCODER_DESC, D3D12_VIDEO_ENCODER_FLAG_NONE,
-    D3D12_VIDEO_ENCODER_FRAME_SUBREGION_LAYOUT_MODE_FULL_FRAME, D3D12_VIDEO_ENCODER_HEAP_DESC,
-    D3D12_VIDEO_ENCODER_HEAP_FLAG_NONE, D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_NONE,
-    D3D12_VIDEO_ENCODER_LEVEL_SETTING, D3D12_VIDEO_ENCODER_LEVEL_SETTING_0,
+    D3D12_VIDEO_ENCODER_AV1_FEATURE_FLAG_AUTO_SEGMENTATION,
+    D3D12_VIDEO_ENCODER_AV1_FEATURE_FLAG_CDEF_FILTERING,
+    D3D12_VIDEO_ENCODER_AV1_FEATURE_FLAG_LOOP_RESTORATION_FILTER,
+    D3D12_VIDEO_ENCODER_AV1_LEVEL_TIER_CONSTRAINTS, D3D12_VIDEO_ENCODER_AV1_PROFILE,
+    D3D12_VIDEO_ENCODER_AV1_PROFILE_MAIN, D3D12_VIDEO_ENCODER_AV1_SEQUENCE_STRUCTURE,
+    D3D12_VIDEO_ENCODER_CODEC_AV1, D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION,
+    D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_0, D3D12_VIDEO_ENCODER_DESC,
+    D3D12_VIDEO_ENCODER_FLAG_NONE, D3D12_VIDEO_ENCODER_FRAME_SUBREGION_LAYOUT_MODE_FULL_FRAME,
+    D3D12_VIDEO_ENCODER_HEAP_DESC, D3D12_VIDEO_ENCODER_HEAP_FLAG_NONE,
+    D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_NONE, D3D12_VIDEO_ENCODER_LEVEL_SETTING,
+    D3D12_VIDEO_ENCODER_LEVEL_SETTING_0,
     D3D12_VIDEO_ENCODER_MOTION_ESTIMATION_PRECISION_MODE_MAXIMUM,
     D3D12_VIDEO_ENCODER_PICTURE_CONTROL_SUBREGIONS_LAYOUT_DATA,
     D3D12_VIDEO_ENCODER_PICTURE_RESOLUTION_DESC, D3D12_VIDEO_ENCODER_PROFILE_DESC,
@@ -131,13 +139,23 @@ pub(super) fn check_resource_requirements(
     Ok(req)
 }
 
-/// Most conservative AV1 codec configuration — no optional tool enabled. Matches
-/// [`super::bitstream_av1`]'s sequence header, which disables every corresponding
-/// `enable_*` flag (superres, CDEF, loop restoration, screen-content tools, warped
-/// motion, …).
-pub(super) const fn default_codec_config_av1() -> D3D12_VIDEO_ENCODER_AV1_CODEC_CONFIGURATION {
+/// AV1 codec configuration for this backend. `FeatureFlags` sets exactly the three
+/// AV1 coding tools this driver's `RequiredFeatureFlags` mandates be declared at the
+/// session level (`D3D12_FEATURE_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT` — see
+/// [`super`]'s module doc, finding 2) — `AUTO_SEGMENTATION | CDEF_FILTERING |
+/// LOOP_RESTORATION_FILTER`. This is a **session-level capability declaration**, not a
+/// per-frame command: [`super::ops_av1`]'s per-frame `D3D12_VIDEO_ENCODER_AV1_PICTURE_
+/// CONTROL_CODEC_DATA::Flags` still omits `ENABLE_FRAME_SEGMENTATION_AUTO`/`_CUSTOM` (an
+/// independent, optional per-frame flag pair — spec §4.1.1), and [`super::bitstream_av1`]
+/// still hand-writes `segmentation_enabled = 0`/`enable_cdef = 0`/`enable_restoration = 0`
+/// in the sequence/frame headers it owns — every real AV1 stream this backend produces
+/// stays a plain all-intra, no-segmentation, no-CDEF, no-restoration bitstream regardless
+/// of what the session declares as *available*.
+pub(super) fn default_codec_config_av1() -> D3D12_VIDEO_ENCODER_AV1_CODEC_CONFIGURATION {
     D3D12_VIDEO_ENCODER_AV1_CODEC_CONFIGURATION {
-        FeatureFlags: D3D12_VIDEO_ENCODER_AV1_FEATURE_FLAG_NONE,
+        FeatureFlags: D3D12_VIDEO_ENCODER_AV1_FEATURE_FLAG_AUTO_SEGMENTATION
+            | D3D12_VIDEO_ENCODER_AV1_FEATURE_FLAG_CDEF_FILTERING
+            | D3D12_VIDEO_ENCODER_AV1_FEATURE_FLAG_LOOP_RESTORATION_FILTER,
         OrderHintBitsMinus1: 0,
     }
 }

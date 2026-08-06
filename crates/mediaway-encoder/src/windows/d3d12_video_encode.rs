@@ -65,11 +65,13 @@ use windows::Win32::Graphics::Direct3D12::{
     ID3D12Fence, ID3D12GraphicsCommandList, ID3D12Resource,
 };
 use windows::Win32::Media::MediaFoundation::{
-    D3D12_VIDEO_ENCODER_AV1_SEQUENCE_STRUCTURE, D3D12_VIDEO_ENCODER_AV1_TIER_HIGH,
-    D3D12_VIDEO_ENCODER_CODEC_H264, D3D12_VIDEO_ENCODER_FRAME_SUBREGION_METADATA,
-    D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_NONE, D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_ROW_BASED,
-    D3D12_VIDEO_ENCODER_OUTPUT_METADATA, D3D12_VIDEO_ENCODER_PICTURE_RESOLUTION_DESC,
-    D3D12_VIDEO_ENCODER_RATE_CONTROL_CQP, D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_H264,
+    D3D12_VIDEO_ENCODER_AV1_PICTURE_CONTROL_SUBREGIONS_LAYOUT_DATA_TILES,
+    D3D12_VIDEO_ENCODER_AV1_POST_ENCODE_VALUES, D3D12_VIDEO_ENCODER_AV1_SEQUENCE_STRUCTURE,
+    D3D12_VIDEO_ENCODER_AV1_TIER_HIGH, D3D12_VIDEO_ENCODER_CODEC_H264,
+    D3D12_VIDEO_ENCODER_FRAME_SUBREGION_METADATA, D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_NONE,
+    D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_ROW_BASED, D3D12_VIDEO_ENCODER_OUTPUT_METADATA,
+    D3D12_VIDEO_ENCODER_PICTURE_RESOLUTION_DESC, D3D12_VIDEO_ENCODER_RATE_CONTROL_CQP,
+    D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_H264,
     D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_HEVC, D3D12_VIDEO_ENCODER_TIER_HEVC_HIGH,
     ID3D12VideoDevice3, ID3D12VideoEncodeCommandList2, ID3D12VideoEncoder, ID3D12VideoEncoderHeap,
 };
@@ -601,9 +603,20 @@ impl D3d12VideoEncoder {
             u64::from(req.MaxEncoderOutputMetadataBufferSize),
             D3D12_RESOURCE_STATE_COMMON,
         )?;
+        // AV1's resolved metadata layout is strictly larger than H.264/HEVC's — it appends
+        // a D3D12_VIDEO_ENCODER_AV1_PICTURE_CONTROL_SUBREGIONS_LAYOUT_DATA_TILES and a
+        // D3D12_VIDEO_ENCODER_AV1_POST_ENCODE_VALUES after the shared
+        // OUTPUT_METADATA + subregions prefix (official spec § "Resolved buffer layouts
+        // for ResolveEncoderOutputMetadata"). Sizing this buffer for the H.264/HEVC layout
+        // on an AV1 session under-allocates a real GPU resource the driver writes into.
         let resolved_metadata_size = (size_of::<D3D12_VIDEO_ENCODER_OUTPUT_METADATA>()
-            + size_of::<D3D12_VIDEO_ENCODER_FRAME_SUBREGION_METADATA>())
-            as u64;
+            + size_of::<D3D12_VIDEO_ENCODER_FRAME_SUBREGION_METADATA>()
+            + if config.codec == CodecKind::Av1 {
+                size_of::<D3D12_VIDEO_ENCODER_AV1_PICTURE_CONTROL_SUBREGIONS_LAYOUT_DATA_TILES>()
+                    + size_of::<D3D12_VIDEO_ENCODER_AV1_POST_ENCODE_VALUES>()
+            } else {
+                0
+            }) as u64;
         let resolved_metadata_buffer = setup::create_linear_buffer(
             &device,
             D3D12_HEAP_TYPE_READBACK,

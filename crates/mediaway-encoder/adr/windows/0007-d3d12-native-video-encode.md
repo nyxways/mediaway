@@ -423,14 +423,59 @@ driver support. Consulting the official D3D12 AV1 encode spec (registered as
 
 **Net effect**: real AV1 hardware encode through the native D3D12 API is very likely
 achievable on this GPU — a materially different conclusion than "blocked by this driver."
-Reaching it needs [`default_codec_config_av1`] to set the three required flags **and**
+
+### Follow-up (same day): `EncodeFrame` now succeeds, real decode still fails
+
+Setting `FeatureFlags` on [`av1::default_codec_config_av1`] to the three required flags
+turned out to be a **session-level capability declaration only** — it does not force any
+single frame to actually use segmentation/CDEF/restoration (`ENABLE_FRAME_SEGMENTATION_AUTO`/
+`_CUSTOM` are separate, optional *per-frame* flags; `enable_cdef`/`enable_restoration` stay
+`0` in this backend's own hand-written sequence header, so `cdef_params()`/`lr_params()`
+read zero bits regardless of what the session declared supported). With just that one change,
+`CreateVideoEncoder` succeeded but `EncodeFrame` failed with two real, clean (no device
+removal) debug-layer validation errors, found and fixed in turn:
+
+1. `D3D12_VIDEO_ENCODER_AV1_PICTURE_CONTROL_FLAGS - ENABLE_FRAME_SEGMENTATION_AUTO is
+   required in RequiredFeatureFlags but not set` — unlike CDEF/restoration, this driver
+   *does* force the per-frame segmentation flag once the session declares `AUTO_SEGMENTATION`
+   available. Fixed by setting it on every frame in
+   [`ops_av1::encode_frame_av1`](../src/d3d12_video_encode/ops_av1.rs).
+2. `AV1 Picture control structure - Key Frames must not use any references. Must set all
+   ReconstructedPictureResourceIndex DPB entries to D3D12_VIDEO_ENCODER_AV1_
+   INVALID_DPB_RESOURCE_INDEX` — a real, pre-existing bug never previously reached (this
+   backend was blocked upstream at `CheckFeatureSupport` before finding 1 above landed):
+   `ReferenceFramesReconPictureDescriptors`'s zeroed `Default` left every
+   `ReconstructedPictureResourceIndex` at `0`, a *valid* DPB slot index per spec, not the
+   `0xFF` sentinel (`D3D12_VIDEO_ENCODER_AV1_INVALID_DPB_RESOURCE_INDEX`, § 4.1.14 — a plain
+   `#define`, no `windows` binding) required for an unused slot.
+
+With both fixed, `EncodeFrame` succeeds and the resulting bitstream is **structurally
+valid**: `ffprobe` parses the real sequence header (`256x192`, Main profile) correctly out of
+the raw dumped OBU stream. It is **still not decodable**: `ffmpeg -c:v libdav1d` reports a
+100% decode error rate on the actual frame data. A third real bug was found and fixed along
+the way — AV1's resolved-metadata buffer layout is strictly larger than H.264/HEVC's (it
+appends a `D3D12_VIDEO_ENCODER_AV1_PICTURE_CONTROL_SUBREGIONS_LAYOUT_DATA_TILES` and a
+`D3D12_VIDEO_ENCODER_AV1_POST_ENCODE_VALUES` after the shared prefix, per spec
+§ "Resolved buffer layouts"); `d3d12_video_encode.rs::open` was sizing that GPU resource
+using the H.264/HEVC layout on every codec, under-allocating it for AV1 — now codec-gated.
+Reading `D3D12_VIDEO_ENCODER_AV1_POST_ENCODE_VALUES.SegmentationConfig` back confirmed
+`NumSegments = 0` on every frame of the flat-gray test pattern, exactly matching this
+backend's hardcoded `segmentation_enabled = 0` — **ruling out segmentation as the
+remaining mismatch**.
+
+The root cause of the still-100%-error decode has not been found. Unlike the H.264/HEVC GOP
+work (ADR-0007's 2026-08-06 addendum) and the Vulkan AV1 investigation (ADR-0001's addendum),
+there is **no FFmpeg D3D12 AV1 reference implementation available to diff against** — this
+`ffmpeg` build's encoder list has no `av1_d3d12`, only `av1_vulkan`. Finding it will need
+open-ended bit-level comparison against the AV1 spec (Rec. AV1 §§ 5.9.2–5.9.20) rather than
+the field-by-field reference-diffing technique that found every other real bug this session.
 [`bitstream_av1`](../src/d3d12_video_encode/bitstream_av1.rs)'s hand-written sequence/frame
-headers to correctly signal `enable_cdef`/`enable_restoration`/segmentation syntax to match
-what the driver will now actually apply (Rec. AV1 §§ 5.5.15, 5.9.14, 5.9.20) — each is a
-real coding tool with its own per-frame header fields this backend does not write today, not
-a flag flip. That bitstream work is deferred, not started; `d3d12_native_av1_encode_or_skip`
-still soft-skips honestly (now on `CODEC_CONFIGURATION_NOT_SUPPORTED` rather than
-`CODEC_NOT_SUPPORTED`) until it lands.
+headers signaling `enable_cdef`/`enable_restoration`/segmentation syntax to match what the
+driver actually applies remains deferred, not started — each is a real coding tool with its
+own per-frame header fields, not a flag flip. `d3d12_native_av1_encode_or_skip` now runs the
+full `EncodeFrame`→readback path and produces real, structurally-valid packets (no longer
+soft-skipping on `CODEC_CONFIGURATION_NOT_SUPPORTED`), but does not independently verify
+decodability — that gap is tracked here, not asserted away.
 
 ## Addendum (2026-08-07): CBR rate control + live `set_bitrate`
 

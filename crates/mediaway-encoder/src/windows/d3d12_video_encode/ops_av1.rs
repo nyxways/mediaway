@@ -23,6 +23,7 @@ use windows::Win32::Media::MediaFoundation::{
     D3D12_VIDEO_ENCODER_AV1_PICTURE_CONTROL_CODEC_DATA,
     D3D12_VIDEO_ENCODER_AV1_PICTURE_CONTROL_FLAG_DISABLE_CDF_UPDATE,
     D3D12_VIDEO_ENCODER_AV1_PICTURE_CONTROL_FLAG_DISABLE_FRAME_END_UPDATE_CDF,
+    D3D12_VIDEO_ENCODER_AV1_PICTURE_CONTROL_FLAG_ENABLE_FRAME_SEGMENTATION_AUTO,
     D3D12_VIDEO_ENCODER_AV1_PROFILE, D3D12_VIDEO_ENCODER_AV1_PROFILE_MAIN,
     D3D12_VIDEO_ENCODER_AV1_REFERENCE_PICTURE_DESCRIPTOR,
     D3D12_VIDEO_ENCODER_AV1_RESTORATION_CONFIG,
@@ -57,6 +58,16 @@ use super::D3d12VideoEncoder;
 use super::FIXED_QP_AV1;
 use super::bitstream_av1;
 use super::util::{borrow_resource, data_size, signal_and_wait, transition_barrier};
+
+/// `D3D12_VIDEO_ENCODER_AV1_INVALID_DPB_RESOURCE_INDEX` (spec § 4.1.14) — a plain `#define`,
+/// not part of an enum, so `windows` has no binding for it. Every unused
+/// `ReferenceFramesReconPictureDescriptors` slot must carry this value, not `0`: `0` is a
+/// *valid* index into `D3D12_VIDEO_ENCODER_PICTURE_CONTROL_DESC.ReferenceFrames`, so the
+/// zeroed `Default` this backend used before real-hardware `EncodeFrame` was ever reached
+/// (blocked upstream at `CheckFeatureSupport`, see `av1.rs`'s module doc) told the driver
+/// every key frame referenced a slot 0 that never existed — confirmed via the debug layer:
+/// "AV1 Picture control structure - Key Frames must not use any references."
+const AV1_INVALID_DPB_RESOURCE_INDEX: u32 = 0xFF;
 
 impl D3d12VideoEncoder {
     #[allow(
@@ -133,8 +144,14 @@ impl D3d12VideoEncoder {
         // Every field here must match what `super::bitstream_av1::write_frame_header`
         // writes into the bitstream for this same frame — see that function's doc comment.
         let mut pic_data = D3D12_VIDEO_ENCODER_AV1_PICTURE_CONTROL_CODEC_DATA {
+            // ENABLE_FRAME_SEGMENTATION_AUTO is mandatory on this driver — set on every
+            // frame, not just declared at the session level, per a real-hardware debug-
+            // layer message (see `av1.rs::default_codec_config_av1`'s doc). The driver
+            // decides `segmentation_params()` itself; `CustomSegmentation`/`SegmentsMap`
+            // below stay zeroed (`CUSTOM`-only fields, unused in `AUTO` mode).
             Flags: D3D12_VIDEO_ENCODER_AV1_PICTURE_CONTROL_FLAG_DISABLE_CDF_UPDATE
-                | D3D12_VIDEO_ENCODER_AV1_PICTURE_CONTROL_FLAG_DISABLE_FRAME_END_UPDATE_CDF,
+                | D3D12_VIDEO_ENCODER_AV1_PICTURE_CONTROL_FLAG_DISABLE_FRAME_END_UPDATE_CDF
+                | D3D12_VIDEO_ENCODER_AV1_PICTURE_CONTROL_FLAG_ENABLE_FRAME_SEGMENTATION_AUTO,
             FrameType: D3D12_VIDEO_ENCODER_AV1_FRAME_TYPE_KEY_FRAME,
             CompoundPredictionType: D3D12_VIDEO_ENCODER_AV1_COMP_PREDICTION_TYPE_SINGLE_REFERENCE,
             InterpolationFilter: D3D12_VIDEO_ENCODER_AV1_INTERPOLATION_FILTERS_EIGHTTAP,
@@ -150,7 +167,10 @@ impl D3d12VideoEncoder {
             TemporalLayerIndexPlus1: 1,
             SpatialLayerIndexPlus1: 1,
             ReferenceFramesReconPictureDescriptors:
-                [D3D12_VIDEO_ENCODER_AV1_REFERENCE_PICTURE_DESCRIPTOR::default(); 8],
+                [D3D12_VIDEO_ENCODER_AV1_REFERENCE_PICTURE_DESCRIPTOR {
+                    ReconstructedPictureResourceIndex: AV1_INVALID_DPB_RESOURCE_INDEX,
+                    ..Default::default()
+                }; 8],
             ReferenceIndices: [0; 7],
             PrimaryRefFrame: 7,      // PRIMARY_REF_NONE
             RefreshFrameFlags: 0xFF, // allFrames — every frame is a shown key frame

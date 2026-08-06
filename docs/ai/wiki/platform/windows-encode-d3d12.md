@@ -36,10 +36,19 @@ a real, distinct encode API separate from feeding D3D12 textures into WMF, reach
   narrower rejection instead: `CODEC_CONFIGURATION_NOT_SUPPORTED` for this backend's
   all-`FEATURE_FLAG_NONE` config. `D3D12_FEATURE_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT`
   reports this driver *requires* `AUTO_SEGMENTATION | CDEF_FILTERING |
-  LOOP_RESTORATION_FILTER` to be set — real AV1 hardware encode is very likely reachable
-  here, pending `bitstream_av1` gaining real CDEF/restoration/segmentation header support to
-  match (deferred, not started; each is a genuine AV1 coding tool, not a flag flip). D3D12
-  Video Decode not attempted at all — distinct API surface.
+  LOOP_RESTORATION_FILTER` to be *declared* (session-level only — no frame is forced to
+  actually use them). Declaring them unblocked `EncodeFrame` itself, which then surfaced (and
+  this pass fixed) two more real bugs: this driver also forces
+  `ENABLE_FRAME_SEGMENTATION_AUTO` per frame once declared, and a pre-existing
+  `ReferenceFramesReconPictureDescriptors` bug (zeroed `Default` looked like a valid DPB slot
+  0 instead of the required `0xFF` sentinel for "unused"). A third real bug — AV1's resolved-
+  metadata buffer needs a larger, AV1-specific layout than H.264/HEVC's, previously
+  under-allocated — was found and fixed the same pass. `EncodeFrame` now succeeds and
+  `ffprobe` parses the real sequence header out of the output, but the frame data still isn't
+  decodable (`libdav1d`: 100% error rate) — confirmed *not* a segmentation mismatch (driver's
+  own post-encode `NumSegments == 0` matches this backend's hardcoded value). No FFmpeg D3D12
+  AV1 reference exists to diff against (unlike H.264/HEVC GOP or Vulkan AV1); root cause not
+  yet found. D3D12 Video Decode not attempted at all — distinct API surface.
 - **H.264/HEVC GOP/P-frame support (2026-08-06):** `gop_size > 1` now real, single forward
   reference (mirrors Vulkan's own GOP design). New `gop.rs`/`gop_hevc.rs` (pure-Rust
   `H264GopState`/`HevcGopState`) + `setup::ReconPool` — **one** 2-slice texture array,

@@ -96,3 +96,5 @@ and `mediaway-container`'s sub-features are unified from this crate's
   today; macOS/Linux native packages need per-platform builds in CI.
 - Screen capture from C (the raw C ABI end-to-end example) remains the only hardware gap;
   C# is covered now (Capability truth) — the C gap still needs the live GPU-device-handle ADR.
+- GOP/CBR/`set_bitrate` reach the C ABI + C# now (ABI v6), no-op through auto-select
+  until Vulkan joins it — [gop-cbr-set-bitrate](gop-cbr-set-bitrate.md).

@@ -103,6 +103,7 @@ fn open_processor() -> AudioProcessor {
 struct MockEncoder {
     info: StreamInfo,
     pushed: Vec<VideoFrame>,
+    last_bitrate: Option<u32>,
 }
 
 impl MockEncoder {
@@ -119,6 +120,7 @@ impl MockEncoder {
                 extra_data: Bytes::new(),
             },
             pushed: Vec::new(),
+            last_bitrate: None,
         }
     }
 }
@@ -138,6 +140,11 @@ impl VideoEncoder for MockEncoder {
     }
 
     fn flush(&mut self) -> Result<(), EncodeError> {
+        Ok(())
+    }
+
+    fn set_bitrate(&mut self, bitrate_bps: u32) -> Result<(), EncodeError> {
+        self.last_bitrate = Some(bitrate_bps);
         Ok(())
     }
 }
@@ -192,6 +199,15 @@ impl FrameFilter for RejectingFilter {
         self.calls.set(self.calls.get() + 1);
         Err(FilterError::Rejected)
     }
+}
+
+#[test]
+fn set_bitrate_forwards_to_the_underlying_encoder() {
+    let mut session = EncodeSession::open(MockEncoder::new()).expect("open session");
+
+    session.set_bitrate(2_000_000).expect("set bitrate");
+
+    assert_eq!(session.encoder.last_bitrate, Some(2_000_000));
 }
 
 #[test]

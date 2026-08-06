@@ -7,6 +7,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use mediaway::platform::AutoEncoder;
 use mediaway_common::{Packet, StreamInfo, VideoFrame};
 use mediaway_encoder::EncodeError;
+use mediaway_encoder::RateControlConfig;
 use mediaway_encoder::VideoEncoder;
 use mediaway_encoder::auto::AutoVideoEncodeConfig;
 
@@ -43,6 +44,10 @@ impl VideoEncoder for AutoEncoderHandle {
 
     fn flush(&mut self) -> Result<(), EncodeError> {
         self.0.flush()
+    }
+
+    fn set_bitrate(&mut self, bitrate_bps: u32) -> Result<(), EncodeError> {
+        self.0.set_bitrate(bitrate_bps)
     }
 }
 
@@ -81,6 +86,12 @@ pub unsafe extern "C" fn mediaway_auto_encoder_open(
         rust_config.bitrate_bps = config.bitrate_bps;
         rust_config.pixel_format = config.pixel_format.into();
         rust_config.gpu_device = config.gpu_device.to_common();
+        rust_config.gop_size = config.gop_size;
+        rust_config.rate_control = config.rate_control_enabled.then(|| RateControlConfig {
+            target_bitrate_bps: config.rate_control_target_bitrate_bps,
+            vbv_buffer_size_bytes: (config.rate_control_vbv_buffer_size_bytes != 0)
+                .then_some(config.rate_control_vbv_buffer_size_bytes),
+        });
         AutoEncoder::open(&rust_config)
     }));
 

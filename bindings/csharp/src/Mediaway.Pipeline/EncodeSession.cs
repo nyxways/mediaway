@@ -75,6 +75,18 @@ public sealed class EncodeSession : IDisposable
     }
 
     /// <summary>
+    /// Retarget the live CBR bitrate ceiling, taking effect from the next
+    /// <see cref="WriteFrame"/>/<see cref="WriteGpuFrame"/> call — no session reopen, no
+    /// dropped frames. Only meaningful for a session whose underlying encoder was opened
+    /// with <see cref="VideoEncodeConfig.RateControl"/> set; a fixed-QP session throws
+    /// <see cref="MediawayPipelineException"/> (native status <c>UNSUPPORTED</c>) — which,
+    /// today, is every session <see cref="AutoVideoEncoder.Open"/> can actually produce
+    /// (see <see cref="VideoEncodeConfig.GopSize"/>'s doc comment).
+    /// </summary>
+    public void SetBitrate(uint bitrateBps) =>
+        MediawayPipelineException.ThrowIfError(NativeMethods.mediaway_encode_session_set_bitrate(_handle, bitrateBps));
+
+    /// <summary>
     /// Flush the encoder and muxer, returning the complete fMP4 byte stream — Zero-Copy over
     /// the native buffer; dispose the returned owner to release it. Consumes this session
     /// unconditionally (success or failure); it must not be used again afterward.

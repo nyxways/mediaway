@@ -83,6 +83,29 @@ pub struct MediawayAutoVideoEncodeConfig {
     /// opts into the Zero-Copy/GPU-copy input path (`adr/0002-gpu-frame-input-c-abi.md`
     /// §1).
     pub gpu_device: MediawayGpuDeviceHandle,
+    /// Frames between forced IDR refreshes — mirrors
+    /// [`mediaway_encoder::auto::AutoVideoEncodeConfig::gop_size`]. `1` = IDR-only
+    /// (default, byte-identical to every existing caller).
+    ///
+    /// **Not yet honored by the auto-selected backend on any platform this crate
+    /// opens** (`adr/0001-auto-encode-c-abi.md`'s 2026-08-07 addendum) — only the
+    /// standalone `mediaway-encoder::vulkan` H.264/HEVC encoders read this today, and
+    /// they are not reachable through [`crate::pipeline::mediaway_auto_encoder_open`]
+    /// yet. Setting this is a forward-compatible no-op for now.
+    pub gop_size: u32,
+    /// Whether `rate_control_target_bitrate_bps`/`rate_control_vbv_buffer_size_bytes`
+    /// are meaningful. `false` (default) keeps fixed-QP encoding, mirroring
+    /// [`mediaway_encoder::auto::AutoVideoEncodeConfig::rate_control`]'s `None`. Same
+    /// **not yet honored** caveat as [`Self::gop_size`] applies.
+    pub rate_control_enabled: bool,
+    /// Target bitrate in bits per second for CBR-style rate control. Only read when
+    /// `rate_control_enabled` is `true`.
+    pub rate_control_target_bitrate_bps: u32,
+    /// VBV buffer size in bytes for CBR-style rate control. `0` lets the backend pick
+    /// a driver-suggested default rather than this crate guessing one — mirrors
+    /// `RateControlConfig::vbv_buffer_size_bytes`'s `None`. Only read when
+    /// `rate_control_enabled` is `true`.
+    pub rate_control_vbv_buffer_size_bytes: u32,
 }
 
 /// Which of [`MediawayVideoFrame`]'s two storage fields is valid.

@@ -69,6 +69,18 @@
   FU-A/FU fragmentation for NAL units larger than a caller-supplied payload
   budget. Closes the workspace's previous no-RTP gap for standard-interop
   low-latency streaming.
+- `mediaway-ffi`/C#: `gop_size`/`rate_control` (GOP + CBR request) and live
+  `set_bitrate` reach the auto-encode C ABI (`mediaway_auto_video_encode_config_t`
+  gains 4 fields, ABI v5 → v6; new `mediaway_encode_session_set_bitrate`) and the
+  `Mediaway.Pipeline` C# package (`VideoEncodeConfig.GopSize`/`RateControl`,
+  `EncodeSession.SetBitrate`) — `adr/pipeline/0001-auto-encode-c-abi.md`'s
+  2026-08-07 addendum. Honestly scoped: `mediaway::platform::AutoEncoder` (what
+  every FFI/binding caller reaches) never resolves to the Vulkan backend that
+  actually reads `gop_size`/`rate_control` yet, so those two are a documented,
+  forward-compatible no-op through this path for now (same IDR-only/fixed-QP
+  output, no error); `set_bitrate` fails loudly instead
+  (`MEDIAWAY_PIPELINE_STATUS_UNSUPPORTED`) since the WMF backend it currently
+  reaches doesn't implement it either.
 
 ### Changed
 

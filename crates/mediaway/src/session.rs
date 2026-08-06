@@ -183,6 +183,20 @@ impl<E: VideoEncoder> EncodeSession<E> {
         self.drain()
     }
 
+    /// Retarget the live CBR bitrate ceiling on the underlying encoder — see
+    /// [`mediaway_encoder::VideoEncoder::set_bitrate`]. No session reopen, no dropped
+    /// frames; takes effect from the next [`write_frame`](Self::write_frame) call.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PipelineError::Encode`] if the underlying encoder was not opened in
+    /// CBR mode or cannot retarget bitrate live (`EncodeError::Unsupported`), or on a
+    /// backend failure.
+    pub fn set_bitrate(&mut self, bitrate_bps: u32) -> Result<(), PipelineError> {
+        self.encoder.set_bitrate(bitrate_bps)?;
+        Ok(())
+    }
+
     /// Push one microphone/capture-side audio frame and drain any packets it produces
     /// into the muxer.
     ///

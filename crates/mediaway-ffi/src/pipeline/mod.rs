@@ -67,7 +67,8 @@ pub use decoder::{
 pub use encoder::{AutoEncoderHandle, mediaway_auto_encoder_close, mediaway_auto_encoder_open};
 pub use session::{
     EncodeSessionHandle, mediaway_encode_session_close, mediaway_encode_session_finish,
-    mediaway_encode_session_open, mediaway_encode_session_write_frame,
+    mediaway_encode_session_open, mediaway_encode_session_set_bitrate,
+    mediaway_encode_session_write_frame,
 };
 pub use status::MediawayPipelineStatus;
 pub use types::{

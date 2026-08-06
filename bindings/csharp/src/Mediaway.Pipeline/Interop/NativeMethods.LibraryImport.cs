@@ -24,6 +24,10 @@ internal static unsafe partial class NativeMethods
         EncodeSessionHandle session, in NativeVideoFrame frame);
 
     [LibraryImport(LibraryName)]
+    internal static partial MediawayPipelineStatus mediaway_encode_session_set_bitrate(
+        EncodeSessionHandle session, uint bitrateBps);
+
+    [LibraryImport(LibraryName)]
     internal static partial MediawayPipelineStatus mediaway_encode_session_finish(
         EncodeSessionHandle session, out nint outData, out nuint outLen);
 

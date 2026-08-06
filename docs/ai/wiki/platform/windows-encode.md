@@ -77,3 +77,22 @@
   AV1 addendum. D3D12 Video Decode (`ID3D12VideoDecoder`, DXVA-shaped
   picture params, DPB) not attempted at all — distinct API surface,
   comparable scope to the encode work above.
+- **H.264 GOP/P-frame support (2026-08-06):** `gop_size > 1` now real, single
+  forward reference (mirrors Vulkan's own GOP design). New `gop.rs`
+  (pure-Rust `H264GopState`) + `setup::ReconPool` — **one** 2-slice texture
+  array, ping-ponged, not two separate resources. **Real hardware `IPPIPPI`
+  cadence confirmed on the RTX 4090** (`d3d12_native_h264_gop_encode_or_skip`),
+  reproduced twice. Two real device-removal incidents on the way there, both
+  root-caused via the official D3D12 spec (fetched to
+  `local/standards/d3d12-video-encoding-h264-hevc/` per
+  `docs/conventions/external-standards.md`) rather than more hardware
+  guessing: (1) `RECONSTRUCTED_FRAMES_REQUIRE_TEXTURE_ARRAYS` is set on this
+  driver — separate individual resources are invalid, not merely
+  suboptimal; (2) the actual root cause —
+  `D3D12_VIDEO_ENCODER_PICTURE_CONTROL_FLAG_USED_AS_REFERENCE_PICTURE` must
+  be set on every frame providing a non-null `ReconstructedPicture` output;
+  the resource alone, without the flag, is undefined behavior. HEVC ported
+  same session (shared `ReconPool`, same fix applied from the start) — worked
+  first try, no device removal, real `IPPIPPI` cadence. See
+  [ADR-0007](../../../../crates/mediaway-encoder/adr/windows/0007-d3d12-native-video-encode.md)'s
+  2026-08-06 addendum for full detail.

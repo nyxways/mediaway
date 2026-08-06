@@ -86,3 +86,11 @@ blake3 = "348af66a2ba1c64149fcd24a7b145aefaabdfd546be04984d1881bc3eefd9531"
 paywalled = false
 note = "RTP Payload Format for HEVC Video — single-NAL/AP/FU packetization used by the new rtp crate. Free IETF RFC, cached under local/standards/."
 
+[[standard]]
+id = "d3d12-video-encoding-h264-hevc"
+url = "https://raw.githubusercontent.com/microsoft/DirectX-Specs/master/d3d/D3D12_Video_Encoding_H264_HEVC.md"
+filename = "d3d12_video_encoding_h264_hevc.md"
+blake3 = "f5f8783be6afa0ed31eb6c8444f8a4757db555904f7c11ee5fd11ec24ab17701"
+paywalled = false
+note = "D3D12 native video-encode H.264/HEVC picture-control/reference-frame spec — used by mediaway-encoder-windows's d3d12_video_encode GOP/P-frame work. Free (MIT-licensed DirectX-Specs repo), cached under local/standards/."
+

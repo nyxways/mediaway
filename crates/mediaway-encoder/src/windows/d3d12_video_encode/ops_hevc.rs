@@ -11,7 +11,7 @@ use mediaway_common::Packet;
 use std::mem::ManuallyDrop;
 use windows::Win32::Graphics::Direct3D12::{
     D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_VIDEO_ENCODE_READ,
-    D3D12_RESOURCE_STATE_VIDEO_ENCODE_WRITE, ID3D12CommandList,
+    D3D12_RESOURCE_STATE_VIDEO_ENCODE_WRITE, ID3D12CommandList, ID3D12Resource,
 };
 use windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_NV12, DXGI_RATIONAL};
 use windows::Win32::Media::MediaFoundation::{
@@ -20,12 +20,14 @@ use windows::Win32::Media::MediaFoundation::{
     D3D12_VIDEO_ENCODER_ENCODEFRAME_INPUT_ARGUMENTS,
     D3D12_VIDEO_ENCODER_ENCODEFRAME_OUTPUT_ARGUMENTS,
     D3D12_VIDEO_ENCODER_FRAME_SUBREGION_LAYOUT_MODE_FULL_FRAME,
-    D3D12_VIDEO_ENCODER_FRAME_TYPE_HEVC_IDR_FRAME, D3D12_VIDEO_ENCODER_INTRA_REFRESH,
-    D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_NONE, D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA,
+    D3D12_VIDEO_ENCODER_FRAME_TYPE_HEVC_IDR_FRAME, D3D12_VIDEO_ENCODER_FRAME_TYPE_HEVC_P_FRAME,
+    D3D12_VIDEO_ENCODER_INTRA_REFRESH, D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_NONE,
+    D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA,
     D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA_0,
     D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA_HEVC,
     D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA_HEVC_FLAG_NONE,
     D3D12_VIDEO_ENCODER_PICTURE_CONTROL_DESC, D3D12_VIDEO_ENCODER_PICTURE_CONTROL_FLAG_NONE,
+    D3D12_VIDEO_ENCODER_PICTURE_CONTROL_FLAG_USED_AS_REFERENCE_PICTURE,
     D3D12_VIDEO_ENCODER_PICTURE_CONTROL_SUBREGIONS_LAYOUT_DATA,
     D3D12_VIDEO_ENCODER_PICTURE_RESOLUTION_DESC, D3D12_VIDEO_ENCODER_PROFILE_DESC,
     D3D12_VIDEO_ENCODER_PROFILE_DESC_0, D3D12_VIDEO_ENCODER_PROFILE_HEVC,
@@ -34,16 +36,19 @@ use windows::Win32::Media::MediaFoundation::{
     D3D12_VIDEO_ENCODER_RATE_CONTROL_CONFIGURATION_PARAMS_0, D3D12_VIDEO_ENCODER_RATE_CONTROL_CQP,
     D3D12_VIDEO_ENCODER_RATE_CONTROL_FLAG_NONE, D3D12_VIDEO_ENCODER_RATE_CONTROL_MODE_CQP,
     D3D12_VIDEO_ENCODER_RECONSTRUCTED_PICTURE,
+    D3D12_VIDEO_ENCODER_REFERENCE_PICTURE_DESCRIPTOR_HEVC,
     D3D12_VIDEO_ENCODER_RESOLVE_METADATA_INPUT_ARGUMENTS,
     D3D12_VIDEO_ENCODER_RESOLVE_METADATA_OUTPUT_ARGUMENTS,
     D3D12_VIDEO_ENCODER_SEQUENCE_CONTROL_DESC, D3D12_VIDEO_ENCODER_SEQUENCE_CONTROL_FLAG_NONE,
     D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE, D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_0,
     D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_HEVC,
 };
-use windows::core::Interface;
+use windows::core::{BOOL, Interface};
 
 use super::D3d12VideoEncoder;
-use super::util::{borrow_resource, data_size, signal_and_wait, transition_barrier};
+use super::util::{
+    borrow_resource, data_size, signal_and_wait, transition_barrier, transition_barrier_subresource,
+};
 
 impl D3d12VideoEncoder {
     #[allow(
@@ -55,7 +60,21 @@ impl D3d12VideoEncoder {
         pts: i64,
         duration: u64,
         mut gop: D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_HEVC,
+        decision: Option<super::gop_hevc::FrameDecision>,
     ) -> Result<Packet, EncodeError> {
+        // See `ops::encode_frame_h264`'s sibling comment — same GOP-mode/IDR-only
+        // default-reproduction contract, mirrored here for HEVC.
+        let is_idr = decision.is_none_or(|d| d.is_idr);
+        let poc = decision.map_or(0, |d| d.poc);
+        let has_reference = !is_idr && self.recon_pool.is_some();
+        let write_slot = self.recon_pool.as_ref().map(|pool| pool.write_slot);
+        let read_slot = write_slot.map(|w| 1 - w);
+        let picture_control_flags = if self.recon_pool.is_some() {
+            D3D12_VIDEO_ENCODER_PICTURE_CONTROL_FLAG_USED_AS_REFERENCE_PICTURE
+        } else {
+            D3D12_VIDEO_ENCODER_PICTURE_CONTROL_FLAG_NONE
+        };
+
         // SAFETY: freshly created/idle allocator+list (fully synchronous per frame).
         unsafe {
             self.encode_allocator
@@ -92,6 +111,28 @@ impl D3d12VideoEncoder {
         // video-encode command list — this is one.
         unsafe { self.encode_list.ResourceBarrier(&barriers_before) };
 
+        // See `ops::encode_frame_h264`'s sibling comment for why per-subresource
+        // barriers (not `transition_barrier`'s all-subresources shape) are needed.
+        if let (Some(pool), Some(write)) = (&self.recon_pool, write_slot) {
+            let mut recon_barriers_before = vec![transition_barrier_subresource(
+                &pool.texture,
+                write,
+                D3D12_RESOURCE_STATE_COMMON,
+                D3D12_RESOURCE_STATE_VIDEO_ENCODE_WRITE,
+            )];
+            if has_reference {
+                let read = read_slot.unwrap_or(write);
+                recon_barriers_before.push(transition_barrier_subresource(
+                    &pool.texture,
+                    read,
+                    D3D12_RESOURCE_STATE_COMMON,
+                    D3D12_RESOURCE_STATE_VIDEO_ENCODE_READ,
+                ));
+            }
+            // SAFETY: same video-encode command list as the barrier call above.
+            unsafe { self.encode_list.ResourceBarrier(&recon_barriers_before) };
+        }
+
         let resolution = D3D12_VIDEO_ENCODER_PICTURE_RESOLUTION_DESC {
             Width: self.width,
             Height: self.height,
@@ -120,18 +161,55 @@ impl D3d12VideoEncoder {
             },
         };
 
+        // See `ops::encode_frame_h264`'s sibling comment for the ABI-ownership
+        // reasoning (`ref_texture` owned-clone vs. `borrow_resource`'s non-owning lend).
+        let mut ref_texture: [Option<ID3D12Resource>; 1] = [None];
+        let mut ref_subresource = [0u32; 1];
+        let mut ref_descriptor =
+            [D3D12_VIDEO_ENCODER_REFERENCE_PICTURE_DESCRIPTOR_HEVC::default(); 1];
+        let list0 = [0u32; 1];
+        if let (true, Some(pool), Some(read), Some(prev_poc)) = (
+            has_reference,
+            &self.recon_pool,
+            read_slot,
+            self.last_hevc_reference,
+        ) {
+            // clone: COM AddRef — owned-array ABI shape, see the comment above.
+            ref_texture[0] = Some(pool.texture.clone());
+            ref_subresource[0] = read;
+            ref_descriptor[0] = D3D12_VIDEO_ENCODER_REFERENCE_PICTURE_DESCRIPTOR_HEVC {
+                ReconstructedPictureResourceIndex: 0,
+                IsRefUsedByCurrentPic: BOOL(1),
+                IsLongTermReference: BOOL(0),
+                PictureOrderCountNumber: prev_poc,
+                TemporalLayerIndex: 0,
+            };
+        }
+
         let mut pic_data = D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA_HEVC {
             Flags: D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA_HEVC_FLAG_NONE,
-            FrameType: D3D12_VIDEO_ENCODER_FRAME_TYPE_HEVC_IDR_FRAME,
+            FrameType: if is_idr {
+                D3D12_VIDEO_ENCODER_FRAME_TYPE_HEVC_IDR_FRAME
+            } else {
+                D3D12_VIDEO_ENCODER_FRAME_TYPE_HEVC_P_FRAME
+            },
             slice_pic_parameter_set_id: 0,
-            PictureOrderCountNumber: 0,
+            PictureOrderCountNumber: poc,
             TemporalLayerIndex: 0,
-            List0ReferenceFramesCount: 0,
-            pList0ReferenceFrames: std::ptr::null_mut(),
+            List0ReferenceFramesCount: u32::from(has_reference),
+            pList0ReferenceFrames: if has_reference {
+                list0.as_ptr().cast_mut()
+            } else {
+                std::ptr::null_mut()
+            },
             List1ReferenceFramesCount: 0,
             pList1ReferenceFrames: std::ptr::null_mut(),
-            ReferenceFramesReconPictureDescriptorsCount: 0,
-            pReferenceFramesReconPictureDescriptors: std::ptr::null_mut(),
+            ReferenceFramesReconPictureDescriptorsCount: u32::from(has_reference),
+            pReferenceFramesReconPictureDescriptors: if has_reference {
+                ref_descriptor.as_mut_ptr()
+            } else {
+                std::ptr::null_mut()
+            },
             List0RefPicModificationsCount: 0,
             pList0RefPicModifications: std::ptr::null_mut(),
             List1RefPicModificationsCount: 0,
@@ -146,6 +224,20 @@ impl D3d12VideoEncoder {
             Anonymous: D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA_0 {
                 pHEVCPicData: &raw mut pic_data,
             },
+        };
+
+        let reference_frames = if has_reference {
+            D3D12_VIDEO_ENCODE_REFERENCE_FRAMES {
+                NumTexture2Ds: 1,
+                ppTexture2Ds: ref_texture.as_mut_ptr(),
+                pSubresources: ref_subresource.as_mut_ptr(),
+            }
+        } else {
+            D3D12_VIDEO_ENCODE_REFERENCE_FRAMES {
+                NumTexture2Ds: 0,
+                ppTexture2Ds: std::ptr::null_mut(),
+                pSubresources: std::ptr::null_mut(),
+            }
         };
 
         let input_args = D3D12_VIDEO_ENCODER_ENCODEFRAME_INPUT_ARGUMENTS {
@@ -164,13 +256,9 @@ impl D3d12VideoEncoder {
             },
             PictureControlDesc: D3D12_VIDEO_ENCODER_PICTURE_CONTROL_DESC {
                 IntraRefreshFrameIndex: 0,
-                Flags: D3D12_VIDEO_ENCODER_PICTURE_CONTROL_FLAG_NONE,
+                Flags: picture_control_flags,
                 PictureControlCodecData: pic_control_data,
-                ReferenceFrames: D3D12_VIDEO_ENCODE_REFERENCE_FRAMES {
-                    NumTexture2Ds: 0,
-                    ppTexture2Ds: std::ptr::null_mut(),
-                    pSubresources: std::ptr::null_mut(),
-                },
+                ReferenceFrames: reference_frames,
             },
             pInputFrame: borrow_resource(&self.input_texture),
             InputFrameSubresource: 0,
@@ -178,15 +266,24 @@ impl D3d12VideoEncoder {
                 .unwrap_or(u32::MAX),
         };
 
+        let reconstructed_picture =
+            if let (Some(pool), Some(write)) = (&self.recon_pool, write_slot) {
+                D3D12_VIDEO_ENCODER_RECONSTRUCTED_PICTURE {
+                    pReconstructedPicture: borrow_resource(&pool.texture),
+                    ReconstructedPictureSubresource: write,
+                }
+            } else {
+                D3D12_VIDEO_ENCODER_RECONSTRUCTED_PICTURE {
+                    pReconstructedPicture: ManuallyDrop::new(None),
+                    ReconstructedPictureSubresource: 0,
+                }
+            };
         let output_args = D3D12_VIDEO_ENCODER_ENCODEFRAME_OUTPUT_ARGUMENTS {
             Bitstream: D3D12_VIDEO_ENCODER_COMPRESSED_BITSTREAM {
                 pBuffer: borrow_resource(&self.bitstream_buffer),
                 FrameStartOffset: self.header_len_aligned,
             },
-            ReconstructedPicture: D3D12_VIDEO_ENCODER_RECONSTRUCTED_PICTURE {
-                pReconstructedPicture: ManuallyDrop::new(None),
-                ReconstructedPictureSubresource: 0,
-            },
+            ReconstructedPicture: reconstructed_picture,
             EncoderOutputMetadata: D3D12_VIDEO_ENCODER_ENCODE_OPERATION_METADATA_BUFFER {
                 pBuffer: borrow_resource(&self.metadata_buffer),
                 Offset: 0,
@@ -195,8 +292,9 @@ impl D3d12VideoEncoder {
 
         // SAFETY: encoder/heap were created for this exact codec/profile/resolution;
         // buffers were sized from `D3D12_FEATURE_VIDEO_ENCODER_RESOURCE_REQUIREMENTS` at
-        // `open`. No reference frames — `ReconstructedPicture` is `None` per the API's
-        // documented "only needed if used as a reference" contract.
+        // `open`. `ReconstructedPicture`/`ReferenceFrames` are `None`/empty outside GOP
+        // mode; in GOP mode both point at `self.recon_pool` textures transitioned to the
+        // correct video-encode state by the barriers above.
         unsafe {
             self.encode_list.EncodeFrame(
                 &self.encoder,
@@ -272,6 +370,26 @@ impl D3d12VideoEncoder {
         // SAFETY: same video-encode command list as every barrier/call above.
         unsafe { self.encode_list.ResourceBarrier(&barriers_after) };
 
+        if let (Some(pool), Some(write)) = (&self.recon_pool, write_slot) {
+            let mut recon_barriers_after = vec![transition_barrier_subresource(
+                &pool.texture,
+                write,
+                D3D12_RESOURCE_STATE_VIDEO_ENCODE_WRITE,
+                D3D12_RESOURCE_STATE_COMMON,
+            )];
+            if has_reference {
+                let read = read_slot.unwrap_or(write);
+                recon_barriers_after.push(transition_barrier_subresource(
+                    &pool.texture,
+                    read,
+                    D3D12_RESOURCE_STATE_VIDEO_ENCODE_READ,
+                    D3D12_RESOURCE_STATE_COMMON,
+                ));
+            }
+            // SAFETY: same video-encode command list as every barrier/call above.
+            unsafe { self.encode_list.ResourceBarrier(&recon_barriers_after) };
+        }
+
         // SAFETY: matched Reset/Close pair on this list.
         unsafe { self.encode_list.Close() }.map_err(|_| EncodeError::Backend)?;
         let generic: ID3D12CommandList =
@@ -285,6 +403,13 @@ impl D3d12VideoEncoder {
             &mut self.fence_value,
         )?;
 
-        self.read_packet(pts, duration)
+        // See `ops::encode_frame_h264`'s sibling comment: only touched in GOP mode, only
+        // after the GPU work is confirmed done.
+        if let Some(pool) = &mut self.recon_pool {
+            self.last_hevc_reference = Some(poc);
+            pool.write_slot = 1 - pool.write_slot;
+        }
+
+        self.read_packet(pts, duration, is_idr)
     }
 }

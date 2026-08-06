@@ -230,6 +230,99 @@ the HEVC encode work above, and this session's time budget went to HEVC encode (
 and verified) and the AV1 probe (real finding) instead. Not started; no partial/broken code
 left behind. A future pass should treat it as its own ADR, mirroring how encode got one.
 
+## Addendum (2026-08-06): H.264 GOP/P-frame support (single forward reference)
+
+Extends the H.264 scope above from "every frame an independent IDR" to real `gop_size > 1`
+support — single forward reference only (no B-frames, no multi-reference, no long-term
+references), matching this workspace's Vulkan H.264 GOP precedent
+([`adr/vulkan/0002-vulkan-gop-rate-control.md`](../vulkan/0002-vulkan-gop-rate-control.md)),
+adapted to D3D12's very different reference-frame API shape. HEVC/AV1 are untouched by this
+addendum (stay all-intra); `gop_size == 1` remains the byte-identical default for every
+existing caller.
+
+### Shape
+
+- New pure-Rust [`gop.rs`](../src/d3d12_video_encode/gop.rs): `H264GopState`/`FrameDecision`,
+  no D3D12 types — `frame_num`/`poc` (POC type 2: `poc = 2 * frame_num`, reset at every IDR),
+  `is_idr` on GOP boundaries. `gop_size <= 1` always returns `is_idr: true, frame_num: 0,
+  poc: 0`, reproducing the original all-IDR sequence exactly.
+- New `setup::ReconPool`: **one** `ID3D12Resource` texture array with 2 array slices (not
+  two separate resources — see the real-hardware finding below), ping-ponged each frame
+  (single forward reference only ever needs one live reference at a time). Allocated only
+  when `gop_size > 1`; `gop_size == 1` sessions never touch this at all.
+- `D3d12VideoEncoder` gained `h264_gop_state: Option<H264GopState>`, `recon_pool:
+  Option<ReconPool>`, `frame_decoding_order: u32`, `last_h264_reference: Option<(u32,
+  u32)>` (the previous GOP-mode frame's POC/decoding-order — the only reference a P frame
+  ever needs). All four stay unset/unused outside GOP mode.
+- `check_encoder_support` gained a `max_reference_frames_in_dpb: u32` parameter — GOP mode
+  probes `D3D12_FEATURE_VIDEO_ENCODER_SUPPORT` with `MaxReferenceFramesInDPB: 1`; on failure
+  (driver can't honor it for this resolution/rate-control combination), `open` silently
+  falls back to the original IDR-only GOP struct/support query, matching Vulkan's own
+  capability-gated fallback (`supports_p_frames`) — no error surfaced to the caller.
+
+### Real-hardware findings (RTX 4090, this session) — two real device-removal incidents
+
+Getting a real `EncodeFrame` P-frame call to succeed (rather than crash the device) took
+three iterations, each grounded in a real finding rather than a guess after the first two:
+
+1. **`D3D12_RESOURCE_FLAG_VIDEO_ENCODE_REFERENCE_ONLY` alone is rejected by the debug
+   layer** — `CreateCommittedResource` requires `DENY_SHADER_RESOURCE` alongside it
+   (`0x88 = VIDEO_ENCODE_REFERENCE_ONLY | DENY_SHADER_RESOURCE`); `VIDEO_DECODE_REFERENCE_ONLY`
+   is a **separate, mutually exclusive** flag for decode output textures — real hardware
+   rejects combining it with the encode-reference-only flag ("Unsupported flags specified:
+   0x80"), confirmed on this device. Caught cleanly by the debug layer, no device removal.
+2. **Separate individual `ID3D12Resource`s for the two recon-pool slots caused a real
+   `DXGI_ERROR_DRIVER_INTERNAL_ERROR` device removal** — `CopyTextureRegion` on the
+   *unrelated* `input_texture` started reporting a barrier-layout mismatch on the next
+   frame, a downstream symptom of the driver already being in an undefined state from the
+   prior frame's `EncodeFrame` call. `D3D12_VIDEO_ENCODER_SUPPORT_FLAG_
+   RECONSTRUCTED_FRAMES_REQUIRE_TEXTURE_ARRAYS` (confirmed real on this driver, per the
+   fetched spec — see below) means separate 2D resources are not a valid choice here, even
+   though the spec also says a texture array remains valid when the flag is *not* set — this
+   backend now always uses one 2-slice texture array (`setup::create_nv12_texture_array`),
+   never separate resources, for the recon pool. Fixing this alone did **not** clear the
+   device removal (see next finding) — it was a real, necessary, but not sufficient fix.
+3. **The actual root cause: `D3D12_VIDEO_ENCODER_PICTURE_CONTROL_FLAG_USED_AS_REFERENCE_PICTURE`
+   was never set.** Providing a non-`NULL` `ReconstructedPicture` output resource without
+   also setting this flag on `D3D12_VIDEO_ENCODER_PICTURE_CONTROL_DESC.Flags` is an
+   undefined/illegal combination — the official spec (cached locally, see References) states
+   the flag is what "indicates to output the reconstructed picture along with the bitstream,"
+   i.e. it is not implied by merely passing a non-null resource. Setting it on every GOP-mode
+   frame (IDR and P alike — every frame becomes the next frame's single reference) fixed the
+   device removal immediately; reproduced clean twice in a row afterward (real `IPPIPPI`
+   NAL cadence, `Packet::is_keyframe` correctly `false` for P packets).
+
+Findings 2 and 3 were only pinned down by fetching the official D3D12 video-encode spec
+document directly (`docs/conventions/external-standards.md` workflow — `bun
+tools/scripts/fetch-standard.ts --ai-agent d3d12-video-encoding-h264-hevc`, cached under
+`local/standards/d3d12-video-encoding-h264-hevc/`, registry id
+`d3d12-video-encoding-h264-hevc`) rather than guessing further against real hardware after
+the first fix attempt didn't clear the device removal — each of the two device-removal
+incidents was contained to that one test's own `ID3D12Device` (other tests' independently
+created devices were unaffected), never a full-system TDR, but real device-level corruption
+is not something to keep guessing against blind.
+
+### Verified end-to-end on real hardware
+
+`d3d12_native_h264_gop_encode_or_skip` ([`d3d12_video_encode_tests.rs`](../src/d3d12_video_encode_tests.rs)),
+`gop_size: 3`, pushes 7 synthetic 176x144 NV12 frames and asserts a real `IPPIPPI` Annex-B
+NAL-type cadence (type 5 IDR vs type 1 P) with `Packet::is_keyframe` agreeing with the NAL
+type on every packet. **Passed twice in a row on the RTX 4090** (2026-08-06). Also asserts
+the documented fallback (all-`IIIIIII`) as an equally valid outcome, in case a future
+driver/hardware combination can't honor `MaxReferenceFramesInDPB >= 1` here.
+
+### HEVC GOP/P-frame support — ported same session, worked first try
+
+Same design (`gop_hevc.rs`'s `HevcGopState` — simpler than H.264's, HEVC has no
+`frame_num`/`idr_pic_id`, only a `PictureOrderCountNumber` that increments by one per frame
+and resets at IDR), same shared `setup::ReconPool` (codec-agnostic — the same texture-array
+pool type serves whichever codec is active), same `D3D12_VIDEO_ENCODER_PICTURE_CONTROL_FLAG_
+USED_AS_REFERENCE_PICTURE` fix applied from the start (not rediscovered). Unlike H.264, this
+worked on the **first real-hardware attempt** — no device removal — because the root cause
+was already known going in. `d3d12_native_hevc_gop_encode_or_skip` (same file), `gop_size:
+3`, real HEVC Annex-B I/P cadence (IDR `nal_unit_type` 19/20 vs P `nal_unit_type` 1,
+`TRAIL_R`). **Passed twice in a row on the RTX 4090** (2026-08-06).
+
 ## Consequences
 
 - A second, independent hardware-encode code path exists in this crate alongside WMF. Both
@@ -247,9 +340,11 @@ left behind. A future pass should treat it as its own ADR, mirroring how encode 
   discoverable-by-running-on-real-hardware behavior this crate's wiki calls out — recorded
   here **and** in [`docs/ai/wiki/platform/windows-encode.md`](../../../docs/ai/wiki/platform/windows-encode.md)
   so a future HEVC/AV1/Zero-Copy pass doesn't rediscover them from scratch.
-- CPU-upload-only, all-intra-only, fixed-QP-only is an intentionally narrow slice — the
-  same trade this crate's Linux VA-API sibling made. Zero-Copy GPU input and reference-
-  frame/GOP support are real follow-up work, not implied to be "coming for free."
+- CPU-upload-only, fixed-QP-only is an intentionally narrow slice — the same trade this
+  crate's Linux VA-API sibling made. All-intra-only no longer holds for H.264/HEVC (real
+  `gop_size > 1` single-forward-reference support, 2026-08-06 addendum); AV1 stays
+  all-intra-only. Zero-Copy GPU input, B-frames/multi-reference, and rate-control tuning
+  remain real follow-up work, not implied to be "coming for free."
 
 ## References
 
@@ -261,3 +356,10 @@ left behind. A future pass should treat it as its own ADR, mirroring how encode 
 - ADR-0006 (D3D12 shared → D3D11 `GpuCopy` bridge — the *other* D3D12 path in this crate)
 - `mediaway-encoder-linux` ADR-0001 (VA-API CPU-upload staging — the scope-cut precedent
   this ADR mirrors)
+- `local/standards/d3d12-video-encoding-h264-hevc/d3d12_video_encoding_h264_hevc.md`
+  (registry id `d3d12-video-encoding-h264-hevc`, `docs/standards/registry.toml`) — official
+  D3D12 video-encode H.264/HEVC picture-control/reference-frame spec; source of the
+  `USED_AS_REFERENCE_PICTURE` finding in the 2026-08-06 addendum
+- `adr/vulkan/0002-vulkan-gop-rate-control.md` — this workspace's Vulkan H.264 GOP/P-frame
+  precedent (single forward reference, no B-frames), the design this addendum's H.264 GOP
+  support mirrors for the D3D12 backend

@@ -58,14 +58,21 @@ Platform order: **Windows first**. Workspace index: [`docs/roadmap.md`](../../..
       (not driver-queried — that query itself reports unsupported on this driver) codec
       configuration: fixed `32x32` CTU, full `4x4..32x32` TU range,
       `USE_ASYMETRIC_MOTION_PARTITION` required. See ADR-0007 addendum.
-- [x] AV1 encode support probed for real (`D3D12_FEATURE_VIDEO_ENCODER_CODEC`) — this
-      machine (Windows 11 24H2, RTX 4090) reports `IsSupported == true`. Encode itself
-      **not implemented** — AV1's OBU/sequence-header bitstream is substantially more
-      machinery than H.264/HEVC's NAL-based parameter sets; scoped as its own follow-up.
+- [x] AV1 all-intra encode implemented (hand-written OBU temporal delimiter + sequence
+      header + frame header, see `bitstream_av1.rs`/`ops_av1.rs`) — still blocked from a
+      real-hardware round trip by the driver-level `CODEC_NOT_SUPPORTED` gap ADR-0007's
+      addendum already documented (re-confirmed via a step-by-step diagnostic 2026-08-06,
+      same finding, not new).
+- [x] H.264 GOP/P-frame support (single forward reference, `gop_size > 1`) — real hardware
+      verified (RTX 4090, real `IPPIPPI` NAL cadence). See ADR-0007's 2026-08-06 addendum.
+- [x] HEVC GOP/P-frame support — ported same session, same design, worked on the first
+      real-hardware attempt (root cause already known from H.264). Real hardware verified
+      (RTX 4090, real `IPPIPPI` NAL cadence).
 - [ ] D3D12 Video Decode API (`ID3D12VideoDevice`/`ID3D12VideoDecoder`/
       `ID3D12VideoDecoderHeap`) — distinct API surface from encode, not started this pass.
 - [ ] Still not wired into `src/lib.rs` / `auto.rs` — self-contained, unregistered by
       design until an integration pass decides how it fits `AutoVideoEncoder`'s path
       selection.
-- [ ] Zero-Copy GPU input, reference-frame/GOP support, rate-control tuning remain
-      deferred for both H.264 and HEVC.
+- [ ] Zero-Copy GPU input and rate-control tuning remain deferred for H.264/HEVC/AV1.
+      Intra-refresh remains deferred and is only meaningful once GOP/P-frame support
+      exists for a codec (all-intra streams have nothing to "refresh").

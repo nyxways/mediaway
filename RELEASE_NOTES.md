@@ -44,6 +44,13 @@
   driver-maturity bug as its base (IDR-only) path (`adr/0001`'s AV1
   addendum), so the GOP request is capability-gated but its output cannot
   currently be verified.
+- `mediaway-encoder`: D3D12 native video-encode backend (still self-contained,
+  not wired into the public API) gains real `gop_size > 1` support for H.264
+  and HEVC — single forward reference, same capability-gated-fallback
+  contract as the Vulkan GOP work above
+  (`adr/windows/0007-d3d12-native-video-encode.md`'s 2026-08-06 addendum).
+  Hardware-verified on a real RTX 4090: real `IPPIPPI` Annex-B NAL cadence for
+  both codecs. AV1 stays all-intra this pass.
 - `mediaway-decoder`: `AudioDecoder` trait, mirroring `VideoDecoder`
   (`adr/0003-audio-decoder-trait.md`). Implemented for the WMF Opus decoder
   (`windows::WmfOpusDecoder`) and `mediaway-sw`'s software Opus decoder

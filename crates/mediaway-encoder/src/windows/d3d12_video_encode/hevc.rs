@@ -164,6 +164,7 @@ pub(super) fn check_encoder_support(
     mut gop: D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_HEVC,
     rc_cqp: D3D12_VIDEO_ENCODER_RATE_CONTROL_CQP,
     frame_rate: (u32, u32),
+    max_reference_frames_in_dpb: u32,
 ) -> Result<D3D12_VIDEO_ENCODER_LEVEL_TIER_CONSTRAINTS_HEVC, EncodeError> {
     let mut codec_conf_hevc = default_codec_config_hevc();
     let mut resolution_limits =
@@ -208,7 +209,7 @@ pub(super) fn check_encoder_support(
         SubregionFrameEncoding: D3D12_VIDEO_ENCODER_FRAME_SUBREGION_LAYOUT_MODE_FULL_FRAME,
         ResolutionsListCount: 1,
         pResolutionList: &raw const resolution,
-        MaxReferenceFramesInDPB: 0,
+        MaxReferenceFramesInDPB: max_reference_frames_in_dpb,
         ValidationFlags: D3D12_VIDEO_ENCODER_VALIDATION_FLAGS::default(),
         SupportFlags: D3D12_VIDEO_ENCODER_SUPPORT_FLAGS::default(),
         SuggestedProfile: D3D12_VIDEO_ENCODER_PROFILE_DESC {

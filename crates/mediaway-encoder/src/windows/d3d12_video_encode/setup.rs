@@ -8,9 +8,11 @@ use windows::Win32::Graphics::Direct3D12::{
     D3D12_COMMAND_QUEUE_FLAG_NONE, D3D12_CPU_PAGE_PROPERTY_UNKNOWN, D3D12_HEAP_FLAG_NONE,
     D3D12_HEAP_PROPERTIES, D3D12_HEAP_TYPE, D3D12_HEAP_TYPE_DEFAULT, D3D12_MEMORY_POOL_UNKNOWN,
     D3D12_RESOURCE_DESC, D3D12_RESOURCE_DIMENSION_BUFFER, D3D12_RESOURCE_DIMENSION_TEXTURE2D,
-    D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATES,
-    D3D12_TEXTURE_LAYOUT_ROW_MAJOR, D3D12_TEXTURE_LAYOUT_UNKNOWN, ID3D12CommandAllocator,
-    ID3D12CommandQueue, ID3D12Device, ID3D12Device4, ID3D12Resource,
+    D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE, D3D12_RESOURCE_FLAG_NONE,
+    D3D12_RESOURCE_FLAG_VIDEO_ENCODE_REFERENCE_ONLY, D3D12_RESOURCE_FLAGS,
+    D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATES, D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+    D3D12_TEXTURE_LAYOUT_UNKNOWN, ID3D12CommandAllocator, ID3D12CommandQueue, ID3D12Device,
+    ID3D12Device4, ID3D12Resource,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_RATIONAL;
 use windows::Win32::Graphics::Dxgi::Common::{
@@ -203,6 +205,7 @@ pub(super) fn check_encoder_support(
     mut gop: D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_H264,
     rc_cqp: D3D12_VIDEO_ENCODER_RATE_CONTROL_CQP,
     frame_rate: (u32, u32),
+    max_reference_frames_in_dpb: u32,
 ) -> Result<D3D12_VIDEO_ENCODER_LEVELS_H264, EncodeError> {
     let mut codec_conf_h264 = default_codec_config_h264();
     let mut resolution_limits =
@@ -244,7 +247,7 @@ pub(super) fn check_encoder_support(
         SubregionFrameEncoding: D3D12_VIDEO_ENCODER_FRAME_SUBREGION_LAYOUT_MODE_FULL_FRAME,
         ResolutionsListCount: 1,
         pResolutionList: &raw const resolution,
-        MaxReferenceFramesInDPB: 0,
+        MaxReferenceFramesInDPB: max_reference_frames_in_dpb,
         ValidationFlags: D3D12_VIDEO_ENCODER_VALIDATION_FLAGS::default(),
         SupportFlags: D3D12_VIDEO_ENCODER_SUPPORT_FLAGS::default(),
         SuggestedProfile: D3D12_VIDEO_ENCODER_PROFILE_DESC {
@@ -387,6 +390,25 @@ pub(super) fn create_nv12_texture(
     device: &ID3D12Device,
     width: u32,
     height: u32,
+    flags: D3D12_RESOURCE_FLAGS,
+) -> Result<ID3D12Resource, EncodeError> {
+    create_nv12_texture_array(device, width, height, 1, flags)
+}
+
+/// Like [`create_nv12_texture`] but with `array_size` array slices in one resource —
+/// real hardware (NVIDIA, confirmed via `D3D12_FEATURE_VIDEO_ENCODER_SUPPORT`'s
+/// `D3D12_VIDEO_ENCODER_SUPPORT_FLAG_RECONSTRUCTED_FRAMES_REQUIRE_TEXTURE_ARRAYS`)
+/// rejects reconstructed-picture/reference-frame textures as separate individual
+/// resources with an undefined-operation device removal, not a clean validation
+/// error — see [`create_recon_pool`], which always uses this even when the flag
+/// isn't set (a texture array is spec-documented as valid either way, just not
+/// mandatory when the flag is clear).
+pub(super) fn create_nv12_texture_array(
+    device: &ID3D12Device,
+    width: u32,
+    height: u32,
+    array_size: u16,
+    flags: D3D12_RESOURCE_FLAGS,
 ) -> Result<ID3D12Resource, EncodeError> {
     let heap_props = D3D12_HEAP_PROPERTIES {
         Type: D3D12_HEAP_TYPE_DEFAULT,
@@ -400,7 +422,7 @@ pub(super) fn create_nv12_texture(
         Alignment: 0,
         Width: u64::from(width),
         Height: height,
-        DepthOrArraySize: 1,
+        DepthOrArraySize: array_size,
         MipLevels: 1,
         Format: DXGI_FORMAT_NV12,
         SampleDesc: DXGI_SAMPLE_DESC {
@@ -408,7 +430,7 @@ pub(super) fn create_nv12_texture(
             Quality: 0,
         },
         Layout: D3D12_TEXTURE_LAYOUT_UNKNOWN,
-        Flags: D3D12_RESOURCE_FLAG_NONE,
+        Flags: flags,
     };
     let mut resource: Option<ID3D12Resource> = None;
     // SAFETY: `CreateCommittedResource` with a DEFAULT-heap NV12 texture; caller-owned.
@@ -425,6 +447,46 @@ pub(super) fn create_nv12_texture(
             .map_err(|_| EncodeError::Backend)?;
     }
     resource.ok_or(EncodeError::Backend)
+}
+
+/// Two-slot ping-pong pool of reconstructed pictures for GOP mode (single forward
+/// reference: at most one live reference at a time, so two slots — one being
+/// written this frame, one being read as the previous frame's reference — are
+/// always enough). **One** `ID3D12Resource` texture array with 2 array slices
+/// (not two separate resources — see [`create_nv12_texture_array`]'s doc for
+/// why), slot `N` addressed as array-slice/subresource `N`. Allocated with
+/// `D3D12_RESOURCE_FLAG_VIDEO_ENCODE_REFERENCE_ONLY`, the driver-required flag
+/// for textures used via `ReconstructedPicture`/`ReferenceFrames`.
+///
+/// Both subresources start `D3D12_RESOURCE_STATE_COMMON`, and this backend's
+/// per-frame recording always transitions each slot back to `COMMON` before
+/// the frame's command list closes — every `encode_frame_h264` call can rely
+/// on a slot being `COMMON` on entry without a separate runtime state field.
+pub(super) struct ReconPool {
+    pub(super) texture: ID3D12Resource,
+    pub(super) write_slot: u32,
+}
+
+/// D3D12's debug layer rejects a texture with only `VIDEO_ENCODE_REFERENCE_ONLY` set
+/// (real hardware validation message: "you must also set the following flags: 0x88" —
+/// `0x88 = VIDEO_ENCODE_REFERENCE_ONLY (0x80) | DENY_SHADER_RESOURCE (0x08)`).
+/// `VIDEO_DECODE_REFERENCE_ONLY` is a **separate**, mutually exclusive flag for decode
+/// output textures — real hardware rejects combining it with `VIDEO_ENCODE_REFERENCE_ONLY`
+/// ("Unsupported flags specified: 0x80"), confirmed on the same device.
+const RECON_TEXTURE_FLAGS: D3D12_RESOURCE_FLAGS = D3D12_RESOURCE_FLAGS(
+    D3D12_RESOURCE_FLAG_VIDEO_ENCODE_REFERENCE_ONLY.0 | D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE.0,
+);
+
+pub(super) fn create_recon_pool(
+    device: &ID3D12Device,
+    width: u32,
+    height: u32,
+) -> Result<ReconPool, EncodeError> {
+    let texture = create_nv12_texture_array(device, width, height, 2, RECON_TEXTURE_FLAGS)?;
+    Ok(ReconPool {
+        texture,
+        write_slot: 0,
+    })
 }
 
 /// Create a linear buffer on the `D3D12_HEAP_TYPE_CUSTOM` equivalent of `heap_type`

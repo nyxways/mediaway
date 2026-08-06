@@ -60,7 +60,7 @@ use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Graphics::Direct3D12::{
     D3D12_COMMAND_LIST_TYPE_COPY, D3D12_COMMAND_LIST_TYPE_VIDEO_ENCODE, D3D12_FENCE_FLAG_NONE,
     D3D12_HEAP_TYPE_DEFAULT, D3D12_HEAP_TYPE_READBACK, D3D12_HEAP_TYPE_UPLOAD,
-    D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_GENERIC_READ,
+    D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_GENERIC_READ,
     D3D12_TEXTURE_DATA_PITCH_ALIGNMENT, ID3D12CommandAllocator, ID3D12CommandQueue, ID3D12Device4,
     ID3D12Fence, ID3D12GraphicsCommandList, ID3D12Resource,
 };
@@ -79,6 +79,8 @@ mod av1;
 mod bitstream;
 mod bitstream_av1;
 mod bitstream_hevc;
+mod gop;
+mod gop_hevc;
 mod hevc;
 mod ops;
 mod ops_av1;
@@ -157,6 +159,30 @@ pub(crate) struct D3d12VideoEncoder {
     pending: VecDeque<Packet>,
     flushed: bool,
     frame_counter: u32,
+
+    /// H.264 GOP mode only (`GopStructure::H264` with `GOPLength > 1`) — `None`
+    /// for HEVC/AV1 and for H.264 IDR-only (`gop_size <= 1` or driver
+    /// capability fallback, see `gop.rs`/ADR-0008). Frame-decision state and
+    /// the two-slot reconstructed-picture pool always go together: one exists
+    /// iff the other does.
+    h264_gop_state: Option<gop::H264GopState>,
+    hevc_gop_state: Option<gop_hevc::HevcGopState>,
+    /// Two-slot reconstructed-picture pool, shared by whichever codec is active
+    /// (only one ever is per session, see `GopStructure`) — `ReconPool` itself
+    /// has no codec-specific fields.
+    recon_pool: Option<setup::ReconPool>,
+    /// Monotonic per-frame counter for `D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA_H264::FrameDecodingOrderNumber`.
+    /// Only meaningfully consumed in H.264 GOP mode; harmless (unread) otherwise.
+    frame_decoding_order: u32,
+    /// `(PictureOrderCountNumber, FrameDecodingOrderNumber)` of the most recently
+    /// encoded H.264 GOP-mode frame — the next P frame's single reference
+    /// descriptor. `None` before the first frame or when GOP mode is off.
+    last_h264_reference: Option<(u32, u32)>,
+    /// `PictureOrderCountNumber` of the most recently encoded HEVC GOP-mode
+    /// frame — HEVC's reference descriptor has no `FrameDecodingOrderNumber`
+    /// field, so this is simpler than its H.264 counterpart. `None` before the
+    /// first frame or when GOP mode is off.
+    last_hevc_reference: Option<u32>,
 }
 
 // SAFETY: all fields are `windows`-crate COM wrappers (thread-safe reference-counted
@@ -212,20 +238,58 @@ impl D3d12VideoEncoder {
                     )?;
                     let req = setup::check_resource_requirements(&video_device, resolution)?;
 
-                    let gop_h264 = D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_H264 {
+                    let idr_only_gop = D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_H264 {
                         GOPLength: 1,
                         PPicturePeriod: 0,
                         pic_order_cnt_type: 2,
                         log2_max_frame_num_minus4: 0,
                         log2_max_pic_order_cnt_lsb_minus4: 0,
                     };
-                    let level = setup::check_encoder_support(
-                        &video_device,
-                        resolution,
-                        gop_h264,
-                        rc_cqp,
-                        (fps_num, fps_den),
-                    )?;
+                    // Requested GOP size (`1` = today's IDR-only default, byte-identical
+                    // output). `config.gop_size > 1` asks for single-forward-reference
+                    // P-frames — capability-gated: falls back to `idr_only_gop` with no
+                    // error when the driver can't honor `MaxReferenceFramesInDPB >= 1`
+                    // for this codec/resolution/rate-control combination, per ADR-0008.
+                    let requested_gop_size = config.gop_size.max(1);
+                    let (gop_h264, level) = if requested_gop_size > 1 {
+                        let p_frame_gop = D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_H264 {
+                            GOPLength: requested_gop_size,
+                            PPicturePeriod: 1,
+                            pic_order_cnt_type: 2,
+                            log2_max_frame_num_minus4: 4,
+                            log2_max_pic_order_cnt_lsb_minus4: 0,
+                        };
+                        if let Ok(level) = setup::check_encoder_support(
+                            &video_device,
+                            resolution,
+                            p_frame_gop,
+                            rc_cqp,
+                            (fps_num, fps_den),
+                            1,
+                        ) {
+                            (p_frame_gop, level)
+                        } else {
+                            let level = setup::check_encoder_support(
+                                &video_device,
+                                resolution,
+                                idr_only_gop,
+                                rc_cqp,
+                                (fps_num, fps_den),
+                                0,
+                            )?;
+                            (idr_only_gop, level)
+                        }
+                    } else {
+                        let level = setup::check_encoder_support(
+                            &video_device,
+                            resolution,
+                            idr_only_gop,
+                            rc_cqp,
+                            (fps_num, fps_den),
+                            0,
+                        )?;
+                        (idr_only_gop, level)
+                    };
                     let level_idc = setup::level_h264_to_idc(level);
                     let (encoder, encoder_heap) =
                         setup::create_encoder(&video_device, resolution, level)?;
@@ -257,18 +321,51 @@ impl D3d12VideoEncoder {
                         return Err(EncodeError::InvalidInput);
                     }
 
-                    let gop_hevc = D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_HEVC {
+                    let idr_only_gop_hevc = D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_HEVC {
                         GOPLength: 1,
                         PPicturePeriod: 0,
                         log2_max_pic_order_cnt_lsb_minus4: 0,
                     };
-                    let level = hevc::check_encoder_support(
-                        &video_device,
-                        resolution,
-                        gop_hevc,
-                        rc_cqp,
-                        (fps_num, fps_den),
-                    )?;
+                    // Same capability-gated GOP fallback as H.264 above — see ADR-0007's
+                    // 2026-08-06 addendum.
+                    let requested_gop_size_hevc = config.gop_size.max(1);
+                    let (gop_hevc, level) = if requested_gop_size_hevc > 1 {
+                        let p_frame_gop_hevc = D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_HEVC {
+                            GOPLength: requested_gop_size_hevc,
+                            PPicturePeriod: 1,
+                            log2_max_pic_order_cnt_lsb_minus4: 4,
+                        };
+                        if let Ok(level) = hevc::check_encoder_support(
+                            &video_device,
+                            resolution,
+                            p_frame_gop_hevc,
+                            rc_cqp,
+                            (fps_num, fps_den),
+                            1,
+                        ) {
+                            (p_frame_gop_hevc, level)
+                        } else {
+                            let level = hevc::check_encoder_support(
+                                &video_device,
+                                resolution,
+                                idr_only_gop_hevc,
+                                rc_cqp,
+                                (fps_num, fps_den),
+                                0,
+                            )?;
+                            (idr_only_gop_hevc, level)
+                        }
+                    } else {
+                        let level = hevc::check_encoder_support(
+                            &video_device,
+                            resolution,
+                            idr_only_gop_hevc,
+                            rc_cqp,
+                            (fps_num, fps_den),
+                            0,
+                        )?;
+                        (idr_only_gop_hevc, level)
+                    };
                     let general_level_idc = hevc::level_hevc_to_general_level_idc(level.Level);
                     let general_tier_flag =
                         u8::from(level.Tier == D3D12_VIDEO_ENCODER_TIER_HEVC_HIGH);
@@ -362,7 +459,12 @@ impl D3d12VideoEncoder {
         let fence_event =
             unsafe { CreateEventW(None, false, false, None) }.map_err(|_| EncodeError::Backend)?;
 
-        let input_texture = setup::create_nv12_texture(&device, config.width, config.height)?;
+        let input_texture = setup::create_nv12_texture(
+            &device,
+            config.width,
+            config.height,
+            D3D12_RESOURCE_FLAG_NONE,
+        )?;
 
         let row_pitch = util::align_up_u32(config.width, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
         let luma_size = u64::from(row_pitch) * u64::from(config.height);
@@ -404,6 +506,31 @@ impl D3d12VideoEncoder {
         let header_len_aligned = util::align_up_u64(header_bytes.len() as u64, bitstream_align);
         util::write_header_once(&bitstream_buffer, &header_bytes)?;
 
+        let effective_gop_size = match &gop {
+            GopStructure::H264(g) => g.GOPLength,
+            GopStructure::Hevc(g) => g.GOPLength,
+            GopStructure::Av1(_) => 1,
+        };
+        let recon_pool = if effective_gop_size > 1 {
+            Some(setup::create_recon_pool(
+                &device,
+                config.width,
+                config.height,
+            )?)
+        } else {
+            None
+        };
+        let h264_gop_state = if let (GopStructure::H264(_), true) = (&gop, effective_gop_size > 1) {
+            Some(gop::H264GopState::new(effective_gop_size))
+        } else {
+            None
+        };
+        let hevc_gop_state = if let (GopStructure::Hevc(_), true) = (&gop, effective_gop_size > 1) {
+            Some(gop_hevc::HevcGopState::new(effective_gop_size))
+        } else {
+            None
+        };
+
         Ok(Self {
             encoder,
             encoder_heap,
@@ -437,6 +564,12 @@ impl D3d12VideoEncoder {
             pending: VecDeque::new(),
             flushed: false,
             frame_counter: 0,
+            h264_gop_state,
+            hevc_gop_state,
+            recon_pool,
+            frame_decoding_order: 0,
+            last_h264_reference: None,
+            last_hevc_reference: None,
         })
     }
 }
@@ -463,8 +596,17 @@ impl VideoEncoder for D3d12VideoEncoder {
 
         self.upload_and_copy(data)?;
         let packet = match self.gop {
-            GopStructure::H264(gop) => self.encode_frame_h264(frame.pts, frame.duration, gop)?,
-            GopStructure::Hevc(gop) => self.encode_frame_hevc(frame.pts, frame.duration, gop)?,
+            GopStructure::H264(gop) => {
+                let decision = self.h264_gop_state.as_mut().map(gop::H264GopState::decide);
+                self.encode_frame_h264(frame.pts, frame.duration, gop, decision)?
+            }
+            GopStructure::Hevc(gop) => {
+                let decision = self
+                    .hevc_gop_state
+                    .as_mut()
+                    .map(gop_hevc::HevcGopState::decide);
+                self.encode_frame_hevc(frame.pts, frame.duration, gop, decision)?
+            }
             GopStructure::Av1(gop) => self.encode_frame_av1(frame.pts, frame.duration, gop)?,
         };
         self.pending.push_back(packet);

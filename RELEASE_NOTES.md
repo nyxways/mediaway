@@ -84,11 +84,19 @@
 
 - `mediaway-encoder`: D3D12 native AV1 backend (still self-contained, not wired into the
   public API) — fixed a wrong-feature-query bug that made this driver's AV1 support look
-  entirely absent, plus a real `ReferenceFramesReconPictureDescriptors` DPB-index bug and an
-  undersized resolved-metadata buffer that both blocked `EncodeFrame` from ever being
-  reached. `EncodeFrame` now succeeds with a structurally-valid bitstream, though it is not
-  yet independently decode-verified — see ADR-0007's 2026-08-07 addendum for the full
-  account and what's still open.
+  entirely absent, plus a real `ReferenceFramesReconPictureDescriptors` DPB-index bug, an
+  undersized resolved-metadata buffer, and (later) a subregion-metadata extraction gap that
+  both blocked/risked corrupting `EncodeFrame` output. `EncodeFrame` now succeeds with a
+  structurally-valid bitstream, but real hardware output still fails `libdav1d` decode at a
+  100% error rate — confirmed by direct `ffmpeg`/`libdav1d` testing, root cause still open.
+  See ADR-0007's 2026-08-07 addenda for the full account.
+- `mediaway-decoder` (Windows): D3D12 native H.264 decode (still self-contained, not wired
+  into the public API) — `DXVA_Slice_H264_Long::BitOffsetToSliceData` was computed backwards
+  (translated into a raw-buffer-relative offset) against the official DXVA H.264 decoding
+  spec, which defines it as the de-emulated-RBSP-relative offset the accelerator itself
+  translates internally. Fixed; real hardware `DXGI_ERROR_DEVICE_HUNG` TDR still reproduces
+  (8th occurrence) — this was a real, spec-confirmed bug independent of the hang's actual
+  cause. See ADR-0002's 2026-08-07 addendum.
 - `mediaway-decoder::vulkan`'s HEVC GPU decode no longer produces an all-zero
   picture: `HevcPps` was missing `pps_loop_filter_across_slices_enabled_flag`,
   which gates a real conditional bit in every slice header, desyncing the

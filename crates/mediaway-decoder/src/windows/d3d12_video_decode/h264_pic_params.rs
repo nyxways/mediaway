@@ -304,14 +304,14 @@ fn pack_ref_pic_list(entries: &[RefListEntry]) -> [DxvaPicEntryH264; 32] {
 ///
 /// `bs_nal_unit_data_location`/`slice_bytes_in_buffer` describe the slice NAL's real
 /// position in the compressed-bitstream input buffer (`ops.rs` owns that layout);
-/// `bit_offset_to_slice_data` is the bit position, **relative to the start of the raw
-/// NAL unit** (header byte included, `emulation_prevention_three_byte` bytes still
-/// present — i.e. relative to `bs_nal_unit_data_location`, not to
-/// `h264_slice::parse_slice_header`'s de-emulated RBSP), where `slice_data()` begins.
-/// Callers must translate `parse_slice_header`'s returned de-emulated bit count via
-/// [`super::h264_slice::rbsp_bit_offset_to_raw_bit_offset`] plus 8 (the header byte)
-/// before calling this function — see `d3d12_video_decode.rs::decode_slice` and its
-/// ADR-0002 Addendum note (getting this wrong hung a real GPU on real hardware).
+/// `bit_offset_to_slice_data` is the bit position **within the de-emulated RBSP**,
+/// relative to `slice_header()`'s first bit, where `slice_data()` begins — exactly
+/// `h264_slice::parse_slice_header`'s returned bit count, byte-aligned for CABAC. The
+/// raw-buffer position (escape bytes, NAL header, start code accounted for) is the
+/// **accelerator's** own translation per the official DXVA spec, not the caller's.
+/// Callers should use [`super::h264_slice::bit_offset_to_slice_data`] to build this
+/// value — see `d3d12_video_decode.rs::decode_slice` and ADR-0002's Addendum
+/// (correcting a prior session's opposite-direction "fix").
 #[allow(
     clippy::too_many_arguments,
     reason = "mirrors DXVA_Slice_H264_Long's field list 1:1"

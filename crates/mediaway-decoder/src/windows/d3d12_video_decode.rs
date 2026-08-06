@@ -391,14 +391,13 @@ impl D3d12VideoDecoder {
 
         let (sh, deemulated_bits_read) =
             h264_slice::parse_slice_header(&nal.rbsp, nal.unit_type, nal.ref_idc, &sps, &pps)?;
-        // `deemulated_bits_read` counts bits in the de-emulated RBSP (`nal.rbsp`), but
-        // `nal_bytes` (the actual D3D12 compressed-bitstream buffer content) still has
-        // `emulation_prevention_three_byte` bytes in it — translate back to a raw bit
-        // offset (real hardware bug found + fixed this session, see ADR-0002 Addendum:
-        // feeding the de-emulated count directly hung the GPU).
-        let raw_bit_offset_after_header =
-            h264_slice::rbsp_bit_offset_to_raw_bit_offset(&nal_bytes[1..], deemulated_bits_read);
-        let bit_offset_to_slice_data = 8u32.saturating_add(raw_bit_offset_after_header); // +8 for the 1-byte NAL header
+        // `BitOffsetToSliceData` is RBSP-relative, not raw-buffer-relative — see
+        // `h264_slice::bit_offset_to_slice_data` doc comment (corrected against the
+        // official DXVA spec, ADR-0002 Addendum).
+        let bit_offset_to_slice_data = h264_slice::bit_offset_to_slice_data(
+            deemulated_bits_read,
+            pps.entropy_coding_mode_flag,
+        );
         let (poc, next_poc_state) = self.poc_state.compute(&sps, &sh, is_idr, nal.ref_idc);
 
         let max_frame_num = 1u32 << sps.log2_max_frame_num;

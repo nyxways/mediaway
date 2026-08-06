@@ -49,32 +49,32 @@ two real bugs, both fixed — both tests un-`#[ignore]`d:
   H.264 bitstream triggers a genuine `DXGI_ERROR_DEVICE_HUNG` TDR (GPU driver reset) on this
   workspace's reference RTX 4090, not just a clean error return.
 - Debugged with `ID3D12Debug`/`ID3D12InfoQueue` (same technique as ADR-0007's encode
-  findings) and **fixed 3 real bugs**: readback buffer sized tightly-packed instead of
-  row-pitch-aligned; NV12's chroma plane (`slot + num_slots`) never barriered to
-  `VIDEO_DECODE_WRITE`/`READ` (luma-only) — the strongest hang candidate; RBSP-vs-raw bit
-  offset never translated, corrupting `BitOffsetToSliceData` on any stream with escape bytes
-  before `slice_data()`. **The hang still reproduces after all three fixes** — the debug
-  layer now reports zero validation messages, meaning the remaining bug is very likely inside
-  the opaque `DXVA_PicParams_H264` blob content itself (invisible to the debug layer).
-  **6 real hardware TDRs** were triggered finding this — by explicit project-owner decision,
-  further hardware iteration here is **paused** rather than continuing to reset the machine's
-  GPU on speculation.
-- **Follow-up static-only pass (2026-08-05, no hardware run)**: field-by-field diff against
-  two real DXVA producers (FFmpeg `dxva2_h264.c`, GStreamer `gstdxvah264decoder.cpp`) found
-  and fixed **2 more real bugs**: `wBitFields` bit 14 (`MinLumaBipredSize8x8Flag`) was sourced
-  from `direct_8x8_inference_flag` instead of `level_idc >= 31` (both references agree);
-  `Reserved16Bits` — not a true zero-fill field despite its name — was `0` instead of the
-  shared default `3` both references use. A third candidate (Bug 3's raw-vs-de-emulated
-  `BitOffsetToSliceData` translation) looks likely unnecessary per FFmpeg but the exact
-  additive constant stayed ambiguous from static tracing, so **not** changed — see ADR
-  addendum for the full reasoning and a proposed synthetic-stream follow-up. Struct field
-  order/layout re-confirmed correct (Wine `dxva.h` mirror) — no layout bug.
-- `GpuBufferHandle::DirectX12` has no `subresource` field — Zero-Copy output currently uses a
-  local `DecodedOutput` type instead of forcing it through the shared facade type; flagged as
-  a cross-crate follow-up.
+  findings) and **fixed 3 real bugs**: readback buffer row-pitch alignment; NV12 chroma
+  plane (`slot + num_slots`) never barriered to `VIDEO_DECODE_WRITE`/`READ` (luma-only) —
+  strongest hang candidate; RBSP-vs-raw bit offset (later found itself wrong, see below).
+  **Hang reproduced after all three** — debug layer clean, so the remaining bug is very
+  likely opaque `DXVA_PicParams_H264` blob content (invisible to the debug layer). **6 real
+  hardware TDRs** total finding this.
+- **Static-only follow-ups (2026-08-05 + 2026-08-07, no hardware run)**: diffed against real
+  DXVA producers (FFmpeg `dxva2_h264.c`, GStreamer `gstdxvah264decoder.cpp`) — fixed
+  `wBitFields` bit 14 sourced from the wrong SPS field and a wrong `Reserved16Bits` default.
+  Then fetched the **primary spec** itself (`docs/standards/registry.toml` id
+  `dxva-h264-decoding`): it states `BitOffsetToSliceData` **is** the de-emulated RBSP bit
+  offset (`parse_slice_header`'s own return value); the raw-buffer-position formula the spec
+  also gives is the **accelerator's** internal translation, not the host's. This means the
+  earlier "Bug 3" fix (raw-byte translation + `+8`) was backwards — replaced with a direct
+  pass-through (+byte round-up for CABAC, a real requirement previously missing entirely).
+  124 unit tests + clippy clean; re-run on real hardware same day — **hang reproduces
+  identically, 8th TDR**, so this real, spec-confirmed fix is ruled out as the sole cause
+  (kept regardless — correct per spec either way). No further hardware attempts without a
+  new concrete lead (see ADR addendum: WMF-DXVA2 dump-and-diff or single-MB synthetic
+  stream, both not yet tried). Struct field order/layout re-confirmed correct separately
+  (Wine `dxva.h` mirror) — no layout bug.
+- `GpuBufferHandle::DirectX12` has no `subresource` field — Zero-Copy output uses a local
+  `DecodedOutput` type instead; flagged as a cross-crate follow-up.
 - DPB = one fixed-size NV12 texture array; Zero-Copy output points at DPB subresources
-  directly; callers must release Zero-Copy frames promptly or get a backpressure error
-  (FFmpeg hwaccel surface-pool model), never a silent overwrite.
+  directly; callers must release promptly or get a backpressure error (FFmpeg hwaccel
+  surface-pool model), never a silent overwrite.
 - ADR: [0002](../../../../crates/mediaway-decoder/adr/windows/0002-d3d12-native-video-decode.md)
   (2026-07-30 addendum has the full hang-debugging trail).
 

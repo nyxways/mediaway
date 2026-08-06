@@ -102,3 +102,19 @@ blake3 = "a15088eb3e695660367d971654028c0a7fcbd79a3813b67765843d9eae5cb383"
 paywalled = false
 note = "D3D12 native video-encode AV1 spec — found the original CODEC_NOT_SUPPORTED finding for AV1 on the RTX 4090 was a wrong-query bug (must use SUPPORT1), and the real remaining requirement (RequiredFeatureFlags). Free (MIT-licensed DirectX-Specs repo), cached under local/standards/."
 
+[[standard]]
+id = "dxva-h264-decoding"
+url = "https://download.microsoft.com/download/5/f/c/5fc4ec5c-bd8c-4624-8034-319c1bab7671/DXVA_H264.pdf"
+filename = "DXVA_H264.pdf"
+blake3 = "39ab3b67a78623ed05f853b41bd36b82cf358f7cf59e6af14bbf056f5be1e1b5"
+paywalled = false
+note = "DirectX Video Acceleration Specification for H.264/AVC Decoding (Microsoft, download id 11323) — the DXVA_PicParams_H264/DXVA_Slice_H264_Long/DXVA_Qmatrix_H264 struct source mediaway-decoder-windows's d3d12_video_decode hand-defines against (absent from the `windows` crate bindings, per ADR-0002). Free direct download; not yet cached locally."
+
+[[standard]]
+id = "av1-bitstream-spec"
+url = "https://aomediacodec.github.io/av1-spec/av1-spec.pdf"
+filename = "av1-spec.pdf"
+blake3 = "a523792387d1b498ff834257edec1924e9181d2f80afb25cb40e0fe710285b4b"
+paywalled = false
+note = "AV1 Bitstream & Decoding Process Specification (AOMedia) — OBU/sequence-header/frame-header/tile syntax ground truth for mediaway-decoder-windows's planned D3D12 AV1 decode (ADR-0002) and for diffing mediaway-encoder-windows's D3D12 AV1 encode output (currently EncodeFrame succeeds but the bitstream is not decodable by libdav1d). Free; not yet cached locally."
+

@@ -747,3 +747,87 @@ workspace's "each real hardware attempt has a real cost" judgment call, no furth
 hardware attempts should be made without first resolving the `BitOffsetToSliceData`
 ambiguity above via the CPU-only synthetic-stream approach already recommended —
 that is now the clearest remaining lead.
+
+## Addendum (2026-08-07): `BitOffsetToSliceData` resolved against the official spec — prior "Bug 3" fix was backwards
+
+Follow-up to the previous addendum's still-unresolved lead. Fetched and cached the
+actual primary source this time — **"DirectX Video Acceleration Specification for
+H.264/AVC Decoding"** (Microsoft, `docs/standards/registry.toml` id
+`dxva-h264-decoding`, BLAKE3-pinned under `local/standards/dxva-h264-decoding/`) —
+rather than continuing to reason from FFmpeg/GStreamer call-sequence tracing alone.
+§ `BitOffsetToSliceData` (p. 32–33) states, unambiguously:
+
+> This bit offset is the offset within the RBSP data for the slice, relative to the
+> starting position of the `slice_header()` in the RBSP. That is, it represents a bit
+> offset after the removal of any `emulation_prevention_three_byte` syntax elements
+> that preceded the start of the `slice_data()` in the NAL unit.
+
+The spec *also* gives a formula for locating the referenced bit's byte in the raw
+bitstream data buffer — `BSNALunitDataLocation + (BitOffsetToSliceData >> 3) + 4 + K`
+(`K` = escape-byte count before `slice_data()`) — but this is documented as how **the
+accelerator** maps the RBSP-relative value to a raw buffer position, not a
+transformation the host is expected to perform before writing the field.
+
+**This directly inverts the previous addendum's "Bug 3" fix.** That session added
+`h264_slice::rbsp_bit_offset_to_raw_bit_offset` specifically to translate the
+de-emulated bit count *into* a raw-buffer-relative one (plus an ad hoc `+8` for the
+NAL header byte), on the reasoning that the hardware needed a raw position. Per the
+primary spec, the correct value was always the untranslated de-emulated bit count —
+exactly what `parse_slice_header` already returns, since a slice NAL's RBSP begins
+directly at `slice_header()`'s first bit (nothing precedes it). The one real
+requirement the spec does add, not previously implemented: for CABAC
+(`entropy_coding_mode_flag == 1`), the value must be rounded up to the next byte
+boundary (`% 8 == 0`), covering `cabac_alignment_one_bit()`; the prior codebase had no
+such rounding at all, CAVLC or CABAC.
+
+**Fixed**: `h264_slice::rbsp_bit_offset_to_raw_bit_offset` replaced with
+`h264_slice::bit_offset_to_slice_data(deemulated_bits_read, entropy_coding_mode_flag)`
+— passes the de-emulated bit count straight through for CAVLC, rounds up to the next
+byte for CABAC, no raw-buffer translation. `d3d12_video_decode.rs::decode_slice` and
+`h264_pic_params::build_slice_long`'s doc comment updated to match. 124 unit tests
+(including 2 new ones for the corrected function) and `clippy --all-targets
+--all-features -- -D warnings` are clean.
+
+The CIF test stream that produced every prior hang used CAVLC (`entropy_mode=false`
+in the 2026-07-30 diagnostic dump), so this fix's behavioral change for *that specific
+stream* is exactly the removal of the erroneous raw translation and `+8` — no CABAC
+rounding applies to it.
+
+### Hardware re-verification (2026-08-07, same-day, explicit project-owner go-ahead): hang persists — 8th TDR
+
+With this fix applied, `windows::d3d12_video_decode::tests::
+h264_decode_idr_and_p_frame_or_skip` was run for real against the same RTX 4090:
+
+```
+D3D12 InfoQueue[0]: ID3D12Device::CreateCommittedResource: Ignoring InitialState
+D3D12_RESOURCE_STATE_VIDEO_DECODE_READ. Buffers are effectively created in state
+D3D12_RESOURCE_STATE_COMMON.
+D3D12 InfoQueue[1]: ID3D12Device::RemoveDevice: Device removal has been triggered
+for the following reason (DXGI_ERROR_DEVICE_HUNG: ...)
+skip: push_packet failed on packet 0 (Backend, is_keyframe=true)
+test windows::d3d12_video_decode::tests::h264_decode_idr_and_p_frame_or_skip ... ok
+```
+
+**The hang reproduces identically, an 8th real TDR.** `BitOffsetToSliceData` was a
+real, spec-confirmed bug independent of whether it caused *this specific* hang (kept
+either way — it was wrong regardless), but it is now **ruled out as this hang's sole
+cause**, same conclusion pattern as Bugs 4/5 before it. The one new, previously-unseen
+debug-layer line this run (`CreateCommittedResource: Ignoring InitialState
+D3D12_RESOURCE_STATE_VIDEO_DECODE_READ` for the compressed-bitstream input buffer) is
+an *advisory* message, not an error — D3D12 buffers (as opposed to textures) are
+always created in `COMMON` regardless of requested initial state, a documented D3D12
+behavior, not a bug — but it does confirm the debug layer is still watching and still
+finds nothing else to flag before the hang, reinforcing the prior addendum's
+conclusion that the remaining defect is inside opaque DXVA blob semantics the debug
+layer cannot validate (a wrong QP, an incorrect reference index, wrong scaling-list
+handling, or the still-untouched candidate from Open Question investigated-not-fixed
+above). The test's honest-skip convention correctly did not hard-fail again.
+
+Per this workspace's "each real hardware attempt has a real cost" judgment call, no
+further hardware attempts should be made without a new, concrete lead — the remaining
+plausible candidates are the same ones the 2026-07-30 addendum already named and did
+not get to: a byte-for-byte diff against a **working** WMF/DXVA2 decode of the exact
+same stream (extending `mediaway-decoder-windows`'s existing WMF path to dump its
+internal DXVA buffers), or a single-macroblock synthetic stream decoded first through
+a CPU-only reference parser to pin down any remaining ambiguous field one at a time,
+rather than a real encoder's full complexity.

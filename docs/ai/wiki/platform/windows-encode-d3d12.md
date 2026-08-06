@@ -75,6 +75,15 @@ a real, distinct encode API separate from feeding D3D12 textures into WMF, reach
   resolutions that cap is `0`, so both hardware tests land in the documented fallback
   rather than a live refresh cadence — the capability-gated path itself (no device
   removal, no invalid `EncodeFrame` reaching the driver) is confirmed correct.
+- **AV1 subregion-metadata fix, decodability bug still open (2026-08-07):** the official
+  spec's resolved-metadata layout has a `D3D12_VIDEO_ENCODER_FRAME_SUBREGION_METADATA`
+  entry (`bStartOffset`/`bSize`) this backend's buffer was already sized for but never
+  read — fixed `read_packet_av1` to extract `[bStartOffset, bSize)` instead of trusting
+  `EncodedBitstreamWrittenBytesCount` verbatim. **Ruled out as the actual decode bug**:
+  `bStartOffset == 0` on the RTX 4090 (no behavior change), confirmed by feeding real
+  encoded packets through `ffmpeg`/`libdav1d` directly — same `Decode error rate 1`
+  before and after. Root cause remains unfound; no FFmpeg D3D12 AV1 reference exists to
+  diff against, and `dav1d`'s CLI-level error is too coarse to localize.
 - **CBR rate control + live `set_bitrate` (2026-08-07):** `setup::RateControlState`
   (`Cqp`/`Cbr`) replaces the old bare CQP field; `open` probes CBR once more at the
   already-chosen GOP/intra-refresh tier and falls back to CQP with no error if this

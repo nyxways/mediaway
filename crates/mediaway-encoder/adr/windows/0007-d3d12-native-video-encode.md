@@ -519,6 +519,56 @@ codecs.
   1000-line source cap once the two new CBR tests pushed the combined file over it, not a
   behavior change.
 
+## Addendum (2026-08-07): AV1 subregion-metadata extraction fixed; decodability bug still unresolved
+
+Follow-up to the previous addendum's still-open "`EncodeFrame` succeeds, `ffprobe`
+parses the sequence header, but `libdav1d` rejects the frame data at a 100% error
+rate" gap. Fetched the official D3D12 spec's "Resolved buffer layouts for
+ResolveEncoderOutputMetadata" section (same cached doc as the previous addendum,
+`docs/standards/registry.toml` id `d3d12-video-encoding-av1`) and found a real,
+previously-undiscovered gap: `read_packet_av1` read only the base
+`D3D12_VIDEO_ENCODER_OUTPUT_METADATA` struct and treated
+`EncodedBitstreamWrittenBytesCount` as the exact tile payload starting at
+`FrameStartOffset`. The spec documents a `D3D12_VIDEO_ENCODER_FRAME_SUBREGION_METADATA`
+entry immediately following that struct (this backend's `resolved_metadata_buffer` was
+already correctly sized for it, per the earlier "under-allocated" fix, but nothing ever
+read it) whose `bStartOffset` field is real leading padding the caller must skip — the
+correct tile extraction is `[bStartOffset, bSize)` within the subregion, not
+`[0, EncodedBitstreamWrittenBytesCount)`.
+
+**Fixed**: `ops_av1.rs::read_packet_av1` now reads the `D3D12_VIDEO_ENCODER_FRAME_
+SUBREGION_METADATA` entry and slices the tile using `bStartOffset`/`bSize` per spec,
+rejecting (`EncodeError::Backend`) if `WrittenSubregionsCount != 1` (this backend only
+ever requests `FULL_FRAME` layout).
+
+**Real-hardware result**: `bStartOffset == 0` on this crate's reference RTX 4090 for
+every packet — behaviorally identical to the old code on this specific driver, so this
+fix does not change output here, but is the spec-correct extraction going forward
+(other drivers are not guaranteed `bStartOffset == 0`). Diagnostic dumps of 3 real
+encoded packets (each `EncodedBitstreamWrittenBytesCount = 9` bytes — legitimately
+tiny, since this crate's hardware test encodes a flat mid-gray NV12 frame, and AV1's
+`TX_MODE_LARGEST` all-DC-coefficient path genuinely compresses that to near-nothing;
+not itself a bug) fed through real `ffmpeg`/`libdav1d` (`ffmpeg -c:v libdav1d -f obu -i
+<packet>.obu -f rawvideo ...`) reproduced the exact same `Decoding error: Invalid data
+found when processing input` / `Decode error rate 1 exceeds maximum 0.666667` this
+backend's own hardware test already knew about, both before and after this fix — **the
+extraction-bounds hypothesis is now ruled out** with concrete evidence (not merely
+inferred), same conclusion pattern as this ADR's earlier ruled-out hypotheses.
+
+**Root cause still not found.** As the prior addendum already noted, no FFmpeg D3D12
+AV1 hwaccel backend exists to diff against (unlike H.264/HEVC's `dxva2_h264.c`/
+`gstdxvah264decoder.cpp` ground truth), and `dav1d`'s CLI-level error via `ffmpeg` is
+too coarse to localize which syntax element diverges — real progress here would need
+either `dav1d`'s C API directly (per-OBU verbose logging, not exposed through
+`ffmpeg`'s CLI) or a hand-built single-superblock synthetic bitstream traced by hand
+against AV1 spec § 5.11 (`tile_group_obu`)/§ 7 (decoding process), mirroring the
+CPU-only synthetic-stream approach `mediaway-decoder-windows` ADR-0002 recommends for
+its own still-open D3D12 H.264 *decode* hang. Static verification only this pass
+(`clippy --all-targets --all-features -- -D warnings` clean, all 96
+`mediaway-encoder` unit tests pass including 3 real-hardware-verified AV1/H.264/HEVC
+D3D12 encode tests) plus the real-hardware dump-and-external-decode check described
+above — not a synthetic-stream bisection.
+
 ## References
 
 - FFmpeg `libavcodec/d3d12va_encode.c` / `d3d12va_encode_h264.c` (BSD-2-Clause,

@@ -9,7 +9,7 @@
 
 use crate::EncodeError;
 use mediaway_common::{Bytes, Packet};
-use std::mem::ManuallyDrop;
+use std::mem::{ManuallyDrop, size_of};
 use windows::Win32::Graphics::Direct3D12::{
     D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_VIDEO_ENCODE_READ,
     D3D12_RESOURCE_STATE_VIDEO_ENCODE_WRITE, ID3D12CommandList,
@@ -38,7 +38,8 @@ use windows::Win32::Media::MediaFoundation::{
     D3D12_VIDEO_ENCODER_COMPRESSED_BITSTREAM, D3D12_VIDEO_ENCODER_ENCODE_OPERATION_METADATA_BUFFER,
     D3D12_VIDEO_ENCODER_ENCODEFRAME_INPUT_ARGUMENTS,
     D3D12_VIDEO_ENCODER_ENCODEFRAME_OUTPUT_ARGUMENTS,
-    D3D12_VIDEO_ENCODER_FRAME_SUBREGION_LAYOUT_MODE_FULL_FRAME, D3D12_VIDEO_ENCODER_INTRA_REFRESH,
+    D3D12_VIDEO_ENCODER_FRAME_SUBREGION_LAYOUT_MODE_FULL_FRAME,
+    D3D12_VIDEO_ENCODER_FRAME_SUBREGION_METADATA, D3D12_VIDEO_ENCODER_INTRA_REFRESH,
     D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_NONE, D3D12_VIDEO_ENCODER_OUTPUT_METADATA,
     D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA,
     D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA_0, D3D12_VIDEO_ENCODER_PICTURE_CONTROL_DESC,
@@ -355,11 +356,22 @@ impl D3d12VideoEncoder {
         if resolved_ptr.is_null() {
             return Err(EncodeError::Backend);
         }
-        // SAFETY: buffer was sized >= `size_of::<D3D12_VIDEO_ENCODER_OUTPUT_METADATA>()` at
-        // `open`; the driver writes a full struct at offset 0 during `ResolveEncoderOutputMetadata`.
+        // SAFETY: buffer was sized >= `size_of::<D3D12_VIDEO_ENCODER_OUTPUT_METADATA>()
+        // + size_of::<D3D12_VIDEO_ENCODER_FRAME_SUBREGION_METADATA>()` at `open`; the
+        // driver writes the base struct at offset 0 and (this backend's `FULL_FRAME`
+        // layout always yields exactly one subregion) one subregion entry immediately
+        // after it during `ResolveEncoderOutputMetadata`.
         let meta = unsafe {
             resolved_ptr
                 .cast::<D3D12_VIDEO_ENCODER_OUTPUT_METADATA>()
+                .read_unaligned()
+        };
+        // SAFETY: same buffer, `size_of::<D3D12_VIDEO_ENCODER_OUTPUT_METADATA>()` bytes in
+        // — within bounds per the `open`-time sizing referenced above.
+        let subregion = unsafe {
+            resolved_ptr
+                .add(size_of::<D3D12_VIDEO_ENCODER_OUTPUT_METADATA>())
+                .cast::<D3D12_VIDEO_ENCODER_FRAME_SUBREGION_METADATA>()
                 .read_unaligned()
         };
         // SAFETY: matches the `Map` above.
@@ -369,22 +381,46 @@ impl D3d12VideoEncoder {
         if meta.EncodeErrorFlags != 0 {
             return Err(EncodeError::Backend);
         }
-        let written = meta.EncodedBitstreamWrittenBytesCount;
-        if written == 0 {
+        // This backend always requests `FULL_FRAME` subregion layout — exactly one entry.
+        if meta.WrittenSubregionsCount != 1 {
             return Err(EncodeError::Backend);
         }
-        let written_usize = usize::try_from(written).map_err(|_| EncodeError::Backend)?;
-        let offset_usize =
+        // Per the official D3D12 spec ("Resolved buffer layouts for
+        // ResolveEncoderOutputMetadata", `D3D12_VIDEO_ENCODER_FRAME_SUBREGION_METADATA`):
+        // `bSize` includes `bStartOffset` bytes of *leading padding* before the real
+        // coded tile data begins — the actual tile payload is `[bStartOffset, bSize)`
+        // within this subregion, not `[0, EncodedBitstreamWrittenBytesCount)` as this
+        // backend previously (wrongly) assumed by reading the whole written range
+        // verbatim. A real, previously-undiscovered gap, kept as a correctness fix even
+        // though real-hardware verification (ADR-0007's AV1 addenda) found
+        // `bStartOffset == 0` on this crate's reference RTX 4090 — behaviorally
+        // equivalent to the old code *on this driver*, but not guaranteed on others,
+        // and this is the spec-correct extraction regardless. Ruled out as this
+        // backend's still-open decodability bug on this hardware.
+        let tile_size = subregion
+            .bSize
+            .checked_sub(subregion.bStartOffset)
+            .ok_or(EncodeError::Backend)?;
+        if tile_size == 0 {
+            return Err(EncodeError::Backend);
+        }
+        let tile_len_usize = usize::try_from(tile_size).map_err(|_| EncodeError::Backend)?;
+        let base_offset_usize =
             usize::try_from(self.header_len_aligned).map_err(|_| EncodeError::Backend)?;
-        let end = offset_usize
-            .checked_add(written_usize)
+        let start_offset_usize =
+            usize::try_from(subregion.bStartOffset).map_err(|_| EncodeError::Backend)?;
+        let tile_start_usize = base_offset_usize
+            .checked_add(start_offset_usize)
+            .ok_or(EncodeError::Backend)?;
+        let end = tile_start_usize
+            .checked_add(tile_len_usize)
             .ok_or(EncodeError::Backend)?;
         if end as u64 > self.bitstream_capacity {
             return Err(EncodeError::Backend);
         }
 
         let mut payload = self.header_bytes.clone(); // clone: own Packet payload built from the persistent per-session TD+SeqHdr OBU bytes
-        let obu_payload_len = self.av1_frame_header_bytes.len() + written_usize;
+        let obu_payload_len = self.av1_frame_header_bytes.len() + tile_len_usize;
         payload.push(bitstream_av1::obu_header_byte(bitstream_av1::OBU_FRAME));
         bitstream_av1::write_leb128(&mut payload, obu_payload_len as u64);
         payload.extend_from_slice(&self.av1_frame_header_bytes);
@@ -401,10 +437,10 @@ impl D3d12VideoEncoder {
             unsafe { self.bitstream_buffer.Unmap(0, None) };
             return Err(EncodeError::Backend);
         }
-        // SAFETY: `offset_usize + written_usize <= bitstream_capacity`, checked above; the
-        // buffer was committed with that capacity at `open`.
+        // SAFETY: `tile_start_usize + tile_len_usize <= bitstream_capacity`, checked
+        // above; the buffer was committed with that capacity at `open`.
         unsafe {
-            let slice = std::slice::from_raw_parts(slice_ptr.add(offset_usize), written_usize);
+            let slice = std::slice::from_raw_parts(slice_ptr.add(tile_start_usize), tile_len_usize);
             payload.extend_from_slice(slice);
         }
         // SAFETY: matches the `Map` above.

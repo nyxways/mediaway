@@ -483,6 +483,44 @@ fn push_frames_gop_with_rate_control_or_skip() {
         packets += 1;
     }
 
+    // Live retarget mid-session (`VideoEncoder::set_bitrate`) — real when CBR was actually
+    // selected (`Capabilities::supports_cbr`), `Unsupported` on the same fixed-QP fallback
+    // this test's doc already treats as legitimate; either way `push_frame` must keep
+    // producing real packets right after the call, since `push_frame` rebuilds
+    // `VkVideoEncodeRateControlLayerInfoKHR` from `rate_control_params` fresh every call
+    // (see `VulkanVideoEncoder::set_bitrate`'s doc) rather than caching anything from the
+    // retargeted call itself.
+    match enc.set_bitrate(250_000) {
+        Ok(()) => eprintln!("vulkan H.264 CBR set_bitrate: accepted (real CBR session)"),
+        Err(error) => {
+            eprintln!("vulkan H.264 CBR set_bitrate: {error:?} (fixed-QP fallback, expected)");
+        }
+    }
+    for i in 6..9i64 {
+        let frame = nv12_frame(i);
+        if let Err(error) = enc.push_frame(&frame) {
+            eprintln!("skip: push_frame after set_bitrate failed at {i} ({error:?})");
+            return;
+        }
+        let packet = match enc.poll_packet() {
+            Ok(Some(packet)) => packet,
+            Ok(None) => {
+                eprintln!("skip: no packet after push_frame {i} (post-set_bitrate)");
+                return;
+            }
+            Err(error) => {
+                eprintln!("skip: poll_packet (post-set_bitrate) failed ({error:?})");
+                return;
+            }
+        };
+        assert!(
+            !packet.payload.is_empty(),
+            "post-set_bitrate packet {i} payload is empty"
+        );
+        total_bytes += packet.payload.len();
+        packets += 1;
+    }
+
     enc.flush().expect("flush");
     eprintln!(
         "vulkan H.264 GOP+CBR VideoEncoder ok: {packets} packets, {total_bytes} total bytes \

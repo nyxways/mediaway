@@ -82,9 +82,15 @@ Platform order: **Windows first**. Workspace index: [`docs/roadmap.md`](../../..
       2026-08-06 addendum.
 - [ ] D3D12 Video Decode API (`ID3D12VideoDevice`/`ID3D12VideoDecoder`/
       `ID3D12VideoDecoderHeap`) — distinct API surface from encode, not started this pass.
+- [x] Real, capability-gated CBR rate control (`VideoEncoderConfig::rate_control`) for
+      H.264/HEVC — one extra driver probe at the already-chosen GOP/intra-refresh tier,
+      falls back to fixed-QP with no error. Plus `VideoEncoder::set_bitrate` — live
+      mid-session bitrate retarget, no reopen. Hardware-verified on the RTX 4090: real CBR
+      selected and `set_bitrate` accepted for both codecs. See ADR-0007's 2026-08-07
+      addendum. AV1 stays out of scope (same cut Vulkan's ADR-0002 already made).
 - [ ] Still not wired into `src/lib.rs` / `auto.rs` — self-contained, unregistered by
       design until an integration pass decides how it fits `AutoVideoEncoder`'s path
       selection.
-- [ ] Zero-Copy GPU input and rate-control tuning remain deferred for H.264/HEVC/AV1.
-      Intra-refresh remains deferred and is only meaningful once GOP/P-frame support
-      exists for a codec (all-intra streams have nothing to "refresh").
+- [ ] Zero-Copy GPU input remains deferred for H.264/HEVC/AV1. Intra-refresh remains
+      deferred for AV1 (only meaningful once GOP/P-frame support exists for a codec —
+      all-intra streams have nothing to "refresh").

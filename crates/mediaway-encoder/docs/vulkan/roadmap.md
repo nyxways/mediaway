@@ -74,6 +74,9 @@ ADR's Stage 1 addendum "Deliberate scope cuts").
       `RateControlParams`, capability-gated via
       `Capabilities::supports_p_frames`/`supports_cbr`) — hardware-verified
       real CBR bitstream output
+- [x] H.264: `VideoEncoder::set_bitrate` — live mid-session bitrate retarget,
+      no reopen (2026-08-07, ADR-0002 addendum). Hardware-verified: retargets
+      and encoding keeps producing real packets right after.
 - [x] HEVC: same P-frame/DPB wiring — **hardware-verified 2026-08-05**
       (same-day follow-up): `hevc_gop.rs::GopState`/`Dpb` (reuses
       `h264_gop::WORKSPACE_DPB_CAP`), `hevc_params.rs`'s P-frame

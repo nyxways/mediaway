@@ -45,10 +45,7 @@ use windows::Win32::Media::MediaFoundation::{
     D3D12_VIDEO_ENCODER_PICTURE_CONTROL_SUBREGIONS_LAYOUT_DATA,
     D3D12_VIDEO_ENCODER_PICTURE_RESOLUTION_DESC, D3D12_VIDEO_ENCODER_PROFILE_DESC,
     D3D12_VIDEO_ENCODER_PROFILE_DESC_0, D3D12_VIDEO_ENCODER_RATE_CONTROL,
-    D3D12_VIDEO_ENCODER_RATE_CONTROL_CONFIGURATION_PARAMS,
-    D3D12_VIDEO_ENCODER_RATE_CONTROL_CONFIGURATION_PARAMS_0, D3D12_VIDEO_ENCODER_RATE_CONTROL_CQP,
-    D3D12_VIDEO_ENCODER_RATE_CONTROL_FLAG_NONE, D3D12_VIDEO_ENCODER_RATE_CONTROL_MODE_CQP,
-    D3D12_VIDEO_ENCODER_RECONSTRUCTED_PICTURE,
+    D3D12_VIDEO_ENCODER_RATE_CONTROL_FLAG_NONE, D3D12_VIDEO_ENCODER_RECONSTRUCTED_PICTURE,
     D3D12_VIDEO_ENCODER_RESOLVE_METADATA_INPUT_ARGUMENTS,
     D3D12_VIDEO_ENCODER_RESOLVE_METADATA_OUTPUT_ARGUMENTS,
     D3D12_VIDEO_ENCODER_SEQUENCE_CONTROL_DESC, D3D12_VIDEO_ENCODER_SEQUENCE_CONTROL_FLAG_NONE,
@@ -120,16 +117,13 @@ impl D3d12VideoEncoder {
             },
         };
 
-        let rc_cqp = self.rc_cqp;
+        let rate_control_state = self.rate_control;
+        let (rate_control_mode, rate_control_params) =
+            super::setup::rate_control_mode_and_params(&rate_control_state);
         let rc = D3D12_VIDEO_ENCODER_RATE_CONTROL {
-            Mode: D3D12_VIDEO_ENCODER_RATE_CONTROL_MODE_CQP,
+            Mode: rate_control_mode,
             Flags: D3D12_VIDEO_ENCODER_RATE_CONTROL_FLAG_NONE,
-            ConfigParams: D3D12_VIDEO_ENCODER_RATE_CONTROL_CONFIGURATION_PARAMS {
-                DataSize: data_size::<D3D12_VIDEO_ENCODER_RATE_CONTROL_CQP>(),
-                Anonymous: D3D12_VIDEO_ENCODER_RATE_CONTROL_CONFIGURATION_PARAMS_0 {
-                    pConfiguration_CQP: &raw const rc_cqp,
-                },
-            },
+            ConfigParams: rate_control_params,
             TargetFrameRate: DXGI_RATIONAL {
                 Numerator: self.fps_num,
                 Denominator: self.fps_den,

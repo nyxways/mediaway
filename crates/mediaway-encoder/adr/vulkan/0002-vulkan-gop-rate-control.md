@@ -566,6 +566,22 @@ enum FrameRequest { Auto, ForceIdr }
   GOP/rate-control — a caller wanting to avoid periodic IDR bandwidth spikes
   has no answer from this ADR alone.
 
+## Addendum (2026-08-07): live `set_bitrate`
+
+`VideoEncoder::set_bitrate(&mut self, bitrate_bps: u32) -> Result<(), EncodeError>` — new
+trait method (default `Err(EncodeError::Unsupported)`, explicit forwarding in the
+`Box<dyn VideoEncoder>` impl). This backend's implementation mutates
+`rate_control_params.average_bitrate_bps`/`max_bitrate_bps` in place and returns
+`Unsupported` when `rate_control_params` is `None` (fixed-QP `DISABLED` mode, or HEVC/AV1,
+which never enable CBR this pass). This is real and live for free, not new plumbing: `Some`
+above already documents that `push_frame` rebuilds `VkVideoEncodeRateControlLayerInfoKHR`
+from `rate_control_params` fresh on every call rather than caching it once at `open` time —
+`set_bitrate` just mutates the source of truth that rebuild already reads. Hardware-verified
+on the RTX 4090: `push_frames_gop_with_rate_control_or_skip`
+([`encoder_tests.rs`](../src/encoder_tests.rs)) retargets mid-session and confirms encoding
+keeps producing real packets afterward. Same design landed on the D3D12 backend in the same
+pass (`adr/windows/0007-d3d12-native-video-encode.md`'s 2026-08-07 addendum).
+
 ## References
 
 - [`docs/vulkan/roadmap.md`](../../docs/vulkan/roadmap.md) Stage 2

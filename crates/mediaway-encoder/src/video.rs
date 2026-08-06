@@ -186,6 +186,26 @@ pub trait VideoEncoder {
     ///
     /// Returns [`EncodeError`] on backend failure.
     fn flush(&mut self) -> Result<(), EncodeError>;
+
+    /// Retarget the live CBR bitrate ceiling, taking effect from the next
+    /// [`push_frame`](Self::push_frame) call — no session reopen, no dropped frames.
+    ///
+    /// Only meaningful for a session opened with
+    /// [`VideoEncoderConfig::rate_control`] set (CBR-style rate control); a
+    /// fixed-QP session has no bitrate ceiling to retarget. The default
+    /// implementation always returns [`EncodeError::Unsupported`] — backends
+    /// that support live CBR retargeting override this method and must
+    /// document the honored range/granularity on their own encoder type's
+    /// rustdoc, per `caveats-and-clarity.md`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EncodeError::Unsupported`] when the session is not in CBR
+    /// mode or this backend cannot retarget bitrate live; [`EncodeError`] on
+    /// backend failure otherwise.
+    fn set_bitrate(&mut self, _bitrate_bps: u32) -> Result<(), EncodeError> {
+        Err(EncodeError::Unsupported)
+    }
 }
 
 /// Forwarding impl so `Box<dyn VideoEncoder>` (cross-platform dispatch) satisfies
@@ -207,5 +227,9 @@ impl<T: VideoEncoder + ?Sized> VideoEncoder for Box<T> {
 
     fn flush(&mut self) -> Result<(), EncodeError> {
         (**self).flush()
+    }
+
+    fn set_bitrate(&mut self, bitrate_bps: u32) -> Result<(), EncodeError> {
+        (**self).set_bitrate(bitrate_bps)
     }
 }

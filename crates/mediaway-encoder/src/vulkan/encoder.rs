@@ -770,6 +770,23 @@ impl VideoEncoder for VulkanVideoEncoder {
         self.flushed = true;
         Ok(())
     }
+
+    /// Retargets `average_bitrate_bps`/`max_bitrate_bps` in place — real, live, and cheap:
+    /// `push_frame` rebuilds `VkVideoEncodeRateControlLayerInfoKHR` from
+    /// `rate_control_params` fresh on every call (never cached once at session-open time,
+    /// see this field's doc), so the very next pushed frame picks up the new target with no
+    /// session reopen and no dropped frames. Only meaningful for the `Some` (H.264 + CBR
+    /// capability-gated, see `open`'s doc) case — `None` (fixed-QP `DISABLED` mode, or HEVC/
+    /// AV1, which never enable CBR this pass per ADR-0002) has no bitrate ceiling to
+    /// retarget.
+    fn set_bitrate(&mut self, bitrate_bps: u32) -> Result<(), EncodeError> {
+        let Some(rate_control) = self.rate_control_params.as_mut() else {
+            return Err(EncodeError::Unsupported);
+        };
+        rate_control.average_bitrate_bps = u64::from(bitrate_bps);
+        rate_control.max_bitrate_bps = u64::from(bitrate_bps);
+        Ok(())
+    }
 }
 
 impl Drop for VulkanVideoEncoder {

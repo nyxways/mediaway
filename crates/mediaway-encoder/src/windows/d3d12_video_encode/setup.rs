@@ -1,7 +1,7 @@
 //! `open`-time D3D12 object creation: device/queue/allocator/list objects, feature-support
 //! queries, and the `ID3D12VideoEncoder`/`ID3D12VideoEncoderHeap` pair.
 
-use crate::EncodeError;
+use crate::{EncodeError, RateControlConfig};
 use mediaway_common::NativeHandle;
 use windows::Win32::Graphics::Direct3D12::{
     D3D12_COMMAND_LIST_FLAG_NONE, D3D12_COMMAND_LIST_TYPE, D3D12_COMMAND_QUEUE_DESC,
@@ -39,9 +39,10 @@ use windows::Win32::Media::MediaFoundation::{
     D3D12_VIDEO_ENCODER_PICTURE_RESOLUTION_DESC, D3D12_VIDEO_ENCODER_PROFILE_DESC,
     D3D12_VIDEO_ENCODER_PROFILE_DESC_0, D3D12_VIDEO_ENCODER_PROFILE_H264,
     D3D12_VIDEO_ENCODER_PROFILE_H264_MAIN, D3D12_VIDEO_ENCODER_RATE_CONTROL,
-    D3D12_VIDEO_ENCODER_RATE_CONTROL_CONFIGURATION_PARAMS,
+    D3D12_VIDEO_ENCODER_RATE_CONTROL_CBR, D3D12_VIDEO_ENCODER_RATE_CONTROL_CONFIGURATION_PARAMS,
     D3D12_VIDEO_ENCODER_RATE_CONTROL_CONFIGURATION_PARAMS_0, D3D12_VIDEO_ENCODER_RATE_CONTROL_CQP,
-    D3D12_VIDEO_ENCODER_RATE_CONTROL_FLAG_NONE, D3D12_VIDEO_ENCODER_RATE_CONTROL_MODE_CQP,
+    D3D12_VIDEO_ENCODER_RATE_CONTROL_FLAG_NONE, D3D12_VIDEO_ENCODER_RATE_CONTROL_MODE,
+    D3D12_VIDEO_ENCODER_RATE_CONTROL_MODE_CBR, D3D12_VIDEO_ENCODER_RATE_CONTROL_MODE_CQP,
     D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE, D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_0,
     D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_H264,
     D3D12_VIDEO_ENCODER_SUPPORT_FLAG_GENERAL_SUPPORT_OK, D3D12_VIDEO_ENCODER_SUPPORT_FLAGS,
@@ -195,6 +196,72 @@ pub(super) const fn default_codec_config_h264() -> D3D12_VIDEO_ENCODER_CODEC_CON
     }
 }
 
+/// Which `D3D12_VIDEO_ENCODER_RATE_CONTROL_MODE` this session uses, holding
+/// exactly the codec-agnostic config that mode's own struct needs. `Cqp` is
+/// this backend's original, always-available mode; `Cbr` is real, driver
+/// feedback-gated (see `d3d12_video_encode.rs::open`'s selection logic) and
+/// is the only mode [`crate::VideoEncoder::set_bitrate`] can retarget live —
+/// see that method's D3D12 impl.
+#[derive(Debug, Clone, Copy)]
+pub(super) enum RateControlState {
+    Cqp(D3D12_VIDEO_ENCODER_RATE_CONTROL_CQP),
+    Cbr(D3D12_VIDEO_ENCODER_RATE_CONTROL_CBR),
+}
+
+/// Build the `Mode`/`ConfigParams` portion of `D3D12_VIDEO_ENCODER_RATE_CONTROL` from
+/// `state`. The returned `ConfigParams` union pointer borrows `state` itself (never a
+/// local of this function), so it stays valid for exactly as long as the caller's own
+/// `state` does — safe to embed directly into a `D3D12_VIDEO_ENCODER_RATE_CONTROL` the
+/// caller builds and uses in the same scope (matches every other C-union builder in this
+/// module: the pointee always lives in the same stack frame as its use).
+pub(super) fn rate_control_mode_and_params(
+    state: &RateControlState,
+) -> (
+    D3D12_VIDEO_ENCODER_RATE_CONTROL_MODE,
+    D3D12_VIDEO_ENCODER_RATE_CONTROL_CONFIGURATION_PARAMS,
+) {
+    match state {
+        RateControlState::Cqp(cqp) => (
+            D3D12_VIDEO_ENCODER_RATE_CONTROL_MODE_CQP,
+            D3D12_VIDEO_ENCODER_RATE_CONTROL_CONFIGURATION_PARAMS {
+                DataSize: data_size::<D3D12_VIDEO_ENCODER_RATE_CONTROL_CQP>(),
+                Anonymous: D3D12_VIDEO_ENCODER_RATE_CONTROL_CONFIGURATION_PARAMS_0 {
+                    pConfiguration_CQP: std::ptr::from_ref(cqp),
+                },
+            },
+        ),
+        RateControlState::Cbr(cbr) => (
+            D3D12_VIDEO_ENCODER_RATE_CONTROL_MODE_CBR,
+            D3D12_VIDEO_ENCODER_RATE_CONTROL_CONFIGURATION_PARAMS {
+                DataSize: data_size::<D3D12_VIDEO_ENCODER_RATE_CONTROL_CBR>(),
+                Anonymous: D3D12_VIDEO_ENCODER_RATE_CONTROL_CONFIGURATION_PARAMS_0 {
+                    pConfiguration_CBR: std::ptr::from_ref(cbr),
+                },
+            },
+        ),
+    }
+}
+
+/// Build a `D3D12_VIDEO_ENCODER_RATE_CONTROL_CBR` from a target [`RateControlConfig`].
+/// `InitialQP`/`MinQP`/`MaxQP`/`MaxFrameBitSize` are left `0` — this backend never sets
+/// `ENABLE_INITIAL_QP`/`ENABLE_QP_RANGE`/`ENABLE_MAX_FRAME_SIZE` in `Flags`, so the driver
+/// ignores those fields regardless (spec § 4.4); `InitialVBVFullness` similarly stays `0`
+/// (start empty, matching this backend's "let the driver pick a default" convention for
+/// `vbv_buffer_size_bytes: None`).
+pub(super) fn cbr_from_config(rc: RateControlConfig) -> D3D12_VIDEO_ENCODER_RATE_CONTROL_CBR {
+    D3D12_VIDEO_ENCODER_RATE_CONTROL_CBR {
+        InitialQP: 0,
+        MinQP: 0,
+        MaxQP: 0,
+        MaxFrameBitSize: 0,
+        TargetBitRate: u64::from(rc.target_bitrate_bps),
+        VBVCapacity: rc
+            .vbv_buffer_size_bytes
+            .map_or(0, |bytes| u64::from(bytes) * 8),
+        InitialVBVFullness: 0,
+    }
+}
+
 /// Query `D3D12_FEATURE_VIDEO_ENCODER_SUPPORT` for the exact codec/GOP/rate-control/
 /// resolution combination this session will use, returning the driver's `SuggestedLevel`
 /// (the level actually valid for this configuration on this hardware — a hardcoded guess
@@ -208,7 +275,7 @@ pub(super) fn check_encoder_support(
     video_device: &ID3D12VideoDevice3,
     resolution: D3D12_VIDEO_ENCODER_PICTURE_RESOLUTION_DESC,
     mut gop: D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_H264,
-    rc_cqp: D3D12_VIDEO_ENCODER_RATE_CONTROL_CQP,
+    rate_control: &RateControlState,
     frame_rate: (u32, u32),
     max_reference_frames_in_dpb: u32,
     intra_refresh: D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE,
@@ -218,6 +285,7 @@ pub(super) fn check_encoder_support(
         D3D12_FEATURE_DATA_VIDEO_ENCODER_RESOLUTION_SUPPORT_LIMITS::default();
     let mut suggested_profile_h264 = D3D12_VIDEO_ENCODER_PROFILE_H264_MAIN;
     let mut suggested_level_h264 = D3D12_VIDEO_ENCODER_LEVELS_H264_51;
+    let (rate_control_mode, rate_control_params) = rate_control_mode_and_params(rate_control);
 
     let mut support = D3D12_FEATURE_DATA_VIDEO_ENCODER_SUPPORT {
         NodeIndex: 0,
@@ -236,14 +304,9 @@ pub(super) fn check_encoder_support(
             },
         },
         RateControl: D3D12_VIDEO_ENCODER_RATE_CONTROL {
-            Mode: D3D12_VIDEO_ENCODER_RATE_CONTROL_MODE_CQP,
+            Mode: rate_control_mode,
             Flags: D3D12_VIDEO_ENCODER_RATE_CONTROL_FLAG_NONE,
-            ConfigParams: D3D12_VIDEO_ENCODER_RATE_CONTROL_CONFIGURATION_PARAMS {
-                DataSize: data_size::<D3D12_VIDEO_ENCODER_RATE_CONTROL_CQP>(),
-                Anonymous: D3D12_VIDEO_ENCODER_RATE_CONTROL_CONFIGURATION_PARAMS_0 {
-                    pConfiguration_CQP: &raw const rc_cqp,
-                },
-            },
+            ConfigParams: rate_control_params,
             TargetFrameRate: DXGI_RATIONAL {
                 Numerator: frame_rate.0,
                 Denominator: frame_rate.1,

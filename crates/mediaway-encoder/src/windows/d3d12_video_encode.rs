@@ -144,7 +144,7 @@ pub(crate) struct D3d12VideoEncoder {
     luma_size: u64,
 
     gop: GopStructure,
-    rc_cqp: D3D12_VIDEO_ENCODER_RATE_CONTROL_CQP,
+    rate_control: setup::RateControlState,
     fps_num: u32,
     fps_den: u32,
 
@@ -235,13 +235,15 @@ impl D3d12VideoEncoder {
             ConstantQP_InterPredictedFrame_BiDirectionalRef: FIXED_QP,
         };
 
+        let rate_control = setup::RateControlState::Cqp(rc_cqp);
+
         let (
             encoder,
             encoder_heap,
             gop,
             header_bytes,
             req,
-            rc_cqp,
+            rate_control,
             av1_frame_header_bytes,
             intra_refresh_period,
         ) = match config.codec {
@@ -288,7 +290,7 @@ impl D3d12VideoEncoder {
                                 &video_device,
                                 resolution,
                                 intra_refresh_gop,
-                                rc_cqp,
+                                &rate_control,
                                 (fps_num, fps_den),
                                 1,
                                 D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_ROW_BASED,
@@ -311,7 +313,7 @@ impl D3d12VideoEncoder {
                             &video_device,
                             resolution,
                             p_frame_gop,
-                            rc_cqp,
+                            &rate_control,
                             (fps_num, fps_den),
                             1,
                             D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_NONE,
@@ -323,7 +325,7 @@ impl D3d12VideoEncoder {
                         &video_device,
                         resolution,
                         idr_only_gop,
-                        rc_cqp,
+                        &rate_control,
                         (fps_num, fps_den),
                         0,
                         D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_NONE,
@@ -333,6 +335,36 @@ impl D3d12VideoEncoder {
                 let level_idc = setup::level_h264_to_idc(level);
                 let (encoder, encoder_heap) =
                     setup::create_encoder(&video_device, resolution, level)?;
+
+                // Real, capability-gated CBR: one extra probe at the already-chosen
+                // GOP/intra-refresh tier — falls back to CQP silently (no error) if this
+                // driver won't accept CBR for that exact configuration, per
+                // `caveats-and-clarity.md`. `max_reference_frames_in_dpb`/`intra_refresh`
+                // mirror exactly what the winning tier above already used.
+                let rate_control = config.rate_control.map_or(rate_control, |rc| {
+                    let cbr_state = setup::RateControlState::Cbr(setup::cbr_from_config(rc));
+                    let max_ref = u32::from(gop_h264.GOPLength != 1);
+                    let intra_refresh_mode = if effective_intra_refresh_period.is_some() {
+                        D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_ROW_BASED
+                    } else {
+                        D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_NONE
+                    };
+                    if setup::check_encoder_support(
+                        &video_device,
+                        resolution,
+                        gop_h264,
+                        &cbr_state,
+                        (fps_num, fps_den),
+                        max_ref,
+                        intra_refresh_mode,
+                    )
+                    .is_ok()
+                    {
+                        cbr_state
+                    } else {
+                        rate_control
+                    }
+                });
 
                 let width_mbs_minus1 = config.width / 16 - 1;
                 let height_map_units_minus1 = config.height / 16 - 1;
@@ -347,7 +379,7 @@ impl D3d12VideoEncoder {
                     GopStructure::H264(gop_h264),
                     header_bytes,
                     req,
-                    rc_cqp,
+                    rate_control,
                     Vec::new(),
                     effective_intra_refresh_period,
                 )
@@ -385,7 +417,7 @@ impl D3d12VideoEncoder {
                             &video_device,
                             resolution,
                             intra_refresh_gop_hevc,
-                            rc_cqp,
+                            &rate_control,
                             (fps_num, fps_den),
                             1,
                             D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_ROW_BASED,
@@ -405,7 +437,7 @@ impl D3d12VideoEncoder {
                             &video_device,
                             resolution,
                             p_frame_gop_hevc,
-                            rc_cqp,
+                            &rate_control,
                             (fps_num, fps_den),
                             1,
                             D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_NONE,
@@ -417,7 +449,7 @@ impl D3d12VideoEncoder {
                         &video_device,
                         resolution,
                         idr_only_gop_hevc,
-                        rc_cqp,
+                        &rate_control,
                         (fps_num, fps_den),
                         0,
                         D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_NONE,
@@ -428,6 +460,34 @@ impl D3d12VideoEncoder {
                 let general_tier_flag = u8::from(level.Tier == D3D12_VIDEO_ENCODER_TIER_HEVC_HIGH);
                 let (encoder, encoder_heap) =
                     hevc::create_encoder(&video_device, resolution, level)?;
+
+                // See the H.264 branch above's sibling comment — same one-extra-probe CBR
+                // fallback design, `gop_hevc`/`hevc::check_encoder_support` in place of
+                // `gop_h264`/`setup::check_encoder_support`.
+                let rate_control = config.rate_control.map_or(rate_control, |rc| {
+                    let cbr_state = setup::RateControlState::Cbr(setup::cbr_from_config(rc));
+                    let max_ref = u32::from(gop_hevc.GOPLength != 1);
+                    let intra_refresh_mode = if effective_intra_refresh_period.is_some() {
+                        D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_ROW_BASED
+                    } else {
+                        D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_NONE
+                    };
+                    if hevc::check_encoder_support(
+                        &video_device,
+                        resolution,
+                        gop_hevc,
+                        &cbr_state,
+                        (fps_num, fps_den),
+                        max_ref,
+                        intra_refresh_mode,
+                    )
+                    .is_ok()
+                    {
+                        cbr_state
+                    } else {
+                        rate_control
+                    }
+                });
 
                 let header_bytes = bitstream_hevc::build_hevc_headers(
                     config.width,
@@ -441,7 +501,7 @@ impl D3d12VideoEncoder {
                     GopStructure::Hevc(gop_hevc),
                     header_bytes,
                     req,
-                    rc_cqp,
+                    rate_control,
                     Vec::new(),
                     effective_intra_refresh_period,
                 )
@@ -491,7 +551,7 @@ impl D3d12VideoEncoder {
                     GopStructure::Av1(gop_av1),
                     header_bytes,
                     req,
-                    rc_cqp_av1,
+                    setup::RateControlState::Cqp(rc_cqp_av1),
                     av1_frame_header_bytes,
                     None,
                 )
@@ -624,7 +684,7 @@ impl D3d12VideoEncoder {
             row_pitch,
             luma_size,
             gop,
-            rc_cqp,
+            rate_control,
             fps_num,
             fps_den,
             header_bytes,
@@ -692,6 +752,23 @@ impl VideoEncoder for D3d12VideoEncoder {
         // Every pushed frame is independently encoded and drained synchronously — no
         // pipeline depth to flush.
         self.flushed = true;
+        Ok(())
+    }
+
+    /// Retargets `TargetBitRate` in place — real and live: `ops`/`ops_hevc`/`ops_av1` all
+    /// rebuild `D3D12_VIDEO_ENCODER_RATE_CONTROL` from `self.rate_control` fresh on every
+    /// `EncodeFrame` call (never cached once at `open` time, see
+    /// `setup::rate_control_mode_and_params`'s doc), so the very next pushed frame picks up
+    /// the new target with no session reopen and no dropped frames. Only meaningful when
+    /// `open` actually landed in `RateControlState::Cbr` (real, capability-gated — see
+    /// `open`'s doc); a `Cqp` session (no `VideoEncoderConfig::rate_control`, or this
+    /// driver rejected CBR for the chosen GOP/intra-refresh tier) has no bitrate ceiling to
+    /// retarget.
+    fn set_bitrate(&mut self, bitrate_bps: u32) -> Result<(), EncodeError> {
+        let setup::RateControlState::Cbr(cbr) = &mut self.rate_control else {
+            return Err(EncodeError::Unsupported);
+        };
+        cbr.TargetBitRate = u64::from(bitrate_bps);
         Ok(())
     }
 }

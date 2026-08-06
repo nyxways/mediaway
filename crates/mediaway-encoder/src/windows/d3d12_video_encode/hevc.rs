@@ -49,11 +49,8 @@ use windows::Win32::Media::MediaFoundation::{
     D3D12_VIDEO_ENCODER_PICTURE_RESOLUTION_DESC, D3D12_VIDEO_ENCODER_PROFILE_DESC,
     D3D12_VIDEO_ENCODER_PROFILE_DESC_0, D3D12_VIDEO_ENCODER_PROFILE_HEVC,
     D3D12_VIDEO_ENCODER_PROFILE_HEVC_MAIN, D3D12_VIDEO_ENCODER_RATE_CONTROL,
-    D3D12_VIDEO_ENCODER_RATE_CONTROL_CONFIGURATION_PARAMS,
-    D3D12_VIDEO_ENCODER_RATE_CONTROL_CONFIGURATION_PARAMS_0, D3D12_VIDEO_ENCODER_RATE_CONTROL_CQP,
-    D3D12_VIDEO_ENCODER_RATE_CONTROL_FLAG_NONE, D3D12_VIDEO_ENCODER_RATE_CONTROL_MODE_CQP,
-    D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE, D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_0,
-    D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_HEVC,
+    D3D12_VIDEO_ENCODER_RATE_CONTROL_FLAG_NONE, D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE,
+    D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_0, D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_HEVC,
     D3D12_VIDEO_ENCODER_SUPPORT_FLAG_GENERAL_SUPPORT_OK, D3D12_VIDEO_ENCODER_SUPPORT_FLAGS,
     D3D12_VIDEO_ENCODER_TIER_HEVC_HIGH, D3D12_VIDEO_ENCODER_VALIDATION_FLAGS, ID3D12VideoDevice3,
     ID3D12VideoEncoder, ID3D12VideoEncoderHeap,
@@ -61,8 +58,8 @@ use windows::Win32::Media::MediaFoundation::{
 use windows::core::BOOL;
 
 use super::setup::{
-    check_codec_support as check_codec_support_generic,
-    check_output_resolution as check_output_resolution_generic,
+    RateControlState, check_codec_support as check_codec_support_generic,
+    check_output_resolution as check_output_resolution_generic, rate_control_mode_and_params,
 };
 use super::util::data_size;
 
@@ -165,7 +162,7 @@ pub(super) fn check_encoder_support(
     video_device: &ID3D12VideoDevice3,
     resolution: D3D12_VIDEO_ENCODER_PICTURE_RESOLUTION_DESC,
     mut gop: D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_HEVC,
-    rc_cqp: D3D12_VIDEO_ENCODER_RATE_CONTROL_CQP,
+    rate_control: &RateControlState,
     frame_rate: (u32, u32),
     max_reference_frames_in_dpb: u32,
     intra_refresh: D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE,
@@ -178,6 +175,7 @@ pub(super) fn check_encoder_support(
         Level: D3D12_VIDEO_ENCODER_LEVELS_HEVC_61,
         Tier: D3D12_VIDEO_ENCODER_TIER_HEVC_HIGH,
     };
+    let (rate_control_mode, rate_control_params) = rate_control_mode_and_params(rate_control);
 
     let mut support = D3D12_FEATURE_DATA_VIDEO_ENCODER_SUPPORT {
         NodeIndex: 0,
@@ -196,14 +194,9 @@ pub(super) fn check_encoder_support(
             },
         },
         RateControl: D3D12_VIDEO_ENCODER_RATE_CONTROL {
-            Mode: D3D12_VIDEO_ENCODER_RATE_CONTROL_MODE_CQP,
+            Mode: rate_control_mode,
             Flags: D3D12_VIDEO_ENCODER_RATE_CONTROL_FLAG_NONE,
-            ConfigParams: D3D12_VIDEO_ENCODER_RATE_CONTROL_CONFIGURATION_PARAMS {
-                DataSize: data_size::<D3D12_VIDEO_ENCODER_RATE_CONTROL_CQP>(),
-                Anonymous: D3D12_VIDEO_ENCODER_RATE_CONTROL_CONFIGURATION_PARAMS_0 {
-                    pConfiguration_CQP: &raw const rc_cqp,
-                },
-            },
+            ConfigParams: rate_control_params,
             TargetFrameRate: DXGI_RATIONAL {
                 Numerator: frame_rate.0,
                 Denominator: frame_rate.1,

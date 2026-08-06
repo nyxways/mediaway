@@ -432,6 +432,48 @@ a flag flip. That bitstream work is deferred, not started; `d3d12_native_av1_enc
 still soft-skips honestly (now on `CODEC_CONFIGURATION_NOT_SUPPORTED` rather than
 `CODEC_NOT_SUPPORTED`) until it lands.
 
+## Addendum (2026-08-07): CBR rate control + live `set_bitrate`
+
+Extends the H.264/HEVC scope above from fixed-CQP-only to real, capability-gated CBR, and
+adds a live mid-session bitrate-retarget method — mirrors the Vulkan H.264 CBR precedent
+(`adr/vulkan/0002-vulkan-gop-rate-control.md`) design-for-design, now on both D3D12
+codecs.
+
+- `setup::RateControlState` (`Cqp(D3D12_VIDEO_ENCODER_RATE_CONTROL_CQP)` /
+  `Cbr(D3D12_VIDEO_ENCODER_RATE_CONTROL_CBR)`) replaces the old bare `rc_cqp` field —
+  `D3d12VideoEncoder::rate_control` holds whichever mode is actually active this session.
+  `setup::rate_control_mode_and_params` builds the `Mode`/`ConfigParams` union pair from it;
+  `ops`/`ops_hevc`/`ops_av1` all call this fresh on every `EncodeFrame` (never cached from
+  `open` time) — the same design choice the Vulkan backend already made for the identical
+  reason: it makes live retargeting trivial, not a special code path.
+- `open`'s CBR selection is **one extra probe after the GOP/intra-refresh tier is already
+  chosen**, not a combinatorial re-sweep: build a `Cbr` state from
+  `VideoEncoderConfig::rate_control`, call `check_encoder_support` once more with the
+  winning tier's exact `gop`/`max_reference_frames_in_dpb`/`intra_refresh` values, and keep
+  `Cbr` only if that succeeds — otherwise fall back to `Cqp` with no error, per
+  `caveats-and-clarity.md`. `setup::cbr_from_config` leaves `InitialQP`/`MinQP`/`MaxQP`/
+  `MaxFrameBitSize` at `0` since this backend never sets the `Flags` that would make the
+  driver read them (spec § 4.4).
+- `VideoEncoder::set_bitrate(&mut self, bitrate_bps: u32) -> Result<(), EncodeError>` — new
+  trait method (default `Err(EncodeError::Unsupported)`, explicit forwarding in the
+  `Box<dyn VideoEncoder>` impl). D3D12's implementation mutates
+  `RateControlState::Cbr(cbr).TargetBitRate` in place and returns `Unsupported` for a `Cqp`
+  session; Vulkan's mutates `rate_control_params.average_bitrate_bps`/`max_bitrate_bps`
+  the same way. Both are real and live because of the "rebuild fresh every `push_frame`"
+  design above — no session reopen, no dropped frames.
+- **Hardware-verified on the RTX 4090**: CBR was actually selected (not the fixed-QP
+  fallback) for both H.264 and HEVC, and `set_bitrate` was accepted and kept encoding
+  working across the retarget in both cases
+  (`d3d12_native_h264_cbr_encode_or_skip`/`d3d12_native_hevc_cbr_encode_or_skip`,
+  [`d3d12_video_encode_tests.rs`](../src/d3d12_video_encode_tests.rs)). AV1 does not
+  participate in this addendum — CBR stays out of scope for AV1 on both backends (same
+  ADR-0002 cut Vulkan already made), and D3D12 AV1 is still blocked on the codec-
+  configuration gap the 2026-08-07 AV1 addendum above describes regardless.
+- The AV1 test file split out of `d3d12_video_encode_tests.rs` into
+  `d3d12_video_encode_tests_av1.rs` this same pass — purely to stay under the workspace's
+  1000-line source cap once the two new CBR tests pushed the combined file over it, not a
+  behavior change.
+
 ## References
 
 - FFmpeg `libavcodec/d3d12va_encode.c` / `d3d12va_encode_h264.c` (BSD-2-Clause,

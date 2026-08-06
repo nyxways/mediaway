@@ -66,6 +66,14 @@ a real, distinct encode API separate from feeding D3D12 textures into WMF, reach
   resolutions that cap is `0`, so both hardware tests land in the documented fallback
   rather than a live refresh cadence — the capability-gated path itself (no device
   removal, no invalid `EncodeFrame` reaching the driver) is confirmed correct.
+- **CBR rate control + live `set_bitrate` (2026-08-07):** `setup::RateControlState`
+  (`Cqp`/`Cbr`) replaces the old bare CQP field; `open` probes CBR once more at the
+  already-chosen GOP/intra-refresh tier and falls back to CQP with no error if this
+  driver rejects it. New `VideoEncoder::set_bitrate` (default `Unsupported`, real for
+  Vulkan H.264 and this backend's H.264/HEVC) mutates `TargetBitRate` in place — live,
+  no reopen, since `ops`/`ops_hevc`/`ops_av1` already rebuild the rate-control struct
+  fresh every `EncodeFrame`. **Real CBR selected and `set_bitrate` accepted on the RTX
+  4090 for both H.264 and HEVC** (not the fixed-QP fallback).
 
 See [ADR-0007](../../../../crates/mediaway-encoder/adr/windows/0007-d3d12-native-video-encode.md)
 (+ its 2026-08-06 and 2026-08-07 addenda) for full detail on every finding above, including

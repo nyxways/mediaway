@@ -10,7 +10,7 @@
     reason = "unit tests"
 )]
 
-use crate::{VideoEncoder, VideoEncoderConfig, VideoInputPreference};
+use crate::{RateControlConfig, VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 use mediaway_common::{
     Bytes, CodecKind, GpuDeviceHandle, NativeHandle, PixelFormat, Rational, VideoFrame,
     VideoFrameStorage,
@@ -24,6 +24,9 @@ use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIAdapter1, IDXGIFac
 use windows::core::Interface;
 
 use super::D3d12VideoEncoder;
+
+#[path = "d3d12_video_encode_tests_av1.rs"]
+mod av1_tests;
 
 // D3D12_FEATURE_VIDEO_ENCODER_OUTPUT_RESOLUTION reports a real minimum encode
 // resolution on real hardware (observed: 160x64 on an NVIDIA RTX 4090) — below it,
@@ -456,6 +459,111 @@ fn d3d12_native_h264_intra_refresh_encode_or_skip() {
     eprintln!("d3d12 native h264 intra-refresh encode ok: cadence {cadence:?}");
 }
 
+/// Real D3D12 device → `VideoEncoderConfig::rate_control` requested → real `EncodeFrame`
+/// submissions, then a live [`VideoEncoder::set_bitrate`] retarget mid-session with more
+/// frames pushed after it. Real CBR when this driver accepts `RateControlState::Cbr` for
+/// the chosen (IDR-only) GOP tier, the documented fixed-QP fallback otherwise
+/// (`open`'s one-extra-probe design, see `d3d12_video_encode.rs`'s doc) — this test cannot
+/// tell which outcome landed without reaching into a private field, so it accepts either:
+/// `set_bitrate` returning `Ok(())` (real CBR) or `Err(EncodeError::Unsupported)` (fixed-QP
+/// fallback) are both legitimate, and either way encoding must keep working right after the
+/// call — that's the actual thing under test. Skips (does not fail) if this machine's
+/// adapter/driver lacks D3D12 native H.264 video-encode support at all.
+#[test]
+fn d3d12_native_h264_cbr_encode_or_skip() {
+    let Some(device) = open_real_d3d12_device() else {
+        return;
+    };
+    let Some(handle) = NativeHandle::new(Interface::as_raw(&device) as usize) else {
+        eprintln!("skip: null D3D12 device pointer");
+        return;
+    };
+    let info_queue: Option<ID3D12InfoQueue> = device.cast().ok();
+
+    let cfg = VideoEncoderConfig {
+        codec: CodecKind::H264,
+        width: WIDTH,
+        height: HEIGHT,
+        time_base: Rational::new(1, 30),
+        bitrate_bps: 500_000,
+        pixel_format: PixelFormat::Nv12,
+        input: VideoInputPreference::CpuUploadOk,
+        gpu_device: Some(GpuDeviceHandle::DirectX12(handle)),
+        gop_size: 1,
+        rate_control: Some(RateControlConfig {
+            target_bitrate_bps: 500_000,
+            vbv_buffer_size_bytes: None,
+        }),
+        intra_refresh_period: None,
+    };
+
+    let mut enc = match D3d12VideoEncoder::open(&cfg) {
+        Ok(e) => e,
+        Err(e) => {
+            dump_d3d12_info_queue(info_queue.as_ref());
+            eprintln!("skip: D3d12VideoEncoder::open (H.264 CBR) failed ({e:?})");
+            return;
+        }
+    };
+
+    for i in 0..3i64 {
+        let frame = nv12_frame(i);
+        if let Err(e) = enc.push_frame(&frame) {
+            dump_d3d12_info_queue(info_queue.as_ref());
+            eprintln!("skip: push_frame (H.264 CBR) failed ({e:?})");
+            return;
+        }
+        match enc.poll_packet() {
+            Ok(Some(p)) => assert!(!p.payload.is_empty(), "packet {i} payload is empty"),
+            Ok(None) => {
+                eprintln!("skip: no packet after push_frame {i} (H.264 CBR)");
+                return;
+            }
+            Err(e) => {
+                eprintln!("skip: poll_packet (H.264 CBR) failed ({e:?})");
+                return;
+            }
+        }
+    }
+
+    let cbr_selected = match enc.set_bitrate(250_000) {
+        Ok(()) => true,
+        Err(e) => {
+            eprintln!("d3d12 h264 set_bitrate: {e:?} (fixed-QP fallback, expected)");
+            false
+        }
+    };
+
+    for i in 3..6i64 {
+        let frame = nv12_frame(i);
+        if let Err(e) = enc.push_frame(&frame) {
+            dump_d3d12_info_queue(info_queue.as_ref());
+            eprintln!("skip: push_frame after set_bitrate failed ({e:?})");
+            return;
+        }
+        match enc.poll_packet() {
+            Ok(Some(p)) => assert!(
+                !p.payload.is_empty(),
+                "post-set_bitrate packet {i} payload is empty"
+            ),
+            Ok(None) => {
+                eprintln!("skip: no packet after push_frame {i} (post-set_bitrate)");
+                return;
+            }
+            Err(e) => {
+                eprintln!("skip: poll_packet (post-set_bitrate) failed ({e:?})");
+                return;
+            }
+        }
+    }
+
+    enc.flush().expect("flush");
+    eprintln!(
+        "d3d12 native h264 CBR encode ok: cbr_selected={cbr_selected}, encoding kept working \
+         across set_bitrate"
+    );
+}
+
 /// Real D3D12 device → real HEVC `ID3D12VideoDevice3` support check → real `EncodeFrame`
 /// submissions → real Annex-B output (VPS `nal_unit_type == 32`, SPS `== 33`,
 /// PPS `== 34`, IDR `== 19` (`IDR_W_RADL`) or `== 20` (`IDR_N_LP`) present in every
@@ -726,54 +834,11 @@ fn d3d12_native_hevc_intra_refresh_encode_or_skip() {
     eprintln!("d3d12 native hevc intra-refresh encode ok: cadence {cadence:?}");
 }
 
-/// Parse AV1 `obu_type` values out of length-prefixed OBUs (`obu_has_size_field == 1`,
-/// no extension — the only shape this backend ever writes/expects, see
-/// [`super::bitstream_av1`]).
-fn obu_types(payload: &[u8]) -> Vec<u8> {
-    let mut types = Vec::new();
-    let mut i = 0usize;
-    while i < payload.len() {
-        let header = payload[i];
-        let obu_type = (header >> 3) & 0x0F;
-        let has_size_field = (header >> 1) & 1 == 1;
-        let has_extension = (header >> 2) & 1 == 1;
-        i += 1;
-        if has_extension {
-            i += 1;
-        }
-        if !has_size_field || i >= payload.len() {
-            break;
-        }
-        let mut size = 0u64;
-        let mut shift = 0u32;
-        loop {
-            if i >= payload.len() {
-                return types;
-            }
-            let b = payload[i];
-            i += 1;
-            size |= u64::from(b & 0x7f) << shift;
-            shift += 7;
-            if b & 0x80 == 0 {
-                break;
-            }
-        }
-        types.push(obu_type);
-        let Ok(size) = usize::try_from(size) else {
-            break;
-        };
-        i += size;
-    }
-    types
-}
-
-/// Real D3D12 device → real AV1 `ID3D12VideoDevice3` support check → real `EncodeFrame`
-/// submissions → real length-prefixed OBU output (temporal delimiter `obu_type == 2`,
-/// sequence header `== 1`, frame `== 6` present in every packet). Skips (does not fail) if
-/// this machine's adapter/driver lacks D3D12 native AV1 video-encode support (requires
-/// Windows 11 24H2+ / WDDM 3.2).
+/// HEVC sibling of [`d3d12_native_h264_cbr_encode_or_skip`] — same real CBR-or-documented
+/// fixed-QP-fallback design, `set_bitrate` retarget mid-session, same either-outcome
+/// acceptance criterion (see that test's doc for why).
 #[test]
-fn d3d12_native_av1_encode_or_skip() {
+fn d3d12_native_hevc_cbr_encode_or_skip() {
     let Some(device) = open_real_d3d12_device() else {
         return;
     };
@@ -784,16 +849,19 @@ fn d3d12_native_av1_encode_or_skip() {
     let info_queue: Option<ID3D12InfoQueue> = device.cast().ok();
 
     let cfg = VideoEncoderConfig {
-        codec: CodecKind::Av1,
-        width: WIDTH_AV1,
-        height: HEIGHT_AV1,
+        codec: CodecKind::Hevc,
+        width: WIDTH_HEVC,
+        height: HEIGHT_HEVC,
         time_base: Rational::new(1, 30),
         bitrate_bps: 500_000,
         pixel_format: PixelFormat::Nv12,
         input: VideoInputPreference::CpuUploadOk,
         gpu_device: Some(GpuDeviceHandle::DirectX12(handle)),
         gop_size: 1,
-        rate_control: None,
+        rate_control: Some(RateControlConfig {
+            target_bitrate_bps: 500_000,
+            vbv_buffer_size_bytes: None,
+        }),
         intra_refresh_period: None,
     };
 
@@ -801,96 +869,65 @@ fn d3d12_native_av1_encode_or_skip() {
         Ok(e) => e,
         Err(e) => {
             dump_d3d12_info_queue(info_queue.as_ref());
-            eprintln!(
-                "skip: D3d12VideoEncoder::open (AV1) failed ({e:?}) — no D3D12 AV1 video-encode \
-                 support on this device/driver?"
-            );
+            eprintln!("skip: D3d12VideoEncoder::open (HEVC CBR) failed ({e:?})");
             return;
         }
     };
 
-    let mut packets = 0usize;
     for i in 0..3i64 {
-        let frame = nv12_frame_sized(i, WIDTH_AV1, HEIGHT_AV1);
+        let frame = nv12_frame_sized(i, WIDTH_HEVC, HEIGHT_HEVC);
         if let Err(e) = enc.push_frame(&frame) {
             dump_d3d12_info_queue(info_queue.as_ref());
-            eprintln!("skip: push_frame (AV1) failed ({e:?})");
+            eprintln!("skip: push_frame (HEVC CBR) failed ({e:?})");
             return;
         }
-        let packet = match enc.poll_packet() {
-            Ok(Some(p)) => p,
+        match enc.poll_packet() {
+            Ok(Some(p)) => assert!(!p.payload.is_empty(), "packet {i} payload is empty"),
             Ok(None) => {
-                eprintln!("skip: no packet after push_frame {i} (AV1)");
+                eprintln!("skip: no packet after push_frame {i} (HEVC CBR)");
                 return;
             }
             Err(e) => {
-                eprintln!("skip: poll_packet (AV1) failed ({e:?})");
+                eprintln!("skip: poll_packet (HEVC CBR) failed ({e:?})");
                 return;
             }
-        };
-        assert!(!packet.payload.is_empty(), "packet {i} payload is empty");
-        assert!(packet.is_keyframe, "packet {i} should be a key frame");
+        }
+    }
 
-        let types = obu_types(&packet.payload);
-        assert!(
-            types.contains(&2),
-            "packet {i} missing temporal delimiter OBU (type 2); found types {types:?}"
-        );
-        assert!(
-            types.contains(&1),
-            "packet {i} missing sequence header OBU (type 1); found types {types:?}"
-        );
-        assert!(
-            types.contains(&6),
-            "packet {i} missing frame OBU (type 6); found types {types:?}"
-        );
-        packets += 1;
+    let cbr_selected = match enc.set_bitrate(250_000) {
+        Ok(()) => true,
+        Err(e) => {
+            eprintln!("d3d12 hevc set_bitrate: {e:?} (fixed-QP fallback, expected)");
+            false
+        }
+    };
+
+    for i in 3..6i64 {
+        let frame = nv12_frame_sized(i, WIDTH_HEVC, HEIGHT_HEVC);
+        if let Err(e) = enc.push_frame(&frame) {
+            dump_d3d12_info_queue(info_queue.as_ref());
+            eprintln!("skip: push_frame after set_bitrate failed ({e:?})");
+            return;
+        }
+        match enc.poll_packet() {
+            Ok(Some(p)) => assert!(
+                !p.payload.is_empty(),
+                "post-set_bitrate packet {i} payload is empty"
+            ),
+            Ok(None) => {
+                eprintln!("skip: no packet after push_frame {i} (post-set_bitrate)");
+                return;
+            }
+            Err(e) => {
+                eprintln!("skip: poll_packet (post-set_bitrate) failed ({e:?})");
+                return;
+            }
+        }
     }
 
     enc.flush().expect("flush");
-    eprintln!("d3d12 native av1 encode ok: {packets} packets, all with real TD+SeqHdr+Frame OBUs");
-}
-
-/// Real, hardware-honest probe: does this machine's actual D3D12 driver advertise AV1
-/// video-encode support (`D3D12_FEATURE_VIDEO_ENCODER_CODEC` for
-/// `D3D12_VIDEO_ENCODER_CODEC_AV1`)? Kept alongside [`d3d12_native_av1_encode_or_skip`] as
-/// a cheap, isolated probe (no encoder session) for triage when that test skips. Never
-/// fails: both "supported" and "not supported" are informative, honest outcomes.
-#[test]
-fn d3d12_av1_encode_codec_probe() {
-    use windows::Win32::Media::MediaFoundation::{
-        D3D12_FEATURE_DATA_VIDEO_ENCODER_CODEC, D3D12_FEATURE_VIDEO_ENCODER_CODEC,
-        D3D12_VIDEO_ENCODER_CODEC_AV1, ID3D12VideoDevice3,
-    };
-    use windows::core::BOOL;
-
-    let Some(device) = open_real_d3d12_device() else {
-        return;
-    };
-    let Ok(video_device) = device.cast::<ID3D12VideoDevice3>() else {
-        eprintln!("skip: no ID3D12VideoDevice3 on this device");
-        return;
-    };
-
-    let mut support = D3D12_FEATURE_DATA_VIDEO_ENCODER_CODEC {
-        NodeIndex: 0,
-        Codec: D3D12_VIDEO_ENCODER_CODEC_AV1,
-        IsSupported: BOOL::default(),
-    };
-    // SAFETY: `support` is sized/typed exactly as `D3D12_FEATURE_VIDEO_ENCODER_CODEC` expects.
-    let hr = unsafe {
-        video_device.CheckFeatureSupport(
-            D3D12_FEATURE_VIDEO_ENCODER_CODEC,
-            std::ptr::from_mut(&mut support).cast(),
-            u32::try_from(std::mem::size_of::<D3D12_FEATURE_DATA_VIDEO_ENCODER_CODEC>())
-                .unwrap_or(u32::MAX),
-        )
-    };
-    match hr {
-        Ok(()) => eprintln!(
-            "d3d12 av1 encode codec probe: IsSupported={}",
-            support.IsSupported.as_bool()
-        ),
-        Err(e) => eprintln!("d3d12 av1 encode codec probe: CheckFeatureSupport failed ({e:?})"),
-    }
+    eprintln!(
+        "d3d12 native hevc CBR encode ok: cbr_selected={cbr_selected}, encoding kept working \
+         across set_bitrate"
+    );
 }

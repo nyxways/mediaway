@@ -54,6 +54,12 @@
   `VideoEncoderConfig::intra_refresh_period` — row-based intra refresh (unbounded
   GOP + continuous refresh waves instead of periodic IDR) for H.264/HEVC,
   capability-gated on the driver's real `MaxIntraRefreshFrameDuration` cap.
+- `mediaway-encoder`: `VideoEncoder::set_bitrate` — live CBR bitrate retargeting mid-session,
+  no reopen. Implemented for Vulkan H.264 and the D3D12 native backend's H.264/HEVC (still
+  self-contained, not wired into the public API), which also gains real, capability-gated
+  CBR rate control (`VideoEncoderConfig::rate_control`). Hardware-verified on a real RTX
+  4090: real CBR selected and `set_bitrate` accepted live for both codecs on D3D12 and for
+  H.264 on Vulkan.
 - `mediaway-decoder`: `AudioDecoder` trait, mirroring `VideoDecoder`
   (`adr/0003-audio-decoder-trait.md`). Implemented for the WMF Opus decoder
   (`windows::WmfOpusDecoder`) and `mediaway-sw`'s software Opus decoder

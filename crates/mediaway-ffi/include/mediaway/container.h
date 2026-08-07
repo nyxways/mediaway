@@ -28,7 +28,7 @@
 #ifndef MEDIAWAY_CONTAINER_H
 #define MEDIAWAY_CONTAINER_H
 
-#define MEDIAWAY_CONTAINER_FFI_ABI_VERSION 3 /* bump on any breaking change; pre-1.0, no stability promise */
+#define MEDIAWAY_CONTAINER_FFI_ABI_VERSION 4 /* bump on any breaking change; pre-1.0, no stability promise */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -58,6 +58,12 @@ typedef struct mediaway_ogg_demuxer mediaway_ogg_demuxer_t;
  * above: adts::Muxer has no track registration and no Open/Live typestate. */
 typedef struct mediaway_adts_muxer mediaway_adts_muxer_t;
 typedef struct mediaway_adts_demuxer mediaway_adts_demuxer_t;
+
+/* Dedicated FLV handles (adr/0005-flv-c-abi.md) -- flv::Muxer writes directly into a
+ * caller-supplied buffer on every call instead of buffering for a separate poll_bytes step,
+ * and has a fixed one-video/one-audio track slot instead of caller-assigned track ids. */
+typedef struct mediaway_flv_muxer mediaway_flv_muxer_t;
+typedef struct mediaway_flv_demuxer mediaway_flv_demuxer_t;
 
 /* ── Container format (adr/0003-multi-format-c-abi.md) ───────────────────────────── */
 
@@ -402,6 +408,77 @@ mediaway_status_t mediaway_adts_demuxer_poll_packet(mediaway_adts_demuxer_t *dem
 /* Close and free an ADTS demuxer handle. Always safe to call, including on a poisoned
  * handle. */
 void mediaway_adts_demuxer_close(mediaway_adts_demuxer_t *demuxer);
+
+/* ── FLV muxer/demuxer (adr/0005-flv-c-abi.md; requires `mux`/`demux` respectively) ─── */
+
+/* Create a new FLV mux session. Call mediaway_flv_muxer_write_header before any tag.
+ * Returns NULL only on a caught panic during construction. */
+mediaway_flv_muxer_t *mediaway_flv_muxer_create(void);
+
+/* Write the FLV file header, declaring whether audio/video tags follow. Unlike
+ * mediaway_muxer_poll_bytes, this writes its output directly rather than buffering
+ * internally -- the returned buffer holds exactly the header bytes from this call. Release
+ * with mediaway_buffer_free. */
+mediaway_status_t mediaway_flv_muxer_write_header(mediaway_flv_muxer_t *muxer, bool has_audio,
+                                                   bool has_video, uint8_t **out_data,
+                                                   size_t *out_len);
+
+/* Register the video track. FLV has exactly one video slot (no track-id field in the
+ * format itself) -- info->id is ignored; video/audio are distinguished by which
+ * add_*_track function was called, matching mediaway_flv_demuxer_t's fixed stream ids.
+ * Only H264 is a recognized video codec (MEDIAWAY_STATUS_UNSUPPORTED_CODEC otherwise). */
+mediaway_status_t mediaway_flv_muxer_add_video_track(mediaway_flv_muxer_t *muxer,
+                                                      const mediaway_video_track_info_t *info);
+
+/* Register the audio track. FLV has exactly one audio slot -- same info->id-ignored
+ * reasoning as add_video_track. AAC and MP3 are the recognized audio codecs
+ * (MEDIAWAY_STATUS_UNSUPPORTED_CODEC otherwise). */
+mediaway_status_t mediaway_flv_muxer_add_audio_track(mediaway_flv_muxer_t *muxer,
+                                                      const mediaway_audio_track_info_t *info);
+
+/* Mux one packet. Writes the track's sequence-header tag first (once, only for codecs
+ * that have one) then the data tag, directly into a freshly allocated output buffer -- no
+ * separate poll step. packet->stream_id selects video (0) vs. audio (1) and must have a
+ * matching add_*_track call already made, else MEDIAWAY_STATUS_UNKNOWN_STREAM. Release the
+ * buffer with mediaway_buffer_free. */
+mediaway_status_t mediaway_flv_muxer_push_packet(mediaway_flv_muxer_t *muxer,
+                                                  const mediaway_packet_view_t *packet,
+                                                  uint8_t **out_data, size_t *out_len);
+
+/* Close and free an FLV muxer handle. Always safe to call, including on a poisoned
+ * handle. */
+void mediaway_flv_muxer_close(mediaway_flv_muxer_t *muxer);
+
+/* Create a new, empty FLV demuxer. Returns NULL only on a caught panic during
+ * construction. */
+mediaway_flv_demuxer_t *mediaway_flv_demuxer_create(void);
+
+/* Feed FLV-container bytes into the demuxer. `data` is a borrowed buffer, valid for the
+ * call only. */
+mediaway_status_t mediaway_flv_demuxer_push_bytes(mediaway_flv_demuxer_t *demuxer,
+                                                    const uint8_t *data, size_t len);
+
+/* Number of streams recognized so far -- 0, 1, or 2 (fixed video-then-audio slots).
+ * Read-only; returns 0 on a null/poisoned handle or a caught panic. */
+size_t mediaway_flv_demuxer_stream_count(const mediaway_flv_demuxer_t *demuxer);
+
+/* Get stream info by index. On success, release *out_info with
+ * mediaway_stream_info_free. */
+mediaway_status_t mediaway_flv_demuxer_stream_at(const mediaway_flv_demuxer_t *demuxer,
+                                                  size_t index,
+                                                  mediaway_stream_info_t *out_info);
+
+/* Pop the next demuxed packet, if any is ready. Sequence-header tags (AVC/AAC config)
+ * update the matching stream's extra_data internally and are not themselves returned as
+ * packets. *out_has_packet == false is a valid "nothing ready" result, not an error. When
+ * true, release *out_packet with mediaway_packet_free. */
+mediaway_status_t mediaway_flv_demuxer_poll_packet(mediaway_flv_demuxer_t *demuxer,
+                                                    mediaway_packet_t *out_packet,
+                                                    bool *out_has_packet);
+
+/* Close and free an FLV demuxer handle. Always safe to call, including on a poisoned
+ * handle. */
+void mediaway_flv_demuxer_close(mediaway_flv_demuxer_t *demuxer);
 
 /* ── Shared frees ────────────────────────────────────────────────────────────────── */
 

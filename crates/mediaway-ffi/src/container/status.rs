@@ -1,6 +1,6 @@
 //! C ABI status codes (`mediaway_status_t`).
 
-use mediaway_container::{adts, mp4, ogg, webm};
+use mediaway_container::{adts, flv, mp4, ogg, webm};
 
 /// C ABI status code returned by fallible `mediaway-container-ffi` functions.
 ///
@@ -81,6 +81,18 @@ impl From<adts::Error> for MediawayStatus {
             adts::Error::FrameTooLarge(_) => Self::InvalidPacket,
             // UnsupportedSampleRate/BadSync/UnsupportedSamplingFrequencyIndex, plus any
             // future non-exhaustive variant.
+            _ => Self::InvalidData,
+        }
+    }
+}
+
+impl From<flv::Error> for MediawayStatus {
+    fn from(err: flv::Error) -> Self {
+        match err {
+            flv::Error::UnsupportedCodec(_) => Self::UnsupportedCodec,
+            flv::Error::UnregisteredStream(_) => Self::UnknownStream,
+            // Tag(flv_core::Error) (bad signature, oversized tag data, a tag written
+            // before the file header, ...), plus any future non-exhaustive variant.
             _ => Self::InvalidData,
         }
     }

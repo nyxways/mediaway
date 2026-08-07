@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Rust **stable** matching [`rust-toolchain.toml`](../../rust-toolchain.toml) (MSRV **1.85**, edition **2024**)
+- Rust **stable** matching [`rust-toolchain.toml`](../../rust-toolchain.toml) (MSRV **1.91**, edition **2024**)
 - Git
 - On Windows: a bash-capable environment for lefthook scripts (Git Bash is fine)
 - Optional: [Bun](https://bun.sh) when working on `tools/scripts/` ([`scripts.md`](../conventions/scripts.md))

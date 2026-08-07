@@ -87,7 +87,7 @@ shape was replaced (capability probe, `AutoHardwareOnly`, ceiling-not-bitflags).
 - **AMF** → `mediaway-encoder::amf` adr/0001: **deferred**, not just
   unverified — `amf-rs` on crates.io is a *different*, unrelated GPL-3.0
   crate (real bindings are `shiguredo_amf`, Apache-2.0); `shiguredo_amf`
-  needs Rust 1.93, this workspace pins 1.85 (hard MSRV block); no AMD GPU
+  needs Rust 1.93, this workspace pins 1.91 (hard MSRV block); no AMD GPU
   available either.
 - **Vulkan Video** doesn't fit `GraphicsApi` or `VendorHw` cleanly — it's
   cross-vendor (unlike `VendorHw`) but packaged like a vendor crate

@@ -4,11 +4,11 @@
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use mediaway_container::mp4;
+use mediaway_container::{Demux, mp4, webm};
 
 use crate::container::buffer::{borrow_slice, leak_boxed_slice};
 use crate::container::status::MediawayStatus;
-use crate::container::types::{MediawayPacket, MediawayStreamInfo};
+use crate::container::types::{MediawayContainerFormat, MediawayPacket, MediawayStreamInfo};
 
 /// Opaque demuxer handle (`mediaway_demuxer_t*` in the C header).
 ///
@@ -16,10 +16,37 @@ use crate::container::types::{MediawayPacket, MediawayStreamInfo};
 /// two threads concurrently without external synchronization.
 pub struct DemuxerHandle {
     poisoned: bool,
-    inner: mp4::Demuxer,
+    inner: DemuxerState,
 }
 
-/// Create a new, empty demuxer.
+/// One variant per format `mediaway_demuxer_create_for_format` can open — see
+/// `adr/0003-multi-format-c-abi.md`.
+enum DemuxerState {
+    Mp4(mp4::Demuxer),
+    Webm(webm::Demuxer),
+}
+
+impl DemuxerState {
+    /// Both variants implement [`Demux`] identically (`push_bytes`/`streams`/
+    /// `poll_packet`) — a trait object here avoids duplicating those 3 functions' bodies
+    /// per format, unlike the muxer side (`MuxerState`) where `add_track`/`begin` aren't
+    /// part of any shared trait and genuinely need one match arm per variant.
+    fn as_demux_mut(&mut self) -> &mut dyn Demux {
+        match self {
+            Self::Mp4(d) => d,
+            Self::Webm(d) => d,
+        }
+    }
+
+    fn as_demux(&self) -> &dyn Demux {
+        match self {
+            Self::Mp4(d) => d,
+            Self::Webm(d) => d,
+        }
+    }
+}
+
+/// Create a new, empty MP4 demuxer.
 ///
 /// Returns null only if a panic was caught during construction (defensive;
 /// `mp4::Demuxer::new()` is simple enough that this should not trigger in practice).
@@ -27,7 +54,30 @@ pub struct DemuxerHandle {
 pub extern "C" fn mediaway_demuxer_create() -> *mut DemuxerHandle {
     let built = catch_unwind(AssertUnwindSafe(|| DemuxerHandle {
         poisoned: false,
-        inner: mp4::Demuxer::new(),
+        inner: DemuxerState::Mp4(mp4::Demuxer::new()),
+    }));
+    built.map_or(std::ptr::null_mut(), |handle| {
+        Box::into_raw(Box::new(handle))
+    })
+}
+
+/// Create a new, empty demuxer for `format`.
+///
+/// A new function rather than a `format` parameter on [`mediaway_demuxer_create`] — see
+/// [`crate::container::mediaway_muxer_create_for_format`]'s doc comment for why.
+///
+/// Returns null for an unrecognized `format` value or if a panic was caught during
+/// construction.
+#[unsafe(no_mangle)]
+pub extern "C" fn mediaway_demuxer_create_for_format(
+    format: MediawayContainerFormat,
+) -> *mut DemuxerHandle {
+    let built = catch_unwind(AssertUnwindSafe(|| DemuxerHandle {
+        poisoned: false,
+        inner: match format {
+            MediawayContainerFormat::Mp4 => DemuxerState::Mp4(mp4::Demuxer::new()),
+            MediawayContainerFormat::Webm => DemuxerState::Webm(webm::Demuxer::new()),
+        },
     }));
     built.map_or(std::ptr::null_mut(), |handle| {
         Box::into_raw(Box::new(handle))
@@ -63,7 +113,7 @@ pub unsafe extern "C" fn mediaway_demuxer_push_bytes(
     };
 
     let result = catch_unwind(AssertUnwindSafe(|| {
-        handle.inner.push_bytes(chunk);
+        handle.inner.as_demux_mut().push_bytes(chunk);
     }));
 
     if result.is_ok() {
@@ -94,7 +144,7 @@ pub unsafe extern "C" fn mediaway_demuxer_stream_count(demuxer: *const DemuxerHa
     if handle.poisoned {
         return 0;
     }
-    catch_unwind(AssertUnwindSafe(|| handle.inner.streams().len())).unwrap_or(0)
+    catch_unwind(AssertUnwindSafe(|| handle.inner.as_demux().streams().len())).unwrap_or(0)
 }
 
 /// Get stream/track info by index.
@@ -121,7 +171,7 @@ pub unsafe extern "C" fn mediaway_demuxer_stream_at(
     }
 
     let result = catch_unwind(AssertUnwindSafe(|| {
-        let Some(stream) = handle.inner.streams().get(index) else {
+        let Some(stream) = handle.inner.as_demux().streams().get(index) else {
             return Err(MediawayStatus::InvalidArgument);
         };
         let geometry = stream.geometry();
@@ -182,7 +232,7 @@ pub unsafe extern "C" fn mediaway_demuxer_poll_packet(
     }
 
     let result = catch_unwind(AssertUnwindSafe(|| {
-        handle.inner.poll_packet().map(|packet| {
+        handle.inner.as_demux_mut().poll_packet().map(|packet| {
             let (payload, payload_len) = leak_boxed_slice(packet.payload.to_vec());
             MediawayPacket {
                 stream_id: packet.stream_id,
@@ -220,6 +270,9 @@ pub unsafe extern "C" fn mediaway_demuxer_poll_packet(
 }
 
 /// Set the `ClearKey` decryption key applied to all encrypted tracks on this demuxer.
+///
+/// **MP4 only** — `WebM` has no CENC/`ClearKey` support in this crate; returns
+/// [`MediawayStatus::InvalidState`] on a WebM-backed handle (`adr/0003-multi-format-c-abi.md`).
 ///
 /// One demuxer-wide key, no track/KID scoping (`adr/0002-clearkey-decrypt-and-fragment-batch-c-abi.md`
 /// §1): `iso_bmff::Demuxer` never compares this key against a track's parsed KID, so
@@ -259,20 +312,28 @@ pub unsafe extern "C" fn mediaway_demuxer_set_decryption_key(
         return MediawayStatus::InvalidArgument;
     };
 
-    let result = catch_unwind(AssertUnwindSafe(|| {
-        handle.inner.set_decryption_key(key_arr);
+    let result = catch_unwind(AssertUnwindSafe(|| match &mut handle.inner {
+        DemuxerState::Mp4(d) => {
+            d.set_decryption_key(key_arr);
+            Ok(())
+        }
+        DemuxerState::Webm(_) => Err(MediawayStatus::InvalidState),
     }));
 
-    if result.is_ok() {
-        MediawayStatus::Ok
-    } else {
-        handle.poisoned = true;
-        MediawayStatus::InternalPanic
+    match result {
+        Ok(Ok(())) => MediawayStatus::Ok,
+        Ok(Err(status)) => status,
+        Err(_) => {
+            handle.poisoned = true;
+            MediawayStatus::InternalPanic
+        }
     }
 }
 
 /// Clear a previously set `ClearKey` decryption key, so subsequent encrypted samples are no
 /// longer decrypted.
+///
+/// **MP4 only** — see [`mediaway_demuxer_set_decryption_key`].
 ///
 /// Same timing contract as [`mediaway_demuxer_set_decryption_key`]: only affects samples
 /// drained from *subsequent* `push_bytes` calls.
@@ -294,15 +355,21 @@ pub unsafe extern "C" fn mediaway_demuxer_clear_decryption_key(
         return MediawayStatus::HandlePoisoned;
     }
 
-    let result = catch_unwind(AssertUnwindSafe(|| {
-        handle.inner.clear_decryption_key();
+    let result = catch_unwind(AssertUnwindSafe(|| match &mut handle.inner {
+        DemuxerState::Mp4(d) => {
+            d.clear_decryption_key();
+            Ok(())
+        }
+        DemuxerState::Webm(_) => Err(MediawayStatus::InvalidState),
     }));
 
-    if result.is_ok() {
-        MediawayStatus::Ok
-    } else {
-        handle.poisoned = true;
-        MediawayStatus::InternalPanic
+    match result {
+        Ok(Ok(())) => MediawayStatus::Ok,
+        Ok(Err(status)) => status,
+        Err(_) => {
+            handle.poisoned = true;
+            MediawayStatus::InternalPanic
+        }
     }
 }
 

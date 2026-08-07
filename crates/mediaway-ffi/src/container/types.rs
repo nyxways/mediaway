@@ -14,6 +14,26 @@ pub type MediawayCodecKind = crate::common::types::CodecKind;
 /// Rational timebase (`num / den`, seconds) — see `common::types::Rational`.
 pub type MediawayRational = crate::common::types::Rational;
 
+/// Which container format [`crate::container::mediaway_muxer_create_for_format`]/
+/// [`crate::container::mediaway_demuxer_create_for_format`] open.
+///
+/// Only formats sharing MP4's multi-track, typestated (`Open`→`Live`)
+/// `add_video_track`/`add_audio_track`/`begin`/`push_packet`/`poll_bytes`/`flush` shape are
+/// listed here — Ogg/ADTS (single implicit stream, no track registration) get their own
+/// dedicated handle types (`mediaway_ogg_muxer_t`/`mediaway_adts_muxer_t`); FLV/MPEG-TS/MP3/
+/// WAV have genuinely incompatible method shapes (see `adr/0003-multi-format-c-abi.md` §
+/// Deferred) and are not reachable through this enum at all yet.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediawayContainerFormat {
+    /// ISOBMFF / fragmented MP4 (`mediaway_container::mp4`) — the only format
+    /// [`crate::container::mediaway_muxer_create`]/[`crate::container::mediaway_demuxer_create`]
+    /// (no `_for_format` suffix) ever open.
+    Mp4 = 0,
+    /// `WebM` (`mediaway_container::webm`).
+    Webm = 1,
+}
+
 /// Input to [`crate::container::mediaway_muxer_add_video_track`] — caller-owned, valid for the call only.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]

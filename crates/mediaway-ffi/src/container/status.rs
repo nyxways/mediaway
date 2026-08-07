@@ -1,13 +1,16 @@
 //! C ABI status codes (`mediaway_status_t`).
 
-use mediaway_container::mp4;
+use mediaway_container::{adts, mp4, ogg, webm};
 
 /// C ABI status code returned by fallible `mediaway-container-ffi` functions.
 ///
 /// `InvalidArgument`/`InvalidState` are FFI-layer inventions — the wrapped Rust API
-/// represents both as compile-time impossibilities. Everything else maps onto
-/// [`mp4::Error`] (`#[non_exhaustive]`, hence [`Self::UnknownError`] as a catch-all).
-/// See `adr/0001-mp4-mux-demux-c-abi.md` §2.
+/// represents both as compile-time impossibilities. Everything else maps onto each
+/// format's own `#[non_exhaustive]` error enum (hence [`Self::UnknownError`] as a shared
+/// catch-all across all of them — one status enum for every format this crate wraps, not
+/// a per-format one, since they all plug into the same `mediaway_muxer_t`/
+/// `mediaway_demuxer_t`-family handles). See `adr/0001-mp4-mux-demux-c-abi.md` §2 and
+/// `adr/0003-multi-format-c-abi.md`.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediawayStatus {
@@ -24,12 +27,19 @@ pub enum MediawayStatus {
     InvalidPacket = 4,
     /// [`mp4::Error::InvalidData`].
     InvalidData = 5,
-    /// `mp4::Error` is `#[non_exhaustive]`; catch-all for a future variant.
+    /// Any wrapped format's error type is `#[non_exhaustive]`; catch-all for a variant
+    /// this enum has no dedicated slot for.
     UnknownError = 6,
     /// This call caught a Rust panic; the handle is now poisoned.
     InternalPanic = 7,
     /// A previous call already poisoned this handle; the call was refused.
     HandlePoisoned = 8,
+    /// A track's codec has no encoding in the requested container format (e.g.
+    /// [`webm::Error::UnsupportedCodec`]) — a real, expected rejection, not a bug.
+    UnsupportedCodec = 9,
+    /// `push_packet`'s `stream_id` doesn't match any registered track (e.g.
+    /// [`webm::Error::UnknownStream`]).
+    UnknownStream = 10,
 }
 
 impl From<mp4::Error> for MediawayStatus {
@@ -39,6 +49,39 @@ impl From<mp4::Error> for MediawayStatus {
             mp4::Error::InvalidPacket => Self::InvalidPacket,
             mp4::Error::InvalidData => Self::InvalidData,
             _ => Self::UnknownError,
+        }
+    }
+}
+
+impl From<webm::Error> for MediawayStatus {
+    fn from(err: webm::Error) -> Self {
+        match err {
+            webm::Error::UnsupportedCodec(_) => Self::UnsupportedCodec,
+            webm::Error::UnknownStream(_) => Self::UnknownStream,
+            // Mux(ebml_webm::MuxError), plus any future non-exhaustive variant.
+            _ => Self::InvalidData,
+        }
+    }
+}
+
+impl From<ogg::Error> for MediawayStatus {
+    fn from(_err: ogg::Error) -> Self {
+        // ogg_core::Error is framing-level (bad capture pattern, CRC mismatch, oversized
+        // packet, ...) — none of it maps to this enum's MP4-shaped
+        // InvalidTrack/InvalidPacket distinction, so every variant collapses to
+        // InvalidData (malformed/unrepresentable container data), matching how mp4::Error's
+        // own non-exhaustive tail already collapses to a single bucket above.
+        Self::InvalidData
+    }
+}
+
+impl From<adts::Error> for MediawayStatus {
+    fn from(err: adts::Error) -> Self {
+        match err {
+            adts::Error::FrameTooLarge(_) => Self::InvalidPacket,
+            // UnsupportedSampleRate/BadSync/UnsupportedSamplingFrequencyIndex, plus any
+            // future non-exhaustive variant.
+            _ => Self::InvalidData,
         }
     }
 }

@@ -6,11 +6,13 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use mediaway_common::{Bytes, Packet, StreamInfo, VideoGeometry};
-use mediaway_container::mp4;
+use mediaway_container::{mp4, webm};
 
 use crate::container::buffer::{borrow_slice, leak_boxed_slice};
 use crate::container::status::MediawayStatus;
-use crate::container::types::{MediawayAudioTrackInfo, MediawayPacketView, MediawayVideoTrackInfo};
+use crate::container::types::{
+    MediawayAudioTrackInfo, MediawayContainerFormat, MediawayPacketView, MediawayVideoTrackInfo,
+};
 
 /// Opaque muxer handle (`mediaway_muxer_t*` in the C header).
 ///
@@ -21,12 +23,19 @@ pub struct MuxerHandle {
     state: MuxerState,
 }
 
+/// One variant pair per format `mediaway_muxer_create_for_format` can open — see
+/// `adr/0003-multi-format-c-abi.md`. `Mp4`/`Webm` share the same typestated
+/// `add_track`/`begin`/[`mediaway_container::Mux`] shape, so every function below is one
+/// match per variant rather than a generic dispatch (there is no trait spanning the `Open`
+/// *and* `Live` halves — see that ADR for why forcing one would be a worse fit than this).
 enum MuxerState {
-    Open(mp4::mux::Muxer<mp4::mux::Open>),
-    Live(mp4::mux::Muxer<mp4::mux::Live>),
+    Mp4Open(mp4::mux::Muxer<mp4::mux::Open>),
+    Mp4Live(mp4::mux::Muxer<mp4::mux::Live>),
+    WebmOpen(webm::Muxer<webm::Open>),
+    WebmLive(webm::Muxer<webm::Live>),
 }
 
-/// Create a new muxer in the track-registration (`Open`) state.
+/// Create a new MP4 muxer in the track-registration (`Open`) state.
 ///
 /// Returns null only if a panic was caught during construction (defensive;
 /// `mp4::mux::Muxer::new()` is simple enough that this should not trigger in practice).
@@ -34,7 +43,32 @@ enum MuxerState {
 pub extern "C" fn mediaway_muxer_create() -> *mut MuxerHandle {
     let built = catch_unwind(AssertUnwindSafe(|| MuxerHandle {
         poisoned: false,
-        state: MuxerState::Open(mp4::mux::Muxer::new()),
+        state: MuxerState::Mp4Open(mp4::mux::Muxer::new()),
+    }));
+    built.map_or(std::ptr::null_mut(), |handle| {
+        Box::into_raw(Box::new(handle))
+    })
+}
+
+/// Create a new muxer in the track-registration (`Open`) state for `format`.
+///
+/// A new function rather than a `format` parameter on [`mediaway_muxer_create`] — adding a
+/// parameter to an already-shipped zero-argument C function would silently break every
+/// existing binding's `mediaway_muxer_create()` call at the ABI level, not just source
+/// (same reasoning `mediaway_muxer_create_with_fragment_batch` already established).
+///
+/// Returns null for an unrecognized `format` value or if a panic was caught during
+/// construction.
+#[unsafe(no_mangle)]
+pub extern "C" fn mediaway_muxer_create_for_format(
+    format: MediawayContainerFormat,
+) -> *mut MuxerHandle {
+    let built = catch_unwind(AssertUnwindSafe(|| MuxerHandle {
+        poisoned: false,
+        state: match format {
+            MediawayContainerFormat::Mp4 => MuxerState::Mp4Open(mp4::mux::Muxer::new()),
+            MediawayContainerFormat::Webm => MuxerState::WebmOpen(webm::Muxer::default()),
+        },
     }));
     built.map_or(std::ptr::null_mut(), |handle| {
         Box::into_raw(Box::new(handle))
@@ -57,7 +91,7 @@ pub extern "C" fn mediaway_muxer_create() -> *mut MuxerHandle {
 pub extern "C" fn mediaway_muxer_create_with_fragment_batch(batch: usize) -> *mut MuxerHandle {
     let built = catch_unwind(AssertUnwindSafe(|| MuxerHandle {
         poisoned: false,
-        state: MuxerState::Open(mp4::mux::Muxer::with_fragment_batch(batch)),
+        state: MuxerState::Mp4Open(mp4::mux::Muxer::with_fragment_batch(batch)),
     }));
     built.map_or(std::ptr::null_mut(), |handle| {
         Box::into_raw(Box::new(handle))
@@ -93,23 +127,26 @@ pub unsafe extern "C" fn mediaway_muxer_add_video_track(
         return MediawayStatus::InvalidArgument;
     };
 
-    let result = catch_unwind(AssertUnwindSafe(|| {
-        let MuxerState::Open(open) = &mut handle.state else {
-            return Err(MediawayStatus::InvalidState);
-        };
-        let track = StreamInfo::Video {
-            id: info.id,
-            codec: info.codec.into(),
-            time_base: info.time_base.into(),
-            geometry: VideoGeometry {
-                width: info.width,
-                height: info.height,
-            },
-            extra_data: Bytes::copy_from_slice(extra_data),
-        };
-        open.add_track(track)
+    let track = StreamInfo::Video {
+        id: info.id,
+        codec: info.codec.into(),
+        time_base: info.time_base.into(),
+        geometry: VideoGeometry {
+            width: info.width,
+            height: info.height,
+        },
+        extra_data: Bytes::copy_from_slice(extra_data),
+    };
+    let result = catch_unwind(AssertUnwindSafe(|| match &mut handle.state {
+        MuxerState::Mp4Open(open) => open
+            .add_track(track)
             .map(|_id| ())
-            .map_err(MediawayStatus::from)
+            .map_err(MediawayStatus::from),
+        MuxerState::WebmOpen(open) => open
+            .add_track(track)
+            .map(|_id| ())
+            .map_err(MediawayStatus::from),
+        MuxerState::Mp4Live(_) | MuxerState::WebmLive(_) => Err(MediawayStatus::InvalidState),
     }));
 
     match result {
@@ -148,21 +185,24 @@ pub unsafe extern "C" fn mediaway_muxer_add_audio_track(
         return MediawayStatus::InvalidArgument;
     };
 
-    let result = catch_unwind(AssertUnwindSafe(|| {
-        let MuxerState::Open(open) = &mut handle.state else {
-            return Err(MediawayStatus::InvalidState);
-        };
-        let track = StreamInfo::Audio {
-            id: info.id,
-            codec: info.codec.into(),
-            time_base: info.time_base.into(),
-            extra_data: Bytes::copy_from_slice(extra_data),
-            sample_rate: info.sample_rate,
-            channels: info.channels,
-        };
-        open.add_track(track)
+    let track = StreamInfo::Audio {
+        id: info.id,
+        codec: info.codec.into(),
+        time_base: info.time_base.into(),
+        extra_data: Bytes::copy_from_slice(extra_data),
+        sample_rate: info.sample_rate,
+        channels: info.channels,
+    };
+    let result = catch_unwind(AssertUnwindSafe(|| match &mut handle.state {
+        MuxerState::Mp4Open(open) => open
+            .add_track(track)
             .map(|_id| ())
-            .map_err(MediawayStatus::from)
+            .map_err(MediawayStatus::from),
+        MuxerState::WebmOpen(open) => open
+            .add_track(track)
+            .map(|_id| ())
+            .map_err(MediawayStatus::from),
+        MuxerState::Mp4Live(_) | MuxerState::WebmLive(_) => Err(MediawayStatus::InvalidState),
     }));
 
     match result {
@@ -192,11 +232,19 @@ pub unsafe extern "C" fn mediaway_muxer_begin(muxer: *mut MuxerHandle) -> Mediaw
     }
 
     let result = catch_unwind(AssertUnwindSafe(|| {
-        let MuxerState::Open(open) = &mut handle.state else {
-            return Err(MediawayStatus::InvalidState);
-        };
-        let owned = std::mem::take(open);
-        handle.state = MuxerState::Live(owned.begin());
+        match &mut handle.state {
+            MuxerState::Mp4Open(open) => {
+                let owned = std::mem::take(open);
+                handle.state = MuxerState::Mp4Live(owned.begin());
+            }
+            MuxerState::WebmOpen(open) => {
+                let owned = std::mem::take(open);
+                handle.state = MuxerState::WebmLive(owned.begin());
+            }
+            MuxerState::Mp4Live(_) | MuxerState::WebmLive(_) => {
+                return Err(MediawayStatus::InvalidState);
+            }
+        }
         Ok(())
     }));
 
@@ -238,20 +286,19 @@ pub unsafe extern "C" fn mediaway_muxer_push_packet(
         return MediawayStatus::InvalidArgument;
     };
 
-    let result = catch_unwind(AssertUnwindSafe(|| {
-        let MuxerState::Live(live) = &mut handle.state else {
-            return Err(MediawayStatus::InvalidState);
-        };
-        let packet = Packet {
-            stream_id: view.stream_id,
-            pts: view.pts,
-            dts: view.dts,
-            duration: view.duration,
-            is_keyframe: view.is_keyframe,
-            is_discard: view.is_discard,
-            payload: Bytes::copy_from_slice(payload),
-        };
-        live.push_packet(&packet).map_err(MediawayStatus::from)
+    let packet = Packet {
+        stream_id: view.stream_id,
+        pts: view.pts,
+        dts: view.dts,
+        duration: view.duration,
+        is_keyframe: view.is_keyframe,
+        is_discard: view.is_discard,
+        payload: Bytes::copy_from_slice(payload),
+    };
+    let result = catch_unwind(AssertUnwindSafe(|| match &mut handle.state {
+        MuxerState::Mp4Live(live) => live.push_packet(&packet).map_err(MediawayStatus::from),
+        MuxerState::WebmLive(live) => live.push_packet(&packet).map_err(MediawayStatus::from),
+        MuxerState::Mp4Open(_) | MuxerState::WebmOpen(_) => Err(MediawayStatus::InvalidState),
     }));
 
     match result {
@@ -282,10 +329,13 @@ pub unsafe extern "C" fn mediaway_muxer_flush(muxer: *mut MuxerHandle) -> Mediaw
     }
 
     let result = catch_unwind(AssertUnwindSafe(|| {
-        let MuxerState::Live(live) = &mut handle.state else {
-            return Err(MediawayStatus::InvalidState);
-        };
-        live.flush();
+        match &mut handle.state {
+            MuxerState::Mp4Live(live) => live.flush(),
+            MuxerState::WebmLive(live) => live.flush(),
+            MuxerState::Mp4Open(_) | MuxerState::WebmOpen(_) => {
+                return Err(MediawayStatus::InvalidState);
+            }
+        }
         Ok(())
     }));
 
@@ -324,11 +374,18 @@ pub unsafe extern "C" fn mediaway_muxer_poll_bytes(
     }
 
     let result = catch_unwind(AssertUnwindSafe(|| {
-        let MuxerState::Live(live) = &mut handle.state else {
-            return Err(MediawayStatus::InvalidState);
-        };
         let mut buf = Vec::new();
-        live.poll_bytes(&mut buf);
+        match &mut handle.state {
+            MuxerState::Mp4Live(live) => {
+                live.poll_bytes(&mut buf);
+            }
+            MuxerState::WebmLive(live) => {
+                live.poll_bytes(&mut buf);
+            }
+            MuxerState::Mp4Open(_) | MuxerState::WebmOpen(_) => {
+                return Err(MediawayStatus::InvalidState);
+            }
+        }
         Ok(buf)
     }));
 

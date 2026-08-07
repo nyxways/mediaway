@@ -28,7 +28,7 @@
 #ifndef MEDIAWAY_CONTAINER_H
 #define MEDIAWAY_CONTAINER_H
 
-#define MEDIAWAY_CONTAINER_FFI_ABI_VERSION 0 /* bump on any breaking change; pre-1.0, no stability promise */
+#define MEDIAWAY_CONTAINER_FFI_ABI_VERSION 1 /* bump on any breaking change; pre-1.0, no stability promise */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -47,6 +47,21 @@ extern "C" {
 typedef struct mediaway_muxer mediaway_muxer_t;
 typedef struct mediaway_demuxer mediaway_demuxer_t;
 
+/* ── Container format (adr/0003-multi-format-c-abi.md) ───────────────────────────── */
+
+/* Which format mediaway_muxer_create_for_format/mediaway_demuxer_create_for_format open.
+ * Only formats sharing MP4's multi-track, typestated (Open -> Live)
+ * add_video_track/add_audio_track/begin/push_packet/poll_bytes/flush shape are listed
+ * here. Ogg/ADTS (single implicit stream, no track registration) and FLV/MPEG-TS/MP3/WAV
+ * (genuinely incompatible method shapes) are not reachable through this enum — see the
+ * ADR's "Deferred" section. */
+typedef enum mediaway_container_format {
+    MEDIAWAY_CONTAINER_FORMAT_MP4 = 0,  /* the only format mediaway_muxer_create/
+                                          * mediaway_demuxer_create (no _for_format suffix)
+                                          * ever open */
+    MEDIAWAY_CONTAINER_FORMAT_WEBM = 1,
+} mediaway_container_format_t;
+
 /* ── Status codes ────────────────────────────────────────────────────────────────── */
 
 typedef enum mediaway_status {
@@ -59,6 +74,8 @@ typedef enum mediaway_status {
     MEDIAWAY_STATUS_UNKNOWN_ERROR = 6,    /* reserved for a future error variant */
     MEDIAWAY_STATUS_INTERNAL_PANIC = 7,   /* this call caught a Rust panic; the handle is now poisoned */
     MEDIAWAY_STATUS_HANDLE_POISONED = 8,  /* a previous call already poisoned this handle; call refused */
+    MEDIAWAY_STATUS_UNSUPPORTED_CODEC = 9, /* track's codec has no encoding in the requested format */
+    MEDIAWAY_STATUS_UNKNOWN_STREAM = 10,   /* push_packet's stream_id matches no registered track */
 } mediaway_status_t;
 
 /* ── Shared value types ──────────────────────────────────────────────────────────── */
@@ -78,6 +95,7 @@ typedef enum mediaway_codec_kind {
     MEDIAWAY_CODEC_TX3G = 9,
     MEDIAWAY_CODEC_RAW_VIDEO = 10,
     MEDIAWAY_CODEC_RAW_AUDIO = 11,
+    MEDIAWAY_CODEC_VP8 = 12,
 } mediaway_codec_kind_t; /* pre-1.0 — values may be renumbered */
 
 /* Input to mediaway_muxer_add_video_track — borrowed extra_data, valid for the call only. */
@@ -153,6 +171,12 @@ uint32_t mediaway_container_ffi_abi_version(void);
  * panic during construction (defensive; should not happen in practice). */
 mediaway_muxer_t *mediaway_muxer_create(void);
 
+/* Create a muxer in the track-registration (Open) state for `format`. A separate function
+ * rather than a parameter on mediaway_muxer_create — adding one to an already-shipped
+ * zero-argument function would silently break every existing binding's call at the ABI
+ * level, not just source. Returns NULL for an unrecognized format or a caught panic. */
+mediaway_muxer_t *mediaway_muxer_create_for_format(mediaway_container_format_t format);
+
 /* Create a muxer in the track-registration (Open) state with a custom samples-per-fragment
  * batch size. batch == 0 is NOT rejected: it is passed straight through to the core, which
  * clamps it to 1 itself, so there is no diagnostic for a caller passing 0 by mistake.
@@ -193,6 +217,11 @@ void mediaway_muxer_close(mediaway_muxer_t *muxer);
 /* Create a new, empty demuxer. Returns NULL only on a caught panic during construction. */
 mediaway_demuxer_t *mediaway_demuxer_create(void);
 
+/* Create a new, empty demuxer for `format` — see mediaway_muxer_create_for_format's doc
+ * comment for why this is a separate function. Returns NULL for an unrecognized format or
+ * a caught panic. */
+mediaway_demuxer_t *mediaway_demuxer_create_for_format(mediaway_container_format_t format);
+
 /* Feed container bytes into the demuxer. `data` is a borrowed buffer, valid for the call
  * only; the core copies it synchronously before returning. */
 mediaway_status_t mediaway_demuxer_push_bytes(mediaway_demuxer_t *demuxer, const uint8_t *data,
@@ -214,7 +243,9 @@ mediaway_status_t mediaway_demuxer_poll_packet(mediaway_demuxer_t *demuxer,
                                                 mediaway_packet_t *out_packet,
                                                 bool *out_has_packet);
 
-/* Set the ClearKey decryption key applied to ALL encrypted tracks on this demuxer. One
+/* Set the ClearKey decryption key applied to ALL encrypted tracks on this demuxer. MP4
+ * only -- a WebM-backed demuxer has no CENC/ClearKey support and returns
+ * MEDIAWAY_STATUS_INVALID_STATE (adr/0003-multi-format-c-abi.md). One
  * demuxer-wide key, no per-track/KID scoping: a key that is wrong for even one track in
  * multi-KID content -- or no key set at all -- silently yields garbage or raw-ciphertext
  * sample payloads marked as ordinary (non-discarded) packets, not an error. Timing

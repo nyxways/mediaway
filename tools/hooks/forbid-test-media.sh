@@ -12,6 +12,13 @@ while IFS= read -r file; do
     [[ -z "$file" ]] && continue
     # Normalize for matching
     lower=$(printf '%s' "$file" | tr '[:upper:]' '[:lower:]')
+    # Package-icon exception: NuGet/npm/UPM package icons are real, small, non-test
+    # binary assets under a package's own source tree (e.g. bindings/csharp/src/icon.png),
+    # not a test fixture — SVG (this repo's other logo assets) isn't accepted by NuGet's
+    # PackageIcon, so a raster icon.png is unavoidable here.
+    if [[ "$lower" =~ (^|/)icon\.png$ ]]; then
+        continue
+    fi
     if [[ "$lower" =~ $EXT_RE ]]; then
         echo "❌ Staged media/binary fixture is forbidden: $file" >&2
         echo "   Generate with mediaway-test-media into local/.cache/ (gitignored)." >&2

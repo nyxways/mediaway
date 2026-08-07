@@ -7,9 +7,11 @@
 Mediaway exposes a hand-written C ABI (`*-ffi` crates) so non-Rust languages can call
 the stack. For C, **the ABI itself is the binding** — there is no wrapper layer. See
 [`docs/spec/c-ffi.md`](../../docs/spec/c-ffi.md) (ADR-0004) and
-[`crates/mediaway-ffi/`](../../crates/mediaway-ffi/),
-[`crates/mediaway-ffi/`](../../crates/mediaway-ffi/),
 [`crates/mediaway-ffi/`](../../crates/mediaway-ffi/) for the sources.
+
+The library behind this ABI is 100% Rust — no `libav*`/GPL codec dependencies,
+memory-safe by construction on the native side, exposed here through a plain
+C surface.
 
 ## What Mediaway is (the capabilities)
 

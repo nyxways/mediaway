@@ -4,6 +4,11 @@ Native media capture, encoding, and container mux/demux for .NET, backed by
 Mediaway's C ABI (`mediaway_ffi.dll`, bundled in the packages — no separate
 native install).
 
+The native side is 100% Rust — no `libav*`/GPL codec dependencies, memory-safe
+by construction where the OS/GPU APIs allow it. This package is a thin,
+idiomatic `SafeHandle`-based wrapper over that Rust core's C ABI, not a
+managed reimplementation.
+
 Windows x64 is the verified platform. Pre-1.0: APIs may change.
 
 ## Packages

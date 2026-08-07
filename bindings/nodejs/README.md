@@ -11,6 +11,10 @@ Node.js is a **Tier B host** (through the C ABI) — distinct from the browser h
 host and `docs/spec/c-ffi.md` § Tier C; see [`../c/README.md`](../c/README.md) for the
 underlying C ABI contract.
 
+The native library behind that ABI is 100% Rust — no `libav*`/GPL codec
+dependencies, memory-safe by construction on the native side. These packages
+are thin `koffi` FFI wrappers, not a reimplementation.
+
 ## What Mediaway is (the capabilities)
 
 A streaming-first media stack. The C ABI currently covers three capabilities (full

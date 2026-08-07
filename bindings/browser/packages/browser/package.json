@@ -1,7 +1,7 @@
 {
   "name": "@mediaway/browser",
   "version": "0.1.1",
-  "description": "WASM fMP4 mux and demux for the browser — no native code, no install",
+  "description": "Rust-based, lightweight, fast — WASM fMP4 mux and demux for the browser — no native code, no install",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

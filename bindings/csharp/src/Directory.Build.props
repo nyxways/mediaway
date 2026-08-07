@@ -6,15 +6,19 @@
     <Company>Mediaway</Company>
     <LicenseExpression>MIT OR Apache-2.0</LicenseExpression>
     <RepositoryUrl>https://github.com/nyxways/mediaway</RepositoryUrl>
-    <PackageTags>media;video;audio;mp4;h264;aac;capture;mediaway</PackageTags>
+    <!-- Each Mediaway.*.csproj sets its own <PackageTags> reflecting that
+         package's actual role (Common/Container/Device.*/Pipeline) — no
+         shared default here, so every package isn't tagged identically. -->
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- One shared README for the whole Mediaway.* family (packed at the
-         nupkg root; PackageReadmeFile above). -->
+    <!-- One shared README + icon for the whole Mediaway.* family (packed at
+         the nupkg root; PackageReadmeFile/PackageIcon above). -->
     <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" />
+    <None Include="$(MSBuildThisFileDirectory)icon.png" Pack="true" PackagePath="\" />
   </ItemGroup>
 </Project>

@@ -10,7 +10,8 @@
     <RootNamespace>Mediaway.Device.Audio</RootNamespace>
     <AssemblyName>Mediaway.Device.Audio</AssemblyName>
     <NeedsNativeRuntime>true</NeedsNativeRuntime>
-    <Description>Idiomatic C# binding over mediaway-ffi's "audio" feature (Microphone capture only) — see adr/0004-domain-feature-split.md.</Description>
+    <Description>Rust-based, lightweight, fast idiomatic C# binding over mediaway-ffi's "audio" feature (Microphone capture only).</Description>
+    <PackageTags>mediaway;audio;microphone;capture</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

@@ -10,6 +10,10 @@ See the [C binding README](../c/README.md) for the underlying C ABI contract (st
 enums, ownership, thread confinement) — the Python package translates that ABI into
 idiomatic Python.
 
+The native library behind that ABI is 100% Rust — no `libav*`/GPL codec
+dependencies, memory-safe by construction on the native side. This package is
+a thin `ctypes` wrapper, not a reimplementation.
+
 ## What Mediaway is (the capabilities)
 
 A streaming-first media stack. The C ABI currently covers three capabilities (full

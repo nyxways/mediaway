@@ -1,6 +1,6 @@
 [package]
 name = "mediaway-ffi"
-description = "Single C ABI facade over Mediaway container/device/pipeline — merged from the four mediaway-*-ffi crates per ADR-0021"
+description = "Single C ABI facade over Mediaway container/device/pipeline"
 version.workspace = true
 publish = false # no header/ABI has shipped yet — see docs/roadmap.md
 edition.workspace = true

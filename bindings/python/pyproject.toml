@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mediaway"
 version = "0.1.0"
-description = "Idiomatic Python binding over Mediaway's C ABI (mux/demux, auto video/audio encode, camera/mic capture)"
+description = "Rust-based, lightweight, fast idiomatic Python binding over Mediaway's C ABI (mux/demux, auto video/audio encode, camera/mic capture)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT OR Apache-2.0" }

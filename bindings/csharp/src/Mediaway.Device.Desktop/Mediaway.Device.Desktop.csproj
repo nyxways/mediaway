@@ -10,7 +10,8 @@
     <RootNamespace>Mediaway.Device.Desktop</RootNamespace>
     <AssemblyName>Mediaway.Device.Desktop</AssemblyName>
     <NeedsNativeRuntime>true</NeedsNativeRuntime>
-    <Description>Idiomatic C# binding over mediaway-ffi's "desktop" feature (Screen video Zero-Copy capture + Loopback/ProcessLoopback audio capture) — see adr/0004-domain-feature-split.md.</Description>
+    <Description>Rust-based, lightweight, fast idiomatic C# binding over mediaway-ffi's "desktop" feature (Screen video Zero-Copy capture + Loopback/ProcessLoopback audio capture).</Description>
+    <PackageTags>mediaway;video;audio;screen-capture;loopback;zero-copy</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

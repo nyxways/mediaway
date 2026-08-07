@@ -34,6 +34,21 @@ pub enum MediawayContainerFormat {
     Webm = 1,
 }
 
+/// One elementary stream registered in [`crate::container::mediaway_ts_muxer_create`]'s PMT.
+///
+/// Input to muxer construction only — `mediaway_container::ts::Muxer::new` takes the full
+/// stream list upfront (no `add_track` after construction, unlike every other mux handle in
+/// this crate); see `adr/0006-mpeg-ts-c-abi.md`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct MediawayTsElementaryStream {
+    /// Transport Stream PID (13 bits, `2..=0x1FFF` — `0`/`1` are reserved for PAT/CAT).
+    pub pid: u16,
+    /// Codec — must be one of `H264`/`Hevc`/`Aac`/`Mp3` (the only `StreamType` mappings this
+    /// facade has); any other value fails muxer construction.
+    pub codec: MediawayCodecKind,
+}
+
 /// Input to [`crate::container::mediaway_muxer_add_video_track`] — caller-owned, valid for the call only.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]

@@ -1,11 +1,12 @@
-# mediaway-ffi — container mux/demux C ABI (MP4, WebM, Ogg, ADTS, FLV)
+# mediaway-ffi — container mux/demux C ABI (MP4, WebM, Ogg, ADTS, FLV, MPEG-TS)
 
 First `mediaway-*-ffi` crate in the workspace. Wraps `mediaway-container::{mp4,webm}` over a
-hand-written C ABI, plus dedicated handles for `::{ogg,adts,flv}`.
-[ADR-0001](../../../../crates/mediaway-ffi/adr/container/0001-mp4-mux-demux-c-abi.md) (MP4),
-[ADR-0003](../../../../crates/mediaway-ffi/adr/container/0003-multi-format-c-abi.md) (WebM),
-[ADR-0004](../../../../crates/mediaway-ffi/adr/container/0004-ogg-adts-c-abi.md) (Ogg/ADTS),
-[ADR-0005](../../../../crates/mediaway-ffi/adr/container/0005-flv-c-abi.md) (FLV).
+hand-written C ABI, plus dedicated handles for `::{ogg,adts,flv,ts}`. ADRs:
+[0001](../../../../crates/mediaway-ffi/adr/container/0001-mp4-mux-demux-c-abi.md) (MP4),
+[0003](../../../../crates/mediaway-ffi/adr/container/0003-multi-format-c-abi.md) (WebM),
+[0004](../../../../crates/mediaway-ffi/adr/container/0004-ogg-adts-c-abi.md) (Ogg/ADTS),
+[0005](../../../../crates/mediaway-ffi/adr/container/0005-flv-c-abi.md) (FLV),
+[0006](../../../../crates/mediaway-ffi/adr/container/0006-mpeg-ts-c-abi.md) (MPEG-TS).
 
 ## Shape
 
@@ -27,17 +28,20 @@ hand-written C ABI, plus dedicated handles for `::{ogg,adts,flv}`.
   variants; `InternalPanic`/`HandlePoisoned` are the panic-safety states below. WebM has no
   `ClearKey` support — `set/clear_decryption_key` on a WebM handle return `InvalidState`.
 - Modules: `status.rs`, `types.rs`, `buffer.rs`, `muxer.rs`/`demuxer.rs` (MP4+WebM),
-  `{ogg,adts,flv}_muxer.rs`/`_demuxer.rs` (each pair `#[cfg(feature = "mux"/"demux")]`).
-- **Ogg/ADTS/FLV get dedicated handles**, not `MuxerState`/`DemuxerState` variants — none has
-  track registration or `Open`/`Live` typestate. Reuse packet/stream types + shared frees;
-  `mediaway_adts_muxer_create` collapses a bad `sample_rate` and a caught panic to one
-  `NULL` (no status side channel there).
-- **FLV's muxer allocates a fresh buffer per call** (`mediaway_flv_muxer_write_header`/
-  `_push_packet`, both take `out_data`/`out_len`), mirroring `flv::Muxer`'s own
-  `out: &mut Vec<u8>` param — no internal accumulation, so no `poll_bytes`/`flush` exist for
-  it (ADR-0005). Fixed one-video/one-audio slot; `info.id` accepted but ignored.
-- **MPEG-TS/MP3/WAV stay unreachable** — shapes genuinely incompatible with every handle
-  family so far (ADR-0003 § Deferred).
+  `{ogg,adts,flv,ts}_muxer.rs`/`_demuxer.rs` (each pair `#[cfg(feature = "mux"/"demux")]`).
+- **Ogg/ADTS/FLV/MPEG-TS get dedicated handles**, not `MuxerState`/`DemuxerState` variants —
+  none has track registration or `Open`/`Live` typestate (MPEG-TS fixes streams instead at
+  `mediaway_ts_muxer_create(program_number, pmt_pid, streams, stream_count)`, no `add_track`
+  at all). `mediaway_adts_muxer_create`/`_ts_muxer_create` collapse a bad input and a caught
+  panic to one `NULL` alike (no status side channel on either).
+- **FLV/MPEG-TS's muxers allocate a fresh buffer per call** (`out_data`/`out_len` params on
+  `_write_header`/`_push_packet` or `_write_pat_pmt`/`_write_access_unit`) instead of
+  buffering for `poll_bytes`; `_write_access_unit` also takes raw `pts_90k`/`has_dts`/
+  `dts_90k`, not a packet (90 kHz is format-level, ADR-0005/0006).
+- **`mediaway_ts_demuxer_finish` returns an owned array** (`out_packets`/`out_count`, freed
+  via its own `_finish_free`) — the only multi-packet demux call in this crate (ADR-0006).
+- **MP3/WAV stay unreachable** — shapes incompatible with every handle family so far
+  (ADR-0003 § Deferred).
 
 ## Panic safety (every exported fn)
 
@@ -53,47 +57,44 @@ flowchart TD
     H --> I[return InternalPanic]
 ```
 
-Null/argument checks happen *before* `catch_unwind`. `mediaway_*_close` always succeeds even
-on a poisoned handle; a `drop` panic is deliberately leaked, not double-handled (ADR §7).
+Null checks happen *before* `catch_unwind`. `mediaway_*_close` always succeeds even on a
+poisoned handle; a `drop` panic is deliberately leaked, not double-handled (ADR §7).
 
 ## Ownership
 
 - Input (extra_data/payload/push_bytes data): caller-owned borrow, valid for the call only,
-  copied once at the boundary (`Bytes::copy_from_slice`). **Not Zero-Copy** — C has no
-  refcounted-buffer concept to hand across without inventing one.
+  copied once at the boundary. **Not Zero-Copy** — C has no refcounted-buffer concept to
+  hand across without inventing one.
 - Output (`poll_bytes`, `poll_packet`, `stream_at`): owned buffer, `Vec<u8>` →
-  `into_boxed_slice()` → `Box::into_raw()`, freed via the matching `_free` (nulls the
-  struct's pointer/len, making double-free a no-op). `mediaway_packet_t`/`_stream_info_t`
-  do **not** derive `Copy`/`Clone` — they own a raw pointer.
-
-Corrections vs. the aspirational `bindings/c/examples/mux_roundtrip.c` (ADR §4):
-`mediaway_buffer_free` needs a length; track `id` is caller-assigned; packet struct split
-into `mediaway_packet_view_t` (input, `const`) vs. `mediaway_packet_t` (output, owned).
+  `into_boxed_slice()` → `Box::into_raw()`, freed via the matching `_free`, needing a length
+  (nulls the struct's pointer/len, making double-free a no-op) — a correction vs. the
+  aspirational `bindings/c/examples/mux_roundtrip.c` (ADR §4), along with splitting the
+  packet struct into `mediaway_packet_view_t` (input, `const`) vs. `_packet_t` (output,
+  owned) and making track `id` caller-assigned. `mediaway_ts_demuxer_finish`'s array return
+  is the one exception: free each element's payload *and* the array, via its own
+  `_finish_free` rather than the shared `_packet_free`.
 
 ## Feature flags
 
 `default = ["mux", "demux"]`, gating whole `muxer`/`demuxer` modules — a slim build genuinely
 drops the other side's symbols. The `mediaway-container` dep is pinned to
 `default-features = false, features = ["mux", "demux", "audio", "video"]` regardless of this
-crate's own selection (§9) — spelled out as `path + version` since Cargo forbids
-`workspace = true` + `default-features = false` on an inherited dep.
+crate's own selection (§9).
 
 Header: hand-written `include/mediaway/container.h`, not `cbindgen` (§8). ABI version is at
-`4` (WebM `1`, Ogg `2`, ADTS `3`, FLV `4`); `mediaway_container_ffi_abi_version()` had
-drifted to a stale hardcoded `0` since the WebM bump — fixed with ADR-0004's own bump.
+`5` (WebM `1`, Ogg `2`, ADTS `3`, FLV `4`, MPEG-TS `5`) — `mediaway_container_ffi_abi_version()`
+drifted to a stale hardcoded `0` since the WebM bump, fixed with ADR-0004's own bump.
 
 ## ClearKey decrypt + fragment batch (ADR-0002, MP4 only)
 
-`mediaway_demuxer_set/clear_decryption_key` attach to `DemuxerHandle` — one demuxer-wide
-`[u8; 16]` key, no per-track/KID check, decrypting synchronously inside `push_bytes`.
-`mediaway_muxer_create_with_fragment_batch(batch)` mirrors `mediaway_muxer_create`; `batch ==
-0` passes through uncorrected (clamped to `1`). [Full design](../../../../crates/mediaway-ffi/adr/container/0002-clearkey-decrypt-and-fragment-batch-c-abi.md).
+`mediaway_demuxer_set/clear_decryption_key` attach to `DemuxerHandle` (MP4 only) — one
+demuxer-wide `[u8; 16]` key, decrypting synchronously inside `push_bytes`.
+`mediaway_muxer_create_with_fragment_batch(batch)` mirrors `mediaway_muxer_create` (`batch ==
+0` passes through uncorrected). [Full design](../../../../crates/mediaway-ffi/adr/container/0002-clearkey-decrypt-and-fragment-batch-c-abi.md).
 
 ## Building the C example on Windows
 
 Default toolchain is MSVC (`.lib`), which plain `gcc`/MinGW can't link — build for the GNU
-target instead: `cargo build -p mediaway-ffi --target x86_64-pc-windows-gnu`, then
-`gcc -Icrates/mediaway-ffi/include bindings/c/examples/container/mux_roundtrip.c
--Ltarget/x86_64-pc-windows-gnu/debug -lmediaway_ffi -o mux_roundtrip.exe`. `gcc` picks the
-import lib over the staticlib, so `mediaway_ffi.dll` must sit next to the `.exe` at run
-time. Verified end-to-end (90 pushed/recovered video+audio packets).
+target instead: `cargo build -p mediaway-ffi --target x86_64-pc-windows-gnu`, then `gcc
+-Icrates/mediaway-ffi/include bindings/c/examples/container/mux_roundtrip.c
+-Ltarget/x86_64-pc-windows-gnu/debug -lmediaway_ffi -o mux_roundtrip.exe`.

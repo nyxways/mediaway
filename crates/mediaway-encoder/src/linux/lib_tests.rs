@@ -22,6 +22,7 @@ const fn tiny_h264_cfg() -> VideoEncoderConfig {
         gpu_device: None,
         gop_size: 1,
         rate_control: None,
+        intra_refresh_period: None,
     }
 }
 

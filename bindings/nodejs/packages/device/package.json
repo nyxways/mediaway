@@ -1,7 +1,7 @@
 {
   "name": "@mediaway/device",
   "version": "0.1.1",
-  "description": "Camera, microphone, and screen capture for Node.js (poll-based, never blocks)",
+  "description": "Rust-based, lightweight, fast — camera, microphone, and screen capture for Node.js (poll-based, never blocks)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

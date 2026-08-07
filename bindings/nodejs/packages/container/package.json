@@ -1,7 +1,7 @@
 {
   "name": "@mediaway/container",
   "version": "0.1.1",
-  "description": "Sans-IO fragmented MP4 (fMP4) mux and demux for Node.js — push packets in, poll bytes out",
+  "description": "Rust-based, lightweight, fast — sans-IO fragmented MP4 (fMP4) mux and demux for Node.js — push packets in, poll bytes out",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

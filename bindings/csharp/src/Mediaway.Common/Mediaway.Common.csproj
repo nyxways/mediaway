@@ -9,7 +9,8 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>Mediaway.Common</RootNamespace>
     <AssemblyName>Mediaway.Common</AssemblyName>
-    <Description>Shared value types and exception base for Mediaway C# bindings.</Description>
+    <Description>Rust-based, lightweight, fast — shared value types and exception base for Mediaway C# bindings.</Description>
+    <PackageTags>mediaway;interop;native-interop;shared</PackageTags>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">

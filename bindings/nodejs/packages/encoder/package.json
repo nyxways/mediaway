@@ -1,7 +1,7 @@
 {
   "name": "@mediaway/encoder",
   "version": "0.1.1",
-  "description": "Automatic hardware video encoding to fragmented MP4 for Node.js (NVENC / Vulkan Video / QuickSync)",
+  "description": "Rust-based, lightweight, fast — automatic hardware video encoding to fragmented MP4 for Node.js (NVENC / Vulkan Video / QuickSync)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

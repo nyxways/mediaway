@@ -12,6 +12,10 @@ The browser is a **Tier C host**: it reaches Mediaway through **WASM (`wasm-bind
 + native Web APIs, never the C ABI** (`docs/spec/c-ffi.md` § Tier C). This is the
 mirror image of Node.js (Tier B, C ABI) — do not collapse the two JS/TS hosts.
 
+The mux/demux core compiled to this WASM is 100% Rust (`iso-bmff` via
+`iso-bmff-wasm`) — no `libav*`/GPL codec dependencies. Lightweight and fast: no
+native install, no download beyond the `.wasm` binary itself.
+
 ## What Mediaway is (the capabilities)
 
 A streaming-first media stack. The browser binding covers the same capability ideas as

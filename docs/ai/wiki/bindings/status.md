@@ -10,7 +10,7 @@ freestanding cores 0.1.1 (`ebml-webm` 0.2.1) · CPack `Mediaway-0.1.2-win64`.
 | Language | Mechanism | Status |
 |---|---|---|
 | C | the C ABI itself | ✅ verified — 7 examples link+run; real camera (1920×1080) + mic capture → two-track MP4 (H.264 + AAC) |
-| C++ | `bindings/cpp/include/mediaway/mediaway.hpp` RAII wrapper | ✅ verified — 7 examples compile+run; two-track camera_record on real hardware |
+| C++ | `bindings/cpp/include/mediaway/{core,container,pipeline,device}.hpp` RAII wrapper | ✅ verified — 8 examples compile+run (incl. all 8 container formats); two-track camera_record on real hardware |
 | Python | `bindings/python/mediaway/` ctypes package | ✅ verified — 7 examples run; encode output byte-identical to C/C++/Node (6253 B video; 27372 B audio) |
 | Node.js | `bindings/nodejs/packages/@mediaway/*` koffi FFI | ✅ verified — 7 examples run; napi-rs is the eventual official path |
 | C# | `bindings/csharp/src/` P/Invoke | ✅ verified (xUnit against native libs; ADR-0017/0018); 6 examples under `Container/`/`Device/`/`Pipeline/`, mirroring Node's layout |
@@ -35,9 +35,9 @@ bindings were then implemented to satisfy those examples. Examples mirror the Ru
   C# gained its own `Mediaway.Pipeline.AudioEncoder` wrapper this pass (previously Node-only)
   — hardware-verified: 96 synthetic PCM frames → 96 AAC packets → 27376-byte audio-only fMP4,
   matching Node's own `encode-audio.ts` output (27372 B) to within container-padding noise.
-- **Screen capture not from C**: needs a live `ID3D11Device*` with no CPU fallback; Screen + `NONE` gpu → `INVALID_INPUT`, Window → `UNSUPPORTED` (both verified). Browser host: `getDisplayMedia` is native and real.
+- **Screen capture not from C**: needs a live `ID3D11Device*`, no CPU fallback; Screen + `NONE` gpu → `INVALID_INPUT`, Window → `UNSUPPORTED`. Browser host: `getDisplayMedia` is native and real.
 - **C# Screen capture hardware-verified** — `CaptureTests` gained a test-only raw
-  `D3D11CreateDevice` P/Invoke; the new test polls real GPU-backed 2560×1440 frames end to end.
+  `D3D11CreateDevice` P/Invoke polling real GPU-backed 2560×1440 frames end to end.
 
 ## Audio encode learnings
 
@@ -53,10 +53,8 @@ bindings were then implemented to satisfy those examples. Examples mirror the Ru
 
 - **`include/mediaway/device.h` was stale**: it still declared the pre-split
   `mediaway_video_capture_*` surface while the crate shipped
-  `mediaway_camera_capture_*` / `mediaway_desktop_capture_*` /
-  `mediaway_audio_capture_*` (ADR-0004 domain-feature-split). Rewritten to the real
-  ABI (config structs `MediawayCameraCaptureConfig` etc. are CPU-only; desktop keeps
-  `gpu_device`).
+  `mediaway_camera_capture_*`/`_desktop_capture_*`/`_audio_capture_*`
+  (ADR-0004 domain-feature-split). Rewritten to the real ABI.
 - **Header co-inclusion**: the three `*-ffi` headers each define
   `mediaway_rational_t` / `mediaway_pixel_format_t` / gpu handle types. The C++
   wrapper needs all three in one TU, so the shared typedefs got
@@ -67,20 +65,21 @@ bindings were then implemented to satisfy those examples. Examples mirror the Ru
   release, never close, on the failure path (C++ `finish()` and the Node `finish()`
   both had release-after-consume bugs this pass; fixed).
 
-## FFI packaging fix (this pass)
+## FFI packaging fix
 
-`docs/spec/c-ffi.md` (ADR-0004) still described the pre-merge per-capability
-`-ffi` crate split even though ADR-0021 (2026-08-03) merged everything into one
-`mediaway-ffi` crate — updated to document the current feature-gated module
-layout instead. Separately, the crate's own `pipeline` module (encode/decode/
-Opus — the heaviest part, pulling in `mediaway`/`mediaway-encoder`/
-`mediaway-decoder`/`mediaway-sw`) had **no** Cargo feature gate at all, unlike
-`container`/`device`; and `mediaway-container`'s `mux`/`demux`/`audio`/`video`
-features were hardcoded rather than propagated from this crate's own
-`mux`/`demux` features. Both fixed: `pipeline` is now its own feature (in
-`default`, unchanged behavior), and `mediaway-container`'s sub-features are
-unified from this crate's own. The capture→encode bridge (needs `pipeline` +
-`camera`/`desktop`) is gated per-function on the conjunction.
+`docs/spec/c-ffi.md` (ADR-0004) documents the current single-crate,
+feature-gated `mediaway-ffi` module layout (post ADR-0021 merge); `pipeline`
+and `container`'s `mux`/`demux`/`audio`/`video` are each their own Cargo
+feature, unified from this crate's own.
+
+## Container format wiring (all 8 formats, C++ first)
+
+Wiring WebM + 6 dedicated-handle formats into C++ surfaced two real bugs
+`-fsyntax-only` couldn't catch, only linking+running against the real
+GNU-target dylib (`all_formats_smoke.cpp`): (1) `mediaway_common::CodecKind`
+had no explicit `#[repr(u8)]`, now pinned to match the C header; (2) WebM's
+TrackNumber must not be `0` — `container::Muxer`'s auto-assigned ids now
+start at `1` (was `0`, silently rejected only by WebM).
 
 ## Open items
 

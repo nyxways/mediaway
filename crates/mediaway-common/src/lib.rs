@@ -33,36 +33,47 @@ impl Rational {
 }
 
 /// Supported codec types for demuxing and muxing.
+///
+/// `#[repr(u8)]` with explicit discriminants, kept in lockstep with
+/// `mediaway_codec_kind_t` in `crates/mediaway-ffi/include/mediaway/container.h` — this
+/// type crosses the C ABI directly (`mediaway-ffi`'s `MediawayCodecKind` is a type alias to
+/// this enum, not a converting wrapper), so an implicit/compiler-chosen discriminant order
+/// is a real correctness bug, not just a style nit: `Vp8` was appended to the C header at
+/// `= 12` when `WebM` support landed, but this enum's declaration order put it 5th
+/// (discriminant `4`, sandwiched between `Vp9` and `Aac`) — every codec from `Aac` onward
+/// silently carried the wrong wire value across the C ABI until these discriminants were
+/// pinned explicitly to match the header.
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CodecKind {
     /// H.264 / AVC video.
-    H264,
+    H264 = 0,
     /// HEVC / H.265 video.
-    Hevc,
+    Hevc = 1,
     /// AV1 video.
-    Av1,
+    Av1 = 2,
     /// VP9 video.
-    Vp9,
-    /// VP8 video.
-    Vp8,
+    Vp9 = 3,
     /// AAC audio.
-    Aac,
+    Aac = 4,
     /// Opus audio.
-    Opus,
+    Opus = 5,
     /// MP3 (MPEG-1/2/2.5 Layer III) audio.
-    Mp3,
+    Mp3 = 6,
     /// Vorbis audio.
-    Vorbis,
+    Vorbis = 7,
     /// `WebVTT` subtitle.
-    WebVtt,
+    WebVtt = 8,
     /// Tx3g timed text subtitle.
-    Tx3g,
+    Tx3g = 9,
     /// Uncompressed / raw video (capture, passthrough).
-    RawVideo,
+    RawVideo = 10,
     /// Uncompressed / raw PCM audio — the audio analog of [`CodecKind::RawVideo`].
     /// Covers both capture/passthrough (no container) and container-framed PCM
     /// (e.g. RIFF/WAVE `data` chunk) — PCM has no encoding to distinguish either way.
-    RawAudio,
+    RawAudio = 11,
+    /// VP8 video.
+    Vp8 = 12,
 }
 
 impl CodecKind {

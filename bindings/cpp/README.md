@@ -19,10 +19,16 @@ thin RAII wrapper, not a reimplementation.
 A streaming-first media stack. The C ABI currently covers three capabilities (full
 detail in [`../c/README.md`](../c/README.md) and `docs/spec/c-ffi.md`):
 
-1. **Container — mux + demux**: sans-io fragmented-MP4 muxer (register video/audio
-   tracks, `begin()` → Live, push packets, flush, `pollBytes()`; never touches
-   files — the caller owns byte I/O) and demuxer (`pushBytes`, `streams()`,
-   `pollPacket()`, optional ClearKey key). Fully real.
+1. **Container — mux + demux, all 8 `mediaway-container` formats**: MP4/WebM share
+   `container::Muxer`/`Demuxer` (`Format::Mp4`/`Format::Webm`, typestated
+   `Open`→`Live` via `begin()`, never touches files — the caller owns byte I/O).
+   Ogg/ADTS/FLV/MPEG-TS/MP3 get dedicated classes (`OggMuxer`/`OggDemuxer`,
+   `AdtsMuxer`/`AdtsDemuxer`, `FlvMuxer`/`FlvDemuxer`, `TsMuxer`/`TsDemuxer`,
+   `Mp3Muxer`/`Mp3Demuxer`) reflecting each format's own C ABI shape (no track
+   registration, out-buffer-per-call mux, or a construction-time stream list —
+   see each header's top comment). WAV is mux-only as a class (`WavMuxer`,
+   consuming `finish()`); demux is the one-shot `container::wavParse()` function,
+   not a class at all. Fully real, all formats link+run verified.
 2. **Pipeline — auto video encode → fMP4**: one call picks the best available OS/GPU
    encoder for a config, wires it into an internal MP4 muxer; `finish()` returns
    complete MP4 bytes. **Video only** — the audio encoder is separate (ABI v2,
@@ -84,6 +90,7 @@ aspirational):
 | File | Capability | Real today? |
 |---|---|---|
 | `container/mux_roundtrip.cpp` | mux 90 fake video + audio packets → fMP4 → demux back, count packets | ✅ link+run verified |
+| `container/all_formats_smoke.cpp` | round-trip all 7 non-MP4 formats (WebM, Ogg, ADTS, FLV, MPEG-TS incl. `finish()`, MP3, WAV incl. `wavParse()`) | ✅ link+run verified |
 | `pipeline/encode_to_mp4.cpp` | auto H.264 encode of 90 synthetic NV12 frames → `out.mp4` | ✅ link+run verified |
 | `pipeline/encode_audio.cpp` | auto AAC encode of 96 synthetic F32 stereo frames → audio-only fMP4 (ABI v2) | ✅ link+run verified (96 packets → 27385 bytes fMP4) |
 | `device/camera_record.cpp` | camera + mic → H.264 + AAC → ONE two-track MP4 (remuxed; audio track registered with the encoder's AudioSpecificConfig) | ✅ link+run verified on real hardware (46 frames + 140 AAC packets → ~256 KB two-track MP4); video-only fallback without mic/audio backend |

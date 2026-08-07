@@ -410,6 +410,22 @@ void mediaway_pipeline_ffi_packet_free(mediaway_audio_packet_t *packet);
  * call, including with info == NULL. */
 void mediaway_pipeline_ffi_stream_info_free(mediaway_audio_stream_info_t *info);
 
+/* Input to mediaway_decode_session_push_packet / mediaway_audio_decode_session_push_packet
+ * — BORROWED view, valid for the call only. A new, pipeline-scoped type, not reused from
+ * container.h's mediaway_packet_view_t (adr/0004 §4). Declared here (before both the audio
+ * and video decode sections) since audio decode reuses it too (adr/pipeline/0006 §4).
+ * stream_id is accepted but unused by decode. */
+typedef struct mediaway_decode_packet_view {
+    uint32_t stream_id;    /* unused by decode; kept for call-site symmetry */
+    int64_t pts;
+    int64_t dts;
+    uint64_t duration;
+    bool is_keyframe;
+    bool is_discard;
+    const uint8_t *payload; /* BORROWED; valid for the call only; NULL iff payload_len == 0 */
+    size_t payload_len;
+} mediaway_decode_packet_view_t;
+
 /* ── Audio decode (adr/pipeline/0006-audio-decode-c-abi.md) ─────────────────────── */
 
 /* Config for mediaway_audio_decode_session_open. codec is Opus only today (any other
@@ -495,20 +511,6 @@ typedef struct mediaway_auto_video_decode_config {
     const uint8_t *extra_data;   /* BORROWED; valid for the open call only; NULL iff extra_data_len == 0 */
     size_t extra_data_len;
 } mediaway_auto_video_decode_config_t;
-
-/* Input to mediaway_decode_session_push_packet — BORROWED view, valid for the call
- * only. A new, pipeline-scoped type, not reused from container.h's
- * mediaway_packet_view_t (adr/0004 §4). stream_id is accepted but unused by decode. */
-typedef struct mediaway_decode_packet_view {
-    uint32_t stream_id;    /* unused by decode; kept for call-site symmetry */
-    int64_t pts;
-    int64_t dts;
-    uint64_t duration;
-    bool is_keyframe;
-    bool is_discard;
-    const uint8_t *payload; /* BORROWED; valid for the call only; NULL iff payload_len == 0 */
-    size_t payload_len;
-} mediaway_decode_packet_view_t;
 
 /* Output of mediaway_decode_session_poll_frame — OWNED; release with
  * mediaway_decoded_video_frame_free. CPU-only (no storage_kind/gpu_buffer — GPU

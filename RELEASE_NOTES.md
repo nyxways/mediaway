@@ -59,6 +59,14 @@
   this crate. No language-binding wiring yet for any of the 6 non-MP4/WebM formats. Verified
   end-to-end: `tests/wav_container_smoke.rs` round-trips PCM and float-format frames, a
   double-`finish()` rejection, and a non-RIFF/WAVE-data rejection.
+- C++ binding: all 8 `mediaway-container` formats reach `bindings/cpp/include/mediaway/`
+  (WebM via `container::Muxer`/`Demuxer(Format::Webm)`; Ogg/ADTS/FLV/MPEG-TS/MP3 get
+  dedicated classes; WAV is mux-only via `WavMuxer` + the one-shot `wavParse()` function).
+  Split the single 892-line `mediaway.hpp` into `core.hpp`/`container.hpp` (+ per-format
+  headers under `container/`)/`pipeline.hpp`/`device.hpp` to stay under the workspace's
+  1000-line source cap; `mediaway.hpp` remains a pure umbrella include. C#/Python/Node
+  wiring still pending. Verified end-to-end: `examples/container/all_formats_smoke.cpp`
+  links and runs against the real GNU-target dylib.
 
 ### Changed
 
@@ -70,6 +78,14 @@
 - `mediaway-ffi`: `mediaway_container_ffi_abi_version()` had drifted to a stale hardcoded
   `0` since the WebM C ABI landed (the header macro had already moved to `1`) — fixed to
   track the real value (`7`, alongside this release's own bumps).
+- `mediaway-common`: `CodecKind` had no explicit `#[repr(u8)]`/discriminants at all, found
+  while wiring the C++ container bindings — harmless at the FFI boundary itself (the
+  `mediaway-ffi`-local mirror enum already had correct explicit values and converts by
+  name), but a real latent footgun now pinned explicitly to match the C header's values.
+- C++ binding: `container::Muxer`'s auto-assigned track ids started at `0`, silently
+  rejected by WebM/Matroska (TrackNumber must not be `0`) though harmless for MP4 — now
+  start at `1` for both formats. Only reproducible by linking and running against the real
+  dylib, not by `-fsyntax-only` alone.
 
 ### Removed
 

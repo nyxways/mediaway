@@ -28,7 +28,7 @@
 #ifndef MEDIAWAY_CONTAINER_H
 #define MEDIAWAY_CONTAINER_H
 
-#define MEDIAWAY_CONTAINER_FFI_ABI_VERSION 1 /* bump on any breaking change; pre-1.0, no stability promise */
+#define MEDIAWAY_CONTAINER_FFI_ABI_VERSION 3 /* bump on any breaking change; pre-1.0, no stability promise */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -46,6 +46,18 @@ extern "C" {
  * notice pre-1.0. Always access through the functions below. */
 typedef struct mediaway_muxer mediaway_muxer_t;
 typedef struct mediaway_demuxer mediaway_demuxer_t;
+
+/* Dedicated Ogg handles (adr/0004-ogg-adts-c-abi.md) -- NOT reachable through
+ * mediaway_muxer_t/mediaway_demuxer_t or mediaway_container_format_t: ogg::Muxer has no
+ * track registration and no Open/Live typestate, so it does not fit the shared handles'
+ * shape. */
+typedef struct mediaway_ogg_muxer mediaway_ogg_muxer_t;
+typedef struct mediaway_ogg_demuxer mediaway_ogg_demuxer_t;
+
+/* Dedicated ADTS handles (adr/0004-ogg-adts-c-abi.md) -- same reasoning as the Ogg handles
+ * above: adts::Muxer has no track registration and no Open/Live typestate. */
+typedef struct mediaway_adts_muxer mediaway_adts_muxer_t;
+typedef struct mediaway_adts_demuxer mediaway_adts_demuxer_t;
 
 /* ── Container format (adr/0003-multi-format-c-abi.md) ───────────────────────────── */
 
@@ -264,6 +276,132 @@ mediaway_status_t mediaway_demuxer_clear_decryption_key(mediaway_demuxer_t *demu
 
 /* Close and free a demuxer handle. Always safe to call, including on a poisoned handle. */
 void mediaway_demuxer_close(mediaway_demuxer_t *demuxer);
+
+/* ── Ogg muxer/demuxer (adr/0004-ogg-adts-c-abi.md; requires `mux`/`demux` respectively) ── */
+
+/* Dedicated handles, not mediaway_muxer_t/mediaway_demuxer_t: Ogg has no track-registration
+ * step and no Open/Live typestate -- mediaway_ogg_muxer_create is immediately ready for
+ * push_packet. Reuses mediaway_packet_view_t/mediaway_packet_t/mediaway_stream_info_t
+ * (already codec-agnostic) and mediaway_buffer_free/mediaway_packet_free/
+ * mediaway_stream_info_free (same ownership shape as the MP4/WebM handles). */
+
+/* Open a mux session for logical bitstream `serial`. Returns NULL only on a caught panic
+ * during construction (defensive; should not happen in practice). */
+mediaway_ogg_muxer_t *mediaway_ogg_muxer_create(uint32_t serial);
+
+/* Write one Ogg page containing packet's payload. packet->pts becomes the page's
+ * granule_position; packet->is_discard becomes the page's eos flag. Fails with
+ * MEDIAWAY_STATUS_INVALID_DATA when the payload exceeds a single Ogg page's capacity (this
+ * mux always emits one page per packet). */
+mediaway_status_t mediaway_ogg_muxer_push_packet(mediaway_ogg_muxer_t *muxer,
+                                                  const mediaway_packet_view_t *packet);
+
+/* No-op -- every push_packet call already wrote a complete, independently valid Ogg page.
+ * Exposed for shape parity with mediaway_muxer_flush. */
+mediaway_status_t mediaway_ogg_muxer_flush(mediaway_ogg_muxer_t *muxer);
+
+/* Drain whatever muxed Ogg page bytes are ready right now into an owned buffer.
+ * *out_data == NULL && *out_len == 0 is a valid "nothing ready" result, not an error.
+ * Release the buffer with mediaway_buffer_free. */
+mediaway_status_t mediaway_ogg_muxer_poll_bytes(mediaway_ogg_muxer_t *muxer, uint8_t **out_data,
+                                                 size_t *out_len);
+
+/* Close and free an Ogg muxer handle. Always safe to call, including on a poisoned handle. */
+void mediaway_ogg_muxer_close(mediaway_ogg_muxer_t *muxer);
+
+/* Create a new, empty Ogg demuxer. Returns NULL only on a caught panic during
+ * construction. */
+mediaway_ogg_demuxer_t *mediaway_ogg_demuxer_create(void);
+
+/* Feed Ogg-container bytes into the demuxer. `data` is a borrowed buffer, valid for the
+ * call only. */
+mediaway_status_t mediaway_ogg_demuxer_push_bytes(mediaway_ogg_demuxer_t *demuxer,
+                                                    const uint8_t *data, size_t len);
+
+/* Number of logical bitstreams discovered so far -- 0 or 1 (Ogg carries a single logical
+ * bitstream per this facade). Read-only; returns 0 on a null/poisoned handle or a caught
+ * panic. */
+size_t mediaway_ogg_demuxer_stream_count(const mediaway_ogg_demuxer_t *demuxer);
+
+/* Get stream info by index (always index 0 once the identification-header packet has been
+ * recognized). On success, release *out_info with mediaway_stream_info_free. */
+mediaway_status_t mediaway_ogg_demuxer_stream_at(const mediaway_ogg_demuxer_t *demuxer,
+                                                  size_t index,
+                                                  mediaway_stream_info_t *out_info);
+
+/* Pop the next demuxed packet, if any is ready. *out_has_packet == false is a valid
+ * "nothing ready" result, not an error. When true, release *out_packet with
+ * mediaway_packet_free. */
+mediaway_status_t mediaway_ogg_demuxer_poll_packet(mediaway_ogg_demuxer_t *demuxer,
+                                                    mediaway_packet_t *out_packet,
+                                                    bool *out_has_packet);
+
+/* Close and free an Ogg demuxer handle. Always safe to call, including on a poisoned
+ * handle. */
+void mediaway_ogg_demuxer_close(mediaway_ogg_demuxer_t *demuxer);
+
+/* ── ADTS muxer/demuxer (adr/0004-ogg-adts-c-abi.md; requires `mux`/`demux` respectively) ── */
+
+/* Same dedicated-handle reasoning as the Ogg section above: no track-registration step, no
+ * Open/Live typestate. Reuses mediaway_packet_view_t/mediaway_packet_t/
+ * mediaway_stream_info_t and the shared frees. */
+
+/* Open a mux session for `sample_rate` (must be a standard ADTS rate) / `channels`.
+ * Returns NULL for a non-standard sample_rate OR a caught panic during construction --
+ * both collapse to NULL; there is no status side channel on this constructor. */
+mediaway_adts_muxer_t *mediaway_adts_muxer_create(uint32_t sample_rate, uint8_t channels);
+
+/* Append one AAC frame (raw, ADTS header added) from packet's payload. Fails with
+ * MEDIAWAY_STATUS_INVALID_PACKET if the payload is too large for ADTS's 13-bit
+ * frame-length field. */
+mediaway_status_t mediaway_adts_muxer_push_packet(mediaway_adts_muxer_t *muxer,
+                                                   const mediaway_packet_view_t *packet);
+
+/* No-op -- ADTS frames are independently appendable; nothing is buffered beyond what
+ * poll_bytes already exposes. Exposed for shape parity with mediaway_muxer_flush. */
+mediaway_status_t mediaway_adts_muxer_flush(mediaway_adts_muxer_t *muxer);
+
+/* Drain whatever muxed ADTS bytes are ready right now into an owned buffer.
+ * *out_data == NULL && *out_len == 0 is a valid "nothing ready" result, not an error.
+ * Release the buffer with mediaway_buffer_free. */
+mediaway_status_t mediaway_adts_muxer_poll_bytes(mediaway_adts_muxer_t *muxer,
+                                                  uint8_t **out_data, size_t *out_len);
+
+/* Close and free an ADTS muxer handle. Always safe to call, including on a poisoned
+ * handle. */
+void mediaway_adts_muxer_close(mediaway_adts_muxer_t *muxer);
+
+/* Create a new, empty ADTS demuxer. Returns NULL only on a caught panic during
+ * construction. */
+mediaway_adts_demuxer_t *mediaway_adts_demuxer_create(void);
+
+/* Feed ADTS elementary-stream bytes into the demuxer. `data` is a borrowed buffer, valid
+ * for the call only. */
+mediaway_status_t mediaway_adts_demuxer_push_bytes(mediaway_adts_demuxer_t *demuxer,
+                                                     const uint8_t *data, size_t len);
+
+/* Number of streams discovered so far -- 0 or 1 (ADTS carries a single implicit stream,
+ * recognized once the first frame's header has been parsed). Read-only; returns 0 on a
+ * null/poisoned handle or a caught panic. */
+size_t mediaway_adts_demuxer_stream_count(const mediaway_adts_demuxer_t *demuxer);
+
+/* Get stream info by index (always index 0 once the first frame has been parsed). On
+ * success, release *out_info with mediaway_stream_info_free. */
+mediaway_status_t mediaway_adts_demuxer_stream_at(const mediaway_adts_demuxer_t *demuxer,
+                                                   size_t index,
+                                                   mediaway_stream_info_t *out_info);
+
+/* Pop the next demuxed packet (one AAC frame), if any is ready. pts/duration are
+ * synthesized from a running 1024-samples-per-frame count -- ADTS carries no per-frame
+ * timing of its own. *out_has_packet == false is a valid "nothing ready" result, not an
+ * error. When true, release *out_packet with mediaway_packet_free. */
+mediaway_status_t mediaway_adts_demuxer_poll_packet(mediaway_adts_demuxer_t *demuxer,
+                                                     mediaway_packet_t *out_packet,
+                                                     bool *out_has_packet);
+
+/* Close and free an ADTS demuxer handle. Always safe to call, including on a poisoned
+ * handle. */
+void mediaway_adts_demuxer_close(mediaway_adts_demuxer_t *demuxer);
 
 /* ── Shared frees ────────────────────────────────────────────────────────────────── */
 

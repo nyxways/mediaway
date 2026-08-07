@@ -26,6 +26,10 @@ mediaway-container = { path = "../mediaway-container", version = "0.1.0", defaul
 # adr/container/0007-mp3-c-abi.md) — `mediaway-container` already pulls this in
 # transitively, so this adds no new feature surface.
 mpeg-audio = { workspace = true }
+# Needed for `WaveFormat`/`SampleFormat` (WAV C ABI, adr/container/0008-wav-c-abi.md) —
+# `mediaway-container` already pulls this in transitively, so this adds no new feature
+# surface.
+riff-wave-core = { workspace = true }
 
 mediaway-device = { workspace = true }
 

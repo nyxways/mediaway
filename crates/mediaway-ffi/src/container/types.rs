@@ -93,6 +93,31 @@ pub struct MediawayMp3FrameHeader {
     pub channel_mode: MediawayChannelMode,
 }
 
+/// PCM sample encoding — see `riff_wave_core::SampleFormat`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediawayWavSampleFormat {
+    /// Integer PCM (`wFormatTag` 1).
+    Pcm = 0,
+    /// IEEE float PCM (`wFormatTag` 3).
+    Float = 1,
+}
+
+/// Explicit WAVE format for [`crate::container::mediaway_wav_muxer_create_with_format`] —
+/// see `riff_wave_core::WaveFormat`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct MediawayWaveFormat {
+    /// Sample encoding.
+    pub sample_format: MediawayWavSampleFormat,
+    /// Channel count.
+    pub channels: u16,
+    /// Samples per second.
+    pub sample_rate: u32,
+    /// Bits per sample (e.g. 16, 24, 32).
+    pub bits_per_sample: u16,
+}
+
 /// Input to [`crate::container::mediaway_muxer_add_video_track`] — caller-owned, valid for the call only.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]

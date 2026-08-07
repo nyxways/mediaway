@@ -1491,6 +1491,7 @@ dependencies = [
  "mediaway-encoder",
  "mediaway-sw",
  "mpeg-audio",
+ "riff-wave-core",
  "windows 0.62.2",
 ]
 

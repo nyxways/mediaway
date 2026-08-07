@@ -44,6 +44,13 @@
   Rust-only; no language-binding wiring yet. Verified end-to-end:
   `tests/ts_container_smoke.rs` round-trips one H.264 video and one AAC audio access unit,
   a `finish()`-recovered trailing access unit, and an invalid-PID construction rejection.
+- `mediaway-ffi`: MP3 (MPEG Layer III) reaches the container C ABI via dedicated
+  `mediaway_mp3_muxer_t`/`_demuxer_t` handles (ABI v5 → v6, `adr/container/0007-mp3-c-abi.md`)
+  — a fixed header for the mux session's lifetime (no track registration at all) and an
+  explicit `padding` bit on `write_frame` that no `mediaway_packet_view_t` has a slot for.
+  WAV remains Rust-only; no language-binding wiring yet. Verified end-to-end:
+  `tests/mp3_container_smoke.rs` round-trips a 128 kbps/44100 Hz stereo frame, a mono
+  channel-count case, and a wrong-frame-body-length rejection.
 
 ### Changed
 
@@ -54,7 +61,7 @@
   but no C caller could ever name it. Added (`= 12`, matching the existing Rust discriminant).
 - `mediaway-ffi`: `mediaway_container_ffi_abi_version()` had drifted to a stale hardcoded
   `0` since the WebM C ABI landed (the header macro had already moved to `1`) — fixed to
-  track the real value (`5`, alongside this release's own bumps).
+  track the real value (`6`, alongside this release's own bumps).
 
 ### Removed
 

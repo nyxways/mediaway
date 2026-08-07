@@ -1490,6 +1490,7 @@ dependencies = [
  "mediaway-device",
  "mediaway-encoder",
  "mediaway-sw",
+ "mpeg-audio",
  "windows 0.62.2",
 ]
 

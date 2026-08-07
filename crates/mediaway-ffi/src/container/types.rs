@@ -49,6 +49,50 @@ pub struct MediawayTsElementaryStream {
     pub codec: MediawayCodecKind,
 }
 
+/// MPEG audio version — see `mpeg_audio::MpegVersion`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediawayMpegVersion {
+    /// MPEG Version 1 (44100/48000/32000 Hz family).
+    Mpeg1 = 0,
+    /// MPEG Version 2 (22050/24000/16000 Hz family).
+    Mpeg2 = 1,
+    /// MPEG Version 2.5 (11025/12000/8000 Hz family, unofficial low-rate extension).
+    Mpeg25 = 2,
+}
+
+/// MPEG audio channel mode — see `mpeg_audio::ChannelMode`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediawayChannelMode {
+    /// Stereo.
+    Stereo = 0,
+    /// Joint stereo (intensity/MS).
+    JointStereo = 1,
+    /// Dual mono (two independent channels).
+    DualChannel = 2,
+    /// Mono.
+    Mono = 3,
+}
+
+/// Fixed Layer III frame header for [`crate::container::mediaway_mp3_muxer_create`] — see
+/// `mpeg_audio::FrameHeader`.
+///
+/// Bitrate/sample-rate/channel mode stay constant for the mux session's lifetime, matching
+/// real Layer III streams this facade targets (`adr/0007-mp3-c-abi.md`).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct MediawayMp3FrameHeader {
+    /// MPEG version.
+    pub version: MediawayMpegVersion,
+    /// Bitrate in kbps — must be one of the 14 standard values for `version` (Layer III).
+    pub bitrate_kbps: u16,
+    /// Sample rate — must be one of the 3 standard rates for `version`.
+    pub sample_rate: u32,
+    /// Channel mode.
+    pub channel_mode: MediawayChannelMode,
+}
+
 /// Input to [`crate::container::mediaway_muxer_add_video_track`] — caller-owned, valid for the call only.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]

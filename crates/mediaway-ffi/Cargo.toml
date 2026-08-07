@@ -22,6 +22,11 @@ mediaway-common = { workspace = true }
 # rather than hardcoded, so a `demux`-only build doesn't also link `iso-bmff`'s mux path.
 mediaway-container = { path = "../mediaway-container", version = "0.1.0", default-features = false }
 
+# Needed for `FrameHeader`/`MpegVersion`/`ChannelMode` (MP3 C ABI,
+# adr/container/0007-mp3-c-abi.md) — `mediaway-container` already pulls this in
+# transitively, so this adds no new feature surface.
+mpeg-audio = { workspace = true }
+
 mediaway-device = { workspace = true }
 
 # `pipeline` module deps — optional so a container/device-only build (`pipeline` feature

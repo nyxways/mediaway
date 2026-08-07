@@ -27,6 +27,10 @@ mod demuxer;
 mod flv_demuxer;
 #[cfg(feature = "mux")]
 mod flv_muxer;
+#[cfg(feature = "demux")]
+mod mp3_demuxer;
+#[cfg(feature = "mux")]
+mod mp3_muxer;
 #[cfg(feature = "mux")]
 mod muxer;
 #[cfg(feature = "demux")]
@@ -40,9 +44,9 @@ mod ts_muxer;
 
 pub use status::MediawayStatus;
 pub use types::{
-    MediawayAudioTrackInfo, MediawayCodecKind, MediawayContainerFormat, MediawayPacket,
-    MediawayPacketView, MediawayRational, MediawayStreamInfo, MediawayTsElementaryStream,
-    MediawayVideoTrackInfo,
+    MediawayAudioTrackInfo, MediawayChannelMode, MediawayCodecKind, MediawayContainerFormat,
+    MediawayMp3FrameHeader, MediawayMpegVersion, MediawayPacket, MediawayPacketView,
+    MediawayRational, MediawayStreamInfo, MediawayTsElementaryStream, MediawayVideoTrackInfo,
 };
 
 #[cfg(feature = "mux")]
@@ -79,6 +83,17 @@ pub use flv_muxer::{
     FlvMuxerHandle, mediaway_flv_muxer_add_audio_track, mediaway_flv_muxer_add_video_track,
     mediaway_flv_muxer_close, mediaway_flv_muxer_create, mediaway_flv_muxer_push_packet,
     mediaway_flv_muxer_write_header,
+};
+#[cfg(feature = "demux")]
+pub use mp3_demuxer::{
+    Mp3DemuxerHandle, mediaway_mp3_demuxer_close, mediaway_mp3_demuxer_create,
+    mediaway_mp3_demuxer_poll_packet, mediaway_mp3_demuxer_push_bytes,
+    mediaway_mp3_demuxer_stream_at, mediaway_mp3_demuxer_stream_count,
+};
+#[cfg(feature = "mux")]
+pub use mp3_muxer::{
+    Mp3MuxerHandle, mediaway_mp3_muxer_close, mediaway_mp3_muxer_create,
+    mediaway_mp3_muxer_write_frame,
 };
 #[cfg(feature = "mux")]
 pub use muxer::{
@@ -120,9 +135,10 @@ pub use ts_muxer::{
 /// Was hardcoded `0` through ABI v1 (`WebM`'s `mediaway_muxer_create_for_format` addition) —
 /// a drift bug, since the header macro had already moved to `1` and nothing kept this
 /// literal in sync. Fixed at `2` (Ogg, `adr/0004-ogg-adts-c-abi.md`), then `3` (ADTS, same
-/// pass), then `4` (FLV, `adr/0005-flv-c-abi.md`), then `5` (MPEG-TS's dedicated
-/// `mediaway_ts_muxer_t`/`mediaway_ts_demuxer_t` handles, `adr/0006-mpeg-ts-c-abi.md`).
+/// pass), then `4` (FLV, `adr/0005-flv-c-abi.md`), then `5` (MPEG-TS,
+/// `adr/0006-mpeg-ts-c-abi.md`), then `6` (MP3's dedicated `mediaway_mp3_muxer_t`/
+/// `mediaway_mp3_demuxer_t` handles, `adr/0007-mp3-c-abi.md`).
 #[unsafe(no_mangle)]
 pub const extern "C" fn mediaway_container_ffi_abi_version() -> u32 {
-    5
+    6
 }

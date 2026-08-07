@@ -28,7 +28,7 @@
 #ifndef MEDIAWAY_CONTAINER_H
 #define MEDIAWAY_CONTAINER_H
 
-#define MEDIAWAY_CONTAINER_FFI_ABI_VERSION 5 /* bump on any breaking change; pre-1.0, no stability promise */
+#define MEDIAWAY_CONTAINER_FFI_ABI_VERSION 6 /* bump on any breaking change; pre-1.0, no stability promise */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -71,6 +71,12 @@ typedef struct mediaway_flv_demuxer mediaway_flv_demuxer_t;
  * pts_90k/dts_90k clock values (the 90 kHz system clock is not a per-track timebase). */
 typedef struct mediaway_ts_muxer mediaway_ts_muxer_t;
 typedef struct mediaway_ts_demuxer mediaway_ts_demuxer_t;
+
+/* Dedicated MP3 handles (adr/0007-mp3-c-abi.md) -- mp3::Muxer has a fixed header for the
+ * session's lifetime (no track registration at all) and write_frame takes an explicit
+ * padding bit the generic packet-based shape has no slot for. */
+typedef struct mediaway_mp3_muxer mediaway_mp3_muxer_t;
+typedef struct mediaway_mp3_demuxer mediaway_mp3_demuxer_t;
 
 /* ── Container format (adr/0003-multi-format-c-abi.md) ───────────────────────────── */
 
@@ -190,6 +196,28 @@ typedef struct mediaway_ts_elementary_stream {
     uint16_t pid;              /* 2..=0x1FFF; 0/1 reserved for PAT/CAT */
     mediaway_codec_kind_t codec; /* must be H264, HEVC, AAC, or MP3 */
 } mediaway_ts_elementary_stream_t;
+
+typedef enum mediaway_mpeg_version {
+    MEDIAWAY_MPEG_VERSION_1 = 0,   /* 44100/48000/32000 Hz family */
+    MEDIAWAY_MPEG_VERSION_2 = 1,   /* 22050/24000/16000 Hz family */
+    MEDIAWAY_MPEG_VERSION_2_5 = 2, /* 11025/12000/8000 Hz family (unofficial low-rate ext.) */
+} mediaway_mpeg_version_t;
+
+typedef enum mediaway_channel_mode {
+    MEDIAWAY_CHANNEL_MODE_STEREO = 0,
+    MEDIAWAY_CHANNEL_MODE_JOINT_STEREO = 1,
+    MEDIAWAY_CHANNEL_MODE_DUAL_CHANNEL = 2,
+    MEDIAWAY_CHANNEL_MODE_MONO = 3,
+} mediaway_channel_mode_t;
+
+/* Fixed Layer III frame header for mediaway_mp3_muxer_create -- bitrate/sample_rate/
+ * channel_mode stay constant for the mux session's lifetime (adr/0007-mp3-c-abi.md). */
+typedef struct mediaway_mp3_frame_header {
+    mediaway_mpeg_version_t version;
+    uint16_t bitrate_kbps;   /* must be one of the 14 standard Layer III rates for version */
+    uint32_t sample_rate;    /* must be one of the 3 standard rates for version */
+    mediaway_channel_mode_t channel_mode;
+} mediaway_mp3_frame_header_t;
 
 /* ── ABI version ─────────────────────────────────────────────────────────────────── */
 
@@ -566,6 +594,59 @@ void mediaway_ts_demuxer_finish_free(mediaway_packet_t *packets, size_t count);
 /* Close and free an MPEG-TS demuxer handle. Always safe to call, including on a poisoned
  * handle. */
 void mediaway_ts_demuxer_close(mediaway_ts_demuxer_t *demuxer);
+
+/* ── MP3 muxer/demuxer (adr/0007-mp3-c-abi.md; requires `mux`/`demux` respectively) ─── */
+
+/* Open a mux session for `header`. Bitrate/sample-rate/channel mode stay constant for the
+ * session's lifetime. Returns NULL for a non-standard bitrate/sample-rate combination or a
+ * caught panic during construction -- both collapse to NULL (no status side channel on this
+ * constructor). `header` is a borrowed pointer, valid for the call only. */
+mediaway_mp3_muxer_t *mediaway_mp3_muxer_create(const mediaway_mp3_frame_header_t *header);
+
+/* Append one already-encoded Layer III frame body into a freshly allocated output buffer.
+ * Fails with MEDIAWAY_STATUS_INVALID_PACKET when frame_body's length doesn't match what the
+ * header's bitrate/sample-rate/padding combination requires. Release the buffer with
+ * mediaway_buffer_free. */
+mediaway_status_t mediaway_mp3_muxer_write_frame(mediaway_mp3_muxer_t *muxer,
+                                                  const uint8_t *frame_body,
+                                                  size_t frame_body_len, bool padding,
+                                                  uint8_t **out_data, size_t *out_len);
+
+/* Close and free an MP3 muxer handle. Always safe to call, including on a poisoned
+ * handle. */
+void mediaway_mp3_muxer_close(mediaway_mp3_muxer_t *muxer);
+
+/* Create a new, empty MP3 demuxer. Returns NULL only on a caught panic during
+ * construction. */
+mediaway_mp3_demuxer_t *mediaway_mp3_demuxer_create(void);
+
+/* Feed MPEG audio elementary-stream bytes into the demuxer. `data` is a borrowed buffer,
+ * valid for the call only. */
+mediaway_status_t mediaway_mp3_demuxer_push_bytes(mediaway_mp3_demuxer_t *demuxer,
+                                                    const uint8_t *data, size_t len);
+
+/* Number of streams discovered so far -- 0 or 1 (MP3 carries a single implicit stream,
+ * recognized once the first frame's header has been parsed). Read-only; returns 0 on a
+ * null/poisoned handle or a caught panic. */
+size_t mediaway_mp3_demuxer_stream_count(const mediaway_mp3_demuxer_t *demuxer);
+
+/* Get stream info by index (always index 0 once the first frame has been parsed). On
+ * success, release *out_info with mediaway_stream_info_free. */
+mediaway_status_t mediaway_mp3_demuxer_stream_at(const mediaway_mp3_demuxer_t *demuxer,
+                                                  size_t index,
+                                                  mediaway_stream_info_t *out_info);
+
+/* Pop the next demuxed packet (one Layer III frame), if any is ready. pts/duration are
+ * synthesized from a running samples-per-frame count -- MPEG audio carries no per-frame
+ * timing of its own. *out_has_packet == false is a valid "nothing ready" result, not an
+ * error. When true, release *out_packet with mediaway_packet_free. */
+mediaway_status_t mediaway_mp3_demuxer_poll_packet(mediaway_mp3_demuxer_t *demuxer,
+                                                    mediaway_packet_t *out_packet,
+                                                    bool *out_has_packet);
+
+/* Close and free an MP3 demuxer handle. Always safe to call, including on a poisoned
+ * handle. */
+void mediaway_mp3_demuxer_close(mediaway_mp3_demuxer_t *demuxer);
 
 /* ── Shared frees ────────────────────────────────────────────────────────────────── */
 

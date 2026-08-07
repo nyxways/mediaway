@@ -1,6 +1,6 @@
 //! C ABI status codes (`mediaway_status_t`).
 
-use mediaway_container::{adts, flv, mp4, ogg, webm};
+use mediaway_container::{adts, flv, mp4, ogg, ts, webm};
 
 /// C ABI status code returned by fallible `mediaway-container-ffi` functions.
 ///
@@ -93,6 +93,22 @@ impl From<flv::Error> for MediawayStatus {
             flv::Error::UnregisteredStream(_) => Self::UnknownStream,
             // Tag(flv_core::Error) (bad signature, oversized tag data, a tag written
             // before the file header, ...), plus any future non-exhaustive variant.
+            _ => Self::InvalidData,
+        }
+    }
+}
+
+impl From<ts::Error> for MediawayStatus {
+    fn from(err: ts::Error) -> Self {
+        match err {
+            // Muxer construction (`mediaway_ts_muxer_create`) has no status side channel
+            // (adr/0006-mpeg-ts-c-abi.md) — `InvalidPid` only ever surfaces there, so this
+            // arm is exercised by `From` callers other than muxer construction (none
+            // today), kept for completeness against the non-exhaustive error enum.
+            ts::Error::InvalidPid(_) => Self::InvalidArgument,
+            ts::Error::UnknownPid(_) => Self::UnknownStream,
+            // BadSyncByte/CrcMismatch/unexpected table_id/..., plus any future
+            // non-exhaustive variant.
             _ => Self::InvalidData,
         }
     }

@@ -33,11 +33,16 @@ mod muxer;
 mod ogg_demuxer;
 #[cfg(feature = "mux")]
 mod ogg_muxer;
+#[cfg(feature = "demux")]
+mod ts_demuxer;
+#[cfg(feature = "mux")]
+mod ts_muxer;
 
 pub use status::MediawayStatus;
 pub use types::{
     MediawayAudioTrackInfo, MediawayCodecKind, MediawayContainerFormat, MediawayPacket,
-    MediawayPacketView, MediawayRational, MediawayStreamInfo, MediawayVideoTrackInfo,
+    MediawayPacketView, MediawayRational, MediawayStreamInfo, MediawayTsElementaryStream,
+    MediawayVideoTrackInfo,
 };
 
 #[cfg(feature = "mux")]
@@ -93,6 +98,18 @@ pub use ogg_muxer::{
     OggMuxerHandle, mediaway_ogg_muxer_close, mediaway_ogg_muxer_create, mediaway_ogg_muxer_flush,
     mediaway_ogg_muxer_poll_bytes, mediaway_ogg_muxer_push_packet,
 };
+#[cfg(feature = "demux")]
+pub use ts_demuxer::{
+    TsDemuxerHandle, mediaway_ts_demuxer_close, mediaway_ts_demuxer_create,
+    mediaway_ts_demuxer_finish, mediaway_ts_demuxer_finish_free, mediaway_ts_demuxer_poll_packet,
+    mediaway_ts_demuxer_push_bytes, mediaway_ts_demuxer_stream_at,
+    mediaway_ts_demuxer_stream_count,
+};
+#[cfg(feature = "mux")]
+pub use ts_muxer::{
+    TsMuxerHandle, mediaway_ts_muxer_close, mediaway_ts_muxer_create,
+    mediaway_ts_muxer_write_access_unit, mediaway_ts_muxer_write_pat_pmt,
+};
 
 /// Runtime ABI version, matching `MEDIAWAY_CONTAINER_FFI_ABI_VERSION` in
 /// `include/mediaway/container.h`.
@@ -103,9 +120,9 @@ pub use ogg_muxer::{
 /// Was hardcoded `0` through ABI v1 (`WebM`'s `mediaway_muxer_create_for_format` addition) —
 /// a drift bug, since the header macro had already moved to `1` and nothing kept this
 /// literal in sync. Fixed at `2` (Ogg, `adr/0004-ogg-adts-c-abi.md`), then `3` (ADTS, same
-/// pass), then `4` (FLV's dedicated `mediaway_flv_muxer_t`/`mediaway_flv_demuxer_t`
-/// handles, `adr/0005-flv-c-abi.md`).
+/// pass), then `4` (FLV, `adr/0005-flv-c-abi.md`), then `5` (MPEG-TS's dedicated
+/// `mediaway_ts_muxer_t`/`mediaway_ts_demuxer_t` handles, `adr/0006-mpeg-ts-c-abi.md`).
 #[unsafe(no_mangle)]
 pub const extern "C" fn mediaway_container_ffi_abi_version() -> u32 {
-    4
+    5
 }

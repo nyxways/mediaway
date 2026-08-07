@@ -34,6 +34,16 @@
   shape. MPEG-TS/MP3/WAV remain Rust-only; no language-binding wiring yet. Verified
   end-to-end: `tests/flv_container_smoke.rs` round-trips one AVC video packet and one AAC
   audio packet, plus unsupported-codec/unregistered-stream rejection.
+- `mediaway-ffi`: MPEG-TS reaches the container C ABI via dedicated `mediaway_ts_muxer_t`/
+  `_demuxer_t` handles (ABI v4 → v5, `adr/container/0006-mpeg-ts-c-abi.md`) — elementary
+  streams are registered at muxer construction (no `add_track`), `write_pat_pmt`/
+  `write_access_unit` write directly into a caller-supplied buffer with explicit
+  `pts_90k`/`dts_90k` clock values (not a track-timebase packet), and
+  `mediaway_ts_demuxer_finish` returns an owned array of packets — the only multi-packet
+  demux call in this crate, with its own `mediaway_ts_demuxer_finish_free`. MP3/WAV remain
+  Rust-only; no language-binding wiring yet. Verified end-to-end:
+  `tests/ts_container_smoke.rs` round-trips one H.264 video and one AAC audio access unit,
+  a `finish()`-recovered trailing access unit, and an invalid-PID construction rejection.
 
 ### Changed
 
@@ -44,7 +54,7 @@
   but no C caller could ever name it. Added (`= 12`, matching the existing Rust discriminant).
 - `mediaway-ffi`: `mediaway_container_ffi_abi_version()` had drifted to a stale hardcoded
   `0` since the WebM C ABI landed (the header macro had already moved to `1`) — fixed to
-  track the real value (`4`, alongside this release's own bumps).
+  track the real value (`5`, alongside this release's own bumps).
 
 ### Removed
 

@@ -28,7 +28,7 @@
 #ifndef MEDIAWAY_CONTAINER_H
 #define MEDIAWAY_CONTAINER_H
 
-#define MEDIAWAY_CONTAINER_FFI_ABI_VERSION 4 /* bump on any breaking change; pre-1.0, no stability promise */
+#define MEDIAWAY_CONTAINER_FFI_ABI_VERSION 5 /* bump on any breaking change; pre-1.0, no stability promise */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -64,6 +64,13 @@ typedef struct mediaway_adts_demuxer mediaway_adts_demuxer_t;
  * and has a fixed one-video/one-audio track slot instead of caller-assigned track ids. */
 typedef struct mediaway_flv_muxer mediaway_flv_muxer_t;
 typedef struct mediaway_flv_demuxer mediaway_flv_demuxer_t;
+
+/* Dedicated MPEG-TS handles (adr/0006-mpeg-ts-c-abi.md) -- ts::Muxer::new takes the full
+ * elementary stream list upfront (no add_track after construction); write_pat_pmt/
+ * write_access_unit both write directly into a caller-supplied buffer with explicit
+ * pts_90k/dts_90k clock values (the 90 kHz system clock is not a per-track timebase). */
+typedef struct mediaway_ts_muxer mediaway_ts_muxer_t;
+typedef struct mediaway_ts_demuxer mediaway_ts_demuxer_t;
 
 /* ── Container format (adr/0003-multi-format-c-abi.md) ───────────────────────────── */
 
@@ -176,6 +183,13 @@ typedef struct mediaway_stream_info {
     uint8_t *extra_data;  /* owned */
     size_t extra_data_len;
 } mediaway_stream_info_t;
+
+/* One elementary stream registered in mediaway_ts_muxer_create's PMT. Input to muxer
+ * construction only -- ts::Muxer::new takes the full stream list upfront (adr/0006). */
+typedef struct mediaway_ts_elementary_stream {
+    uint16_t pid;              /* 2..=0x1FFF; 0/1 reserved for PAT/CAT */
+    mediaway_codec_kind_t codec; /* must be H264, HEVC, AAC, or MP3 */
+} mediaway_ts_elementary_stream_t;
 
 /* ── ABI version ─────────────────────────────────────────────────────────────────── */
 
@@ -479,6 +493,79 @@ mediaway_status_t mediaway_flv_demuxer_poll_packet(mediaway_flv_demuxer_t *demux
 /* Close and free an FLV demuxer handle. Always safe to call, including on a poisoned
  * handle. */
 void mediaway_flv_demuxer_close(mediaway_flv_demuxer_t *demuxer);
+
+/* ── MPEG-TS muxer/demuxer (adr/0006-mpeg-ts-c-abi.md; requires `mux`/`demux` respectively) ── */
+
+/* Start a mux session for one program's elementary streams. pmt_pid and every stream's pid
+ * must be in 2..=0x1FFF; every stream's codec must be H264/HEVC/AAC/MP3. Returns NULL for
+ * an invalid PID, an unsupported codec, or a caught panic during construction -- all three
+ * collapse to NULL (no status side channel on this constructor). `streams` is a borrowed
+ * array, valid for the call only. */
+mediaway_ts_muxer_t *mediaway_ts_muxer_create(uint16_t program_number, uint16_t pmt_pid,
+                                               const mediaway_ts_elementary_stream_t *streams,
+                                               size_t stream_count);
+
+/* Write PAT + PMT packets into a freshly allocated output buffer. Call once at the start
+ * and periodically thereafter -- real players expect PAT/PMT to repeat. Release with
+ * mediaway_buffer_free. */
+mediaway_status_t mediaway_ts_muxer_write_pat_pmt(mediaway_ts_muxer_t *muxer,
+                                                   uint8_t **out_data, size_t *out_len);
+
+/* Packetize one access unit for `pid` into PES + TS packets, written into a freshly
+ * allocated output buffer. pts_90k/dts_90k are the real MPEG-TS 90 kHz clock values, not a
+ * track's own timebase-relative units; has_dts == false means "no DTS". Release the buffer
+ * with mediaway_buffer_free. */
+mediaway_status_t mediaway_ts_muxer_write_access_unit(mediaway_ts_muxer_t *muxer, uint16_t pid,
+                                                        const uint8_t *data, size_t data_len,
+                                                        uint64_t pts_90k, bool has_dts,
+                                                        uint64_t dts_90k, bool random_access,
+                                                        uint8_t **out_data, size_t *out_len);
+
+/* Close and free an MPEG-TS muxer handle. Always safe to call, including on a poisoned
+ * handle. */
+void mediaway_ts_muxer_close(mediaway_ts_muxer_t *muxer);
+
+/* Create a new, empty MPEG-TS demuxer. Returns NULL only on a caught panic during
+ * construction. */
+mediaway_ts_demuxer_t *mediaway_ts_demuxer_create(void);
+
+/* Feed bytes (need not be 188-byte aligned across calls). */
+mediaway_status_t mediaway_ts_demuxer_push_bytes(mediaway_ts_demuxer_t *demuxer,
+                                                   const uint8_t *data, size_t len);
+
+/* Number of streams whose stream_type maps to a recognized codec (H264/HEVC/AAC/MP3).
+ * Empty until poll_packet has actually consumed the PMT packet (lazy PSI parsing).
+ * Read-only; returns 0 on a null/poisoned handle or a caught panic. */
+size_t mediaway_ts_demuxer_stream_count(const mediaway_ts_demuxer_t *demuxer);
+
+/* Get stream info by index (id is the TS PID). On success, release *out_info with
+ * mediaway_stream_info_free. */
+mediaway_status_t mediaway_ts_demuxer_stream_at(const mediaway_ts_demuxer_t *demuxer,
+                                                 size_t index,
+                                                 mediaway_stream_info_t *out_info);
+
+/* Pop the next demuxed packet, if any is ready. A PID with no recognized codec mapping is
+ * silently skipped. *out_has_packet == false is a valid "nothing ready" result, not an
+ * error. When true, release *out_packet with mediaway_packet_free. */
+mediaway_status_t mediaway_ts_demuxer_poll_packet(mediaway_ts_demuxer_t *demuxer,
+                                                   mediaway_packet_t *out_packet,
+                                                   bool *out_has_packet);
+
+/* Force-emit whatever is still accumulating per PID -- call once at the end of a stream so
+ * the very last access unit per PID isn't lost (MPEG-TS only confirms a PES boundary once
+ * the next packet on the same PID starts). *out_packets/*out_count describe an owned array
+ * (possibly empty), released with mediaway_ts_demuxer_finish_free -- NOT
+ * mediaway_packet_free, which only frees one packet, not an array. */
+mediaway_status_t mediaway_ts_demuxer_finish(mediaway_ts_demuxer_t *demuxer,
+                                              mediaway_packet_t **out_packets,
+                                              size_t *out_count);
+
+/* Free an array returned by mediaway_ts_demuxer_finish. */
+void mediaway_ts_demuxer_finish_free(mediaway_packet_t *packets, size_t count);
+
+/* Close and free an MPEG-TS demuxer handle. Always safe to call, including on a poisoned
+ * handle. */
+void mediaway_ts_demuxer_close(mediaway_ts_demuxer_t *demuxer);
 
 /* ── Shared frees ────────────────────────────────────────────────────────────────── */
 

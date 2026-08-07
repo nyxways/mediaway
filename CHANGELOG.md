@@ -78,15 +78,23 @@ a single C ABI (`mediaway-ffi`).
 
 ### Bindings
 
-- C: `mediaway_ffi.h` + CMake/CPack archives — video decode, capture-to-encode
-  bridge, and Opus audio decode/encode all newly reachable this release.
-- C#: `Mediaway.*` packages on NuGet (Trusted Publishing, OIDC) — GOP/CBR
-  encode config and live `SetBitrate` newly reachable this release.
-- Python: `mediaway` on PyPI (Trusted Publishing).
-- Node: `@mediaway/ffi`, `@mediaway/container`, `@mediaway/device`,
-  `@mediaway/encoder` on npm (OIDC Trusted Publishing).
-- Browser: `@mediaway/browser` (wasm, wasm-bindgen) — now decode-capable via
-  `DecodeSession`, not just encode.
+- C: [`mediaway_ffi.h`](https://github.com/nyxways/mediaway/releases/tag/v0.1.4)
+  + CMake/CPack archives (GitHub Release assets) — video decode,
+  capture-to-encode bridge, and Opus audio decode/encode all newly reachable
+  this release.
+- C#: [`Mediaway.*`](https://www.nuget.org/packages/Mediaway.Common) packages
+  on NuGet (Trusted Publishing, OIDC) — GOP/CBR encode config and live
+  `SetBitrate` newly reachable this release.
+- Python: [`mediaway`](https://pypi.org/project/mediaway/) on PyPI (Trusted
+  Publishing).
+- Node: [`@mediaway/ffi`](https://www.npmjs.com/package/@mediaway/ffi),
+  [`@mediaway/container`](https://www.npmjs.com/package/@mediaway/container),
+  [`@mediaway/device`](https://www.npmjs.com/package/@mediaway/device),
+  [`@mediaway/encoder`](https://www.npmjs.com/package/@mediaway/encoder) on
+  npm (OIDC Trusted Publishing).
+- Browser: [`@mediaway/browser`](https://www.npmjs.com/package/@mediaway/browser)
+  (wasm, wasm-bindgen) — now decode-capable via `DecodeSession`, not just
+  encode.
 
 ### Breaking changes
 

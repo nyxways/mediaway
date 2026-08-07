@@ -35,6 +35,13 @@ Finalize Mediaway release notes: turn the `## Unreleased` section of
      Unreleased bullets imply a change (new platform/codec/binding support,
      renamed or removed API, maturity shift per `docs/spec/status.md`). Keep
      the maturity bar honest — never claim production readiness.
+   - `## Bindings` — hyperlink every named package to its registry page using
+     the package → URL table in
+     [`docs/ai/wiki/meta/release-notes.md`](../../docs/ai/wiki/meta/release-notes.md)
+     § Package registry links (crates.io / NuGet / PyPI / npm; C has no
+     registry, link the GitHub Release page instead). If a new package
+     appears in the Unreleased bullets that isn't in that table yet, add it
+     to the table too — don't leave it unlinked.
 4. **Archive.** Prepend `## [$1] - YYYY-MM-DD` (today, ISO) to
    `CHANGELOG.md` with the same content as the new `RELEASE_NOTES.md` minus
    the `# Mediaway v$1` title (Keep a Changelog style, English).

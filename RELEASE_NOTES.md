@@ -27,6 +27,13 @@
   language-binding wiring yet. Verified end-to-end:
   `tests/ogg_adts_container_smoke.rs` round-trips a real `OpusHead` header + Opus packet and
   two raw AAC frames.
+- `mediaway-ffi`: FLV reaches the container C ABI via dedicated `mediaway_flv_muxer_t`/
+  `_demuxer_t` handles (ABI v3 → v4, `adr/container/0005-flv-c-abi.md`) — its mux side
+  writes tag bytes directly into a caller-supplied buffer on every call (no `poll_bytes`
+  step) with a fixed one-video/one-audio track slot, mirroring `flv::Muxer`'s own Rust
+  shape. MPEG-TS/MP3/WAV remain Rust-only; no language-binding wiring yet. Verified
+  end-to-end: `tests/flv_container_smoke.rs` round-trips one AVC video packet and one AAC
+  audio packet, plus unsupported-codec/unregistered-stream rejection.
 
 ### Changed
 
@@ -37,7 +44,7 @@
   but no C caller could ever name it. Added (`= 12`, matching the existing Rust discriminant).
 - `mediaway-ffi`: `mediaway_container_ffi_abi_version()` had drifted to a stale hardcoded
   `0` since the WebM C ABI landed (the header macro had already moved to `1`) — fixed to
-  track the real value (`3`, alongside this release's own bumps).
+  track the real value (`4`, alongside this release's own bumps).
 
 ### Removed
 

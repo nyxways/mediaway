@@ -23,6 +23,10 @@ mod adts_demuxer;
 mod adts_muxer;
 #[cfg(feature = "demux")]
 mod demuxer;
+#[cfg(feature = "demux")]
+mod flv_demuxer;
+#[cfg(feature = "mux")]
+mod flv_muxer;
 #[cfg(feature = "mux")]
 mod muxer;
 #[cfg(feature = "demux")]
@@ -59,6 +63,18 @@ pub use demuxer::{
     mediaway_demuxer_push_bytes, mediaway_demuxer_set_decryption_key, mediaway_demuxer_stream_at,
     mediaway_demuxer_stream_count,
 };
+#[cfg(feature = "demux")]
+pub use flv_demuxer::{
+    FlvDemuxerHandle, mediaway_flv_demuxer_close, mediaway_flv_demuxer_create,
+    mediaway_flv_demuxer_poll_packet, mediaway_flv_demuxer_push_bytes,
+    mediaway_flv_demuxer_stream_at, mediaway_flv_demuxer_stream_count,
+};
+#[cfg(feature = "mux")]
+pub use flv_muxer::{
+    FlvMuxerHandle, mediaway_flv_muxer_add_audio_track, mediaway_flv_muxer_add_video_track,
+    mediaway_flv_muxer_close, mediaway_flv_muxer_create, mediaway_flv_muxer_push_packet,
+    mediaway_flv_muxer_write_header,
+};
 #[cfg(feature = "mux")]
 pub use muxer::{
     MuxerHandle, mediaway_muxer_add_audio_track, mediaway_muxer_add_video_track,
@@ -86,10 +102,10 @@ pub use ogg_muxer::{
 ///
 /// Was hardcoded `0` through ABI v1 (`WebM`'s `mediaway_muxer_create_for_format` addition) —
 /// a drift bug, since the header macro had already moved to `1` and nothing kept this
-/// literal in sync. Fixed alongside this pass's own bump to `2` (Ogg's dedicated
-/// `mediaway_ogg_muxer_t`/`mediaway_ogg_demuxer_t` handles), then `3` (ADTS's, same pass —
-/// `adr/0004-ogg-adts-c-abi.md`).
+/// literal in sync. Fixed at `2` (Ogg, `adr/0004-ogg-adts-c-abi.md`), then `3` (ADTS, same
+/// pass), then `4` (FLV's dedicated `mediaway_flv_muxer_t`/`mediaway_flv_demuxer_t`
+/// handles, `adr/0005-flv-c-abi.md`).
 #[unsafe(no_mangle)]
 pub const extern "C" fn mediaway_container_ffi_abi_version() -> u32 {
-    3
+    4
 }

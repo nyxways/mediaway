@@ -1,6 +1,6 @@
 //! C ABI status codes (`mediaway_status_t`).
 
-use mediaway_container::{adts, flv, mp3, mp4, ogg, ts, webm};
+use mediaway_container::{adts, flv, mp3, mp4, ogg, ts, wav, webm};
 
 /// C ABI status code returned by fallible `mediaway-container-ffi` functions.
 ///
@@ -110,6 +110,16 @@ impl From<mp3::Error> for MediawayStatus {
             // variant.
             _ => Self::InvalidData,
         }
+    }
+}
+
+impl From<wav::Error> for MediawayStatus {
+    fn from(_err: wav::Error) -> Self {
+        // riff_wave_core::Error is entirely parse-level (not a RIFF/WAVE container, missing
+        // `fmt ` chunk, truncated `fmt ` chunk, unsupported wFormatTag) — none of it maps to
+        // this enum's MP4-shaped InvalidTrack/InvalidPacket distinction, so every variant
+        // collapses to InvalidData, matching Ogg/ADTS's non-exhaustive-tail posture.
+        Self::InvalidData
     }
 }
 

@@ -28,7 +28,7 @@
 #ifndef MEDIAWAY_CONTAINER_H
 #define MEDIAWAY_CONTAINER_H
 
-#define MEDIAWAY_CONTAINER_FFI_ABI_VERSION 6 /* bump on any breaking change; pre-1.0, no stability promise */
+#define MEDIAWAY_CONTAINER_FFI_ABI_VERSION 7 /* bump on any breaking change; pre-1.0, no stability promise */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -77,6 +77,11 @@ typedef struct mediaway_ts_demuxer mediaway_ts_demuxer_t;
  * padding bit the generic packet-based shape has no slot for. */
 typedef struct mediaway_mp3_muxer mediaway_mp3_muxer_t;
 typedef struct mediaway_mp3_demuxer mediaway_mp3_demuxer_t;
+
+/* Dedicated WAV muxer handle (adr/0008-wav-c-abi.md) -- wav::Muxer::finish consumes self by
+ * value (RIFF chunk sizes must be known up front), so there is no poll_bytes step. WAV demux
+ * has NO handle at all: mediaway_wav_parse is a one-shot whole-buffer function instead. */
+typedef struct mediaway_wav_muxer mediaway_wav_muxer_t;
 
 /* ── Container format (adr/0003-multi-format-c-abi.md) ───────────────────────────── */
 
@@ -218,6 +223,21 @@ typedef struct mediaway_mp3_frame_header {
     uint32_t sample_rate;    /* must be one of the 3 standard rates for version */
     mediaway_channel_mode_t channel_mode;
 } mediaway_mp3_frame_header_t;
+
+/* NOT the same as mediaway_sample_format_t in common.h (raw PCM bit depth for device/
+ * pipeline audio, S16/S32/F32) -- this is the WAVE fmt chunk's wFormatTag encoding. */
+typedef enum mediaway_wav_sample_format {
+    MEDIAWAY_WAV_SAMPLE_FORMAT_PCM = 0,   /* integer PCM (wFormatTag 1) */
+    MEDIAWAY_WAV_SAMPLE_FORMAT_FLOAT = 1, /* IEEE float PCM (wFormatTag 3) */
+} mediaway_wav_sample_format_t;
+
+/* Explicit WAVE format for mediaway_wav_muxer_create_with_format (adr/0008-wav-c-abi.md). */
+typedef struct mediaway_wave_format {
+    mediaway_wav_sample_format_t sample_format;
+    uint16_t channels;
+    uint32_t sample_rate;
+    uint16_t bits_per_sample;
+} mediaway_wave_format_t;
 
 /* ── ABI version ─────────────────────────────────────────────────────────────────── */
 
@@ -647,6 +667,45 @@ mediaway_status_t mediaway_mp3_demuxer_poll_packet(mediaway_mp3_demuxer_t *demux
 /* Close and free an MP3 demuxer handle. Always safe to call, including on a poisoned
  * handle. */
 void mediaway_mp3_demuxer_close(mediaway_mp3_demuxer_t *demuxer);
+
+/* ── WAV muxer + one-shot parse (adr/0008-wav-c-abi.md; requires `mux`/`demux` respectively) ── */
+
+/* Start an integer-PCM mux session. Returns NULL only on a caught panic during
+ * construction. */
+mediaway_wav_muxer_t *mediaway_wav_muxer_create(uint32_t sample_rate, uint16_t channels,
+                                                 uint16_t bits_per_sample);
+
+/* Start a mux session for an explicit format (e.g. IEEE float PCM). Returns NULL for a
+ * NULL `format` or a caught panic during construction. `format` is a borrowed pointer,
+ * valid for the call only. */
+mediaway_wav_muxer_t *
+mediaway_wav_muxer_create_with_format(const mediaway_wave_format_t *format);
+
+/* Append raw interleaved PCM bytes (already encoded per the session's format). Always
+ * succeeds unless the muxer already finished (MEDIAWAY_STATUS_INVALID_STATE). */
+mediaway_status_t mediaway_wav_muxer_push_packet(mediaway_wav_muxer_t *muxer,
+                                                  const mediaway_packet_view_t *packet);
+
+/* Finalize the mux session and return the complete RIFF/WAVE byte stream. Consumes the
+ * muxer's internal state -- a second call fails with MEDIAWAY_STATUS_INVALID_STATE rather
+ * than re-finalizing. The handle itself must still be released with
+ * mediaway_wav_muxer_close afterward. Release the buffer with mediaway_buffer_free. */
+mediaway_status_t mediaway_wav_muxer_finish(mediaway_wav_muxer_t *muxer, uint8_t **out_data,
+                                             size_t *out_len);
+
+/* Close and free a WAV muxer handle. Always safe to call, including on a poisoned handle or
+ * one that never called mediaway_wav_muxer_finish (the buffered PCM bytes are simply
+ * dropped). */
+void mediaway_wav_muxer_close(mediaway_wav_muxer_t *muxer);
+
+/* Parse a complete RIFF/WAVE buffer into its single track's stream info and one packet
+ * holding the whole PCM payload (RIFF/WAVE carries no internal frame boundaries) -- a
+ * one-shot function, not a demuxer handle (adr/0008-wav-c-abi.md). On success, release
+ * *out_info/*out_packet with mediaway_stream_info_free/mediaway_packet_free. On failure,
+ * neither out-parameter is written. `data` is a borrowed buffer, valid for the call only. */
+mediaway_status_t mediaway_wav_parse(const uint8_t *data, size_t data_len,
+                                      mediaway_stream_info_t *out_info,
+                                      mediaway_packet_t *out_packet);
 
 /* ── Shared frees ────────────────────────────────────────────────────────────────── */
 

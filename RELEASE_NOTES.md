@@ -51,6 +51,14 @@
   WAV remains Rust-only; no language-binding wiring yet. Verified end-to-end:
   `tests/mp3_container_smoke.rs` round-trips a 128 kbps/44100 Hz stereo frame, a mono
   channel-count case, and a wrong-frame-body-length rejection.
+- `mediaway-ffi`: WAV (RIFF/WAVE PCM) reaches the container C ABI (ABI v6 → v7,
+  `adr/container/0008-wav-c-abi.md`) — closing out all 8 `mediaway-container` formats.
+  `mediaway_wav_muxer_t` is mux-only, since `wav::Muxer::finish` consumes `self` by value
+  (RIFF chunk sizes must be known up front); demux has no handle at all —
+  `mediaway_wav_parse` is a one-shot whole-buffer function, unlike every other format in
+  this crate. No language-binding wiring yet for any of the 6 non-MP4/WebM formats. Verified
+  end-to-end: `tests/wav_container_smoke.rs` round-trips PCM and float-format frames, a
+  double-`finish()` rejection, and a non-RIFF/WAVE-data rejection.
 
 ### Changed
 
@@ -61,7 +69,7 @@
   but no C caller could ever name it. Added (`= 12`, matching the existing Rust discriminant).
 - `mediaway-ffi`: `mediaway_container_ffi_abi_version()` had drifted to a stale hardcoded
   `0` since the WebM C ABI landed (the header macro had already moved to `1`) — fixed to
-  track the real value (`6`, alongside this release's own bumps).
+  track the real value (`7`, alongside this release's own bumps).
 
 ### Removed
 

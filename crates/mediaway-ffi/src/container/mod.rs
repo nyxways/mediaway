@@ -41,12 +41,17 @@ mod ogg_muxer;
 mod ts_demuxer;
 #[cfg(feature = "mux")]
 mod ts_muxer;
+#[cfg(feature = "demux")]
+mod wav_demuxer;
+#[cfg(feature = "mux")]
+mod wav_muxer;
 
 pub use status::MediawayStatus;
 pub use types::{
     MediawayAudioTrackInfo, MediawayChannelMode, MediawayCodecKind, MediawayContainerFormat,
     MediawayMp3FrameHeader, MediawayMpegVersion, MediawayPacket, MediawayPacketView,
     MediawayRational, MediawayStreamInfo, MediawayTsElementaryStream, MediawayVideoTrackInfo,
+    MediawayWavSampleFormat, MediawayWaveFormat,
 };
 
 #[cfg(feature = "mux")]
@@ -125,6 +130,14 @@ pub use ts_muxer::{
     TsMuxerHandle, mediaway_ts_muxer_close, mediaway_ts_muxer_create,
     mediaway_ts_muxer_write_access_unit, mediaway_ts_muxer_write_pat_pmt,
 };
+#[cfg(feature = "demux")]
+pub use wav_demuxer::mediaway_wav_parse;
+#[cfg(feature = "mux")]
+pub use wav_muxer::{
+    WavMuxerHandle, mediaway_wav_muxer_close, mediaway_wav_muxer_create,
+    mediaway_wav_muxer_create_with_format, mediaway_wav_muxer_finish,
+    mediaway_wav_muxer_push_packet,
+};
 
 /// Runtime ABI version, matching `MEDIAWAY_CONTAINER_FFI_ABI_VERSION` in
 /// `include/mediaway/container.h`.
@@ -136,9 +149,10 @@ pub use ts_muxer::{
 /// a drift bug, since the header macro had already moved to `1` and nothing kept this
 /// literal in sync. Fixed at `2` (Ogg, `adr/0004-ogg-adts-c-abi.md`), then `3` (ADTS, same
 /// pass), then `4` (FLV, `adr/0005-flv-c-abi.md`), then `5` (MPEG-TS,
-/// `adr/0006-mpeg-ts-c-abi.md`), then `6` (MP3's dedicated `mediaway_mp3_muxer_t`/
-/// `mediaway_mp3_demuxer_t` handles, `adr/0007-mp3-c-abi.md`).
+/// `adr/0006-mpeg-ts-c-abi.md`), then `6` (MP3, `adr/0007-mp3-c-abi.md`), then `7` (WAV's
+/// dedicated `mediaway_wav_muxer_t` + one-shot `mediaway_wav_parse`,
+/// `adr/0008-wav-c-abi.md`) — the last of all 8 `mediaway-container` formats.
 #[unsafe(no_mangle)]
 pub const extern "C" fn mediaway_container_ffi_abi_version() -> u32 {
-    6
+    7
 }

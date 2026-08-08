@@ -51,6 +51,7 @@ enum class Status {
     MuxError,
     DemuxError,
     EncodeError,
+    DecodeError,
     CaptureError,
     Panic,
 };

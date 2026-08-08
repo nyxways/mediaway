@@ -108,6 +108,15 @@
   convention, only its test project's DLL-staging items needed a Linux sibling; C++'s
   headers needed no changes at all (no `_WIN32`/`windows.h` anywhere). Verified via
   each binding's own pure-CPU container test suite passing against a real Linux build.
+- C++ binding: video decode (`decoder::DecodeSession`) and Opus audio decode
+  (`decoder::AudioDecodeSession`) reach `bindings/cpp/include/mediaway/pipeline.hpp` —
+  the C ABI's decode sessions (`adr/0004-auto-decode-c-abi.md`,
+  `adr/pipeline/0006-audio-decode-c-abi.md`) existed since v0.1.4 with no language
+  binding wired to them. Both are single-step handles (the handle IS the decoder,
+  same shape as `AutoVideoEncoder`), `NoBackend` throws gracefully. C#/Python/Node
+  wiring still pending. Verified end-to-end: `examples/pipeline/decode_roundtrip.cpp`
+  round-trips a real WMF H.264 encode→mux→demux→decode (10 frames) and a real Opus
+  encode→decode (50 frames) against the real GNU-target dylib.
 
 ### Changed
 

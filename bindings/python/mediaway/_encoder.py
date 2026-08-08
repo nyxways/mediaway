@@ -22,11 +22,11 @@ from ._types import AudioStreamInfo, Codec, Packet, PixelFormat, Rational, Sampl
 __all__ = ["AutoVideoEncoder", "EncodeSession", "AudioEncoder"]
 
 
-def _check_pipeline(status: int) -> None:
+def _check_pipeline(status: int, *, no_backend_error: type[MediawayError] = EncoderUnavailableError) -> None:
     if status == _ffi.PIPELINE_OK:
         return
     if status == _ffi.PIPELINE_NO_BACKEND:
-        raise EncoderUnavailableError(status, "no encode backend compiled in or openable on this platform")
+        raise no_backend_error(status, "no backend compiled in or openable on this platform")
     names = {
         _ffi.PIPELINE_INVALID_ARGUMENT: "invalid argument",
         _ffi.PIPELINE_HANDLE_POISONED: "handle poisoned by an earlier panic",
@@ -39,6 +39,8 @@ def _check_pipeline(status: int) -> None:
         _ffi.PIPELINE_MUX_INVALID_DATA: "malformed container data",
         _ffi.PIPELINE_UNKNOWN_ERROR: "unknown error",
         _ffi.PIPELINE_INTERNAL_PANIC: "internal panic (handle poisoned)",
+        _ffi.PIPELINE_DECODER_BACKEND_FAILURE: "decoder backend OS/API failure",
+        _ffi.PIPELINE_DECODER_CLOSED: "decode session already finished or not open",
     }
     raise MediawayError(status, names.get(status, "unknown status"))
 

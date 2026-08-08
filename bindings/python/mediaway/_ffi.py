@@ -702,6 +702,107 @@ _H.mediaway_pipeline_ffi_stream_info_free.restype = None
 _H.mediaway_pipeline_ffi_stream_info_free.argtypes = [POINTER(AudioStreamInfo)]
 
 
+# ── pipeline.h: decode (adr/0004-auto-decode-c-abi.md, adr/pipeline/0006) ───
+#
+# mediaway_decode_packet_view_t is shared by both video and audio decode
+# push_packet calls — a new, pipeline-scoped type, not container.h's
+# PacketView above.
+
+PIPELINE_DECODER_BACKEND_FAILURE = 13
+PIPELINE_DECODER_CLOSED = 14
+
+
+class DecodePacketView(Structure):  # borrowed input
+    _fields_ = [
+        ("stream_id", c_uint32),  # unused by decode; kept for call-site symmetry
+        ("pts", c_int64),
+        ("dts", c_int64),
+        ("duration", c_uint64),
+        ("is_keyframe", c_bool),
+        ("is_discard", c_bool),
+        ("payload", U8P),  # borrowed
+        ("payload_len", c_size_t),
+    ]
+
+
+class AutoVideoDecodeConfig(Structure):
+    _fields_ = [
+        ("codec", c_int32),
+        ("width", c_uint32),
+        ("height", c_uint32),
+        ("time_base", Rational),
+        ("pixel_format", c_int32),
+        ("extra_data", U8P),  # borrowed, open-call only
+        ("extra_data_len", c_size_t),
+    ]
+
+
+class DecodedVideoFrame(Structure):  # owned output
+    _fields_ = [
+        ("pts", c_int64),
+        ("duration", c_uint64),
+        ("width", c_uint32),
+        ("height", c_uint32),
+        ("pixel_format", c_int32),
+        ("data", U8P),  # owned
+        ("data_len", c_size_t),
+    ]
+
+
+class AudioDecodeConfig(Structure):
+    _fields_ = [
+        ("codec", c_int32),  # Opus only today
+        ("sample_rate", c_uint32),
+        ("channels", c_uint16),
+        ("time_base", Rational),
+    ]
+
+
+class DecodedAudioFrame(Structure):  # owned output
+    _fields_ = [
+        ("pts", c_int64),
+        ("duration", c_uint64),
+        ("sample_rate", c_uint32),
+        ("channels", c_uint16),
+        ("sample_format", c_int32),  # always F32 for Opus
+        ("data", U8P),  # owned interleaved PCM
+        ("data_len", c_size_t),
+    ]
+
+
+_H.mediaway_auto_video_decode_config_new.restype = AutoVideoDecodeConfig
+_H.mediaway_auto_video_decode_config_new.argtypes = [c_int32, c_uint32, c_uint32, Rational, U8P, c_size_t]
+
+_H.mediaway_decode_session_open.restype = c_int32
+_H.mediaway_decode_session_open.argtypes = [POINTER(AutoVideoDecodeConfig), POINTER(c_void_p)]
+_H.mediaway_decode_session_push_packet.restype = c_int32
+_H.mediaway_decode_session_push_packet.argtypes = [c_void_p, POINTER(DecodePacketView)]
+_H.mediaway_decode_session_poll_frame.restype = c_int32
+_H.mediaway_decode_session_poll_frame.argtypes = [c_void_p, POINTER(DecodedVideoFrame), POINTER(c_bool)]
+_H.mediaway_decode_session_flush.restype = c_int32
+_H.mediaway_decode_session_flush.argtypes = [c_void_p]
+_H.mediaway_decode_session_close.restype = None
+_H.mediaway_decode_session_close.argtypes = [c_void_p]
+_H.mediaway_decoded_video_frame_free.restype = None
+_H.mediaway_decoded_video_frame_free.argtypes = [POINTER(DecodedVideoFrame)]
+
+_H.mediaway_audio_decode_config_opus.restype = AudioDecodeConfig
+_H.mediaway_audio_decode_config_opus.argtypes = [c_uint32, c_uint16, Rational]
+
+_H.mediaway_audio_decode_session_open.restype = c_int32
+_H.mediaway_audio_decode_session_open.argtypes = [POINTER(AudioDecodeConfig), POINTER(c_void_p)]
+_H.mediaway_audio_decode_session_push_packet.restype = c_int32
+_H.mediaway_audio_decode_session_push_packet.argtypes = [c_void_p, POINTER(DecodePacketView)]
+_H.mediaway_audio_decode_session_poll_frame.restype = c_int32
+_H.mediaway_audio_decode_session_poll_frame.argtypes = [c_void_p, POINTER(DecodedAudioFrame), POINTER(c_bool)]
+_H.mediaway_audio_decode_session_flush.restype = c_int32
+_H.mediaway_audio_decode_session_flush.argtypes = [c_void_p]
+_H.mediaway_audio_decode_session_close.restype = None
+_H.mediaway_audio_decode_session_close.argtypes = [c_void_p]
+_H.mediaway_decoded_audio_frame_free.restype = None
+_H.mediaway_decoded_audio_frame_free.argtypes = [POINTER(DecodedAudioFrame)]
+
+
 # ── device.h: status codes ────────────────────────────────────────────────────
 
 DEVICE_OK = 0

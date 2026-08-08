@@ -18,6 +18,7 @@ from __future__ import annotations
 __all__ = [
     "MediawayError",
     "EncoderUnavailableError",
+    "DecoderUnavailableError",
     "DeviceUnavailableError",
     "CaptureUnsupportedError",
     "InvalidStateError",
@@ -42,6 +43,15 @@ class EncoderUnavailableError(MediawayError):
     Maps the pipeline ABI's NO_BACKEND (and unsupported-codec) outcomes.
     Expected on machines without a usable encoder — catch it and exit
     gracefully rather than crashing.
+    """
+
+
+class DecoderUnavailableError(MediawayError):
+    """No decoder backend could be opened for the requested config.
+
+    Maps the pipeline ABI's NO_BACKEND outcome for `DecodeSession`/
+    `AudioDecodeSession.open()`. Expected on machines without a usable
+    decoder — catch it and exit gracefully rather than crashing.
     """
 
 

@@ -58,9 +58,29 @@ test-local raw P/Invoke declaration rather than the internal
 precedent `Mediaway.Device`'s hardware capture tests set for a test-only raw
 P/Invoke.
 
-## Python / Node (pending)
+## Python (done)
 
-Not yet wired. Same shape expected: Python ctypes/cffi, Node koffi, plus
-the same class of proactive checks the container series found repeatedly —
-missing mirror-enum variants, stale native DLL shadowing a fresh build,
-double-free on a consumed handle.
+`DecodeSession` / `AudioDecodeSession` in a new `mediaway/_decoder.py`
+module, mirroring `AutoVideoEncoder`/`AudioEncoder`'s single-step-handle
+`ctypes` shape from `_encoder.py`. `_check_pipeline` (shared with
+`_encoder.py`) gained a `no_backend_error=` parameter so `NO_BACKEND` raises
+the new `DecoderUnavailableError` instead of `EncoderUnavailableError`.
+
+Notable find: Python's `AudioEncoder.open()` already took a `codec=`
+parameter (defaulting to AAC, but Opus was always a valid argument) —
+unlike C++/C#'s wrappers, which hardcode AAC and needed a raw-ABI workaround
+to test Opus decode. `AudioEncoder.open(codec=Codec.OPUS, ...)` just worked,
+no extra plumbing needed.
+
+Verified end-to-end: `examples/pipeline/decode_roundtrip.py` (narrated) and
+`tests/test_decode_roundtrip.py` (RC-stage assert-based script, no pytest
+dependency, same style as `test_mux_roundtrip.py`) — a real WMF H.264
+encode→mux→demux→decode round trip (10 frames) and a real Opus
+encode→decode round trip (50 frames).
+
+## Node (pending)
+
+Not yet wired. Same shape expected: Node koffi, plus the same class of
+proactive checks the container series found repeatedly — missing
+mirror-enum variants, stale native DLL shadowing a fresh build, double-free
+on a consumed handle.

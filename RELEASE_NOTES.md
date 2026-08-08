@@ -127,6 +127,19 @@
   H.264 encode→mux→demux→decode round trip (10 frames) and a real Opus encode→decode
   round trip (50 frames, encoded via a test-local raw P/Invoke since the public
   `AudioEncoder` wrapper is AAC-only) against the real native DLL.
+- Python binding: video decode (`DecodeSession`) and Opus audio decode
+  (`AudioDecodeSession`) reach the `mediaway` package in a new `_decoder.py`
+  module, mirroring `AutoVideoEncoder`/`AudioEncoder`'s single-step-handle shape.
+  Python's `AudioEncoder.open()` already accepted a `codec=` parameter (unlike
+  C++/C#'s AAC-only wrappers), so the Opus round trip needed no raw ctypes
+  workaround — `AudioEncoder.open(codec=Codec.OPUS, ...)` just worked.
+  `_check_pipeline` gains a `no_backend_error=` parameter so decode's `NO_BACKEND`
+  raises the new `DecoderUnavailableError` instead of `EncoderUnavailableError`.
+  Node wiring still pending — last in the C++→C#→Python→Node decode sequence.
+  Verified end-to-end: `examples/pipeline/decode_roundtrip.py` and
+  `tests/test_decode_roundtrip.py` (RC-stage, assert-based, no pytest dependency)
+  — a real WMF H.264 encode→mux→demux→decode round trip (10 frames) and a real
+  Opus encode→decode round trip (50 frames) against the real native DLL.
 
 ### Changed
 

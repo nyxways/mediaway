@@ -81,9 +81,12 @@ export class AutoVideoEncodeConfig {
   }
 }
 
-function checkPipeline(status: number): void {
+export function checkPipeline(
+  status: number,
+  noBackendError: new (status: number, message: string) => MediawayError = EncoderUnavailableError
+): void {
   if (status === 0) return;
-  if (status === 3) throw new EncoderUnavailableError(status, "no encode backend compiled in or openable");
+  if (status === 3) throw new noBackendError(status, "no backend compiled in or openable");
   const names: Record<number, string> = {
     1: "invalid argument",
     2: "handle poisoned by an earlier panic",
@@ -96,6 +99,8 @@ function checkPipeline(status: number): void {
     10: "malformed container data",
     11: "unknown error",
     12: "internal panic (handle poisoned)",
+    13: "decoder backend OS/API failure",
+    14: "decode session already finished or not open",
   };
   throw new MediawayError(status, names[status] ?? "unknown pipeline error");
 }
@@ -320,3 +325,5 @@ export class AudioEncoder {
     }
   }
 }
+
+export * from "./decode.js";

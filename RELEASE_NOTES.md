@@ -140,6 +140,23 @@
   `tests/test_decode_roundtrip.py` (RC-stage, assert-based, no pytest dependency)
   — a real WMF H.264 encode→mux→demux→decode round trip (10 frames) and a real
   Opus encode→decode round trip (50 frames) against the real native DLL.
+- Node.js binding: video decode (`DecodeSession`) and Opus audio decode
+  (`AudioDecodeSession`) reach `@mediaway/encoder` in a new `decode.ts` module,
+  mirroring `openAutoEncoder`/`AudioEncoder`'s single-step-handle shape.
+  `@mediaway/ffi` gains the decode session structs/functions
+  (`MwDecodePacketView`, `MwAutoVideoDecodeConfig`, `MwDecodedVideoFrame`,
+  `MwAudioDecodeConfig`, `MwDecodedAudioFrame`); `checkPipeline` (exported from
+  `@mediaway/encoder`) gains a `noBackendError` parameter so decode's
+  `NO_BACKEND` throws the new `DecoderUnavailableError` instead of
+  `EncoderUnavailableError`. The public `AudioEncoder` wrapper stays AAC-only
+  (same gap as C++/C#), so the Opus round trip encodes via the raw
+  `@mediaway/ffi` layer directly. This closes the C++→C#→Python→Node decode
+  wiring sequence — all 4 bindings now reach both decode sessions. Verified
+  end-to-end: `examples/pipeline/decode-roundtrip.ts` and
+  `test/decode-roundtrip.test.ts` (assertion-based with `node:assert`, no test
+  framework, same style as `all-formats-smoke.test.ts`) — a real WMF H.264
+  encode→mux→demux→decode round trip (10 frames) and a real Opus
+  encode→decode round trip (50 frames) against the real native DLL.
 
 ### Changed
 

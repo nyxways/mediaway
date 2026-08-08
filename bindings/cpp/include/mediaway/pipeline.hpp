@@ -29,6 +29,8 @@ inline void checkPipeline(mediaway_pipeline_status_t st) {
         case MEDIAWAY_PIPELINE_STATUS_INVALID_INPUT: throwError(Status::InvalidArgument, st, "invalid argument or input");
         case MEDIAWAY_PIPELINE_STATUS_ENCODER_BACKEND_FAILURE:
         case MEDIAWAY_PIPELINE_STATUS_ENCODER_CLOSED: throwError(Status::EncodeError, st, "encoder backend failure or closed session");
+        case MEDIAWAY_PIPELINE_STATUS_DECODER_BACKEND_FAILURE:
+        case MEDIAWAY_PIPELINE_STATUS_DECODER_CLOSED: throwError(Status::DecodeError, st, "decoder backend failure or closed session");
         case MEDIAWAY_PIPELINE_STATUS_MUX_INVALID_TRACK:
         case MEDIAWAY_PIPELINE_STATUS_MUX_INVALID_PACKET:
         case MEDIAWAY_PIPELINE_STATUS_MUX_INVALID_DATA: throwError(Status::MuxError, st, "muxer rejected encoder output");
@@ -243,6 +245,175 @@ private:
 };
 
 }  // namespace encoder
+
+namespace decoder {
+
+/// One decoded video frame — CPU-only output (GPU decode output is deferred,
+/// adr/0004 §1/§5). `data` planes match `format` (NV12: Y then interleaved UV;
+/// BGRA8: tightly packed).
+struct DecodedVideoFrame {
+    std::int64_t pts;
+    std::uint64_t duration;  // 0 if unknown
+    std::uint32_t width;
+    std::uint32_t height;
+    PixelFormat format;
+    Bytes data;
+};
+
+/// A decoded Opus PCM frame — always interleaved F32 (adr/pipeline/0006 §Decode side).
+struct DecodedAudioFrame {
+    std::int64_t pts;
+    std::uint64_t duration;  // 0 if unknown
+    std::uint32_t sampleRate;
+    std::uint16_t channels;
+    Bytes data;
+};
+
+/// Auto video decode session — the handle IS the decoder (single-step open, no
+/// consumption trap, mirrors encoder::AutoVideoEncoder's NO_BACKEND handling).
+/// open() throws Error(Status::NoBackend) when no decode backend exists for
+/// `codec` — an expected outcome on this machine, not a hard failure.
+class DecodeSession {
+public:
+    /// `extraData` (AVCC / SPS-PPS codec config) is required at open time — it
+    /// is copied into the ABI call and need not outlive this call.
+    static DecodeSession open(Codec codec, std::uint32_t width, std::uint32_t height,
+                              Rational timeBase, const Bytes& extraData = {},
+                              PixelFormat outputFormat = PixelFormat::Nv12) {
+        mediaway_auto_video_decode_config_t raw = mediaway_auto_video_decode_config_new(
+            static_cast<mediaway_pipeline_codec_kind_t>(detail::toAbiCodec(codec)), width,
+            height, {timeBase.num, timeBase.den},
+            extraData.empty() ? nullptr : extraData.data(), extraData.size());
+        raw.pixel_format = detail::toAbiPixel(outputFormat);
+        mediaway_decode_session_t* session = nullptr;
+        detail::checkPipeline(mediaway_decode_session_open(&raw, &session));
+        if (!session) {
+            detail::throwError(Status::Panic, MEDIAWAY_PIPELINE_STATUS_INTERNAL_PANIC,
+                               "decode session open returned no handle");
+        }
+        return DecodeSession(session);
+    }
+
+    ~DecodeSession() = default;
+    DecodeSession(DecodeSession&&) = default;
+    DecodeSession& operator=(DecodeSession&&) = default;
+    DecodeSession(const DecodeSession&) = delete;
+    DecodeSession& operator=(const DecodeSession&) = delete;
+
+    /// Push one compressed packet. `payload` is a BORROWED view, copied
+    /// synchronously inside the call. May produce zero or more frames (drain
+    /// via pollFrame()).
+    void pushPacket(std::int64_t pts, std::int64_t dts, std::uint64_t duration,
+                    bool keyframe, const std::uint8_t* payload, std::size_t payloadLen) {
+        mediaway_decode_packet_view_t raw{};
+        raw.stream_id = 0;  // unused by decode; kept for call-site symmetry
+        raw.pts = pts;
+        raw.dts = dts;
+        raw.duration = duration;
+        raw.is_keyframe = keyframe;
+        raw.is_discard = false;
+        raw.payload = payload;
+        raw.payload_len = payloadLen;
+        detail::checkPipeline(mediaway_decode_session_push_packet(handle_.get(), &raw));
+    }
+
+    /// Pull the next decoded frame, if any is ready. nullopt is a valid
+    /// "nothing ready" result, not an error.
+    std::optional<DecodedVideoFrame> pollFrame() {
+        mediaway_decoded_video_frame_t raw{};
+        bool has = false;
+        detail::checkPipeline(mediaway_decode_session_poll_frame(handle_.get(), &raw, &has));
+        if (!has) return std::nullopt;
+        DecodedVideoFrame frame{raw.pts,
+                                raw.duration,
+                                raw.width,
+                                raw.height,
+                                detail::fromAbiPixel(raw.pixel_format),
+                                {}};
+        if (raw.data_len > 0) frame.data.assign(raw.data, raw.data + raw.data_len);
+        mediaway_decoded_video_frame_free(&raw);
+        return frame;
+    }
+
+    /// Signal end of input; drain the remaining frames with pollFrame().
+    void flush() {
+        detail::checkPipeline(mediaway_decode_session_flush(handle_.get()));
+    }
+
+private:
+    explicit DecodeSession(mediaway_decode_session_t* handle)
+        : handle_(handle, &mediaway_decode_session_close) {}
+    std::unique_ptr<mediaway_decode_session_t, void (*)(mediaway_decode_session_t*)> handle_;
+};
+
+/// Opus audio decode session — the handle IS the decoder (adr/pipeline/0006,
+/// mirrors DecodeSession's video shape; no muxer to wire, no consumption trap).
+class AudioDecodeSession {
+public:
+    static AudioDecodeSession open(std::uint32_t sampleRate, std::uint16_t channels,
+                                   Rational timeBase) {
+        const mediaway_audio_decode_config_t raw =
+            mediaway_audio_decode_config_opus(sampleRate, channels, {timeBase.num, timeBase.den});
+        mediaway_audio_decode_session_t* session = nullptr;
+        detail::checkPipeline(mediaway_audio_decode_session_open(&raw, &session));
+        if (!session) {
+            detail::throwError(Status::Panic, MEDIAWAY_PIPELINE_STATUS_INTERNAL_PANIC,
+                               "audio decode session open returned no handle");
+        }
+        return AudioDecodeSession(session);
+    }
+
+    ~AudioDecodeSession() = default;
+    AudioDecodeSession(AudioDecodeSession&&) = default;
+    AudioDecodeSession& operator=(AudioDecodeSession&&) = default;
+    AudioDecodeSession(const AudioDecodeSession&) = delete;
+    AudioDecodeSession& operator=(const AudioDecodeSession&) = delete;
+
+    /// Push one compressed Opus packet. An empty `payload` (nullptr or
+    /// `payloadLen == 0`) is Opus's packet-loss-concealment hint for a lost
+    /// frame, not an error. May produce zero or more frames (drain via
+    /// pollFrame()).
+    void pushPacket(std::int64_t pts, const std::uint8_t* payload, std::size_t payloadLen) {
+        mediaway_decode_packet_view_t raw{};
+        raw.stream_id = 0;
+        raw.pts = pts;
+        raw.dts = pts;
+        raw.duration = 0;
+        raw.is_keyframe = false;
+        raw.is_discard = false;
+        raw.payload = payload;
+        raw.payload_len = payloadLen;
+        detail::checkPipeline(mediaway_audio_decode_session_push_packet(handle_.get(), &raw));
+    }
+
+    /// Pull the next decoded PCM frame, if any is ready. nullopt is a valid
+    /// "nothing ready" result, not an error.
+    std::optional<DecodedAudioFrame> pollFrame() {
+        mediaway_decoded_audio_frame_t raw{};
+        bool has = false;
+        detail::checkPipeline(
+            mediaway_audio_decode_session_poll_frame(handle_.get(), &raw, &has));
+        if (!has) return std::nullopt;
+        DecodedAudioFrame frame{raw.pts, raw.duration, raw.sample_rate, raw.channels, {}};
+        if (raw.data_len > 0) frame.data.assign(raw.data, raw.data + raw.data_len);
+        mediaway_decoded_audio_frame_free(&raw);
+        return frame;
+    }
+
+    /// Signal end of input; drain the remaining frames with pollFrame().
+    void flush() {
+        detail::checkPipeline(mediaway_audio_decode_session_flush(handle_.get()));
+    }
+
+private:
+    explicit AudioDecodeSession(mediaway_audio_decode_session_t* handle)
+        : handle_(handle, &mediaway_audio_decode_session_close) {}
+    std::unique_ptr<mediaway_audio_decode_session_t,
+                    void (*)(mediaway_audio_decode_session_t*)>
+        handle_;
+};
+
+}  // namespace decoder
 }  // namespace mediaway
 
 #endif  // MEDIAWAY_PIPELINE_HPP

@@ -20,6 +20,13 @@ internal sealed class MuxerHandle : SafeHandleZeroOrMinusOneIsInvalid
         return instance;
     }
 
+    internal static MuxerHandle CreateForFormat(ContainerFormat format)
+    {
+        var instance = new MuxerHandle();
+        instance.SetHandle(NativeMethods.mediaway_muxer_create_for_format(format));
+        return instance;
+    }
+
     internal static MuxerHandle CreateWithFragmentBatch(nuint batch)
     {
         var instance = new MuxerHandle();

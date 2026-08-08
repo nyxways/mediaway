@@ -16,7 +16,7 @@ Windows x64 is the verified platform. Pre-1.0: APIs may change.
 | Package | What it does |
 | --- | --- |
 | `Mediaway.Common` | Shared types (`Rational`, stream/packet info) used by all packages |
-| `Mediaway.Container` | Fragmented MP4 (fMP4) mux and demux — push packets in, poll bytes out |
+| `Mediaway.Container` | Mux/demux for all 8 `mediaway-container` formats: MP4/WebM (`Muxer`/`Demuxer`), Ogg/ADTS/FLV/MPEG-TS/MP3 (dedicated classes), WAV (mux-only + `WavContainer.Parse`) |
 | `Mediaway.Device` | Camera, microphone, and screen capture |
 | `Mediaway.Device.Camera` | Camera capture (`Mediaway.Device.Camera`) |
 | `Mediaway.Device.Audio` | Microphone capture (`Mediaway.Device.Audio`) |

@@ -16,6 +16,14 @@ public sealed class Muxer : IDisposable
 
     public Muxer() => _handle = MuxerHandle.Create();
 
+    /// <param name="format">
+    /// Container format to open. WebM's TrackNumber element must not be <c>0</c> — unlike
+    /// MP4, a video/audio track registered with <see cref="VideoTrackInfo.Id"/>/
+    /// <see cref="AudioTrackInfo.Id"/> <c>== 0</c> is rejected with
+    /// <see cref="MediawayContainerStatus.InvalidData"/>.
+    /// </param>
+    public Muxer(ContainerFormat format) => _handle = MuxerHandle.CreateForFormat(format);
+
     /// <param name="fragmentBatch">
     /// Samples-per-fragment batch size. <c>0</c> is accepted and clamped to 1 by the native
     /// core — no diagnostic is raised for passing 0 by mistake.

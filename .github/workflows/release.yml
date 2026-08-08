@@ -231,10 +231,19 @@ jobs:
         shell: bash
         run: dotnet test bindings/csharp/tests/Mediaway.Container.Tests/Mediaway.Container.Tests.csproj
 
+      - name: C# round-trip test (Pipeline decode, real WMF/Opus hardware)
+        shell: bash
+        run: dotnet test bindings/csharp/tests/Mediaway.Pipeline.Tests/Mediaway.Pipeline.Tests.csproj
+
       - name: Python round-trip test
         shell: bash
         working-directory: bindings/python
         run: python tests/test_mux_roundtrip.py
+
+      - name: Python round-trip test (decode)
+        shell: bash
+        working-directory: bindings/python
+        run: python tests/test_decode_roundtrip.py
 
       - name: Node round-trip test
         shell: bash

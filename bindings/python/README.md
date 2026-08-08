@@ -37,10 +37,15 @@ detail in [`../c/README.md`](../c/README.md) and `docs/spec/c-ffi.md`):
    `wav_parse()` function, not a class at all. These 6 formats use `RawPacket`
    (ABI-native integer pts/dts, not `Rational` seconds) since none of them have MP4's
    per-track time base to convert against. Fully real, all formats run-verified.
-2. **Pipeline — auto video encode → fMP4**: one call picks the best available OS/GPU
-   encoder for a config, wires it into an internal MP4 muxer; `finish()` returns
-   complete MP4 bytes. **Video only** — the audio encoder is separate (ABI v2,
-   adr/0003): `AudioEncoder.open()` streams AAC packets for the caller's own muxer.
+2. **Pipeline — auto video encode → fMP4, plus decode**: one call picks the best
+   available OS/GPU encoder for a config, wires it into an internal MP4 muxer;
+   `finish()` returns complete MP4 bytes. The audio encoder is separate (ABI v2,
+   adr/0003): `AudioEncoder.open()` streams AAC (or Opus) packets for the caller's
+   own muxer. Decode is the mirror shape (adr/0004, adr/pipeline/0006):
+   `DecodeSession` wraps the best available video decoder (CPU output only;
+   Windows/WMF today), `AudioDecodeSession` wraps the cross-platform Opus decoder —
+   both single-step handles (the handle IS the decoder), `NO_BACKEND` raises
+   `DecoderUnavailableError` gracefully.
 3. **Device — capture**: camera (CPU frames), microphone/loopback (PCM), hotplug.
    **Screen capture is `UNSUPPORTED` from C today** (needs a GPU device handle with no
    C representation yet) — an honest gap, not a bug.
@@ -102,6 +107,7 @@ aspirational):
 | `container/mux_roundtrip.py` | mux 90 fake video + audio packets → fMP4 → demux back, count packets | ✅ run verified |
 | `pipeline/encode_to_mp4.py` | auto H.264 encode of 90 synthetic NV12 frames → `out.mp4` | ✅ run verified |
 | `pipeline/encode_audio.py` | auto AAC encode of 96 synthetic F32 stereo frames → audio-only fMP4 (ABI v2) | ✅ run verified (96 packets → 27372 bytes fMP4) |
+| `pipeline/decode_roundtrip.py` | auto H.264 decode (encode→mux→demux→decode) + Opus audio decode round trip | ✅ run verified (10 video frames, 50 Opus frames) |
 | `device/camera_record.py` | camera + mic → H.264 + AAC → ONE two-track MP4 (remuxed; audio track registered with the encoder's AudioSpecificConfig) | ✅ run verified on real hardware (47 frames + 80 AAC packets → ~251 KB two-track MP4); video-only fallback without mic/audio backend |
 | `device/capture_microphone.py` | microphone capture, raw PCM | ✅ run verified (real mic) |
 | `pipeline/screen_record.py` | screen + mic → encode → MP4 | 🚧 aspirational — `VideoCapture.open(source="screen")` raises `CaptureUnsupportedError` today |

@@ -18,10 +18,12 @@ from ._container_ogg import OggDemuxer, OggMuxer
 from ._container_ts import TsDemuxer, TsMuxer
 from ._container_wav import WavMuxer
 from ._container_wav import parse as wav_parse
+from ._decoder import AudioDecodeSession, DecodeSession
 from ._device import AudioCapture, VideoCapture
 from ._encoder import AudioEncoder, AutoVideoEncoder, EncodeSession
 from ._errors import (
     CaptureUnsupportedError,
+    DecoderUnavailableError,
     DeviceUnavailableError,
     EncoderUnavailableError,
     InvalidStateError,
@@ -33,6 +35,9 @@ from ._types import (
     ChannelMode,
     Codec,
     ContainerFormat,
+    DecodedAudioFrame,
+    DecodedVideoFrame,
+    DecodePacket,
     Mp3FrameHeader,
     MpegVersion,
     Packet,
@@ -77,10 +82,13 @@ __all__ = [
     "AutoVideoEncoder",
     "EncodeSession",
     "AudioEncoder",
+    "DecodeSession",
+    "AudioDecodeSession",
     "VideoCapture",
     "AudioCapture",
     "MediawayError",
     "EncoderUnavailableError",
+    "DecoderUnavailableError",
     "DeviceUnavailableError",
     "CaptureUnsupportedError",
     "InvalidStateError",
@@ -93,5 +101,8 @@ __all__ = [
     "Packet",
     "RawPacket",
     "VideoFrame",
+    "DecodePacket",
+    "DecodedVideoFrame",
+    "DecodedAudioFrame",
     "lib_dir",
 ]

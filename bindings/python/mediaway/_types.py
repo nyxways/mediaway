@@ -23,6 +23,9 @@ __all__ = [
     "Packet",
     "RawPacket",
     "VideoFrame",
+    "DecodePacket",
+    "DecodedVideoFrame",
+    "DecodedAudioFrame",
     "ContainerFormat",
     "MpegVersion",
     "ChannelMode",
@@ -160,6 +163,52 @@ class VideoFrame:
     width: int
     height: int
     format: PixelFormat
+    data: bytes
+    pts: Rational
+    duration: Rational | None = None  # None = unknown
+
+
+@dataclass(frozen=True)
+class DecodePacket:
+    """Input to `DecodeSession.push_packet`/`AudioDecodeSession.push_packet` —
+    a pipeline-scoped packet view, distinct from `Packet` above
+    (adr/pipeline/0006-audio-decode-c-abi.md §4: shared by both video and
+    audio decode). `payload` is a plain bytes copy, borrowed for the call
+    only on the native side.
+
+    For audio: an empty `payload` is Opus's packet-loss-concealment hint for
+    a lost frame, not an error — pass it whenever a frame is known lost.
+    """
+
+    pts: Rational
+    payload: bytes
+    dts: Rational | None = None
+    key: bool = False
+    duration: Rational | None = None
+
+
+@dataclass(frozen=True)
+class DecodedVideoFrame:
+    """Output of `DecodeSession.poll_frame` — CPU-only (GPU decode output is
+    deferred, adr/0004-auto-decode-c-abi.md §1/§5). `data` is a plain bytes
+    copy."""
+
+    width: int
+    height: int
+    format: PixelFormat
+    data: bytes
+    pts: Rational
+    duration: Rational | None = None  # None = unknown
+
+
+@dataclass(frozen=True)
+class DecodedAudioFrame:
+    """Output of `AudioDecodeSession.poll_frame` — always interleaved F32
+    PCM (adr/pipeline/0006-audio-decode-c-abi.md § Decode side). `data` is a
+    plain bytes copy."""
+
+    sample_rate: int
+    channels: int
     data: bytes
     pts: Rational
     duration: Rational | None = None  # None = unknown

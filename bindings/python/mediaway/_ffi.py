@@ -122,6 +122,8 @@ MEDIAWAY_STATUS_INVALID_DATA = 5
 MEDIAWAY_STATUS_UNKNOWN_ERROR = 6
 MEDIAWAY_STATUS_INTERNAL_PANIC = 7
 MEDIAWAY_STATUS_HANDLE_POISONED = 8
+MEDIAWAY_STATUS_UNSUPPORTED_CODEC = 9  # track's codec has no encoding in the requested format
+MEDIAWAY_STATUS_UNKNOWN_STREAM = 10  # push_packet's stream_id matches no registered track
 
 # enum mediaway_codec_kind
 CODEC_H264 = 0
@@ -136,6 +138,13 @@ CODEC_WEBVTT = 8
 CODEC_TX3G = 9
 CODEC_RAW_VIDEO = 10
 CODEC_RAW_AUDIO = 11
+CODEC_VP8 = 12
+
+# enum mediaway_container_format — only MP4/WebM share the generic
+# mediaway_muxer_t/mediaway_demuxer_t shape; Ogg/ADTS/FLV/MPEG-TS/MP3/WAV each
+# get their own dedicated handles below.
+CONTAINER_FORMAT_MP4 = 0
+CONTAINER_FORMAT_WEBM = 1
 
 c_ubyte = _c.c_ubyte
 U8P = POINTER(c_ubyte)
@@ -216,6 +225,8 @@ _H.mediaway_container_ffi_abi_version.argtypes = []
 
 _H.mediaway_muxer_create.restype = c_void_p
 _H.mediaway_muxer_create.argtypes = []
+_H.mediaway_muxer_create_for_format.restype = c_void_p
+_H.mediaway_muxer_create_for_format.argtypes = [c_int32]
 _H.mediaway_muxer_create_with_fragment_batch.restype = c_void_p
 _H.mediaway_muxer_create_with_fragment_batch.argtypes = [c_size_t]
 _H.mediaway_muxer_add_video_track.restype = c_int32
@@ -235,6 +246,8 @@ _H.mediaway_muxer_close.argtypes = [c_void_p]
 
 _H.mediaway_demuxer_create.restype = c_void_p
 _H.mediaway_demuxer_create.argtypes = []
+_H.mediaway_demuxer_create_for_format.restype = c_void_p
+_H.mediaway_demuxer_create_for_format.argtypes = [c_int32]
 _H.mediaway_demuxer_push_bytes.restype = c_int32
 _H.mediaway_demuxer_push_bytes.argtypes = [c_void_p, U8P, c_size_t]
 _H.mediaway_demuxer_stream_count.restype = c_size_t
@@ -256,6 +269,224 @@ _H.mediaway_packet_free.restype = None
 _H.mediaway_packet_free.argtypes = [POINTER(Packet)]
 _H.mediaway_stream_info_free.restype = None
 _H.mediaway_stream_info_free.argtypes = [POINTER(StreamInfo)]
+
+
+# ── container.h: Ogg (adr/container/0004) ────────────────────────────────────
+# Dedicated handles, not mediaway_muxer_t/mediaway_demuxer_t: Ogg has no
+# track-registration step and no Open/Live typestate. Reuses PacketView/
+# Packet/StreamInfo and the shared frees above.
+
+_H = container.dll
+
+_H.mediaway_ogg_muxer_create.restype = c_void_p
+_H.mediaway_ogg_muxer_create.argtypes = [c_uint32]
+_H.mediaway_ogg_muxer_push_packet.restype = c_int32
+_H.mediaway_ogg_muxer_push_packet.argtypes = [c_void_p, POINTER(PacketView)]
+_H.mediaway_ogg_muxer_flush.restype = c_int32
+_H.mediaway_ogg_muxer_flush.argtypes = [c_void_p]
+_H.mediaway_ogg_muxer_poll_bytes.restype = c_int32
+_H.mediaway_ogg_muxer_poll_bytes.argtypes = [c_void_p, POINTER(U8P), POINTER(c_size_t)]
+_H.mediaway_ogg_muxer_close.restype = None
+_H.mediaway_ogg_muxer_close.argtypes = [c_void_p]
+
+_H.mediaway_ogg_demuxer_create.restype = c_void_p
+_H.mediaway_ogg_demuxer_create.argtypes = []
+_H.mediaway_ogg_demuxer_push_bytes.restype = c_int32
+_H.mediaway_ogg_demuxer_push_bytes.argtypes = [c_void_p, U8P, c_size_t]
+_H.mediaway_ogg_demuxer_stream_count.restype = c_size_t
+_H.mediaway_ogg_demuxer_stream_count.argtypes = [c_void_p]
+_H.mediaway_ogg_demuxer_stream_at.restype = c_int32
+_H.mediaway_ogg_demuxer_stream_at.argtypes = [c_void_p, c_size_t, POINTER(StreamInfo)]
+_H.mediaway_ogg_demuxer_poll_packet.restype = c_int32
+_H.mediaway_ogg_demuxer_poll_packet.argtypes = [c_void_p, POINTER(Packet), POINTER(c_bool)]
+_H.mediaway_ogg_demuxer_close.restype = None
+_H.mediaway_ogg_demuxer_close.argtypes = [c_void_p]
+
+# ── container.h: ADTS (adr/container/0004) ───────────────────────────────────
+# Same dedicated-handle reasoning as Ogg above.
+
+_H.mediaway_adts_muxer_create.restype = c_void_p
+_H.mediaway_adts_muxer_create.argtypes = [c_uint32, c_ubyte]
+_H.mediaway_adts_muxer_push_packet.restype = c_int32
+_H.mediaway_adts_muxer_push_packet.argtypes = [c_void_p, POINTER(PacketView)]
+_H.mediaway_adts_muxer_flush.restype = c_int32
+_H.mediaway_adts_muxer_flush.argtypes = [c_void_p]
+_H.mediaway_adts_muxer_poll_bytes.restype = c_int32
+_H.mediaway_adts_muxer_poll_bytes.argtypes = [c_void_p, POINTER(U8P), POINTER(c_size_t)]
+_H.mediaway_adts_muxer_close.restype = None
+_H.mediaway_adts_muxer_close.argtypes = [c_void_p]
+
+_H.mediaway_adts_demuxer_create.restype = c_void_p
+_H.mediaway_adts_demuxer_create.argtypes = []
+_H.mediaway_adts_demuxer_push_bytes.restype = c_int32
+_H.mediaway_adts_demuxer_push_bytes.argtypes = [c_void_p, U8P, c_size_t]
+_H.mediaway_adts_demuxer_stream_count.restype = c_size_t
+_H.mediaway_adts_demuxer_stream_count.argtypes = [c_void_p]
+_H.mediaway_adts_demuxer_stream_at.restype = c_int32
+_H.mediaway_adts_demuxer_stream_at.argtypes = [c_void_p, c_size_t, POINTER(StreamInfo)]
+_H.mediaway_adts_demuxer_poll_packet.restype = c_int32
+_H.mediaway_adts_demuxer_poll_packet.argtypes = [c_void_p, POINTER(Packet), POINTER(c_bool)]
+_H.mediaway_adts_demuxer_close.restype = None
+_H.mediaway_adts_demuxer_close.argtypes = [c_void_p]
+
+# ── container.h: FLV (adr/container/0005) ────────────────────────────────────
+# flv::Muxer writes directly into a caller-supplied buffer on every call
+# instead of buffering for a separate poll_bytes step, and has a fixed
+# one-video/one-audio track slot instead of caller-assigned track ids.
+
+_H.mediaway_flv_muxer_create.restype = c_void_p
+_H.mediaway_flv_muxer_create.argtypes = []
+_H.mediaway_flv_muxer_write_header.restype = c_int32
+_H.mediaway_flv_muxer_write_header.argtypes = [c_void_p, c_bool, c_bool, POINTER(U8P), POINTER(c_size_t)]
+_H.mediaway_flv_muxer_add_video_track.restype = c_int32
+_H.mediaway_flv_muxer_add_video_track.argtypes = [c_void_p, POINTER(VideoTrackInfo)]
+_H.mediaway_flv_muxer_add_audio_track.restype = c_int32
+_H.mediaway_flv_muxer_add_audio_track.argtypes = [c_void_p, POINTER(AudioTrackInfo)]
+_H.mediaway_flv_muxer_push_packet.restype = c_int32
+_H.mediaway_flv_muxer_push_packet.argtypes = [c_void_p, POINTER(PacketView), POINTER(U8P), POINTER(c_size_t)]
+_H.mediaway_flv_muxer_close.restype = None
+_H.mediaway_flv_muxer_close.argtypes = [c_void_p]
+
+_H.mediaway_flv_demuxer_create.restype = c_void_p
+_H.mediaway_flv_demuxer_create.argtypes = []
+_H.mediaway_flv_demuxer_push_bytes.restype = c_int32
+_H.mediaway_flv_demuxer_push_bytes.argtypes = [c_void_p, U8P, c_size_t]
+_H.mediaway_flv_demuxer_stream_count.restype = c_size_t
+_H.mediaway_flv_demuxer_stream_count.argtypes = [c_void_p]
+_H.mediaway_flv_demuxer_stream_at.restype = c_int32
+_H.mediaway_flv_demuxer_stream_at.argtypes = [c_void_p, c_size_t, POINTER(StreamInfo)]
+_H.mediaway_flv_demuxer_poll_packet.restype = c_int32
+_H.mediaway_flv_demuxer_poll_packet.argtypes = [c_void_p, POINTER(Packet), POINTER(c_bool)]
+_H.mediaway_flv_demuxer_close.restype = None
+_H.mediaway_flv_demuxer_close.argtypes = [c_void_p]
+
+# ── container.h: MPEG-TS (adr/container/0006) ────────────────────────────────
+# The full elementary-stream list is fixed at construction (no add_track
+# after); write_pat_pmt/write_access_unit write directly into a
+# caller-supplied buffer with explicit pts_90k/dts_90k clock values.
+
+
+class TsElementaryStream(Structure):
+    _fields_ = [
+        ("pid", c_uint16),
+        ("codec", c_int32),
+    ]
+
+
+_H.mediaway_ts_muxer_create.restype = c_void_p
+_H.mediaway_ts_muxer_create.argtypes = [c_uint16, c_uint16, POINTER(TsElementaryStream), c_size_t]
+_H.mediaway_ts_muxer_write_pat_pmt.restype = c_int32
+_H.mediaway_ts_muxer_write_pat_pmt.argtypes = [c_void_p, POINTER(U8P), POINTER(c_size_t)]
+_H.mediaway_ts_muxer_write_access_unit.restype = c_int32
+_H.mediaway_ts_muxer_write_access_unit.argtypes = [
+    c_void_p,
+    c_uint16,
+    U8P,
+    c_size_t,
+    c_uint64,
+    c_bool,
+    c_uint64,
+    c_bool,
+    POINTER(U8P),
+    POINTER(c_size_t),
+]
+_H.mediaway_ts_muxer_close.restype = None
+_H.mediaway_ts_muxer_close.argtypes = [c_void_p]
+
+_H.mediaway_ts_demuxer_create.restype = c_void_p
+_H.mediaway_ts_demuxer_create.argtypes = []
+_H.mediaway_ts_demuxer_push_bytes.restype = c_int32
+_H.mediaway_ts_demuxer_push_bytes.argtypes = [c_void_p, U8P, c_size_t]
+_H.mediaway_ts_demuxer_stream_count.restype = c_size_t
+_H.mediaway_ts_demuxer_stream_count.argtypes = [c_void_p]
+_H.mediaway_ts_demuxer_stream_at.restype = c_int32
+_H.mediaway_ts_demuxer_stream_at.argtypes = [c_void_p, c_size_t, POINTER(StreamInfo)]
+_H.mediaway_ts_demuxer_poll_packet.restype = c_int32
+_H.mediaway_ts_demuxer_poll_packet.argtypes = [c_void_p, POINTER(Packet), POINTER(c_bool)]
+_H.mediaway_ts_demuxer_finish.restype = c_int32
+_H.mediaway_ts_demuxer_finish.argtypes = [c_void_p, POINTER(POINTER(Packet)), POINTER(c_size_t)]
+_H.mediaway_ts_demuxer_finish_free.restype = None
+_H.mediaway_ts_demuxer_finish_free.argtypes = [POINTER(Packet), c_size_t]
+_H.mediaway_ts_demuxer_close.restype = None
+_H.mediaway_ts_demuxer_close.argtypes = [c_void_p]
+
+# ── container.h: MP3 (adr/container/0007) ────────────────────────────────────
+# A fixed header for the mux session's lifetime (no track registration at
+# all) and write_frame takes an explicit padding bit.
+
+# enum mediaway_mpeg_version
+MPEG_VERSION_1 = 0
+MPEG_VERSION_2 = 1
+MPEG_VERSION_2_5 = 2
+
+# enum mediaway_channel_mode
+CHANNEL_MODE_STEREO = 0
+CHANNEL_MODE_JOINT_STEREO = 1
+CHANNEL_MODE_DUAL_CHANNEL = 2
+CHANNEL_MODE_MONO = 3
+
+
+class Mp3FrameHeader(Structure):
+    _fields_ = [
+        ("version", c_int32),
+        ("bitrate_kbps", c_uint16),
+        ("sample_rate", c_uint32),
+        ("channel_mode", c_int32),
+    ]
+
+
+_H.mediaway_mp3_muxer_create.restype = c_void_p
+_H.mediaway_mp3_muxer_create.argtypes = [POINTER(Mp3FrameHeader)]
+_H.mediaway_mp3_muxer_write_frame.restype = c_int32
+_H.mediaway_mp3_muxer_write_frame.argtypes = [c_void_p, U8P, c_size_t, c_bool, POINTER(U8P), POINTER(c_size_t)]
+_H.mediaway_mp3_muxer_close.restype = None
+_H.mediaway_mp3_muxer_close.argtypes = [c_void_p]
+
+_H.mediaway_mp3_demuxer_create.restype = c_void_p
+_H.mediaway_mp3_demuxer_create.argtypes = []
+_H.mediaway_mp3_demuxer_push_bytes.restype = c_int32
+_H.mediaway_mp3_demuxer_push_bytes.argtypes = [c_void_p, U8P, c_size_t]
+_H.mediaway_mp3_demuxer_stream_count.restype = c_size_t
+_H.mediaway_mp3_demuxer_stream_count.argtypes = [c_void_p]
+_H.mediaway_mp3_demuxer_stream_at.restype = c_int32
+_H.mediaway_mp3_demuxer_stream_at.argtypes = [c_void_p, c_size_t, POINTER(StreamInfo)]
+_H.mediaway_mp3_demuxer_poll_packet.restype = c_int32
+_H.mediaway_mp3_demuxer_poll_packet.argtypes = [c_void_p, POINTER(Packet), POINTER(c_bool)]
+_H.mediaway_mp3_demuxer_close.restype = None
+_H.mediaway_mp3_demuxer_close.argtypes = [c_void_p]
+
+# ── container.h: WAV (adr/container/0008) ────────────────────────────────────
+# wav::Muxer::finish consumes self by value, so there is no poll_bytes step.
+# Demux has NO handle at all: mediaway_wav_parse is a one-shot function.
+
+# enum mediaway_wav_sample_format — NOT the same as SAMPLE_S16/S32/F32 above
+# (raw PCM bit depth); this is the WAVE fmt chunk's wFormatTag encoding.
+WAV_SAMPLE_FORMAT_PCM = 0
+WAV_SAMPLE_FORMAT_FLOAT = 1
+
+
+class WaveFormat(Structure):
+    _fields_ = [
+        ("sample_format", c_int32),
+        ("channels", c_uint16),
+        ("sample_rate", c_uint32),
+        ("bits_per_sample", c_uint16),
+    ]
+
+
+_H.mediaway_wav_muxer_create.restype = c_void_p
+_H.mediaway_wav_muxer_create.argtypes = [c_uint32, c_uint16, c_uint16]
+_H.mediaway_wav_muxer_create_with_format.restype = c_void_p
+_H.mediaway_wav_muxer_create_with_format.argtypes = [POINTER(WaveFormat)]
+_H.mediaway_wav_muxer_push_packet.restype = c_int32
+_H.mediaway_wav_muxer_push_packet.argtypes = [c_void_p, POINTER(PacketView)]
+_H.mediaway_wav_muxer_finish.restype = c_int32
+_H.mediaway_wav_muxer_finish.argtypes = [c_void_p, POINTER(U8P), POINTER(c_size_t)]
+_H.mediaway_wav_muxer_close.restype = None
+_H.mediaway_wav_muxer_close.argtypes = [c_void_p]
+
+_H.mediaway_wav_parse.restype = c_int32
+_H.mediaway_wav_parse.argtypes = [U8P, c_size_t, POINTER(StreamInfo), POINTER(Packet)]
 
 
 # ── pipeline.h: status codes ──────────────────────────────────────────────────

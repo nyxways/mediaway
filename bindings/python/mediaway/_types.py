@@ -21,7 +21,15 @@ __all__ = [
     "VideoStreamInfo",
     "AudioStreamInfo",
     "Packet",
+    "RawPacket",
     "VideoFrame",
+    "ContainerFormat",
+    "MpegVersion",
+    "ChannelMode",
+    "WavSampleFormat",
+    "Mp3FrameHeader",
+    "WaveFormat",
+    "TsElementaryStream",
 ]
 
 
@@ -40,6 +48,46 @@ class Codec(enum.IntEnum):
     TX3G = 9
     RAW_VIDEO = 10
     RAW_AUDIO = 11
+    VP8 = 12
+
+
+class ContainerFormat(enum.IntEnum):
+    """Which format `Muxer`/`Demuxer` open — mirrors mediaway_container_format_t.
+
+    Only formats sharing MP4's multi-track, typestated shape are reachable
+    here; Ogg/ADTS/FLV/MPEG-TS/MP3/WAV have their own dedicated classes.
+    """
+
+    MP4 = 0
+    WEBM = 1
+
+
+class MpegVersion(enum.IntEnum):
+    """MPEG audio version — mirrors mediaway_mpeg_version_t."""
+
+    MPEG1 = 0  # 44100/48000/32000 Hz family
+    MPEG2 = 1  # 22050/24000/16000 Hz family
+    MPEG2_5 = 2  # 11025/12000/8000 Hz family (unofficial low-rate extension)
+
+
+class ChannelMode(enum.IntEnum):
+    """MPEG Layer III channel mode — mirrors mediaway_channel_mode_t."""
+
+    STEREO = 0
+    JOINT_STEREO = 1
+    DUAL_CHANNEL = 2
+    MONO = 3
+
+
+class WavSampleFormat(enum.IntEnum):
+    """RIFF/WAVE fmt chunk sample encoding (wFormatTag) — mirrors mediaway_wav_sample_format_t.
+
+    NOT the same enum as `SampleFormat` (raw PCM bit depth for device/pipeline
+    audio) — this is the WAVE container's own tag encoding.
+    """
+
+    PCM = 0
+    FLOAT = 1
 
 
 class PixelFormat(enum.IntEnum):
@@ -115,3 +163,49 @@ class VideoFrame:
     data: bytes
     pts: Rational
     duration: Rational | None = None  # None = unknown
+
+
+@dataclass(frozen=True)
+class RawPacket:
+    """One packet using ABI-native raw integer pts/dts/duration, not Rational
+    seconds — used by the dedicated Ogg/ADTS/FLV/MPEG-TS/MP3/WAV wrappers,
+    none of which have MP4/WebM's per-track time_base to convert seconds
+    against (e.g. Ogg's pts IS the granule position; MPEG-TS's is the raw
+    90 kHz system clock)."""
+
+    stream_id: int
+    pts: int
+    dts: int
+    payload: bytes
+    duration: int = 0
+    key: bool = False
+    discard: bool = False
+
+
+@dataclass(frozen=True)
+class Mp3FrameHeader:
+    """Fixed Layer III frame header for `Mp3Muxer` — bitrate/sample rate/
+    channel mode stay constant for the whole mux session's lifetime."""
+
+    version: MpegVersion
+    bitrate_kbps: int  # must be one of the 14 standard Layer III rates for `version`
+    sample_rate: int  # must be one of the 3 standard rates for `version`
+    channel_mode: ChannelMode
+
+
+@dataclass(frozen=True)
+class WaveFormat:
+    """Explicit RIFF/WAVE fmt chunk for `WavMuxer`."""
+
+    sample_format: WavSampleFormat
+    channels: int
+    sample_rate: int
+    bits_per_sample: int
+
+
+@dataclass(frozen=True)
+class TsElementaryStream:
+    """One elementary stream registered in `TsMuxer`'s constructed PMT."""
+
+    pid: int  # must be in 2..=0x1FFF (0/1 are reserved for PAT/CAT)
+    codec: Codec  # must be H264, HEVC, AAC, or MP3

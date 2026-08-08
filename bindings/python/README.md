@@ -19,10 +19,16 @@ a thin `ctypes` wrapper, not a reimplementation.
 A streaming-first media stack. The C ABI currently covers three capabilities (full
 detail in [`../c/README.md`](../c/README.md) and `docs/spec/c-ffi.md`):
 
-1. **Container — mux + demux**: sans-io fragmented-MP4 muxer (register video/audio
-   tracks, `begin()` → live, push packets, flush, `poll_bytes()`; the muxer never
-   touches files — the caller owns byte I/O) and demuxer (`push_bytes`, `streams()`,
-   `poll_packet()`, optional ClearKey key). Fully real.
+1. **Container — mux + demux, all 8 `mediaway-container` formats**: MP4/WebM share
+   `Muxer`/`Demuxer` (`format=ContainerFormat.MP4`/`.WEBM`, typestated Open→Live via
+   `begin()`, never touches files — the caller owns byte I/O). Ogg/ADTS/FLV/MPEG-TS/MP3
+   get dedicated classes (`OggMuxer`/`OggDemuxer`, `AdtsMuxer`/`AdtsDemuxer`,
+   `FlvMuxer`/`FlvDemuxer`, `TsMuxer`/`TsDemuxer`, `Mp3Muxer`/`Mp3Demuxer`) reflecting
+   each format's own C ABI shape — see each module's (`_container_*.py`) top comment.
+   WAV is mux-only (`WavMuxer`, consuming `finish()`); demux is the one-shot
+   `wav_parse()` function, not a class at all. These 6 formats use `RawPacket`
+   (ABI-native integer pts/dts, not `Rational` seconds) since none of them have MP4's
+   per-track time base to convert against. Fully real, all formats run-verified.
 2. **Pipeline — auto video encode → fMP4**: one call picks the best available OS/GPU
    encoder for a config, wires it into an internal MP4 muxer; `finish()` returns
    complete MP4 bytes. **Video only** — the audio encoder is separate (ABI v2,
@@ -110,6 +116,14 @@ MP4, demuxes the bytes back, and asserts the 1:1 packet round-trip plus the
 recovered stream metadata (video codec/dimensions/frame rate, audio codec). A
 failed assertion exits nonzero, which is the CI job's failure signal. Pure CPU
 — no hardware required.
+
+`tests/test_all_formats_smoke.py` covers the other 7 `mediaway-container`
+formats (WebM/Ogg/ADTS/FLV/MPEG-TS/MP3/WAV) the same way, reusing the
+C++/C# bindings' own verified byte patterns:
+
+```
+python tests/test_all_formats_smoke.py
+```
 
 ## Rules
 

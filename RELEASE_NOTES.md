@@ -75,6 +75,16 @@
   end-to-end: `AllFormatsSmokeTests` (xUnit, in the RC-gate `Mediaway.Container.Tests`
   suite) round-trips all 7 non-MP4 formats against the real native dylib, reusing the
   C++ binding's own verified byte patterns.
+- Python binding: all 8 `mediaway-container` formats reach the `mediaway` package (WebM
+  via `Muxer`/`Demuxer(format=ContainerFormat.WEBM)`; Ogg/ADTS/FLV/MPEG-TS/MP3 get
+  dedicated classes in new `_container_*.py` modules; WAV is mux-only via `WavMuxer` +
+  the one-shot `wav_parse()` function). These 6 dedicated formats use a new `RawPacket`
+  type (ABI-native integer pts/dts) instead of the MP4-only `Packet`'s `Rational`
+  seconds, since none of them have a per-track time base to convert against. `Codec`
+  gains `VP8` (was missing entirely from the Python mirror enum). Node wiring still
+  pending. Verified end-to-end: `tests/test_all_formats_smoke.py` round-trips all 7
+  non-MP4 formats against the real native DLL, reusing the C++/C# bindings' own
+  verified byte patterns.
 
 ### Changed
 
@@ -94,6 +104,9 @@
   rejected by WebM/Matroska (TrackNumber must not be `0`) though harmless for MP4 — now
   start at `1` for both formats. Only reproducible by linking and running against the real
   dylib, not by `-fsyntax-only` alone.
+- Python binding: `Muxer`'s auto-assigned track ids had the same `0`-start issue as the
+  C++ binding above — fixed proactively while wiring `format=ContainerFormat.WEBM` support,
+  before it could bite (now starts at `1` for both MP4 and WebM).
 
 ### Removed
 

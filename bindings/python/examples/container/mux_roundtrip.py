@@ -52,7 +52,7 @@ def synthetic_audio_packet(stream_index: int, i: int) -> Packet:
 def main() -> None:
     # --- mux ---------------------------------------------------------------
     with Muxer() as muxer:
-        # Stream ids are assigned in registration order: video is 0, audio is 1.
+        # Stream ids are assigned in registration order starting at 1: video is 1, audio is 2.
         video_id = muxer.add_video_track(
             VideoStreamInfo(
                 codec=Codec.H264,

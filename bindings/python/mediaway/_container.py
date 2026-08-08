@@ -18,7 +18,7 @@ from ctypes import byref, c_bool, c_size_t, c_ubyte, cast, create_string_buffer
 
 from . import _ffi
 from ._errors import InvalidStateError, MediawayError
-from ._types import AudioStreamInfo, Codec, Packet, Rational, VideoStreamInfo
+from ._types import AudioStreamInfo, Codec, ContainerFormat, Packet, Rational, VideoStreamInfo
 
 __all__ = ["Muxer", "LiveMuxer", "Demuxer"]
 
@@ -57,6 +57,8 @@ def _check_container(status: int) -> None:
         _ffi.MEDIAWAY_STATUS_UNKNOWN_ERROR: "unknown error",
         _ffi.MEDIAWAY_STATUS_INTERNAL_PANIC: "internal panic (handle poisoned)",
         _ffi.MEDIAWAY_STATUS_HANDLE_POISONED: "handle poisoned by an earlier panic",
+        _ffi.MEDIAWAY_STATUS_UNSUPPORTED_CODEC: "codec has no encoding in this container format",
+        _ffi.MEDIAWAY_STATUS_UNKNOWN_STREAM: "packet's stream id matches no registered track",
     }
     message = names.get(status, "unknown status")
     cls = InvalidStateError if status == _ffi.MEDIAWAY_STATUS_INVALID_STATE else MediawayError
@@ -66,21 +68,25 @@ def _check_container(status: int) -> None:
 class Muxer:
     """A muxer in the track-registration (Open) state.
 
-    Stream ids are assigned in registration order: the first `add_*_track`
-    call returns 0, the second 1, and so on. `begin()` consumes this object
+    Stream ids are assigned in registration order starting at 1: the first
+    `add_*_track` call returns 1, the second 2, and so on — not 0, since
+    WebM/Matroska's TrackNumber element must not be 0 (MP4 tolerates 0, but
+    there is no reason to special-case it). `begin()` consumes this object
     (its handle moves into the returned `LiveMuxer`), making "add_track after
     begin" a Python AttributeError instead of the ABI's INVALID_STATE.
     """
 
-    def __init__(self, fragment_batch: int | None = None):
+    def __init__(self, fragment_batch: int | None = None, format: ContainerFormat = ContainerFormat.MP4):
         dll = _ffi.container.dll
-        if fragment_batch is None:
+        if fragment_batch is not None:
+            self._handle = dll.mediaway_muxer_create_with_fragment_batch(fragment_batch)
+        elif format == ContainerFormat.MP4:
             self._handle = dll.mediaway_muxer_create()
         else:
-            self._handle = dll.mediaway_muxer_create_with_fragment_batch(fragment_batch)
+            self._handle = dll.mediaway_muxer_create_for_format(int(format))
         if not self._handle:
             raise MediawayError(_ffi.MEDIAWAY_STATUS_INTERNAL_PANIC, "muxer creation panicked")
-        self._next_id = 0
+        self._next_id = 1
         self._time_bases: dict[int, Rational] = {}  # stream id -> ABI time base
 
     def _assign_id(self) -> int:
@@ -214,8 +220,12 @@ class LiveMuxer:
 class Demuxer:
     """A streaming demuxer: feed container bytes, poll streams and packets."""
 
-    def __init__(self, clear_key: bytes | None = None):
-        self._handle = _ffi.container.dll.mediaway_demuxer_create()
+    def __init__(self, clear_key: bytes | None = None, format: ContainerFormat = ContainerFormat.MP4):
+        dll = _ffi.container.dll
+        if format == ContainerFormat.MP4:
+            self._handle = dll.mediaway_demuxer_create()
+        else:
+            self._handle = dll.mediaway_demuxer_create_for_format(int(format))
         if not self._handle:
             raise MediawayError(_ffi.MEDIAWAY_STATUS_INTERNAL_PANIC, "demuxer creation panicked")
         self._time_bases: dict[int, Rational] = {}

@@ -11,7 +11,7 @@ freestanding cores 0.1.1 (`ebml-webm` 0.2.1) · CPack `Mediaway-0.1.2-win64`.
 |---|---|---|
 | C | the C ABI itself | ✅ verified — 7 examples link+run; real camera (1920×1080) + mic capture → two-track MP4 (H.264 + AAC) |
 | C++ | `bindings/cpp/include/mediaway/{core,container,pipeline,device}.hpp` RAII wrapper | ✅ verified — 8 examples compile+run (incl. all 8 container formats); two-track camera_record on real hardware |
-| Python | `bindings/python/mediaway/` ctypes package | ✅ verified — 7 examples run; encode output byte-identical to C/C++/Node (6253 B video; 27372 B audio) |
+| Python | `bindings/python/mediaway/` ctypes package | ✅ verified — 7 examples run; encode output byte-identical to C/C++/Node (6253 B video; 27372 B audio); all 8 container formats wired |
 | Node.js | `bindings/nodejs/packages/@mediaway/*` koffi FFI | ✅ verified — 7 examples run; napi-rs is the eventual official path |
 | C# | `bindings/csharp/src/` P/Invoke | ✅ verified (xUnit against native libs; ADR-0017/0018); 6 examples under `Container/`/`Device/`/`Pipeline/`, mirroring Node's layout; all 8 container formats wired |
 | Browser | WASM (`iso-bmff-wasm` + WebCodecs) | ✅ verified — `@mediaway/browser` (ADR-0020 + ADR-0022): wasm mux/demux + WebCodecs H.264/AAC encode to fMP4 AND `DecodeSession` decode back (video + audio), E2E-verified in Chromium + real Edge (`tools/e2e-web`, `browser-package.spec.ts`) |
@@ -70,17 +70,17 @@ feature-gated `mediaway-ffi` module layout (post ADR-0021 merge); `pipeline`
 and `container`'s `mux`/`demux`/`audio`/`video` are each their own Cargo
 feature, unified from this crate's own.
 
-## Container format wiring (all 8 formats — C++ then C#)
+## Container format wiring (all 8 formats — C++, C#, Python)
 
-Wiring WebM + 6 dedicated-handle formats surfaced two real bugs
-`-fsyntax-only`/compile-checks couldn't catch, only linking+running against
-the real dylib: (1) `mediaway_common::CodecKind` had no explicit
-`#[repr(u8)]`, now pinned to match the C header; (2) WebM's TrackNumber must
-not be `0` — C++'s auto-assigned ids now start at `1`. C# wired the same 7
-formats via 11 new SafeHandle types + `AllFormatsSmokeTests` (reusing the
-C++ smoke test's verified byte patterns); no new wrapper bugs, but a stale
-gitignored `runtime/win-x64/native/mediaway_ffi.dll` (staged before this ABI
-expansion) shadowed the fresh dev build and had to be deleted.
+Wiring WebM + 6 dedicated-handle formats surfaced real bugs only caught by
+linking+running against the real dylib, never syntax/compile checks:
+`mediaway_common::CodecKind` had no explicit `#[repr(u8)]` (Rust); WebM's
+TrackNumber must not be `0` (C++'s auto ids now start at `1`; Python's too,
+fixed proactively); the Python/C# mirror `Codec`/`CodecKind` enums were each
+missing `VP8` outright. Each language also hit a stale gitignored native DLL
+(`bindings/csharp/runtime/win-x64/native/`, `bindings/python/mediaway/_native/`)
+shadowing the fresh dev build — always delete/rebuild before trusting a
+missing-symbol error.
 
 ## Open items
 

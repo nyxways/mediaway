@@ -1,10 +1,6 @@
-# Mediaway release notes
+# Mediaway v0.1.5
 
-<!-- Dev changes accumulate under ## Unreleased (AGENTS.md § 10). Finalize
-     with `/release-notes <version>`; reset this template with
-     `/release-notes reset`. See docs/ai/wiki/meta/release-notes.md. -->
-
-## Unreleased
+## What's new
 
 ### Added
 
@@ -13,152 +9,60 @@
   — previously the C ABI (and every non-Rust binding) could only open MP4, even though
   `mediaway-container::webm` (real VP8 mux/demux since v0.1.3) has existed with no C-reachable
   path. `MuxerState`/`DemuxerState` become per-format enums; `MediawayStatus` gains
-  `UnsupportedCodec`/`UnknownStream`. Ogg/ADTS/FLV/MPEG-TS/MP3/WAV are explicitly scoped out
-  this pass — each needs a genuinely different, non-generic C ABI shape (see the ADR's
-  Deferred section for the reasoning per format). No language-binding wiring yet (C ABI +
-  header only). Verified end-to-end: `tests/webm_container_smoke.rs` round-trips 5 VP8
-  frames through the new functions.
-
+  `UnsupportedCodec`/`UnknownStream`. Verified end-to-end:
+  `tests/webm_container_smoke.rs` round-trips 5 VP8 frames through the new functions.
 - `mediaway-ffi`: Ogg and ADTS reach the container C ABI via dedicated single-stream handles
   (`mediaway_ogg_muxer_t`/`_demuxer_t`, `mediaway_adts_muxer_t`/`_demuxer_t`, ABI v2 → v3,
   `adr/container/0004-ogg-adts-c-abi.md`) — neither format has track registration or
   `Open`/`Live` typestate, so they don't fit the generic `mediaway_muxer_t`/
-  `mediaway_demuxer_t` handles WebM used. FLV/MPEG-TS/MP3/WAV remain Rust-only; no
-  language-binding wiring yet. Verified end-to-end:
+  `mediaway_demuxer_t` handles WebM used. Verified end-to-end:
   `tests/ogg_adts_container_smoke.rs` round-trips a real `OpusHead` header + Opus packet and
   two raw AAC frames.
 - `mediaway-ffi`: FLV reaches the container C ABI via dedicated `mediaway_flv_muxer_t`/
   `_demuxer_t` handles (ABI v3 → v4, `adr/container/0005-flv-c-abi.md`) — its mux side
   writes tag bytes directly into a caller-supplied buffer on every call (no `poll_bytes`
   step) with a fixed one-video/one-audio track slot, mirroring `flv::Muxer`'s own Rust
-  shape. MPEG-TS/MP3/WAV remain Rust-only; no language-binding wiring yet. Verified
-  end-to-end: `tests/flv_container_smoke.rs` round-trips one AVC video packet and one AAC
-  audio packet, plus unsupported-codec/unregistered-stream rejection.
+  shape. Verified end-to-end: `tests/flv_container_smoke.rs` round-trips one AVC video
+  packet and one AAC audio packet, plus unsupported-codec/unregistered-stream rejection.
 - `mediaway-ffi`: MPEG-TS reaches the container C ABI via dedicated `mediaway_ts_muxer_t`/
   `_demuxer_t` handles (ABI v4 → v5, `adr/container/0006-mpeg-ts-c-abi.md`) — elementary
   streams are registered at muxer construction (no `add_track`), `write_pat_pmt`/
   `write_access_unit` write directly into a caller-supplied buffer with explicit
-  `pts_90k`/`dts_90k` clock values (not a track-timebase packet), and
-  `mediaway_ts_demuxer_finish` returns an owned array of packets — the only multi-packet
-  demux call in this crate, with its own `mediaway_ts_demuxer_finish_free`. MP3/WAV remain
-  Rust-only; no language-binding wiring yet. Verified end-to-end:
+  `pts_90k`/`dts_90k` clock values, and `mediaway_ts_demuxer_finish` returns an owned array
+  of packets — the only multi-packet demux call in this crate. Verified end-to-end:
   `tests/ts_container_smoke.rs` round-trips one H.264 video and one AAC audio access unit,
   a `finish()`-recovered trailing access unit, and an invalid-PID construction rejection.
 - `mediaway-ffi`: MP3 (MPEG Layer III) reaches the container C ABI via dedicated
   `mediaway_mp3_muxer_t`/`_demuxer_t` handles (ABI v5 → v6, `adr/container/0007-mp3-c-abi.md`)
   — a fixed header for the mux session's lifetime (no track registration at all) and an
-  explicit `padding` bit on `write_frame` that no `mediaway_packet_view_t` has a slot for.
-  WAV remains Rust-only; no language-binding wiring yet. Verified end-to-end:
-  `tests/mp3_container_smoke.rs` round-trips a 128 kbps/44100 Hz stereo frame, a mono
-  channel-count case, and a wrong-frame-body-length rejection.
+  explicit `padding` bit on `write_frame`. Verified end-to-end: `tests/mp3_container_smoke.rs`
+  round-trips a 128 kbps/44100 Hz stereo frame, a mono channel-count case, and a
+  wrong-frame-body-length rejection.
 - `mediaway-ffi`: WAV (RIFF/WAVE PCM) reaches the container C ABI (ABI v6 → v7,
   `adr/container/0008-wav-c-abi.md`) — closing out all 8 `mediaway-container` formats.
-  `mediaway_wav_muxer_t` is mux-only, since `wav::Muxer::finish` consumes `self` by value
-  (RIFF chunk sizes must be known up front); demux has no handle at all —
-  `mediaway_wav_parse` is a one-shot whole-buffer function, unlike every other format in
-  this crate. No language-binding wiring yet for any of the 6 non-MP4/WebM formats. Verified
-  end-to-end: `tests/wav_container_smoke.rs` round-trips PCM and float-format frames, a
-  double-`finish()` rejection, and a non-RIFF/WAVE-data rejection.
-- C++ binding: all 8 `mediaway-container` formats reach `bindings/cpp/include/mediaway/`
-  (WebM via `container::Muxer`/`Demuxer(Format::Webm)`; Ogg/ADTS/FLV/MPEG-TS/MP3 get
-  dedicated classes; WAV is mux-only via `WavMuxer` + the one-shot `wavParse()` function).
-  Split the single 892-line `mediaway.hpp` into `core.hpp`/`container.hpp` (+ per-format
-  headers under `container/`)/`pipeline.hpp`/`device.hpp` to stay under the workspace's
-  1000-line source cap; `mediaway.hpp` remains a pure umbrella include. C#/Python/Node
-  wiring still pending. Verified end-to-end: `examples/container/all_formats_smoke.cpp`
-  links and runs against the real GNU-target dylib.
-- C# binding: all 8 `mediaway-container` formats reach `Mediaway.Container` (WebM via
-  `Muxer`/`Demuxer(ContainerFormat.WebM)`; Ogg/ADTS/FLV/MPEG-TS/MP3 get dedicated
-  `SafeHandle`-backed classes; WAV is mux-only via `WavMuxer` + the one-shot
-  `WavContainer.Parse`). `CodecKind` gains `Vp8`; `MediawayContainerStatus` gains
-  `UnsupportedCodec`/`UnknownStream`. Python/Node wiring still pending. Verified
-  end-to-end: `AllFormatsSmokeTests` (xUnit, in the RC-gate `Mediaway.Container.Tests`
-  suite) round-trips all 7 non-MP4 formats against the real native dylib, reusing the
-  C++ binding's own verified byte patterns.
-- Python binding: all 8 `mediaway-container` formats reach the `mediaway` package (WebM
-  via `Muxer`/`Demuxer(format=ContainerFormat.WEBM)`; Ogg/ADTS/FLV/MPEG-TS/MP3 get
-  dedicated classes in new `_container_*.py` modules; WAV is mux-only via `WavMuxer` +
-  the one-shot `wav_parse()` function). These 6 dedicated formats use a new `RawPacket`
-  type (ABI-native integer pts/dts) instead of the MP4-only `Packet`'s `Rational`
-  seconds, since none of them have a per-track time base to convert against. `Codec`
-  gains `VP8` (was missing entirely from the Python mirror enum). Node wiring still
-  pending. Verified end-to-end: `tests/test_all_formats_smoke.py` round-trips all 7
-  non-MP4 formats against the real native DLL, reusing the C++/C# bindings' own
-  verified byte patterns.
-- Node.js binding: all 8 `mediaway-container` formats reach the `@mediaway/container`
-  package (WebM via `new Muxer("webm")`/`new Demuxer("webm")`; Ogg/ADTS/FLV/MPEG-TS/MP3
-  get dedicated classes in new `ogg.ts`/`adts.ts`/`flv.ts`/`ts.ts`/`mp3.ts` modules; WAV
-  is mux-only via `WavMuxer` + the one-shot `parseWav()` function). `@mediaway/ffi`
-  gains a `decodeArray` helper for `TsDemuxer.finish()`'s owned packet-array output —
-  the only multi-element owned-array shape in the crate. `VideoCodec`/`AudioCodec` gain
-  `vp8`/`hevc`/`mp3`/`raw_audio` (several were missing from the Node mirror unions, the
-  same class of gap the C#/Python passes each found in their own mirror enums). This is
-  the last language in the C++→C#→Python→Node sequence — Linux support for all four
-  bindings is next. Verified end-to-end: `test/all-formats-smoke.test.ts` round-trips
-  all 7 non-MP4 formats against the real native DLL, reusing the other three bindings'
-  own verified byte patterns.
-- All 4 C-ABI bindings (C++/C#/Python/Node.js) verified on Linux x64, container
-  capability only (pure CPU — device/pipeline remain Windows-hardware-verified only;
-  see `docs/ai/wiki/bindings/linux-support.md`). `mediaway-ffi` itself needed zero
-  Rust changes: `cargo build -p mediaway-ffi --all-features` already produces a clean
-  `libmediaway_ffi.so` exporting all symbols. Python/Node's native-library loaders
-  gained a `platform.system()`/`process.platform` filename switch
-  (`mediaway_ffi.dll` vs `libmediaway_ffi.so`); C#'s `LibraryName = "mediaway_ffi"`
-  (no extension) already resolved per-platform via .NET's own `DllImport`
-  convention, only its test project's DLL-staging items needed a Linux sibling; C++'s
-  headers needed no changes at all (no `_WIN32`/`windows.h` anywhere). Verified via
-  each binding's own pure-CPU container test suite passing against a real Linux build.
-- C++ binding: video decode (`decoder::DecodeSession`) and Opus audio decode
-  (`decoder::AudioDecodeSession`) reach `bindings/cpp/include/mediaway/pipeline.hpp` —
-  the C ABI's decode sessions (`adr/0004-auto-decode-c-abi.md`,
-  `adr/pipeline/0006-audio-decode-c-abi.md`) existed since v0.1.4 with no language
-  binding wired to them. Both are single-step handles (the handle IS the decoder,
-  same shape as `AutoVideoEncoder`), `NoBackend` throws gracefully. C#/Python/Node
-  wiring still pending. Verified end-to-end: `examples/pipeline/decode_roundtrip.cpp`
-  round-trips a real WMF H.264 encode→mux→demux→decode (10 frames) and a real Opus
-  encode→decode (50 frames) against the real GNU-target dylib.
-- C# binding: video decode (`DecodeSession`) and Opus audio decode (`AudioDecodeSession`)
-  reach `Mediaway.Pipeline`, mirroring `AutoVideoEncoder`/`AudioEncoder`'s `SafeHandle`
-  pattern (both decode sessions have no consumption trap, unlike `AutoVideoEncoder`).
-  `MediawayPipelineStatus` gains `DecoderBackendFailure`/`DecoderClosed`; a new
-  `DecoderUnavailableException` mirrors `EncoderUnavailableException` for the graceful
-  `NoBackend` case. Python/Node wiring still pending. Verified end-to-end:
-  `DecodeRoundtripTests` (xUnit, in the `Mediaway.Pipeline.Tests` suite) — a real WMF
-  H.264 encode→mux→demux→decode round trip (10 frames) and a real Opus encode→decode
-  round trip (50 frames, encoded via a test-local raw P/Invoke since the public
-  `AudioEncoder` wrapper is AAC-only) against the real native DLL.
-- Python binding: video decode (`DecodeSession`) and Opus audio decode
-  (`AudioDecodeSession`) reach the `mediaway` package in a new `_decoder.py`
-  module, mirroring `AutoVideoEncoder`/`AudioEncoder`'s single-step-handle shape.
-  Python's `AudioEncoder.open()` already accepted a `codec=` parameter (unlike
-  C++/C#'s AAC-only wrappers), so the Opus round trip needed no raw ctypes
-  workaround — `AudioEncoder.open(codec=Codec.OPUS, ...)` just worked.
-  `_check_pipeline` gains a `no_backend_error=` parameter so decode's `NO_BACKEND`
-  raises the new `DecoderUnavailableError` instead of `EncoderUnavailableError`.
-  Node wiring still pending — last in the C++→C#→Python→Node decode sequence.
-  Verified end-to-end: `examples/pipeline/decode_roundtrip.py` and
-  `tests/test_decode_roundtrip.py` (RC-stage, assert-based, no pytest dependency)
-  — a real WMF H.264 encode→mux→demux→decode round trip (10 frames) and a real
-  Opus encode→decode round trip (50 frames) against the real native DLL.
-- Node.js binding: video decode (`DecodeSession`) and Opus audio decode
-  (`AudioDecodeSession`) reach `@mediaway/encoder` in a new `decode.ts` module,
-  mirroring `openAutoEncoder`/`AudioEncoder`'s single-step-handle shape.
-  `@mediaway/ffi` gains the decode session structs/functions
-  (`MwDecodePacketView`, `MwAutoVideoDecodeConfig`, `MwDecodedVideoFrame`,
-  `MwAudioDecodeConfig`, `MwDecodedAudioFrame`); `checkPipeline` (exported from
-  `@mediaway/encoder`) gains a `noBackendError` parameter so decode's
-  `NO_BACKEND` throws the new `DecoderUnavailableError` instead of
-  `EncoderUnavailableError`. The public `AudioEncoder` wrapper stays AAC-only
-  (same gap as C++/C#), so the Opus round trip encodes via the raw
-  `@mediaway/ffi` layer directly. This closes the C++→C#→Python→Node decode
-  wiring sequence — all 4 bindings now reach both decode sessions. Verified
-  end-to-end: `examples/pipeline/decode-roundtrip.ts` and
-  `test/decode-roundtrip.test.ts` (assertion-based with `node:assert`, no test
-  framework, same style as `all-formats-smoke.test.ts`) — a real WMF H.264
-  encode→mux→demux→decode round trip (10 frames) and a real Opus
-  encode→decode round trip (50 frames) against the real native DLL.
-
-### Changed
+  `mediaway_wav_muxer_t` is mux-only, since `wav::Muxer::finish` consumes `self` by value;
+  demux has no handle at all — `mediaway_wav_parse` is a one-shot whole-buffer function.
+  Verified end-to-end: `tests/wav_container_smoke.rs` round-trips PCM and float-format
+  frames, a double-`finish()` rejection, and a non-RIFF/WAVE-data rejection.
+- C++, C#, Python, and Node.js bindings: all 8 `mediaway-container` formats wired end-to-end
+  (WebM/Ogg/ADTS/FLV/MPEG-TS/MP3/WAV joining MP4), each verified against a real native dylib
+  reusing shared byte patterns across the four bindings.
+- All 4 C-ABI bindings (C++/C#/Python/Node.js) verified on Linux x64, container capability
+  only (pure CPU — device/pipeline remain Windows-hardware-verified only). `mediaway-ffi`
+  itself needed zero Rust changes: `cargo build -p mediaway-ffi --all-features` already
+  produces a clean `libmediaway_ffi.so` exporting all symbols.
+- C++, C#, Python, and Node.js bindings: video decode (`DecodeSession`) and Opus audio
+  decode (`AudioDecodeSession`) reach all four bindings, closing the last "C ABI real, no
+  binding wired" gap — the decode session C ABI (`adr/0004-auto-decode-c-abi.md`,
+  `adr/pipeline/0006-audio-decode-c-abi.md`) has existed since v0.1.4. Every binding mirrors
+  its existing `AutoVideoEncoder`/`AudioEncoder` single-step-handle shape (the handle IS the
+  decoder, no consumption trap, graceful `NoBackend`). Each binding's public `AudioEncoder`
+  equivalent stays AAC-only, so the Opus round trip encodes via a raw-ABI path in each
+  language instead (C++/C#: raw C ABI / test-local P/Invoke; Node: the `@mediaway/ffi`
+  layer directly). Python's `AudioEncoder.open()` was the one exception — it already
+  accepted `codec=Codec.OPUS`, needing no workaround. Verified end-to-end in each binding:
+  a real WMF H.264 encode→mux→demux→decode round trip (10 frames) and a real Opus
+  encode→decode round trip (50 frames) against the real native dylib.
 
 ### Fixed
 
@@ -172,31 +76,98 @@
   while wiring the C++ container bindings — harmless at the FFI boundary itself (the
   `mediaway-ffi`-local mirror enum already had correct explicit values and converts by
   name), but a real latent footgun now pinned explicitly to match the C header's values.
-- C++ binding: `container::Muxer`'s auto-assigned track ids started at `0`, silently
+- C++/Python/Node.js bindings: `Muxer`'s auto-assigned track ids started at `0`, silently
   rejected by WebM/Matroska (TrackNumber must not be `0`) though harmless for MP4 — now
   start at `1` for both formats. Only reproducible by linking and running against the real
   dylib, not by `-fsyntax-only` alone.
-- Python binding: `Muxer`'s auto-assigned track ids had the same `0`-start issue as the
-  C++ binding above — fixed proactively while wiring `format=ContainerFormat.WEBM` support,
-  before it could bite (now starts at `1` for both MP4 and WebM).
-- Node.js binding: `Muxer`'s `nextIndex` had the same `0`-start issue as the C++/Python
-  bindings above — fixed proactively the same way, before it could bite. Also:
-  `@mediaway/ffi`'s `RawPacket` TypeScript interface was missing a `dts` field the
-  underlying `MwPacket` koffi struct (and the C ABI) already had — harmless for the
-  existing MP4/WebM `Demuxer` (which never reads it), but several of the new dedicated
-  formats' constructors genuinely need both `pts` and `dts`. Added.
-- Node.js binding: `@mediaway/container`/`device`/`encoder`'s `package.json` each
-  pinned their internal `@mediaway/*` cross-dependencies to an exact version
-  (`"0.1.0"`) that had already drifted behind the real workspace version (`0.1.1`) —
-  found while verifying Linux support. npm's workspace linker silently falls back to
-  fetching the real **published** old version from the npm registry instead of
-  symlinking the local (fresher) source whenever a sibling's declared version doesn't
-  satisfy the local one, so this was never Linux-specific — any plain `npm install`
-  on any platform would eventually have resolved stale internal packages. Switched to
-  caret ranges (`^0.1.0`).
+- Node.js binding: `RawPacket`'s TypeScript interface was missing a `dts` field the
+  underlying C ABI already had; `@mediaway/container`/`device`/`encoder`'s internal
+  `@mediaway/*` cross-dependency pins were exact-version instead of caret, so npm's
+  workspace linker could silently resolve stale published packages instead of local sources.
 
-### Removed
+## Overview
 
-### Deprecated
+Mediaway is a cross-platform media toolkit built on Zero-Copy paths (GPU
+handles or shared CPU buffers), sans-io cores for mux/demux/bitstream/config,
+and low-level APIs as first-class entry points. The workspace ships 11
+freestanding, independently versioned core crates (`iso-bmff`, `ebml-webm`,
+`flv-core`, `adts-core`, `ogg-core`, `riff-wave-core`, `mpeg-ts-core`,
+`mpeg-audio`, `iso-cenc`, `rtmp`, `rtp-core`) plus one `mediaway` umbrella with
+five capability crates (`container`, `encoder`, `decoder`, `device`, `sw`) and
+a single C ABI (`mediaway-ffi`).
 
-### Breaking
+## Platforms
+
+- Windows (win64): primary target. Media Foundation capture/decode, NVENC,
+  QuickSync (VPL), and Vulkan Video encode/decode verified on an RTX 4090 and
+  Intel UHD 770.
+- Linux: camera backends (pipewire/v4l), encoder scaffolding — compiles, not
+  hardware-verified. All 4 C-ABI bindings (C++/C#/Python/Node.js) now verified
+  for the container capability on Linux x64 (pure CPU); device/pipeline
+  capabilities remain Windows-hardware-verified only.
+- Web (wasm32): `@mediaway/browser` ships `iso-bmff-wasm`, WebCodecs encode
+  and decode (`DecodeSession`); encoder/decoder/device crates build for
+  wasm32 via wasm-bindgen.
+- macOS / iOS / Android: not yet implemented.
+
+## Codecs
+
+- Encode: H.264 — NVENC, Vulkan Video (`VK_KHR_video_encode_queue`, with
+  multi-frame GOP + CBR rate control and live `set_bitrate`), QuickSync (VPL);
+  AV1 — software (rav1e).
+- Decode: H.264/HEVC — Media Foundation and Vulkan Video, both
+  hardware-verified for GPU decode; AAC — software (ADTS). Auto video
+  decode C ABI (CPU output), now reachable from all 4 non-Rust bindings.
+- Audio: Opus — Windows decode via Media Foundation and a cross-platform
+  software decoder (both behind the `AudioDecoder` trait), software
+  encode/decode (`unsafe-libopus`); audio processing module (sonora); AAC —
+  software encode (C# `Mediaway.Pipeline.AudioEncoder`, ABI v2). Opus decode
+  C ABI now reachable from all 4 non-Rust bindings.
+- Containers: ISOBMFF/MP4, WebM, FLV, MPEG-TS, ADTS, Ogg, RIFF/WAVE, MPEG
+  audio — all verified playable in mpv; CENC encryption/decryption; RTMP
+  (proposed, unpublished); `rtp-core` for RTP payloadization (H.264/HEVC).
+
+## Bindings
+
+- C: [`mediaway_ffi.h`](https://github.com/nyxways/mediaway/releases/tag/v0.1.5)
+  + CMake/CPack archives (GitHub Release assets) — all 8 `mediaway-container`
+  formats (WebM, Ogg, ADTS, FLV, MPEG-TS, MP3, WAV, joining MP4) now reach the
+  C ABI (ABI v7); verified building on Linux x64 in addition to Windows.
+- C#: [`Mediaway.*`](https://www.nuget.org/packages/Mediaway.Common) packages
+  on NuGet (Trusted Publishing, OIDC) — all 8 container formats plus video +
+  Opus audio decode (`DecodeSession`/`AudioDecodeSession`) now wired into
+  `Mediaway.Pipeline`/`Mediaway.Container`; verified on Linux x64 in addition
+  to Windows (container capability).
+- Python: [`mediaway`](https://pypi.org/project/mediaway/) on PyPI (Trusted
+  Publishing) — all 8 container formats plus video + Opus audio decode now
+  wired into the package; verified on Linux x64 in addition to Windows
+  (container capability).
+- Node: [`@mediaway/ffi`](https://www.npmjs.com/package/@mediaway/ffi),
+  [`@mediaway/container`](https://www.npmjs.com/package/@mediaway/container),
+  [`@mediaway/device`](https://www.npmjs.com/package/@mediaway/device),
+  [`@mediaway/encoder`](https://www.npmjs.com/package/@mediaway/encoder) on
+  npm (OIDC Trusted Publishing) — all 8 container formats plus video + Opus
+  audio decode now wired into `@mediaway/container`/`@mediaway/encoder`;
+  verified on Linux x64 in addition to Windows (container capability).
+- C++: all 8 container formats plus video + Opus audio decode
+  (`decoder::DecodeSession`/`AudioDecodeSession`) wired into
+  `bindings/cpp/include/mediaway/`; verified on Linux x64 in addition to
+  Windows (container capability).
+- Browser: [`@mediaway/browser`](https://www.npmjs.com/package/@mediaway/browser)
+  (wasm, wasm-bindgen).
+
+## Breaking changes
+
+None. APIs are pre-1.0 and may change without a major bump.
+
+## Maturity bar
+
+Not production-ready. Backends are stage 0/1: capability probes and minimal
+hardware-verified paths, not full rate-controlled multi-frame pipelines for
+every backend. Container mux/demux and video/Opus-audio decode bindings now
+reach parity across four ecosystems (C/C++, C#, Python, Node.js) and two
+platforms (Windows, Linux x64 for the pure-CPU container capability); device
+and pipeline (encode/decode) capabilities remain Windows-hardware-verified
+only. Costly paths (CPU readback, SW fallbacks) are documented at each API
+(`docs/spec/caveats-and-clarity.md`). Sans-io cores carry the test weight;
+hardware paths are verified on specific GPUs only. See `docs/spec/status.md`.

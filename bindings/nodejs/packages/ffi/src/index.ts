@@ -278,6 +278,58 @@ export const MwAudioStreamInfo = koffi.struct("MwAudioStreamInfo", {
   extra_data_len: "size_t",
 });
 
+// ── Decode (adr/0004-auto-decode-c-abi.md, adr/pipeline/0006) ──────────────────
+// MwDecodePacketView is shared by both video and audio decode push_packet
+// calls — a new, pipeline-scoped type, not MwPacketView above.
+
+export const MwDecodePacketView = koffi.struct("MwDecodePacketView", {
+  stream_id: "uint32", // unused by decode; kept for call-site symmetry
+  pts: "int64",
+  dts: "int64",
+  duration: "uint64",
+  is_keyframe: "bool",
+  is_discard: "bool",
+  payload: "uint8_t *",
+  payload_len: "size_t",
+});
+
+export const MwAutoVideoDecodeConfig = koffi.struct("MwAutoVideoDecodeConfig", {
+  codec: "int32",
+  width: "uint32",
+  height: "uint32",
+  time_base: MwRational,
+  pixel_format: "int32",
+  extra_data: "uint8_t *", // borrowed, open-call only
+  extra_data_len: "size_t",
+});
+
+export const MwDecodedVideoFrame = koffi.struct("MwDecodedVideoFrame", {
+  pts: "int64",
+  duration: "uint64",
+  width: "uint32",
+  height: "uint32",
+  pixel_format: "int32",
+  data: "uint8_t *", // owned
+  data_len: "size_t",
+});
+
+export const MwAudioDecodeConfig = koffi.struct("MwAudioDecodeConfig", {
+  codec: "int32", // Opus only today
+  sample_rate: "uint32",
+  channels: "uint16",
+  time_base: MwRational,
+});
+
+export const MwDecodedAudioFrame = koffi.struct("MwDecodedAudioFrame", {
+  pts: "int64",
+  duration: "uint64",
+  sample_rate: "uint32",
+  channels: "uint16",
+  sample_format: "int32", // always F32 for Opus
+  data: "uint8_t *", // owned interleaved PCM
+  data_len: "size_t",
+});
+
 // ── Container functions ────────────────────────────────────────────────────────
 
 export const container = {
@@ -508,6 +560,42 @@ export const pipeline = {
   pipelinePacketFree: pipelineLib.func("void mediaway_pipeline_ffi_packet_free(MwAudioPacket *packet)"),
   pipelineStreamInfoFree: pipelineLib.func(
     "void mediaway_pipeline_ffi_stream_info_free(MwAudioStreamInfo *info)"
+  ),
+
+  // ── Decode (adr/0004-auto-decode-c-abi.md, adr/pipeline/0006) ────────────
+  decodeConfigNew: pipelineLib.func(
+    "MwAutoVideoDecodeConfig mediaway_auto_video_decode_config_new(int codec, uint32_t width, uint32_t height, MwRational time_base, uint8_t *extra_data, size_t extra_data_len)"
+  ),
+  decodeSessionOpen: pipelineLib.func(
+    "int mediaway_decode_session_open(MwAutoVideoDecodeConfig *config, _Out_ void **out_session)"
+  ),
+  decodeSessionPushPacket: pipelineLib.func(
+    "int mediaway_decode_session_push_packet(void *session, MwDecodePacketView *packet)"
+  ),
+  decodeSessionPollFrame: pipelineLib.func(
+    "int mediaway_decode_session_poll_frame(void *session, _Out_ MwDecodedVideoFrame *out_frame, _Out_ bool *out_has)"
+  ),
+  decodeSessionFlush: pipelineLib.func("int mediaway_decode_session_flush(void *session)"),
+  decodeSessionClose: pipelineLib.func("void mediaway_decode_session_close(void *session)"),
+  decodedVideoFrameFree: pipelineLib.func(
+    "void mediaway_decoded_video_frame_free(MwDecodedVideoFrame *frame)"
+  ),
+  audioDecodeConfigOpus: pipelineLib.func(
+    "MwAudioDecodeConfig mediaway_audio_decode_config_opus(uint32_t sample_rate, uint16_t channels, MwRational time_base)"
+  ),
+  audioDecodeSessionOpen: pipelineLib.func(
+    "int mediaway_audio_decode_session_open(MwAudioDecodeConfig *config, _Out_ void **out_session)"
+  ),
+  audioDecodeSessionPushPacket: pipelineLib.func(
+    "int mediaway_audio_decode_session_push_packet(void *session, MwDecodePacketView *packet)"
+  ),
+  audioDecodeSessionPollFrame: pipelineLib.func(
+    "int mediaway_audio_decode_session_poll_frame(void *session, _Out_ MwDecodedAudioFrame *out_frame, _Out_ bool *out_has)"
+  ),
+  audioDecodeSessionFlush: pipelineLib.func("int mediaway_audio_decode_session_flush(void *session)"),
+  audioDecodeSessionClose: pipelineLib.func("void mediaway_audio_decode_session_close(void *session)"),
+  decodedAudioFrameFree: pipelineLib.func(
+    "void mediaway_decoded_audio_frame_free(MwDecodedAudioFrame *frame)"
   ),
 };
 
@@ -760,4 +848,57 @@ export interface RawAudioPacket {
   is_discard: boolean;
   payload: unknown;
   payload_len: number;
+}
+
+/** `mediaway_decode_packet_view_t` (decode session input; shared by video + audio). */
+export interface RawDecodePacketView {
+  stream_id: number;
+  pts: bigint | number;
+  dts: bigint | number;
+  duration: bigint | number;
+  is_keyframe: boolean;
+  is_discard: boolean;
+  payload: unknown;
+  payload_len: number;
+}
+
+/** `mediaway_auto_video_decode_config_t`. */
+export interface RawAutoVideoDecodeConfig {
+  codec: number;
+  width: number;
+  height: number;
+  time_base: RawRational;
+  pixel_format: number;
+  extra_data: unknown;
+  extra_data_len: number;
+}
+
+/** `mediaway_decoded_video_frame_t` (decode session output). */
+export interface RawDecodedVideoFrame {
+  pts: bigint | number;
+  duration: bigint | number;
+  width: number;
+  height: number;
+  pixel_format: number;
+  data: unknown;
+  data_len: number;
+}
+
+/** `mediaway_audio_decode_config_t` (Opus only today). */
+export interface RawAudioDecodeConfig {
+  codec: number;
+  sample_rate: number;
+  channels: number;
+  time_base: RawRational;
+}
+
+/** `mediaway_decoded_audio_frame_t` (audio decode session output; always F32). */
+export interface RawDecodedAudioFrame {
+  pts: bigint | number;
+  duration: bigint | number;
+  sample_rate: number;
+  channels: number;
+  sample_format: number;
+  data: unknown;
+  data_len: number;
 }

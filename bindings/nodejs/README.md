@@ -37,10 +37,15 @@ detail in [`../c/README.md`](../c/README.md)):
    `ts.ts`/`mp3.ts`) top comment. WAV is mux-only (`WavMuxer`, consuming `finish()`);
    demux is the one-shot `parseWav()` function, not a class at all. Fully real, all
    formats run-verified.
-2. **Pipeline — auto video encode → fMP4**: one call picks the best available OS/GPU
-   encoder for a config, wires it into an internal MP4 muxer; `finish()` returns
-   complete MP4 bytes. **Video only** — the audio encoder is separate (ABI v2,
+2. **Pipeline — auto video encode → fMP4, plus decode**: one call picks the best
+   available OS/GPU encoder for a config, wires it into an internal MP4 muxer;
+   `finish()` returns complete MP4 bytes. The audio encoder is separate (ABI v2,
    adr/0003): `AudioEncoder.open()` streams AAC packets for the caller's own muxer.
+   Decode is the mirror shape (adr/0004, adr/pipeline/0006): `DecodeSession` wraps
+   the best available video decoder (CPU output only; Windows/WMF today),
+   `AudioDecodeSession` wraps the cross-platform Opus decoder — both single-step
+   handles (the handle IS the decoder), `NO_BACKEND` throws `DecoderUnavailableError`
+   gracefully.
 3. **Device — capture**: camera (CPU frames), microphone/loopback (PCM), hotplug.
    **Screen capture is `UNSUPPORTED` from C today** (needs a GPU device handle with no
    C representation yet) — an honest gap, not a bug.
@@ -101,6 +106,7 @@ aspirational):
 | `container/mux-roundtrip.ts` | mux 90 fake video + audio packets → fMP4 → demux back, count packets | ✅ run verified |
 | `pipeline/encode-to-mp4.ts` | auto H.264 encode of 90 synthetic NV12 frames → `out.mp4` | ✅ run verified |
 | `pipeline/encode-audio.ts` | auto AAC encode of 96 synthetic F32 stereo frames → audio-only fMP4 (ABI v2) | ✅ run verified (96 packets → 27372 bytes fMP4) |
+| `pipeline/decode-roundtrip.ts` | auto H.264 decode (encode→mux→demux→decode) + Opus audio decode round trip | ✅ run verified (10 video frames, 50 Opus frames) |
 | `device/camera-record.ts` | camera + mic → H.264 + AAC → ONE two-track MP4 (remuxed; audio track registered with the encoder's AudioSpecificConfig) | ✅ run verified on real hardware (46 frames + 140 AAC packets → ~264 KB two-track MP4); video-only fallback without mic/audio backend |
 | `device/capture-microphone.ts` | microphone capture, raw PCM | ✅ run verified (real mic) |
 | `pipeline/screen-record.ts` | screen + mic → encode → MP4 | 🚧 aspirational — `openScreenCapture()` throws `CaptureUnavailableError` today |

@@ -1,4 +1,4 @@
-# Decode session wiring (C++ → C# → Python → Node)
+# Decode session wiring (C++ → C# → Python → Node) — DONE, all 4
 
 ## What existed vs. what was wired
 
@@ -8,79 +8,60 @@ decode, `adr/0004-auto-decode-c-abi.md`) and `mediaway_audio_decode_session_*`
 since v0.1.4. No language binding had wired either one: the exact same
 "C ABI real, binding missing" gap the [container format
 series](status.md#container-format-wiring-all-8-formats-c-c-python-nodejs)
-closed for mux/demux. This series closes it for decode, same language order.
+closed for mux/demux. This series closes it for decode, same language order,
+now complete: all 4 bindings reach both decode sessions.
 
 Both sessions mirror `AutoVideoEncoder`/`AudioEncoder`'s single-step shape
 (the handle IS the decoder, no consumption trap); `NoBackend` is a graceful,
 expected outcome (WMF video decode is Windows-only; Opus decode is
-cross-platform via `mediaway-sw`, no OS dependency).
+cross-platform via `mediaway-sw`, no OS dependency). Every binding's public
+`AudioEncoder`-equivalent wrapper stayed AAC-only, so the Opus round-trip
+test/example in each language encodes via a raw-ABI path instead of the
+public encoder wrapper — see each section for how.
 
-## C++ (done)
+## C++
 
 `decoder::DecodeSession` / `decoder::AudioDecodeSession` in
-`bindings/cpp/include/mediaway/pipeline.hpp`, following the existing
-`encoder::AutoVideoEncoder`/`AudioEncoder` RAII pattern exactly (same
-`unique_ptr` + custom-deleter shape, same `NoBackend` exception path via
-`detail::checkPipeline`). Added `Status::DecodeError` +
-`MEDIAWAY_PIPELINE_STATUS_DECODER_BACKEND_FAILURE`/`_CLOSED` mapping to
-`core.hpp`/`pipeline.hpp`'s status switch (previously unmapped — any decode
-backend failure would have fallen through to the generic `EncodeError`
-case).
+`bindings/cpp/include/mediaway/pipeline.hpp`, mirroring `encoder::` RAII
+(`unique_ptr` + deleter, `NoBackend` via `detail::checkPipeline`). Added
+`Status::DecodeError` + `DECODER_BACKEND_FAILURE`/`_CLOSED` mapping
+(previously unmapped, fell through to `EncodeError`). Opus encoded via raw
+C ABI in the example itself. Verified: `examples/pipeline/decode_roundtrip.cpp`
+— WMF H.264 encode→mux→demux→decode (10 frames) + Opus encode→decode (50
+frames), linked and run against a fresh `mediaway_ffi.dll`.
 
-Verified end-to-end: `examples/pipeline/decode_roundtrip.cpp` — a real WMF
-H.264 encode → `container::Demuxer` → `DecodeSession` round trip (10 frames,
-extra_data sourced from the demuxed AVCC track, not straight off the
-encoder — the shape a caller decoding a received file would actually have),
-plus a real Opus encode (raw C ABI — the C++ `AudioEncoder` wrapper is
-AAC-only, not extended here) → `AudioDecodeSession` round trip (50 frames).
-Linked and ran against a freshly built `mediaway_ffi.dll`
-(`x86_64-pc-windows-gnu`), not just compiled.
-
-## C# (done)
+## C#
 
 `DecodeSession` / `AudioDecodeSession` in `Mediaway.Pipeline`, mirroring
-`AutoVideoEncoder`/`AudioEncoder`'s `SafeHandle` pattern exactly (both new
-handles have no consumption trap, unlike `AutoEncoderHandle`/
-`EncodeSessionHandle` — closer to `AudioEncodeSessionHandle`'s shape).
-Declarations added to both `NativeMethods.LibraryImport.cs` (net8.0) and
-`NativeMethods.DllImport.cs` (netstandard2.0/Unity) — the dual-TFM split
-ADR-0018 introduced. `MediawayPipelineStatus` gained
-`DecoderBackendFailure`/`DecoderClosed` (13/14); a new
-`DecoderUnavailableException` mirrors `EncoderUnavailableException` for the
-graceful `NoBackend` case.
+`SafeHandle` pattern (closer to `AudioEncodeSessionHandle`'s no-consumption-
+trap shape). Declared in both `NativeMethods.LibraryImport.cs` (net8.0) and
+`.DllImport.cs` (netstandard2.0/Unity, ADR-0018). `MediawayPipelineStatus`
+gained `DecoderBackendFailure`/`DecoderClosed` (13/14); new
+`DecoderUnavailableException`. Opus encoded via a test-local raw P/Invoke
+(no `InternalsVisibleTo` to the test project — same precedent
+`Mediaway.Device`'s hardware tests set). Verified: `DecodeRoundtripTests` in
+`Mediaway.Pipeline.Tests` — same 10-frame/50-frame round trips.
 
-Verified end-to-end: `DecodeRoundtripTests` in `Mediaway.Pipeline.Tests` — a
-real WMF H.264 encode→mux→demux→decode round trip (10 frames) and a real
-Opus encode→decode round trip (50 frames). The Opus encode side used a
-test-local raw P/Invoke declaration rather than the internal
-`NativeMethods` (no `InternalsVisibleTo` to the test project — the public
-`AudioEncoder` wrapper is AAC-only, same gap as C++'s), following the same
-precedent `Mediaway.Device`'s hardware capture tests set for a test-only raw
-P/Invoke.
+## Python
 
-## Python (done)
+`DecodeSession` / `AudioDecodeSession` in a new `mediaway/_decoder.py`,
+mirroring `_encoder.py`'s single-step `ctypes` shape. `_check_pipeline`
+gained a `no_backend_error=` parameter → `DecoderUnavailableError`. Notable:
+Python's `AudioEncoder.open()` already took `codec=` (Opus was always a
+valid argument, unlike C++/C#'s hardcoded-AAC wrappers) — `AudioEncoder.open
+(codec=Codec.OPUS, ...)` just worked, no raw-ABI workaround needed. Verified:
+`examples/pipeline/decode_roundtrip.py` + `tests/test_decode_roundtrip.py`
+(RC-stage, assert-based, no pytest) — same round trips.
 
-`DecodeSession` / `AudioDecodeSession` in a new `mediaway/_decoder.py`
-module, mirroring `AutoVideoEncoder`/`AudioEncoder`'s single-step-handle
-`ctypes` shape from `_encoder.py`. `_check_pipeline` (shared with
-`_encoder.py`) gained a `no_backend_error=` parameter so `NO_BACKEND` raises
-the new `DecoderUnavailableError` instead of `EncoderUnavailableError`.
+## Node
 
-Notable find: Python's `AudioEncoder.open()` already took a `codec=`
-parameter (defaulting to AAC, but Opus was always a valid argument) —
-unlike C++/C#'s wrappers, which hardcode AAC and needed a raw-ABI workaround
-to test Opus decode. `AudioEncoder.open(codec=Codec.OPUS, ...)` just worked,
-no extra plumbing needed.
-
-Verified end-to-end: `examples/pipeline/decode_roundtrip.py` (narrated) and
-`tests/test_decode_roundtrip.py` (RC-stage assert-based script, no pytest
-dependency, same style as `test_mux_roundtrip.py`) — a real WMF H.264
-encode→mux→demux→decode round trip (10 frames) and a real Opus
-encode→decode round trip (50 frames).
-
-## Node (pending)
-
-Not yet wired. Same shape expected: Node koffi, plus the same class of
-proactive checks the container series found repeatedly — missing
-mirror-enum variants, stale native DLL shadowing a fresh build, double-free
-on a consumed handle.
+`DecodeSession` / `AudioDecodeSession` in a new
+`packages/encoder/src/decode.ts`, mirroring `index.ts`'s single-step koffi
+shape. `@mediaway/ffi` gained the decode structs/functions; `checkPipeline`
+(exported from `encoder/index.ts`) gained a `noBackendError` parameter.
+Same AAC-only gap as C++/C#: Opus encoded via the raw `@mediaway/ffi`
+`pipeline` object directly — no test-local P/Invoke needed since
+`@mediaway/ffi` is already a real workspace package, unlike C#'s
+internals-gated `NativeMethods`. Verified: `examples/pipeline/decode-roundtrip.ts`
++ `test/decode-roundtrip.test.ts` (`node:assert`, wired into `npm test`) —
+same round trips; `tsc --noEmit` across the workspace passes clean.

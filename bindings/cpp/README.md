@@ -14,6 +14,14 @@ The native library behind that ABI is 100% Rust — no `libav*`/GPL codec
 dependencies, memory-safe by construction on the native side. This header is a
 thin RAII wrapper, not a reimplementation.
 
+**Platforms**: Windows x64 is the fully hardware-verified platform (device/pipeline
+capture and encode). Linux x64 is container-verified — `all_formats_smoke.cpp` and
+`mux_roundtrip.cpp` both compile with plain g++ (no `_WIN32`/`windows.h` anywhere in
+these headers) and run clean against a real `libmediaway_ffi.so`. Device/pipeline
+capability on Linux is untested here (see
+[`../../docs/ai/wiki/platform/linux-encode.md`](../../docs/ai/wiki/platform/linux-encode.md)
+/ [`linux-decode.md`](../../docs/ai/wiki/platform/linux-decode.md)).
+
 ## What Mediaway is (the capabilities)
 
 A streaming-first media stack. The C ABI currently covers three capabilities (full

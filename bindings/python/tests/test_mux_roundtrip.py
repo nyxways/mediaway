@@ -1,13 +1,14 @@
 """RC-stage binding check: round-trip synthetic packets through the
-release-built mediaway_ffi.dll.
+release-built native library (mediaway_ffi.dll on Windows, libmediaway_ffi.so
+on Linux).
 
 Mux 90 synthetic H.264 video + 90 synthetic AAC audio packets into a
 fragmented MP4, demux the bytes back, and assert the 1:1 round-trip. This is
 the same contract as examples/container/mux_roundtrip.py, packaged as an
 assert-based test with no pytest dependency. Pure CPU: no hardware required.
 
-Run from bindings/python (the DLL must be staged at
-mediaway/_native/mediaway_ffi.dll):
+Run from bindings/python (the native library must be staged at
+mediaway/_native/):
 
     python tests/test_mux_roundtrip.py
 
@@ -137,5 +138,5 @@ if __name__ == "__main__":
     run_roundtrip()
     print(
         f"PASS: {VIDEO_FRAMES} video + {AUDIO_FRAMES} audio packets "
-        f"round-tripped through mediaway_ffi.dll"
+        f"round-tripped through the native library"
     )

@@ -14,16 +14,20 @@ Each language folder is self-contained: its own `README.md` is the entry point. 
 
 ## Languages
 
-| Language | Folder | Interop | Status | Entry point |
-|---|---|---|---|---|
-| C | [`c/`](c/) | The C ABI itself (`<mediaway/*.h>`) | ✅ verified | [README](c/README.md) |
-| C++ | [`cpp/`](cpp/) | Thin RAII wrapper over the C ABI | ✅ verified | [README](cpp/README.md) |
-| C# | [`csharp/`](csharp/) | P/Invoke over the C ABI (net8.0 + netstandard2.0) | ✅ verified | [src](csharp/src/) · [unity UPM](csharp/unity/com.mediaway.unity/README.md) (🔷) |
-| Python | [`python/`](python/) | `ctypes` over the C ABI | ✅ verified | [README](python/README.md) |
-| Node.js | [`nodejs/`](nodejs/) | FFI over the C ABI (`koffi`; napi-rs is the eventual official path) | ✅ verified | [README](nodejs/README.md) |
-| Browser | [`browser/`](browser/) | WASM (`wasm-bindgen`) + WebCodecs — **not** the C ABI | ✅ verified (mux/demux + WebCodecs encode) | [README](browser/README.md) |
+| Language | Folder | Interop | Status | Platform | Entry point |
+|---|---|---|---|---|---|
+| C | [`c/`](c/) | The C ABI itself (`<mediaway/*.h>`) | ✅ verified | Windows (full) | [README](c/README.md) |
+| C++ | [`cpp/`](cpp/) | Thin RAII wrapper over the C ABI | ✅ verified | Windows (full) · Linux (container) | [README](cpp/README.md) |
+| C# | [`csharp/`](csharp/) | P/Invoke over the C ABI (net8.0 + netstandard2.0) | ✅ verified | Windows (full) · Linux (container) | [src](csharp/src/) · [unity UPM](csharp/unity/com.mediaway.unity/README.md) (🔷) |
+| Python | [`python/`](python/) | `ctypes` over the C ABI | ✅ verified | Windows (full) · Linux (container) | [README](python/README.md) |
+| Node.js | [`nodejs/`](nodejs/) | FFI over the C ABI (`koffi`; napi-rs is the eventual official path) | ✅ verified | Windows (full) · Linux (container) | [README](nodejs/README.md) |
+| Browser | [`browser/`](browser/) | WASM (`wasm-bindgen`) + WebCodecs — **not** the C ABI | ✅ verified (mux/demux + WebCodecs encode) | Wherever the browser runs | [README](browser/README.md) |
 
 Node.js and the browser are **two distinct hosts** for JS/TS with two distinct interop paths — see `docs/spec/c-ffi.md` § Tier C. Do not collapse them.
+
+**Platform column**: "full" = device/pipeline capture and encode hardware-verified;
+"container" = mux/demux verified against a real Linux build, device/pipeline capability
+untested on that platform. See [`docs/ai/wiki/bindings/linux-support.md`](../docs/ai/wiki/bindings/linux-support.md).
 
 ## Capability truth table (today)
 

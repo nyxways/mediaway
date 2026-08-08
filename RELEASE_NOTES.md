@@ -97,6 +97,17 @@
   bindings is next. Verified end-to-end: `test/all-formats-smoke.test.ts` round-trips
   all 7 non-MP4 formats against the real native DLL, reusing the other three bindings'
   own verified byte patterns.
+- All 4 C-ABI bindings (C++/C#/Python/Node.js) verified on Linux x64, container
+  capability only (pure CPU — device/pipeline remain Windows-hardware-verified only;
+  see `docs/ai/wiki/bindings/linux-support.md`). `mediaway-ffi` itself needed zero
+  Rust changes: `cargo build -p mediaway-ffi --all-features` already produces a clean
+  `libmediaway_ffi.so` exporting all symbols. Python/Node's native-library loaders
+  gained a `platform.system()`/`process.platform` filename switch
+  (`mediaway_ffi.dll` vs `libmediaway_ffi.so`); C#'s `LibraryName = "mediaway_ffi"`
+  (no extension) already resolved per-platform via .NET's own `DllImport`
+  convention, only its test project's DLL-staging items needed a Linux sibling; C++'s
+  headers needed no changes at all (no `_WIN32`/`windows.h` anywhere). Verified via
+  each binding's own pure-CPU container test suite passing against a real Linux build.
 
 ### Changed
 
@@ -125,6 +136,15 @@
   underlying `MwPacket` koffi struct (and the C ABI) already had — harmless for the
   existing MP4/WebM `Demuxer` (which never reads it), but several of the new dedicated
   formats' constructors genuinely need both `pts` and `dts`. Added.
+- Node.js binding: `@mediaway/container`/`device`/`encoder`'s `package.json` each
+  pinned their internal `@mediaway/*` cross-dependencies to an exact version
+  (`"0.1.0"`) that had already drifted behind the real workspace version (`0.1.1`) —
+  found while verifying Linux support. npm's workspace linker silently falls back to
+  fetching the real **published** old version from the npm registry instead of
+  symlinking the local (fresher) source whenever a sibling's declared version doesn't
+  satisfy the local one, so this was never Linux-specific — any plain `npm install`
+  on any platform would eventually have resolved stale internal packages. Switched to
+  caret ranges (`^0.1.0`).
 
 ### Removed
 

@@ -14,6 +14,14 @@ The native library behind that ABI is 100% Rust — no `libav*`/GPL codec
 dependencies, memory-safe by construction on the native side. This package is
 a thin `ctypes` wrapper, not a reimplementation.
 
+**Platforms**: Windows x64 is the fully hardware-verified platform (device/pipeline
+capture and encode). Linux x64 is container-verified — `tests/test_mux_roundtrip.py`
+and `tests/test_all_formats_smoke.py` (pure CPU, no hardware) both pass against a
+real `libmediaway_ffi.so` build; device/pipeline capability on Linux is untested here
+(see [`../../docs/ai/wiki/platform/linux-encode.md`](../../docs/ai/wiki/platform/linux-encode.md)
+/ [`linux-decode.md`](../../docs/ai/wiki/platform/linux-decode.md) for the Rust-level
+Linux encode/decode status).
+
 ## What Mediaway is (the capabilities)
 
 A streaming-first media stack. The C ABI currently covers three capabilities (full
@@ -101,9 +109,10 @@ aspirational):
 
 ## Testing
 
-The release pipeline stages the built `mediaway_ffi.dll` at
-`mediaway/_native/mediaway_ffi.dll` (the wheel's native directory). The
-round-trip binding check validates that DLL against the documented ABI
+The release pipeline stages the built native library at `mediaway/_native/`
+(`mediaway_ffi.dll` on Windows, `libmediaway_ffi.so` on Linux — the wheel's
+native directory; `_ffi.py` picks the filename via `platform.system()`). The
+round-trip binding check validates that library against the documented ABI
 contract:
 
 ```

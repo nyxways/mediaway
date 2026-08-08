@@ -15,6 +15,14 @@ The native library behind that ABI is 100% Rust — no `libav*`/GPL codec
 dependencies, memory-safe by construction on the native side. These packages
 are thin `koffi` FFI wrappers, not a reimplementation.
 
+**Platforms**: Windows x64 is the fully hardware-verified platform (device/pipeline
+capture and encode). Linux x64 is container-verified — `test/mux-roundtrip.test.ts`
+and `test/all-formats-smoke.test.ts` (pure CPU, no hardware) both pass against a
+real `libmediaway_ffi.so` build; `@mediaway/ffi` picks the library filename via
+`process.platform`. Device/pipeline capability on Linux is untested here (see
+[`../../docs/ai/wiki/platform/linux-encode.md`](../../docs/ai/wiki/platform/linux-encode.md)
+/ [`linux-decode.md`](../../docs/ai/wiki/platform/linux-decode.md)).
+
 ## What Mediaway is (the capabilities)
 
 A streaming-first media stack. The C ABI currently covers three capabilities (full

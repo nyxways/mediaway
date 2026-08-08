@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ctypes as _c
 import os
+import platform
 from ctypes import (
     POINTER,
     Structure,
@@ -47,8 +48,8 @@ __all__ = [
 # in, in order:
 #   1. $MEDIAWAY_FFI_DIR
 #   2. <package>/_native/                          (DLLs bundled in the wheel — the PyPI distribution)
-#   3. <repo root>/target/x86_64-pc-windows-gnu/debug   (GNU toolchain, C examples)
-#   4. <repo root>/target/debug                          (host/MSVC toolchain, C# tests)
+#   3. <repo root>/target/x86_64-pc-windows-gnu/debug   (GNU toolchain, C examples — Windows only)
+#   4. <repo root>/target/debug                          (host toolchain — MSVC on Windows, native on Linux)
 #   5. the current working directory
 # <repo root> is derived from this file's location (bindings/python/mediaway/).
 
@@ -62,6 +63,22 @@ _SEARCH_DIRS = [
     os.path.join(_REPO_ROOT, "target", "debug"),
     os.getcwd(),
 ]
+
+
+def _library_filename() -> str:
+    """cdylib filename Cargo produces for this platform. Windows and Linux
+    only — the workspace's own hardware/CI coverage is limited to those two
+    (see docs/ai/wiki/platform/order.md); macOS support is not claimed here
+    since it has never been built or run."""
+    system = platform.system()
+    if system == "Windows":
+        return "mediaway_ffi.dll"
+    if system == "Linux":
+        return "libmediaway_ffi.so"
+    raise OSError(f"mediaway: unsupported platform {system!r} (Windows and Linux only)")
+
+
+_LIBRARY_FILENAME = _library_filename()
 
 
 def _load_library(name: str) -> _c.CDLL:
@@ -96,9 +113,9 @@ class _Library:
         return self._dll
 
 
-container = _Library("mediaway_ffi.dll")
-pipeline = _Library("mediaway_ffi.dll")
-device = _Library("mediaway_ffi.dll")
+container = _Library(_LIBRARY_FILENAME)
+pipeline = _Library(_LIBRARY_FILENAME)
+device = _Library(_LIBRARY_FILENAME)
 
 
 # ── Shared value types (identical layout across the three headers) ──────────

@@ -26,8 +26,8 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@mediaway/ffi": "0.1.0",
-    "@mediaway/container": "0.1.0"
+    "@mediaway/ffi": "^0.1.0",
+    "@mediaway/container": "^0.1.0"
   },
   "devDependencies": {
     "typescript": "^5.6.0"

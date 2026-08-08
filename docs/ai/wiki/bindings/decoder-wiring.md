@@ -36,10 +36,31 @@ AAC-only, not extended here) → `AudioDecodeSession` round trip (50 frames).
 Linked and ran against a freshly built `mediaway_ffi.dll`
 (`x86_64-pc-windows-gnu`), not just compiled.
 
-## C# / Python / Node (pending)
+## C# (done)
 
-Not yet wired. Same shape expected: session-per-decoder classes mirroring
-each language's existing encoder wrapper (C# `SafeHandle`, Python
-ctypes/cffi, Node koffi), plus the same class of proactive checks the
-container series found repeatedly — missing mirror-enum variants, stale
-native DLL shadowing a fresh build, double-free on a consumed handle.
+`DecodeSession` / `AudioDecodeSession` in `Mediaway.Pipeline`, mirroring
+`AutoVideoEncoder`/`AudioEncoder`'s `SafeHandle` pattern exactly (both new
+handles have no consumption trap, unlike `AutoEncoderHandle`/
+`EncodeSessionHandle` — closer to `AudioEncodeSessionHandle`'s shape).
+Declarations added to both `NativeMethods.LibraryImport.cs` (net8.0) and
+`NativeMethods.DllImport.cs` (netstandard2.0/Unity) — the dual-TFM split
+ADR-0018 introduced. `MediawayPipelineStatus` gained
+`DecoderBackendFailure`/`DecoderClosed` (13/14); a new
+`DecoderUnavailableException` mirrors `EncoderUnavailableException` for the
+graceful `NoBackend` case.
+
+Verified end-to-end: `DecodeRoundtripTests` in `Mediaway.Pipeline.Tests` — a
+real WMF H.264 encode→mux→demux→decode round trip (10 frames) and a real
+Opus encode→decode round trip (50 frames). The Opus encode side used a
+test-local raw P/Invoke declaration rather than the internal
+`NativeMethods` (no `InternalsVisibleTo` to the test project — the public
+`AudioEncoder` wrapper is AAC-only, same gap as C++'s), following the same
+precedent `Mediaway.Device`'s hardware capture tests set for a test-only raw
+P/Invoke.
+
+## Python / Node (pending)
+
+Not yet wired. Same shape expected: Python ctypes/cffi, Node koffi, plus
+the same class of proactive checks the container series found repeatedly —
+missing mirror-enum variants, stale native DLL shadowing a fresh build,
+double-free on a consumed handle.

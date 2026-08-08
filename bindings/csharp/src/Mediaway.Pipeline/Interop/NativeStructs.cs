@@ -106,3 +106,66 @@ internal unsafe struct NativeAudioStreamInfo
     public byte* ExtraData;
     public nuint ExtraDataLen;
 }
+
+// ── Decode (adr/0004-auto-decode-c-abi.md, adr/pipeline/0006-audio-decode-c-abi.md) ────
+//
+// mediaway_decode_packet_view_t is shared by both video and audio decode push_packet
+// calls (a new, pipeline-scoped type per pipeline.h — not container.h's packet view).
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeDecodePacketView
+{
+    public uint StreamId; // unused by decode; kept for call-site symmetry with the ABI
+    public long Pts;
+    public long Dts;
+    public ulong Duration;
+    public byte IsKeyframe;
+    public byte IsDiscard;
+    public byte* Payload;
+    public nuint PayloadLen;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeAutoVideoDecodeConfig
+{
+    public CodecKind Codec; // mediaway_pipeline_codec_kind_t mirrors CodecKind's values 1:1
+    public uint Width;
+    public uint Height;
+    public NativeRational TimeBase;
+    public PixelFormat PixelFormat;
+    public byte* ExtraData; // BORROWED; valid for the open call only
+    public nuint ExtraDataLen;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeDecodedVideoFrame
+{
+    public long Pts;
+    public ulong Duration; // 0 if unknown
+    public uint Width;
+    public uint Height;
+    public PixelFormat PixelFormat;
+    public byte* Data; // OWNED; NULL after mediaway_decoded_video_frame_free
+    public nuint DataLen;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeAudioDecodeConfig
+{
+    public CodecKind Codec; // Opus only today; anything else is a runtime UNSUPPORTED
+    public uint SampleRate;
+    public ushort Channels;
+    public NativeRational TimeBase;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeDecodedAudioFrame
+{
+    public long Pts;
+    public ulong Duration; // 0 if unknown
+    public uint SampleRate;
+    public ushort Channels;
+    public SampleFormat SampleFormat; // always F32 for Opus
+    public byte* Data; // OWNED interleaved PCM; NULL after mediaway_decoded_audio_frame_free
+    public nuint DataLen;
+}

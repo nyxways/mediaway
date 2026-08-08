@@ -65,5 +65,48 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport(LibraryName)]
     internal static partial void mediaway_pipeline_ffi_stream_info_free(ref NativeAudioStreamInfo info);
+
+    [LibraryImport(LibraryName)]
+    internal static partial MediawayPipelineStatus mediaway_decode_session_open(
+        in NativeAutoVideoDecodeConfig config, out nint outSession);
+
+    [LibraryImport(LibraryName)]
+    internal static partial MediawayPipelineStatus mediaway_decode_session_push_packet(
+        DecodeSessionHandle session, in NativeDecodePacketView packet);
+
+    [LibraryImport(LibraryName)]
+    internal static partial MediawayPipelineStatus mediaway_decode_session_poll_frame(
+        DecodeSessionHandle session, out NativeDecodedVideoFrame outFrame, out byte outHasFrame);
+
+    [LibraryImport(LibraryName)]
+    internal static partial MediawayPipelineStatus mediaway_decode_session_flush(DecodeSessionHandle session);
+
+    [LibraryImport(LibraryName)]
+    internal static partial void mediaway_decode_session_close(nint session);
+
+    [LibraryImport(LibraryName)]
+    internal static partial void mediaway_decoded_video_frame_free(ref NativeDecodedVideoFrame frame);
+
+    [LibraryImport(LibraryName)]
+    internal static partial MediawayPipelineStatus mediaway_audio_decode_session_open(
+        in NativeAudioDecodeConfig config, out nint outSession);
+
+    [LibraryImport(LibraryName)]
+    internal static partial MediawayPipelineStatus mediaway_audio_decode_session_push_packet(
+        AudioDecodeSessionHandle session, in NativeDecodePacketView packet);
+
+    [LibraryImport(LibraryName)]
+    internal static partial MediawayPipelineStatus mediaway_audio_decode_session_poll_frame(
+        AudioDecodeSessionHandle session, out NativeDecodedAudioFrame outFrame, out byte outHasFrame);
+
+    [LibraryImport(LibraryName)]
+    internal static partial MediawayPipelineStatus mediaway_audio_decode_session_flush(
+        AudioDecodeSessionHandle session);
+
+    [LibraryImport(LibraryName)]
+    internal static partial void mediaway_audio_decode_session_close(nint session);
+
+    [LibraryImport(LibraryName)]
+    internal static partial void mediaway_decoded_audio_frame_free(ref NativeDecodedAudioFrame frame);
 }
 #endif

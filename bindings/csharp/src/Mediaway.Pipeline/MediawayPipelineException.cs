@@ -30,6 +30,23 @@ public class MediawayPipelineException : MediawayException
         }
     }
 
+    /// <summary>Same as <see cref="ThrowIfError"/>, but a <see cref="MediawayPipelineStatus.NoBackend"/>
+    /// throws <see cref="DecoderUnavailableException"/> instead — used by decode session Open() calls.</summary>
+    internal static void ThrowIfDecodeError(
+        MediawayPipelineStatus status,
+        string noBackendMessage = "No supported decoder backend is compiled in on this platform.")
+    {
+        switch (status)
+        {
+            case MediawayPipelineStatus.Ok:
+                return;
+            case MediawayPipelineStatus.NoBackend:
+                throw new DecoderUnavailableException(noBackendMessage);
+            default:
+                throw new MediawayPipelineException(status, Describe(status));
+        }
+    }
+
     private static string Describe(MediawayPipelineStatus status) => status switch
     {
         MediawayPipelineStatus.InvalidArgument => "Null pointer, or mismatched pointer/length pair.",
@@ -39,6 +56,8 @@ public class MediawayPipelineException : MediawayException
         MediawayPipelineStatus.InvalidInput => "Invalid dimensions, rates, or frame metadata.",
         MediawayPipelineStatus.EncoderBackendFailure => "An OS/API failure occurred inside the encoder backend.",
         MediawayPipelineStatus.EncoderClosed => "This session already finished, or was never open.",
+        MediawayPipelineStatus.DecoderBackendFailure => "An OS/API failure occurred inside the decoder backend.",
+        MediawayPipelineStatus.DecoderClosed => "This decode session already finished, or was never open.",
         MediawayPipelineStatus.MuxInvalidTrack => "The muxer rejected the encoder's stream info.",
         MediawayPipelineStatus.MuxInvalidPacket => "A packet did not match the registered track.",
         MediawayPipelineStatus.MuxInvalidData => "Malformed container data.",

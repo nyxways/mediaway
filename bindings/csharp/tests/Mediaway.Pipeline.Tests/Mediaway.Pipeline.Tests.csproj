@@ -7,6 +7,10 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <RootNamespace>Mediaway.Pipeline.Tests</RootNamespace>
+    <!-- DecodeRoundtripTests.cs's test-local Opus-encode P/Invoke needs pointer arithmetic
+         over pinned PCM (Mediaway.Pipeline.Interop.NativeMethods is internal to that
+         assembly, so the test declares its own minimal raw bindings instead). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Mediaway.Common\Mediaway.Common.csproj" />
+    <ProjectReference Include="..\..\src\Mediaway.Container\Mediaway.Container.csproj" />
     <ProjectReference Include="..\..\src\Mediaway.Pipeline\Mediaway.Pipeline.csproj" />
   </ItemGroup>
 

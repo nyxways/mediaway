@@ -24,4 +24,6 @@ public enum MediawayPipelineStatus
     MuxInvalidData = 10,
     UnknownError = 11,
     InternalPanic = 12,
+    DecoderBackendFailure = 13,
+    DecoderClosed = 14,
 }

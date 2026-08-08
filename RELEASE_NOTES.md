@@ -117,6 +117,16 @@
   wiring still pending. Verified end-to-end: `examples/pipeline/decode_roundtrip.cpp`
   round-trips a real WMF H.264 encode→mux→demux→decode (10 frames) and a real Opus
   encode→decode (50 frames) against the real GNU-target dylib.
+- C# binding: video decode (`DecodeSession`) and Opus audio decode (`AudioDecodeSession`)
+  reach `Mediaway.Pipeline`, mirroring `AutoVideoEncoder`/`AudioEncoder`'s `SafeHandle`
+  pattern (both decode sessions have no consumption trap, unlike `AutoVideoEncoder`).
+  `MediawayPipelineStatus` gains `DecoderBackendFailure`/`DecoderClosed`; a new
+  `DecoderUnavailableException` mirrors `EncoderUnavailableException` for the graceful
+  `NoBackend` case. Python/Node wiring still pending. Verified end-to-end:
+  `DecodeRoundtripTests` (xUnit, in the `Mediaway.Pipeline.Tests` suite) — a real WMF
+  H.264 encode→mux→demux→decode round trip (10 frames) and a real Opus encode→decode
+  round trip (50 frames, encoded via a test-local raw P/Invoke since the public
+  `AudioEncoder` wrapper is AAC-only) against the real native DLL.
 
 ### Changed
 

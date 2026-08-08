@@ -85,6 +85,18 @@
   pending. Verified end-to-end: `tests/test_all_formats_smoke.py` round-trips all 7
   non-MP4 formats against the real native DLL, reusing the C++/C# bindings' own
   verified byte patterns.
+- Node.js binding: all 8 `mediaway-container` formats reach the `@mediaway/container`
+  package (WebM via `new Muxer("webm")`/`new Demuxer("webm")`; Ogg/ADTS/FLV/MPEG-TS/MP3
+  get dedicated classes in new `ogg.ts`/`adts.ts`/`flv.ts`/`ts.ts`/`mp3.ts` modules; WAV
+  is mux-only via `WavMuxer` + the one-shot `parseWav()` function). `@mediaway/ffi`
+  gains a `decodeArray` helper for `TsDemuxer.finish()`'s owned packet-array output —
+  the only multi-element owned-array shape in the crate. `VideoCodec`/`AudioCodec` gain
+  `vp8`/`hevc`/`mp3`/`raw_audio` (several were missing from the Node mirror unions, the
+  same class of gap the C#/Python passes each found in their own mirror enums). This is
+  the last language in the C++→C#→Python→Node sequence — Linux support for all four
+  bindings is next. Verified end-to-end: `test/all-formats-smoke.test.ts` round-trips
+  all 7 non-MP4 formats against the real native DLL, reusing the other three bindings'
+  own verified byte patterns.
 
 ### Changed
 
@@ -107,6 +119,12 @@
 - Python binding: `Muxer`'s auto-assigned track ids had the same `0`-start issue as the
   C++ binding above — fixed proactively while wiring `format=ContainerFormat.WEBM` support,
   before it could bite (now starts at `1` for both MP4 and WebM).
+- Node.js binding: `Muxer`'s `nextIndex` had the same `0`-start issue as the C++/Python
+  bindings above — fixed proactively the same way, before it could bite. Also:
+  `@mediaway/ffi`'s `RawPacket` TypeScript interface was missing a `dts` field the
+  underlying `MwPacket` koffi struct (and the C ABI) already had — harmless for the
+  existing MP4/WebM `Demuxer` (which never reads it), but several of the new dedicated
+  formats' constructors genuinely need both `pts` and `dts`. Added.
 
 ### Removed
 

@@ -12,7 +12,7 @@ freestanding cores 0.1.1 (`ebml-webm` 0.2.1) · CPack `Mediaway-0.1.2-win64`.
 | C | the C ABI itself | ✅ verified — 7 examples link+run; real camera (1920×1080) + mic capture → two-track MP4 (H.264 + AAC) |
 | C++ | `bindings/cpp/include/mediaway/{core,container,pipeline,device}.hpp` RAII wrapper | ✅ verified — 8 examples compile+run (incl. all 8 container formats); two-track camera_record on real hardware |
 | Python | `bindings/python/mediaway/` ctypes package | ✅ verified — 7 examples run; encode output byte-identical to C/C++/Node (6253 B video; 27372 B audio); all 8 container formats wired |
-| Node.js | `bindings/nodejs/packages/@mediaway/*` koffi FFI | ✅ verified — 7 examples run; napi-rs is the eventual official path |
+| Node.js | `bindings/nodejs/packages/@mediaway/*` koffi FFI | ✅ verified — 7 examples run; napi-rs is the eventual official path; all 8 container formats wired |
 | C# | `bindings/csharp/src/` P/Invoke | ✅ verified (xUnit against native libs; ADR-0017/0018); 6 examples under `Container/`/`Device/`/`Pipeline/`, mirroring Node's layout; all 8 container formats wired |
 | Browser | WASM (`iso-bmff-wasm` + WebCodecs) | ✅ verified — `@mediaway/browser` (ADR-0020 + ADR-0022): wasm mux/demux + WebCodecs H.264/AAC encode to fMP4 AND `DecodeSession` decode back (video + audio), E2E-verified in Chromium + real Edge (`tools/e2e-web`, `browser-package.spec.ts`) |
 
@@ -44,10 +44,9 @@ bindings were then implemented to satisfy those examples. Examples mirror the Ru
 - **WMF AAC MFT rejects hand-built output types** (`MF_E_ATTRIBUTENOTFOUND`) — negotiate
   via `GetOutputAvailableType`, matched on sample rate + channels, bitrate overridden on
   a copy. F32 input must be `MFAudioFormat_Float`, not `MFAudioFormat_PCM` + 32 bits/sample.
-- **The ASC arrives late**: `MF_MT_USER_DATA` populates only after the first input sample;
-  the blob is a 14-byte WAVEFORMATEX-ish prefix whose trailing 2 bytes are the
-  AudioSpecificConfig (`asc_from_waveformatex` handles both 20-byte/14-byte shapes). Call
-  order: push → stream_info → mux.
+- **The ASC arrives late**: `MF_MT_USER_DATA` populates only after the first input
+  sample; the blob is a 14-byte WAVEFORMATEX-ish prefix whose trailing 2 bytes are
+  the AudioSpecificConfig. Call order: push → stream_info → mux.
 
 ## FFI learnings (repo fixes this pass)
 
@@ -70,17 +69,18 @@ feature-gated `mediaway-ffi` module layout (post ADR-0021 merge); `pipeline`
 and `container`'s `mux`/`demux`/`audio`/`video` are each their own Cargo
 feature, unified from this crate's own.
 
-## Container format wiring (all 8 formats — C++, C#, Python)
+## Container format wiring (all 8 formats — C++, C#, Python, Node.js)
 
 Wiring WebM + 6 dedicated-handle formats surfaced real bugs only caught by
 linking+running against the real dylib, never syntax/compile checks:
-`mediaway_common::CodecKind` had no explicit `#[repr(u8)]` (Rust); WebM's
-TrackNumber must not be `0` (C++'s auto ids now start at `1`; Python's too,
-fixed proactively); the Python/C# mirror `Codec`/`CodecKind` enums were each
-missing `VP8` outright. Each language also hit a stale gitignored native DLL
-(`bindings/csharp/runtime/win-x64/native/`, `bindings/python/mediaway/_native/`)
-shadowing the fresh dev build — always delete/rebuild before trusting a
-missing-symbol error.
+`mediaway_common::CodecKind` had no `#[repr(u8)]` (Rust); WebM's TrackNumber
+must not be `0` (C++/Python/Node's auto ids now start at `1`, Python/Node's
+fixed proactively); the Python/C#/Node mirror codec enums were each missing
+at least one variant (`VP8` in Python/C#; `vp8`/`hevc`/`mp3`/`raw_audio` in
+Node); `@mediaway/ffi`'s `RawPacket` type was missing `dts` outright. Every
+language but C++ also hit a stale gitignored native DLL shadowing the fresh
+dev build — always delete/rebuild before trusting a missing-symbol error.
+This closes the C++→C#→Python→Node sequence; Linux support is next.
 
 ## Open items
 

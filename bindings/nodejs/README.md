@@ -20,10 +20,15 @@ are thin `koffi` FFI wrappers, not a reimplementation.
 A streaming-first media stack. The C ABI currently covers three capabilities (full
 detail in [`../c/README.md`](../c/README.md)):
 
-1. **Container — mux + demux**: sans-io fragmented-MP4 muxer (register video/audio
-   tracks, `begin()` → live, push packets, flush, `pollBytes()`; never touches
-   files — the caller owns byte I/O) and demuxer (`pushBytes`, `streams()`,
-   `pollPacket()`, optional ClearKey key). Fully real.
+1. **Container — mux + demux, all 8 `mediaway-container` formats**: MP4/WebM share
+   `Muxer`/`Demuxer` (`new Muxer("mp4" | "webm")`, typestated Open→Live via `begin()`,
+   never touches files — the caller owns byte I/O). Ogg/ADTS/FLV/MPEG-TS/MP3 get
+   dedicated classes (`OggMuxer`/`OggDemuxer`, `AdtsMuxer`/`AdtsDemuxer`,
+   `FlvMuxer`/`FlvDemuxer`, `TsMuxer`/`TsDemuxer`, `Mp3Muxer`/`Mp3Demuxer`) reflecting
+   each format's own C ABI shape — see each module's (`ogg.ts`/`adts.ts`/`flv.ts`/
+   `ts.ts`/`mp3.ts`) top comment. WAV is mux-only (`WavMuxer`, consuming `finish()`);
+   demux is the one-shot `parseWav()` function, not a class at all. Fully real, all
+   formats run-verified.
 2. **Pipeline — auto video encode → fMP4**: one call picks the best available OS/GPU
    encoder for a config, wires it into an internal MP4 muxer; `finish()` returns
    complete MP4 bytes. **Video only** — the audio encoder is separate (ABI v2,
@@ -105,6 +110,10 @@ keyframe flags, and payload bytes all survive the round trip. Deterministic
 synthetic payloads only — no randomness, no files, no hardware. Any failed
 assertion exits nonzero.
 
+`test/all-formats-smoke.test.ts` covers the other 7 `mediaway-container`
+formats (WebM/Ogg/ADTS/FLV/MPEG-TS/MP3/WAV) the same way, reusing the
+C++/C#/Python bindings' own verified byte patterns.
+
 The DLL must be staged at `packages/ffi/native/mediaway_ffi.dll` (the release
 workflow stages it there via `tools/scripts/copy-native-dlls.ts`). Run the
 suite with one command, from `bindings/nodejs/`:
@@ -113,7 +122,7 @@ suite with one command, from `bindings/nodejs/`:
 
 The `test` script rebuilds the `@mediaway/ffi` and `@mediaway/container` dist
 with `tsc` (no cargo — the DLL is already staged), type-checks the suite, and
-runs it via `tsx`.
+runs both test files via `tsx`.
 
 Type-check the suite standalone (requires the dist build above to exist):
 

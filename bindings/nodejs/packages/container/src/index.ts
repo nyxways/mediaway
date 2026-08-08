@@ -28,9 +28,15 @@ export interface Rational {
   den: number;
 }
 
-export type VideoCodec = "h264" | "av1" | "vp9";
-export type AudioCodec = "aac" | "opus";
+export type VideoCodec = "h264" | "hevc" | "av1" | "vp9" | "vp8";
+export type AudioCodec = "aac" | "opus" | "mp3" | "raw_audio";
 export type PixelFormat = "nv12" | "bgra8" | "rgba8" | "i420" | "yuy2";
+
+/** Which format `Muxer`/`Demuxer` open — mirrors mediaway_container_format_t.
+ * Only formats sharing MP4's multi-track, typestated shape are reachable
+ * here; Ogg/ADTS/FLV/MPEG-TS/MP3/WAV have their own dedicated classes. */
+export type ContainerFormat = "mp4" | "webm";
+const FORMAT_TO_ABI: Record<ContainerFormat, number> = { mp4: 0, webm: 1 };
 
 export interface VideoTrackInfo {
   codec: VideoCodec;
@@ -77,12 +83,23 @@ export class MediawayError extends Error {
   }
 }
 
-const CODEC_TO_ABI: Record<string, number> = { h264: 0, hevc: 1, av1: 2, vp9: 3, aac: 4, opus: 5 };
-const ABI_TO_CODEC: Record<number, string> = Object.fromEntries(
+export const CODEC_TO_ABI: Record<string, number> = {
+  h264: 0,
+  hevc: 1,
+  av1: 2,
+  vp9: 3,
+  aac: 4,
+  opus: 5,
+  mp3: 6,
+  vorbis: 7,
+  raw_audio: 11,
+  vp8: 12,
+};
+export const ABI_TO_CODEC: Record<number, string> = Object.fromEntries(
   Object.entries(CODEC_TO_ABI).map(([k, v]) => [v, k])
 );
 
-function check(status: number): void {
+export function check(status: number): void {
   if (status === 0) return;
   const names: Record<number, string> = {
     1: "invalid argument",
@@ -93,6 +110,8 @@ function check(status: number): void {
     6: "unknown error",
     7: "internal panic (handle poisoned)",
     8: "handle poisoned by an earlier panic",
+    9: "codec has no encoding in this container format",
+    10: "packet's stream id matches no registered track",
   };
   throw new MediawayError(status, names[status] ?? "unknown container error");
 }
@@ -101,15 +120,18 @@ function check(status: number): void {
 
 /**
  * A muxer in the track-registration (Open) state. Stream indices are assigned
- * in registration order: the first `add*Track` call returns 0, the second 1.
+ * in registration order starting at 1: the first `add*Track` call returns 1,
+ * the second 2 — not 0, since WebM/Matroska's TrackNumber element must not
+ * be 0 (MP4 tolerates 0, but there is no reason to special-case it).
  * `begin()` makes the muxer live; after it, track registration fails.
  */
 export class Muxer {
   private handle: unknown;
-  private nextIndex = 0;
+  private nextIndex = 1;
 
-  constructor() {
-    this.handle = container.muxerCreate();
+  constructor(format: ContainerFormat = "mp4") {
+    this.handle =
+      format === "mp4" ? container.muxerCreate() : container.muxerCreateForFormat(FORMAT_TO_ABI[format]);
     if (!this.handle) throw new MediawayError(7, "muxer creation panicked");
   }
 
@@ -201,8 +223,9 @@ export class Demuxer {
   private handle: unknown;
   private streamIndexById = new Map<number, number>();
 
-  constructor() {
-    this.handle = container.demuxerCreate();
+  constructor(format: ContainerFormat = "mp4") {
+    this.handle =
+      format === "mp4" ? container.demuxerCreate() : container.demuxerCreateForFormat(FORMAT_TO_ABI[format]);
     if (!this.handle) throw new MediawayError(7, "demuxer creation panicked");
   }
 
@@ -272,3 +295,15 @@ export class Demuxer {
     }
   }
 }
+
+// ── The 6 dedicated-handle formats ──────────────────────────────────────────
+// Ogg/ADTS/FLV/MPEG-TS/MP3/WAV each need a genuinely different C ABI shape
+// from MP4/WebM's Muxer/Demuxer (no track registration, out-buffer-per-call
+// mux, or a construction-time stream list) — see each module's own top comment.
+
+export * from "./ogg.js";
+export * from "./adts.js";
+export * from "./flv.js";
+export * from "./ts.js";
+export * from "./mp3.js";
+export * from "./wav.js";

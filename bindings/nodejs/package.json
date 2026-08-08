@@ -10,7 +10,7 @@
   "scripts": {
     "build": "bun ../../tools/scripts/build-node-packages.ts",
     "build:release": "bun ../../tools/scripts/build-node-packages.ts --release",
-    "test": "bun node_modules/typescript/bin/tsc -p packages/ffi/tsconfig.json && bun node_modules/typescript/bin/tsc -p packages/container/tsconfig.json && bun node_modules/typescript/bin/tsc --noEmit && node node_modules/tsx/dist/cli.mjs test/mux-roundtrip.test.ts"
+    "test": "bun node_modules/typescript/bin/tsc -p packages/ffi/tsconfig.json && bun node_modules/typescript/bin/tsc -p packages/container/tsconfig.json && bun node_modules/typescript/bin/tsc --noEmit && node node_modules/tsx/dist/cli.mjs test/mux-roundtrip.test.ts && node node_modules/tsx/dist/cli.mjs test/all-formats-smoke.test.ts"
   },
   "devDependencies": {
     "tsx": "^4.19.0",

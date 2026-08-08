@@ -1,5 +1,3 @@
-using System.Buffers;
-using Mediaway.Common.Interop;
 using Mediaway.Container.Interop;
 
 namespace Mediaway.Container;
@@ -13,6 +11,9 @@ public sealed class Demuxer : IDisposable
     private readonly DemuxerHandle _handle;
 
     public Demuxer() => _handle = DemuxerHandle.Create();
+
+    /// <param name="format">Container format to open.</param>
+    public Demuxer(ContainerFormat format) => _handle = DemuxerHandle.CreateForFormat(format);
 
     /// <summary>
     /// Feed container bytes in. Can be called incrementally as bytes arrive; the native core
@@ -39,7 +40,7 @@ public sealed class Demuxer : IDisposable
             {
                 MediawayContainerException.ThrowIfError(
                     NativeMethods.mediaway_demuxer_stream_at(_handle, index, out var native));
-                streams.Add(ToManaged(native));
+                streams.Add(NativeConversions.ToManaged(native));
             }
 
             return streams;
@@ -51,32 +52,7 @@ public sealed class Demuxer : IDisposable
     {
         MediawayContainerException.ThrowIfError(
             NativeMethods.mediaway_demuxer_poll_packet(_handle, out var native, out var hasPacket));
-
-        if (hasPacket == 0)
-        {
-            return null;
-        }
-
-        IMemoryOwner<byte> owner = native.PayloadLen == 0
-            ? EmptyMemoryOwner<byte>.Instance
-            : new NativeOwnedMemoryManager(
-                native.Payload, native.PayloadLen,
-                static (ptr, len) =>
-                {
-                    var owned = new NativePacket { Payload = ptr, PayloadLen = len };
-                    NativeMethods.mediaway_packet_free(ref owned);
-                });
-
-        return new Packet(owner)
-        {
-            StreamId = native.StreamId,
-            Pts = native.Pts,
-            Dts = native.Dts,
-            Duration = native.Duration,
-            IsKeyframe = native.IsKeyframe != 0,
-            IsDiscard = native.IsDiscard != 0,
-            Payload = owner.Memory,
-        };
+        return hasPacket == 0 ? null : NativeConversions.ToManaged(native);
     }
 
     /// <summary>
@@ -98,28 +74,4 @@ public sealed class Demuxer : IDisposable
         MediawayContainerException.ThrowIfError(NativeMethods.mediaway_demuxer_clear_decryption_key(_handle));
 
     public void Dispose() => _handle.Dispose();
-
-    private static StreamDescriptor ToManaged(NativeStreamInfo native)
-    {
-        IMemoryOwner<byte> owner = native.ExtraDataLen == 0
-            ? EmptyMemoryOwner<byte>.Instance
-            : new NativeOwnedMemoryManager(
-                native.ExtraData, native.ExtraDataLen,
-                static (ptr, len) =>
-                {
-                    var owned = new NativeStreamInfo { ExtraData = ptr, ExtraDataLen = len };
-                    NativeMethods.mediaway_stream_info_free(ref owned);
-                });
-
-        return new StreamDescriptor(owner)
-        {
-            Id = native.Id,
-            Codec = native.Codec,
-            TimeBase = native.TimeBase.ToManaged(),
-            Geometry = native.HasGeometry != 0 ? new StreamGeometry(native.Width, native.Height) : null,
-            SampleRate = native.SampleRate,
-            Channels = native.Channels,
-            ExtraData = owner.Memory,
-        };
-    }
 }

@@ -35,4 +35,10 @@ public enum MediawayContainerStatus
 
     /// <summary>A previous call already poisoned this handle; the call was refused.</summary>
     HandlePoisoned = 8,
+
+    /// <summary>Track's codec has no encoding in the requested format.</summary>
+    UnsupportedCodec = 9,
+
+    /// <summary>A pushed packet's stream id matches no registered track.</summary>
+    UnknownStream = 10,
 }

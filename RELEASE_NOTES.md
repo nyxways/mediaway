@@ -67,6 +67,14 @@
   1000-line source cap; `mediaway.hpp` remains a pure umbrella include. C#/Python/Node
   wiring still pending. Verified end-to-end: `examples/container/all_formats_smoke.cpp`
   links and runs against the real GNU-target dylib.
+- C# binding: all 8 `mediaway-container` formats reach `Mediaway.Container` (WebM via
+  `Muxer`/`Demuxer(ContainerFormat.WebM)`; Ogg/ADTS/FLV/MPEG-TS/MP3 get dedicated
+  `SafeHandle`-backed classes; WAV is mux-only via `WavMuxer` + the one-shot
+  `WavContainer.Parse`). `CodecKind` gains `Vp8`; `MediawayContainerStatus` gains
+  `UnsupportedCodec`/`UnknownStream`. Python/Node wiring still pending. Verified
+  end-to-end: `AllFormatsSmokeTests` (xUnit, in the RC-gate `Mediaway.Container.Tests`
+  suite) round-trips all 7 non-MP4 formats against the real native dylib, reusing the
+  C++ binding's own verified byte patterns.
 
 ### Changed
 

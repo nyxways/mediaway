@@ -20,6 +20,13 @@ internal sealed class DemuxerHandle : SafeHandleZeroOrMinusOneIsInvalid
         return instance;
     }
 
+    internal static DemuxerHandle CreateForFormat(ContainerFormat format)
+    {
+        var instance = new DemuxerHandle();
+        instance.SetHandle(NativeMethods.mediaway_demuxer_create_for_format(format));
+        return instance;
+    }
+
     protected override bool ReleaseHandle()
     {
         NativeMethods.mediaway_demuxer_close(handle);

@@ -42,4 +42,7 @@ public enum CodecKind
 
     /// <summary>Uncompressed / raw PCM audio.</summary>
     RawAudio = 11,
+
+    /// <summary>VP8 video.</summary>
+    Vp8 = 12,
 }

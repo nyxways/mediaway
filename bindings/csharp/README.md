@@ -44,10 +44,13 @@ or, from `bindings/csharp/`:
 dotnet test tests/Mediaway.Container.Tests/Mediaway.Container.Tests.csproj
 ```
 
-`Mediaway.Container.Tests` (`MuxRoundtripTests`) is the RC suite: it muxes 90
+`Mediaway.Container.Tests` is the RC suite. `MuxRoundtripTests` muxes 90
 synthetic H.264 video packets and 90 synthetic AAC audio packets into a
 fragmented MP4, demuxes the bytes back, and asserts 1:1 packet counts and
-stream metadata. Pure CPU, no hardware, deterministic.
+stream metadata. `AllFormatsSmokeTests` round-trips the other 7
+`mediaway-container` formats (WebM/Ogg/ADTS/FLV/MPEG-TS/MP3/WAV) using the
+same byte patterns verified in the Rust FFI and C++ binding smoke tests.
+Pure CPU, no hardware, deterministic.
 
 What must NOT run at RC:
 

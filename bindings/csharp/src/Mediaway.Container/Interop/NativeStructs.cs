@@ -87,3 +87,29 @@ internal struct NativeStreamInfo
     public nint ExtraData;
     public nuint ExtraDataLen;
 }
+
+/// <summary>One elementary stream in <see cref="TsMuxer"/>'s constructed PMT.</summary>
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeTsElementaryStream
+{
+    public ushort Pid;
+    public CodecKind Codec;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeMp3FrameHeader
+{
+    public Mp3MpegVersion Version;
+    public ushort BitrateKbps;
+    public uint SampleRate;
+    public Mp3ChannelMode ChannelMode;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeWaveFormat
+{
+    public WavSampleFormat SampleFormat;
+    public ushort Channels;
+    public uint SampleRate;
+    public ushort BitsPerSample;
+}

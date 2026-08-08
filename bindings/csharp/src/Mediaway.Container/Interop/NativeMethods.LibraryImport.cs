@@ -12,6 +12,9 @@ internal static unsafe partial class NativeMethods
     internal static partial nint mediaway_muxer_create();
 
     [LibraryImport(LibraryName)]
+    internal static partial nint mediaway_muxer_create_for_format(ContainerFormat format);
+
+    [LibraryImport(LibraryName)]
     internal static partial nint mediaway_muxer_create_with_fragment_batch(nuint batch);
 
     [LibraryImport(LibraryName)]
@@ -41,6 +44,9 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport(LibraryName)]
     internal static partial nint mediaway_demuxer_create();
+
+    [LibraryImport(LibraryName)]
+    internal static partial nint mediaway_demuxer_create_for_format(ContainerFormat format);
 
     [LibraryImport(LibraryName)]
     internal static partial MediawayContainerStatus mediaway_demuxer_push_bytes(

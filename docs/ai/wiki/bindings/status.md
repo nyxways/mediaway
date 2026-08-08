@@ -13,7 +13,7 @@ freestanding cores 0.1.1 (`ebml-webm` 0.2.1) · CPack `Mediaway-0.1.2-win64`.
 | C++ | `bindings/cpp/include/mediaway/{core,container,pipeline,device}.hpp` RAII wrapper | ✅ verified — 8 examples compile+run (incl. all 8 container formats); two-track camera_record on real hardware |
 | Python | `bindings/python/mediaway/` ctypes package | ✅ verified — 7 examples run; encode output byte-identical to C/C++/Node (6253 B video; 27372 B audio) |
 | Node.js | `bindings/nodejs/packages/@mediaway/*` koffi FFI | ✅ verified — 7 examples run; napi-rs is the eventual official path |
-| C# | `bindings/csharp/src/` P/Invoke | ✅ verified (xUnit against native libs; ADR-0017/0018); 6 examples under `Container/`/`Device/`/`Pipeline/`, mirroring Node's layout |
+| C# | `bindings/csharp/src/` P/Invoke | ✅ verified (xUnit against native libs; ADR-0017/0018); 6 examples under `Container/`/`Device/`/`Pipeline/`, mirroring Node's layout; all 8 container formats wired |
 | Browser | WASM (`iso-bmff-wasm` + WebCodecs) | ✅ verified — `@mediaway/browser` (ADR-0020 + ADR-0022): wasm mux/demux + WebCodecs H.264/AAC encode to fMP4 AND `DecodeSession` decode back (video + audio), E2E-verified in Chromium + real Edge (`tools/e2e-web`, `browser-package.spec.ts`) |
 
 ## DX-driven example flow
@@ -56,10 +56,8 @@ bindings were then implemented to satisfy those examples. Examples mirror the Ru
   `mediaway_camera_capture_*`/`_desktop_capture_*`/`_audio_capture_*`
   (ADR-0004 domain-feature-split). Rewritten to the real ABI.
 - **Header co-inclusion**: the three `*-ffi` headers each define
-  `mediaway_rational_t` / `mediaway_pixel_format_t` / gpu handle types. The C++
-  wrapper needs all three in one TU, so the shared typedefs got
-  `MEDIAWAY_*_T_DEFINED` include guards (this is why `camera_record.c` previously
-  hand-declared the pipeline surface).
+  `mediaway_rational_t`/`mediaway_pixel_format_t`/gpu handle types; the shared
+  typedefs got `MEDIAWAY_*_T_DEFINED` include guards so multi-header TUs compile.
 - Handle-consumption traps verified across wrappers: `mediaway_encode_session_open` /
   `_finish` consume their handle unconditionally (even on failure) — wrappers must
   release, never close, on the failure path (C++ `finish()` and the Node `finish()`
@@ -72,14 +70,17 @@ feature-gated `mediaway-ffi` module layout (post ADR-0021 merge); `pipeline`
 and `container`'s `mux`/`demux`/`audio`/`video` are each their own Cargo
 feature, unified from this crate's own.
 
-## Container format wiring (all 8 formats, C++ first)
+## Container format wiring (all 8 formats — C++ then C#)
 
-Wiring WebM + 6 dedicated-handle formats into C++ surfaced two real bugs
-`-fsyntax-only` couldn't catch, only linking+running against the real
-GNU-target dylib (`all_formats_smoke.cpp`): (1) `mediaway_common::CodecKind`
-had no explicit `#[repr(u8)]`, now pinned to match the C header; (2) WebM's
-TrackNumber must not be `0` — `container::Muxer`'s auto-assigned ids now
-start at `1` (was `0`, silently rejected only by WebM).
+Wiring WebM + 6 dedicated-handle formats surfaced two real bugs
+`-fsyntax-only`/compile-checks couldn't catch, only linking+running against
+the real dylib: (1) `mediaway_common::CodecKind` had no explicit
+`#[repr(u8)]`, now pinned to match the C header; (2) WebM's TrackNumber must
+not be `0` — C++'s auto-assigned ids now start at `1`. C# wired the same 7
+formats via 11 new SafeHandle types + `AllFormatsSmokeTests` (reusing the
+C++ smoke test's verified byte patterns); no new wrapper bugs, but a stale
+gitignored `runtime/win-x64/native/mediaway_ffi.dll` (staged before this ABI
+expansion) shadowed the fresh dev build and had to be deleted.
 
 ## Open items
 

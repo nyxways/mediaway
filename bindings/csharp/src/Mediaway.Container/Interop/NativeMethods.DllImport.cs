@@ -12,6 +12,9 @@ internal static unsafe partial class NativeMethods
     internal static extern nint mediaway_muxer_create();
 
     [DllImport(LibraryName, ExactSpelling = true)]
+    internal static extern nint mediaway_muxer_create_for_format(ContainerFormat format);
+
+    [DllImport(LibraryName, ExactSpelling = true)]
     internal static extern nint mediaway_muxer_create_with_fragment_batch(nuint batch);
 
     [DllImport(LibraryName, ExactSpelling = true)]
@@ -41,6 +44,9 @@ internal static unsafe partial class NativeMethods
 
     [DllImport(LibraryName, ExactSpelling = true)]
     internal static extern nint mediaway_demuxer_create();
+
+    [DllImport(LibraryName, ExactSpelling = true)]
+    internal static extern nint mediaway_demuxer_create_for_format(ContainerFormat format);
 
     [DllImport(LibraryName, ExactSpelling = true)]
     internal static extern MediawayContainerStatus mediaway_demuxer_push_bytes(

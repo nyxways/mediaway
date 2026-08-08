@@ -9,7 +9,7 @@ freestanding cores 0.1.1 (`ebml-webm` 0.2.1) · CPack `Mediaway-0.1.2-win64`.
 
 | Language | Mechanism | Status |
 |---|---|---|
-| C | the C ABI itself | ✅ verified — 7 examples link+run; real camera (1920×1080) + mic capture → two-track MP4 (H.264 + AAC) |
+| C | the C ABI itself | ✅ verified — 7 examples link+run; real camera (1920×1080) + mic capture → two-track MP4 (H.264 + AAC); all 8 container formats are in `container.h` (source of the other bindings' wiring) but C has no `all_formats_smoke.c` of its own yet — README fixed 2026-08-08, example still open |
 | C++ | `bindings/cpp/include/mediaway/{core,container,pipeline,device}.hpp` RAII wrapper | ✅ verified — 8 examples compile+run (incl. all 8 container formats); two-track camera_record on real hardware; Linux container-verified ([linux-support](linux-support.md)) |
 | Python | `bindings/python/mediaway/` ctypes package | ✅ verified — 7 examples run; encode output byte-identical to C/C++/Node (6253 B video; 27372 B audio); all 8 container formats wired; Linux container-verified |
 | Node.js | `bindings/nodejs/packages/@mediaway/*` koffi FFI | ✅ verified — 7 examples run; napi-rs is the eventual official path; all 8 container formats wired; Linux container-verified |

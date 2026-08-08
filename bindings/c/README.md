@@ -17,11 +17,20 @@ C surface.
 
 A streaming-first media stack. The C surface currently covers three capabilities:
 
-1. **Container — mux + demux** (`<mediaway/container.h>`, crate feature `mux`/`demux`,
-   both on by default): a *sans-io* fragmented-MP4 muxer and demuxer. The core never
-   touches files or sockets: the caller owns all byte I/O — pull muxed bytes out of the
-   muxer, push bytes into the demuxer. Demux also supports ClearKey decryption
-   (one demuxer-wide 16-byte key; decrypt runs synchronously inside `push_bytes`).
+1. **Container — mux + demux, all 8 `mediaway-container` formats** (`<mediaway/container.h>`,
+   crate feature `mux`/`demux`, both on by default): MP4 and WebM are *sans-io*, sharing
+   the same `mediaway_muxer_t`/`mediaway_demuxer_t` handles
+   (`mediaway_muxer_create`/`mediaway_demuxer_create` default to MP4;
+   `mediaway_muxer_create_for_format`/`mediaway_demuxer_create_for_format` pick
+   `MEDIAWAY_CONTAINER_FORMAT_MP4`/`_WEBM`). Ogg, ADTS, FLV, MPEG-TS, and MP3 each get
+   their own dedicated handle type (`mediaway_ogg_muxer_t`/`_demuxer_t`,
+   `mediaway_adts_*`, `mediaway_flv_*`, `mediaway_ts_*`, `mediaway_mp3_*`) reflecting
+   that format's own shape — no track registration, out-buffer-per-call mux instead of
+   `poll_bytes`, or MP4's Open/Live typestate. WAV mux is `mediaway_wav_muxer_t`; WAV
+   demux has no handle at all — `mediaway_wav_parse` is a one-shot whole-buffer function.
+   The core never touches files or sockets: the caller owns all byte I/O. MP4 demux also
+   supports ClearKey decryption (one demuxer-wide 16-byte key; decrypt runs synchronously
+   inside `push_bytes`; WebM has no CENC/ClearKey support and returns `UNSUPPORTED`).
 2. **Pipeline — auto video encode → fMP4** (`<mediaway/pipeline.h>`): opens the best
    available OS/GPU H.264 (or other codec) encoder for a config, wires its output
    packets into a fragmented MP4 muxer internally, and hands the caller complete MP4
@@ -97,6 +106,13 @@ file must state what is real vs. aspirational.
 | `device/capture_microphone.c` | microphone capture, raw PCM (no encode) | ✅ link+run verified (real mic) |
 | `pipeline/screen_record.c` | screen + mic → encode → MP4 | 🚧 demonstrates the real gap — Screen + NONE gpu → `INVALID_INPUT`, Window → `UNSUPPORTED`; exits gracefully |
 | `device/capture_screen.c` | screen capture only | 🚧 same gap demo, capture-only |
+
+No C example exercises Ogg/ADTS/FLV/MPEG-TS/MP3/WAV/WebM yet — `mux_roundtrip.c` covers
+MP4 only. The other 7 formats are exercised by `crates/mediaway-ffi/tests/*.rs`
+(`ogg_adts_container_smoke.rs`, `flv_container_smoke.rs`, `wav_container_smoke.rs`, ...)
+and by the C++/C#/Python/Node bindings' own `all_formats_smoke.*` examples/tests, which
+reuse the same byte patterns against this same header. Adding a C-native smoke example is
+open follow-up work.
 
 ## Rules
 

@@ -47,13 +47,31 @@ export function findLibrary(name: string): string {
   );
 }
 
+/**
+ * cdylib filename Cargo produces for this platform. Windows and Linux only —
+ * the workspace's own hardware/CI coverage is limited to those two (see
+ * docs/ai/wiki/platform/order.md); macOS support is not claimed here since
+ * it has never been built or run.
+ */
+function libraryFilename(): string {
+  switch (process.platform) {
+    case "win32":
+      return "mediaway_ffi.dll";
+    case "linux":
+      return "libmediaway_ffi.so";
+    default:
+      throw new Error(`mediaway: unsupported platform ${process.platform} (Windows and Linux only)`);
+  }
+}
+
 function load(name: string) {
   return koffi.load(findLibrary(name));
 }
 
-export const containerLib = load("mediaway_ffi.dll");
-export const pipelineLib = load("mediaway_ffi.dll");
-export const deviceLib = load("mediaway_ffi.dll");
+const libraryName = libraryFilename();
+export const containerLib = load(libraryName);
+export const pipelineLib = load(libraryName);
+export const deviceLib = load(libraryName);
 
 // ── Structs (layouts mirror the headers exactly) ───────────────────────────────
 

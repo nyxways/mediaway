@@ -23,20 +23,42 @@
   <ItemGroup>
     <!--
       Native library for the P/Invoke layer. No real NuGet native-asset packaging exists
-      yet (ADR-0017 build sequence step 5), so the DLL is copied in directly: prefer the
-      release-staged copy under bindings/csharp/runtime/win-x64/native (populated by
+      yet (ADR-0017 build sequence step 5), so the library is copied in directly: prefer
+      the release-staged copy under bindings/csharp/runtime/<rid>/native (populated by
       tools/scripts/copy-native-dlls.ts — what the release workflow's native-assets job
       stages and the RC-stage binding check downloads), and fall back to the workspace's
       dev-time cargo output so a local `dotnet test` still works without a staging step.
-      Exactly one condition holds, so exactly one DLL is copied.
+      `LibraryName = "mediaway_ffi"` in NativeMethods.cs has no extension, so .NET's own
+      per-platform DllImport resolution picks whichever of these actually got copied —
+      exactly one Exists() condition per platform holds, so exactly one file is copied.
     -->
     <None Include="..\..\runtime\win-x64\native\mediaway_ffi.dll"
           Condition="Exists('..\..\runtime\win-x64\native\mediaway_ffi.dll')"
           Link="mediaway_ffi.dll"
           CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\..\..\target\debug\mediaway_ffi.dll"
-          Condition="!Exists('..\..\runtime\win-x64\native\mediaway_ffi.dll')"
+          Condition="!Exists('..\..\runtime\win-x64\native\mediaway_ffi.dll') AND Exists('..\..\..\..\target\debug\mediaway_ffi.dll')"
           Link="mediaway_ffi.dll"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\runtime\linux-x64\native\libmediaway_ffi.so"
+          Condition="Exists('..\..\runtime\linux-x64\native\libmediaway_ffi.so')"
+          Link="libmediaway_ffi.so"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\..\target\debug\libmediaway_ffi.so"
+          Condition="!Exists('..\..\runtime\linux-x64\native\libmediaway_ffi.so') AND Exists('..\..\..\..\target\debug\libmediaway_ffi.so')"
+          Link="libmediaway_ffi.so"
+          CopyToOutputDirectory="PreserveNewest" />
+    <!--
+      Explicit-target Linux build (cargo build with target x86_64-unknown-linux-gnu),
+      needed when developing under WSL2 against a Windows-hosted checkout, where a
+      plain cargo build on the Linux side would otherwise write into the SAME
+      target/debug/ a Windows host build also uses, corrupting both. Real Linux
+      hosts/CI never need this: their native cargo build already lands in
+      target/debug/ above with no collision.
+    -->
+    <None Include="..\..\..\..\target\x86_64-unknown-linux-gnu\debug\libmediaway_ffi.so"
+          Condition="!Exists('..\..\runtime\linux-x64\native\libmediaway_ffi.so') AND !Exists('..\..\..\..\target\debug\libmediaway_ffi.so') AND Exists('..\..\..\..\target\x86_64-unknown-linux-gnu\debug\libmediaway_ffi.so')"
+          Link="libmediaway_ffi.so"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

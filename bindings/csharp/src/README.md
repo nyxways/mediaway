@@ -9,7 +9,13 @@ by construction where the OS/GPU APIs allow it. This package is a thin,
 idiomatic `SafeHandle`-based wrapper over that Rust core's C ABI, not a
 managed reimplementation.
 
-Windows x64 is the verified platform. Pre-1.0: APIs may change.
+Windows x64 is the fully hardware-verified platform (device/pipeline capture and
+encode). Linux x64 is container-verified — `Mediaway.Container.Tests` passes
+against a real `libmediaway_ffi.so` (`NativeMethods.cs`'s extensionless
+`LibraryName = "mediaway_ffi"` already resolves per-platform via .NET's own
+`DllImport` convention; only the test project's native-library staging needed a
+Linux fallback). Device/pipeline capability on Linux is untested here. Pre-1.0:
+APIs may change.
 
 ## Packages
 

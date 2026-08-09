@@ -86,6 +86,9 @@ jobs:
         with:
           tool: cargo-llvm-cov, cargo-nextest
 
+      - uses: oven-sh/setup-bun@v2
+        if: steps.gate.outputs.should_run == 'true'
+
       - name: Download previous baseline
         if: steps.gate.outputs.should_run == 'true'
         id: baseline

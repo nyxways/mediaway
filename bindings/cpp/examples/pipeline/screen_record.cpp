@@ -1,23 +1,30 @@
 // screen_record.cpp - pipeline + device capability: screen + mic -> encode ->
 // MP4.
 //
-// Status: ASPIRATIONAL - the C ABI returns UNSUPPORTED for screen capture
-// today: screen needs a live GPU device handle (e.g. ID3D11Device*) with no CPU
-// fallback and no C representation yet (crates/mediaway-device-ffi/adr/0001,
-// "Deferred"). Nothing in this file runs against the current ABI; it specifies
-// the DX the wrapper should provide once the ABI lands. The encode -> fMP4 half
-// of the stack is already real.
+// Status: real. GpuDevice::create() (adr/0007-gpu-device-factory.md) drives
+// real Zero-Copy Screen capture, and EncodeSession::writeFrameFromDesktopCapture
+// (adr/pipeline/0005-capture-encode-bridge-c-abi.md) polls + pushes each frame
+// in one native call — no intermediate VideoFrame, Zero-Copy for Screen's
+// GPU-backed frames. AutoVideoEncoder::open's VideoEncoderConfig::gpuDevice +
+// inputFormat = PixelFormat::Bgra8 negotiate the GPU-input-capable path before
+// the bridge is ever called (DXGI delivers BGRA8, not the NV12 default).
 //
-// Flow (ideal):
-//   1. Open display 0 at 30 fps (BGRA8 CPU frames).
-//   2. Open the microphone at 48 kHz (drained - no audio encoder in the ABI).
-//   3. Encode at the negotiated geometry with the auto H.264 encoder.
-//   4. Record ~3 s: poll screen frames into the encode session, drain mic.
+// On a machine whose encoder backend accepts a GPU-configured open but
+// rejects the GPU-input path once frames actually start flowing (a real,
+// pre-existing WMF/DX11 limitation — see the Rust gpu_write_frame_smoke.rs
+// test and the C/Node.js/C#/Python screen_record siblings), this gracefully
+// skips instead of crashing.
+//
+// Flow:
+//   1. Create a GpuDevice; open display 0 at 30 fps with it.
+//   2. Open the microphone at 48 kHz (drained, not muxed — same as
+//      ScreenRecord.cs; camera_record.cpp's two-track remux is a separate
+//      flow this file doesn't duplicate).
+//   3. Open the auto H.264 encoder at the negotiated geometry, sharing the
+//      same GpuDevice.
+//   4. Record ~3 s: bridge screen frames straight into the encode session,
+//      drain mic.
 //   5. finish() -> MP4 bytes written to screen_out.mp4 by the caller.
-//
-// Today, ScreenCapture::open would throw mediaway::Error with
-// Status::Unsupported; this example is the acquisition loop the wrapper should
-// support once screen capture is represented in the C ABI.
 
 #include <mediaway/mediaway.hpp>
 
@@ -52,28 +59,25 @@ bool writeFile(const std::string& path, const mediaway::Bytes& bytes) {
 
 int main() {
   try {
-    // ---- Screen: display 0, 30 fps; 0x0 geometry = native resolution --------
-    // Screen capture is not representable from the C ABI today (it needs a
-    // live GPU device handle with no CPU fallback — see bindings/c/README.md's
-    // truth table), so open() throws Status::Unsupported. The acquisition loop
-    // below is the DX the wrapper should provide once the ABI lands.
+    // ---- GPU device + Screen: display 0, 30 fps ------------------------------
+    mediaway::device::GpuDevice gpu = mediaway::device::GpuDevice::create(
+        {std::nullopt, /*videoSupport=*/true, /*debugLayer=*/false});
+
     mediaway::device::ScreenCapture screen;
     try {
-      screen = mediaway::device::ScreenCapture::open({0, {1, 30}});
+      screen = mediaway::device::ScreenCapture::open({0, {1, 30}, gpu.handle()});
     } catch (const mediaway::Error& error) {
-      if (error.status() != mediaway::Status::Unsupported) throw;
-      std::cout << "Screen capture is NOT available from this binding today:\n"
-                << "  it needs a live GPU device handle (ID3D11Device*) with no\n"
-                << "  CPU fallback, and its C representation is deferred.\n"
-                << "  Exiting gracefully — nothing to encode yet.\n";
+      if (!isExpectedUnavailable(error)) throw;
+      std::cout << "screen capture unavailable: " << error.what()
+                << " - exiting.\n";
       return EXIT_SUCCESS;
     }
     const mediaway::device::CaptureInfo& info = screen.info();
-    std::cout << "screen negotiated " << info.width << 'x' << info.height
+    std::cout << "screen geometry: " << info.width << 'x' << info.height
               << " @ " << info.frameRate.num << '/' << info.frameRate.den
               << '\n';
 
-    // ---- Microphone: 48 kHz; drain-only (no audio encoder in the ABI) --------
+    // ---- Microphone: 48 kHz; drain-only (not wired into this MP4's tracks) ---
     std::optional<mediaway::device::AudioCapture> mic;
     try {
       mic.emplace(mediaway::device::AudioCapture::open({0, 48000}));
@@ -83,44 +87,66 @@ int main() {
                 << " - screen only\n";
     }
 
-    // ---- Encode at the negotiated geometry -----------------------------------
-    mediaway::encoder::AutoVideoEncoder encoder =
-        mediaway::encoder::AutoVideoEncoder::open({
-            mediaway::Codec::H264,
-            info.width, info.height,
-            info.frameRate,
-            info.format,  // the screen capture delivers BGRA8 CPU frames
-        });
-    mediaway::encoder::EncodeSession session = std::move(encoder).begin();
+    // ---- Encode at the negotiated geometry, sharing the same GPU device -----
+    std::optional<mediaway::encoder::AutoVideoEncoder> encoder;
+    try {
+      encoder.emplace(mediaway::encoder::AutoVideoEncoder::open({
+          mediaway::Codec::H264,
+          info.width, info.height,
+          info.frameRate,
+          mediaway::PixelFormat::Bgra8,  // Screen delivers BGRA8, not NV12
+          gpu.handle(),
+      }));
+    } catch (const mediaway::Error& error) {
+      if (!isExpectedUnavailable(error)) throw;
+      std::cout << "no GPU-input encoder available for " << info.width << 'x'
+                << info.height << ": " << error.what() << " - exiting.\n";
+      return EXIT_SUCCESS;
+    }
+    mediaway::encoder::EncodeSession session = std::move(*encoder).begin();
 
-    // ---- Record ~3 s ----------------------------------------------------------
+    // ---- Record ~3 s, bridging screen frames straight into the encoder ------
     const auto deadline =
         std::chrono::steady_clock::now() + std::chrono::seconds(3);
-    std::size_t screenFrames = 0;
+    std::size_t framesWritten = 0;
     std::size_t micFrames = 0;
-    while (std::chrono::steady_clock::now() < deadline) {
-      if (std::optional<mediaway::VideoFrame> frame = screen.pollFrame()) {
-        session.writeFrame(*frame);
-        ++screenFrames;
-      }
-      if (mic) {
-        // Audio note: the screen path is blocked before audio matters — Screen
-        // capture needs a live GPU device handle from C
-        // (mediaway-device-ffi/adr/0001, § Deferred), so mic PCM is drained.
-        while (std::optional<mediaway::device::AudioFrame> audio =
-                   mic->pollFrame()) {
-          ++micFrames;
+    try {
+      while (std::chrono::steady_clock::now() < deadline) {
+        if (session.writeFrameFromDesktopCapture(screen)) {
+          ++framesWritten;
+        } else {
+          std::this_thread::sleep_for(std::chrono::milliseconds(4));
+        }
+        if (mic) {
+          while (std::optional<mediaway::device::AudioFrame> audio =
+                     mic->pollFrame()) {
+            ++micFrames;
+          }
         }
       }
-      std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    } catch (const mediaway::Error& error) {
+      if (!isExpectedUnavailable(error)) throw;
+      // Same known dev-machine limitation as camera/encode_to_mp4's own
+      // encoder — the WMF/DX11 backend accepts a GpuDevice-configured open
+      // but rejects the GPU-input encode path once frames actually start
+      // flowing (adr/pipeline/0002-gpu-frame-input-c-abi.md).
+      std::cout << "GPU-input encode unsupported on this backend ("
+                << error.what() << ") - exiting.\n";
+      return EXIT_SUCCESS;
     }
-    screen.close();
     if (mic) mic->close();
+    screen.close();
+
+    if (framesWritten == 0) {
+      std::cout << "screen capture opened but delivered no frames within the "
+                   "deadline - exiting.\n";
+      return EXIT_SUCCESS;
+    }
 
     mediaway::Bytes mp4 = std::move(session).finish();
-    std::cout << "recorded " << screenFrames << " screen frames (+ " << micFrames
-              << " mic frames drained, not muxed) -> " << mp4.size()
-              << " bytes\n";
+    std::cout << "bridged " << framesWritten << " real screen frame(s) (+ "
+              << micFrames << " mic frames drained, not muxed) -> "
+              << mp4.size() << " bytes\n";
     if (!writeFile("screen_out.mp4", mp4)) {
       std::cerr << "failed to write screen_out.mp4\n";
       return EXIT_FAILURE;

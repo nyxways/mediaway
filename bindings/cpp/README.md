@@ -46,8 +46,11 @@ detail in [`../c/README.md`](../c/README.md) and `docs/spec/c-ffi.md`):
    `decoder::AudioDecodeSession` wraps the cross-platform Opus decoder — both
    single-step handles (the handle IS the decoder), `NoBackend` is graceful.
 3. **Device — capture**: camera (CPU frames), microphone/loopback (PCM), hotplug.
-   **Screen capture is `UNSUPPORTED` from C today** (needs a GPU device handle with
-   no C representation yet) — an honest gap, not a bug.
+   **Screen capture is real** (GPU-backed, DXGI Desktop Duplication) via
+   `device::GpuDevice::create()` (adr/0007-gpu-device-factory.md) —
+   `device::ScreenCapture::open()` takes the resulting handle. There is no CPU
+   pixel readback path for Screen frames; real pixels only ever move through
+   `encoder::EncodeSession::writeFrameFromDesktopCapture` (adr/pipeline/0005).
 
 ## The real ABI beneath (what the wrapper wraps)
 
@@ -86,6 +89,12 @@ idiomatic shape; examples catch `mediaway::Error` (carrying the raw status) at `
   unavailable), `mediaway::encoder::EncodeSession` — `writeFrame`, `finish()` returns
   `Bytes`; **ownership of the encoder transfers into the session at construction and
   into `finish()`** — never expose a close-after-open on the consumed objects.
+  `writeFrameFromCameraCapture`/`writeFrameFromDesktopCapture` are the
+  capture-to-encode bridge (adr/pipeline/0005): poll-and-push in one native
+  call, no intermediate `VideoFrame`, Zero-Copy for Screen's GPU frames.
+- `mediaway::device::GpuDevice::listAdapters()`/`create(options)` — the GPU
+  device factory (adr/0007-gpu-device-factory.md); `.handle()` feeds
+  `ScreenCaptureConfig::gpuDevice` or `encoder::VideoEncoderConfig::gpuDevice`.
 - Value types: `Rational{num, den}`, `TrackId`, `VideoStreamInfo`/`AudioStreamInfo`,
   `Packet`, `Bytes = std::vector<std::uint8_t>`; `VideoFrame` for encode input
   (NV12/BGRA8 CPU bytes).
@@ -108,8 +117,8 @@ aspirational):
 | `pipeline/decode_roundtrip.cpp` | auto H.264 decode (encode→mux→demux→decode) + Opus audio decode round trip | ✅ link+run verified (10 video frames, 50 Opus frames) |
 | `device/camera_record.cpp` | camera + mic → H.264 + AAC → ONE two-track MP4 (remuxed; audio track registered with the encoder's AudioSpecificConfig) | ✅ link+run verified on real hardware (46 frames + 140 AAC packets → ~256 KB two-track MP4); video-only fallback without mic/audio backend |
 | `device/capture_microphone.cpp` | microphone capture, raw PCM | ✅ link+run verified (real mic) |
-| `pipeline/screen_record.cpp` | screen + mic → encode → MP4 | 🚧 aspirational — `ScreenCapture::open()` throws `Status::Unsupported` today |
-| `device/capture_screen.cpp` | screen capture only | 🚧 same gap, capture-only |
+| `pipeline/screen_record.cpp` | screen + mic → encode → MP4, via `GpuDevice` + the capture-to-encode bridge | ✅ link+run verified on real hardware (real 2560x1440 GPU-backed frames bridged; GPU-input encode itself gracefully skips as `Unsupported` on this dev machine's current encoder/driver — same pre-existing limitation the Rust/C/Node.js/C#/Python siblings hit, not introduced here); mic PCM drained, not muxed (see `camera_record.cpp` for two-track remux) |
+| `device/capture_screen.cpp` | screen capture only, via `GpuDevice` | ✅ link+run verified on real hardware (5 real 2560x1440 GPU-backed frames polled) |
 
 ## Rules
 

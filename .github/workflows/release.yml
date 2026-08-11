@@ -313,7 +313,7 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           bun -e '
-          for (const p of ["ffi", "container", "device", "encoder"]) {
+          for (const p of ["ffi", "container", "device", "encoder", "decoder"]) {
             const f = `bindings/nodejs/packages/${p}/package.json`;
             const j = JSON.parse(await Bun.file(f).text());
             j.version = process.env.VERSION;
@@ -334,12 +334,12 @@ jobs:
         if: ${{ github.event.inputs.dry_run == 'true' }}
         shell: bash
         run: |
-          for p in ffi container device encoder; do
+          for p in ffi container device encoder decoder; do
             (cd "bindings/nodejs/packages/$p" && npm publish --dry-run)
           done
           (cd bindings/browser/packages/browser && npm publish --dry-run)
 
-      - name: Publish npm packages (ffi → container/device/encoder → browser)
+      - name: Publish npm packages (ffi → container/device/encoder/decoder → browser)
         if: ${{ github.event.inputs.dry_run != 'true' }}
         shell: bash
         env:
@@ -357,7 +357,7 @@ jobs:
           # Skip versions already on the registry (a manual first publish
           # precedes OIDC: 0.1.0/0.1.1 were published by hand) — npm rejects
           # republishing an existing version with 409.
-          for p in ffi container device encoder; do
+          for p in ffi container device encoder decoder; do
             if npm view "@mediaway/$p@$VERSION" version >/dev/null 2>&1; then
               echo "@mediaway/$p@$VERSION already published — skip"
             else

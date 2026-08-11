@@ -47,8 +47,12 @@ detail in [`../c/README.md`](../c/README.md) and `docs/spec/c-ffi.md`):
    both single-step handles (the handle IS the decoder), `NO_BACKEND` raises
    `DecoderUnavailableError` gracefully.
 3. **Device — capture**: camera (CPU frames), microphone/loopback (PCM), hotplug.
-   **Screen capture is `UNSUPPORTED` from C today** (needs a GPU device handle with no
-   C representation yet) — an honest gap, not a bug.
+   **Screen capture is real** (GPU-backed, DXGI Desktop Duplication) via the
+   `GpuDevice` factory (adr/0007-gpu-device-factory.md) — `VideoCapture.open(source=
+   "screen")` builds one internally, or share your own with an encoder. There is no
+   CPU pixel readback path for Screen frames; real pixels only ever move through
+   `EncodeSession.write_frame_from_desktop_capture` (adr/pipeline/0005). Window
+   capture is still `UNSUPPORTED` from C (no constructor this pass) — an honest gap.
 
 ## The real ABI beneath (what the wrapper wraps)
 
@@ -75,7 +79,7 @@ A single `mediaway` package, pure-Python `ctypes` glue + idiomatic wrappers.
 **snake_case everywhere** (Python convention beats the C names): `Rational`,
 `VideoStreamInfo`, `AudioStreamInfo`, `Packet`, `Codec` (enum), `VideoFrame`;
 classes `Muxer`, `Demuxer`, `EncodeSession`, `AutoVideoEncoder`, `VideoCapture`,
-`AudioCapture`.
+`AudioCapture`, `GpuDevice`.
 
 - **Context managers**: `with Muxer() as m:`, `with Demuxer() as d:`,
   `with EncodeSession(...) as s:` — `__exit__` closes the underlying handle (and, for
@@ -110,8 +114,8 @@ aspirational):
 | `pipeline/decode_roundtrip.py` | auto H.264 decode (encode→mux→demux→decode) + Opus audio decode round trip | ✅ run verified (10 video frames, 50 Opus frames) |
 | `device/camera_record.py` | camera + mic → H.264 + AAC → ONE two-track MP4 (remuxed; audio track registered with the encoder's AudioSpecificConfig) | ✅ run verified on real hardware (47 frames + 80 AAC packets → ~251 KB two-track MP4); video-only fallback without mic/audio backend |
 | `device/capture_microphone.py` | microphone capture, raw PCM | ✅ run verified (real mic) |
-| `pipeline/screen_record.py` | screen + mic → encode → MP4 | 🚧 aspirational — `VideoCapture.open(source="screen")` raises `CaptureUnsupportedError` today |
-| `device/capture_screen.py` | screen capture only | 🚧 same gap, capture-only |
+| `pipeline/screen_record.py` | screen + mic → encode → MP4, via `GpuDevice` + the capture-to-encode bridge | ✅ run verified on real hardware (real 2560x1440 GPU-backed frames bridged; GPU-input encode itself gracefully skips as `UNSUPPORTED` on this dev machine's current encoder/driver — same pre-existing limitation the Rust/C/Node.js/C# siblings hit, not introduced here); mic PCM drained, not muxed (see `camera_record.py` for two-track remux) |
+| `device/capture_screen.py` | screen capture only, via `GpuDevice` | ✅ run verified on real hardware (5 real 2560x1440 GPU-backed frames polled) |
 
 ## Testing
 

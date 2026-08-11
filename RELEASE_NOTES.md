@@ -38,6 +38,12 @@
   bridge instead of a `NotImplementedException` placeholder, and
   `Mediaway.Device.Tests`/`Mediaway.Pipeline.Tests` hardware-verify real Screen capture and
   the bridge on real hardware instead of a hand-rolled test-only `D3D11CreateDevice`.
+- `mediaway` (Python): `GpuDevice.list_adapters()`/`create()` and the capture-to-encode
+  bridge (`EncodeSession.write_frame_from_camera_capture`/`write_frame_from_desktop_capture`)
+  — `VideoCapture.open(source="screen")` now opens real GPU-backed Screen capture instead
+  of always raising `CaptureUnsupportedError`; `examples/device/capture_screen.py` and
+  `examples/pipeline/screen_record.py` now run-verify real Screen capture on real hardware
+  instead of only demonstrating the gap.
 
 ### Changed
 
@@ -55,6 +61,9 @@
   `Mediaway.Pipeline.AudioFrame` (pre-existing, only surfaced once `Mediaway.Pipeline`
   referenced `Mediaway.Device.Camera`/`Mediaway.Device.Desktop` for the bridge above) —
   fixed by fully qualifying the type.
+- `bindings/python`: `examples/pipeline/screen_record.py`'s header claimed "no audio
+  encoder exists in the ABI" — stale; `AudioEncoder` (ABI v2) already shipped and
+  `camera_record.py`'s own header already documents that gap as closed.
 
 ### Removed
 

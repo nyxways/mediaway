@@ -560,6 +560,39 @@ class GpuDeviceHandle(Structure):
     ]
 
 
+# ── GPU device factory (device.h, mediaway-device ADR-0007) ─────────────────
+
+# enum mediaway_gpu_adapter_select_kind
+GPU_ADAPTER_SELECT_DEFAULT = 0
+GPU_ADAPTER_SELECT_INDEX = 1
+
+
+class GpuAdapterInfo(Structure):  # owned output (one array entry)
+    _fields_ = [
+        ("index", c_uint32),
+        ("name", c_char_p),  # owned NUL-terminated UTF-8; freed only via the array free below
+        ("vendor_id", c_uint32),
+        ("device_id", c_uint32),
+        ("dedicated_video_memory", c_uint64),
+        ("is_hardware", c_bool),
+    ]
+
+
+class GpuAdapterSelect(Structure):
+    _fields_ = [
+        ("kind", c_int32),
+        ("index", c_uint32),  # meaningful only when kind == GPU_ADAPTER_SELECT_INDEX
+    ]
+
+
+class GpuDeviceOptions(Structure):
+    _fields_ = [
+        ("adapter", GpuAdapterSelect),
+        ("video_support", c_bool),  # D3D11_CREATE_DEVICE_VIDEO_SUPPORT
+        ("debug_layer", c_bool),  # D3D11_CREATE_DEVICE_DEBUG
+    ]
+
+
 class GpuBufferHandle(Structure):
     _fields_ = [
         ("kind", c_int32),
@@ -622,6 +655,15 @@ _H.mediaway_encode_session_close.argtypes = [c_void_p]
 
 _H.mediaway_pipeline_ffi_buffer_free.restype = None
 _H.mediaway_pipeline_ffi_buffer_free.argtypes = [U8P, c_size_t]
+
+# ── pipeline.h: capture-to-encode bridge (adr/pipeline/0005) ────────────────
+# session/capture are both opaque native pointers — poll-and-push in one call,
+# no intermediate mediaway_video_frame_t, Zero-Copy for GPU-backed frames.
+
+_H.mediaway_encode_session_write_frame_from_camera_capture.restype = c_int32
+_H.mediaway_encode_session_write_frame_from_camera_capture.argtypes = [c_void_p, c_void_p, POINTER(c_bool)]
+_H.mediaway_encode_session_write_frame_from_desktop_capture.restype = c_int32
+_H.mediaway_encode_session_write_frame_from_desktop_capture.argtypes = [c_void_p, c_void_p, POINTER(c_bool)]
 
 # ── pipeline.h: audio encode (ABI v2, adr/0003) ──────────────────────────────
 
@@ -963,6 +1005,19 @@ _H.mediaway_camera_capture_close.restype = c_int32
 _H.mediaway_camera_capture_close.argtypes = [c_void_p]
 _H.mediaway_camera_frame_free.restype = None
 _H.mediaway_camera_frame_free.argtypes = [POINTER(CameraFrame)]
+
+# ── GPU device factory (adr/0007-gpu-device-factory.md) ────────────────────────
+
+_H.mediaway_gpu_adapter_list.restype = c_int32
+_H.mediaway_gpu_adapter_list.argtypes = [POINTER(POINTER(GpuAdapterInfo)), POINTER(c_size_t)]
+_H.mediaway_gpu_adapter_list_free.restype = None
+_H.mediaway_gpu_adapter_list_free.argtypes = [POINTER(GpuAdapterInfo), c_size_t]
+_H.mediaway_gpu_device_create.restype = c_int32
+_H.mediaway_gpu_device_create.argtypes = [POINTER(GpuDeviceOptions), POINTER(c_void_p)]
+_H.mediaway_gpu_device_handle.restype = c_int32
+_H.mediaway_gpu_device_handle.argtypes = [c_void_p, POINTER(GpuDeviceHandle)]
+_H.mediaway_gpu_device_close.restype = None
+_H.mediaway_gpu_device_close.argtypes = [c_void_p]
 
 # ── Desktop (Screen) ───────────────────────────────────────────────────────────
 

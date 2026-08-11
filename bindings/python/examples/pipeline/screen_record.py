@@ -1,13 +1,23 @@
-"""Screen + mic -> H.264 encode -> MP4 (out.mp4).
+"""Screen + mic -> H.264 encode -> MP4 (out_screen.mp4).
 
-🚧 aspirational — ABI returns UNSUPPORTED for screen today. Screen capture
-needs a live GPU device handle (`ID3D11Device*`) with no CPU fallback, and its
-C representation is deferred, so `VideoCapture.open("screen", ...)` raises
-CaptureUnsupportedError against the current ABI. This file shows the ideal
-flow the DX contract targets once that gap is closed.
+Real Zero-Copy Screen capture + the capture-to-encode bridge: a `GpuDevice`
+(adr/0007-gpu-device-factory.md) drives real Screen capture, and
+`EncodeSession.write_frame_from_desktop_capture` (adr/pipeline/0005) polls +
+pushes each frame in one native call — no intermediate `VideoFrame`, Zero-Copy
+for Screen's GPU-backed frames. `AutoVideoEncoder.pick(..., pixel_format=BGRA8,
+gpu_device=gpu)` negotiates the GPU-input-capable path before the bridge is
+ever called (DXGI delivers BGRA8, not the NV12 default).
 
-The audio side is aspirational too: no audio encoder exists in the ABI, so mic
-PCM is drained rather than muxed — the same documented gap as camera_record.py.
+On a machine whose encoder backend accepts a GPU-configured open but rejects
+the GPU-input path once frames actually start flowing (a real, pre-existing
+WMF/DX11 limitation — see the Rust `gpu_write_frame_smoke.rs` test and the
+C/Node.js/C# `screen_record` siblings), this gracefully skips instead of
+crashing.
+
+The audio side is not wired into the output MP4 as a second track yet — mic
+PCM is drained (proves capture works), not muxed, same as `ScreenRecord.cs`'s
+C# equivalent. `camera_record.py`'s two-track remux is a separate flow this
+file doesn't duplicate.
 """
 
 from contextlib import nullcontext
@@ -20,12 +30,14 @@ from mediaway import (
     CaptureUnsupportedError,
     DeviceUnavailableError,
     EncodeSession,
-    EncoderUnavailableError,
+    GpuDevice,
+    MediawayError,
+    PixelFormat,
     Rational,
     VideoCapture,
 )
 
-RECORD_SECONDS = 5.0
+RECORD_SECONDS = 3.0
 
 
 def fmt_rational(r: Rational) -> str:
@@ -34,62 +46,74 @@ def fmt_rational(r: Rational) -> str:
 
 
 def main() -> None:
-    # Against the current ABI this raises CaptureUnsupportedError (the native
-    # status UNSUPPORTED is an expected outcome, not an error). The guard
-    # keeps the example from crashing on real hardware today.
     try:
-        screen = VideoCapture.open("screen", index=0, frame_rate=Rational(1, 30))
-    except CaptureUnsupportedError as err:
-        print(f"screen capture is UNSUPPORTED in the native ABI: {err}")
-        print("(aspirational example — see the header comment)")
+        gpu = GpuDevice.create(video_support=True)
+    except (CaptureUnsupportedError, DeviceUnavailableError) as err:
+        print(f"GPU device unavailable: {err} — exiting.")
         return
 
-    with screen:
-        width, height = screen.size()
-        fps = screen.frame_rate()
-        print(f"screen geometry: {width}x{height} @ {fmt_rational(fps)}")
-
+    with gpu:
         try:
-            encoder = AutoVideoEncoder.pick(
-                width=width, height=height, frame_rate=fps
-            )
-        except EncoderUnavailableError as err:
-            print(f"no encoder available for {width}x{height}: {err}")
+            screen = VideoCapture.open("screen", index=0, frame_rate=Rational(1, 30), gpu_device=gpu)
+        except (CaptureUnsupportedError, DeviceUnavailableError) as err:
+            print(f"screen capture unavailable: {err} — exiting.")
             return
-        print(f"picked encoder: {encoder.name} ({encoder.codec.name})")
 
-        mic = None
-        try:
-            mic = AudioCapture.open("mic", 48000)
-            print(f"mic open: {mic.sample_rate()} Hz, {mic.channels()} ch")
-        except DeviceUnavailableError as err:
-            print(f"mic unavailable ({err}); recording video only")
+        with screen:
+            width, height = screen.size()
+            fps = screen.frame_rate()
+            print(f"screen geometry: {width}x{height} @ {fmt_rational(fps)}")
 
-        with mic or nullcontext(), EncodeSession(encoder) as session:
-            deadline = time.monotonic() + RECORD_SECONDS
-            frames_recorded = 0
-            pcm_bytes = 0
-            while time.monotonic() < deadline:
-                frame = screen.poll_frame(timeout=0.1)
-                if frame is not None:
-                    session.push_frame(frame)
-                    frames_recorded += 1
+            try:
+                encoder = AutoVideoEncoder.pick(
+                    width=width,
+                    height=height,
+                    frame_rate=fps,
+                    pixel_format=PixelFormat.BGRA8,
+                    bitrate_bps=8_000_000,
+                    gpu_device=gpu,
+                )
+            except MediawayError as err:
+                print(f"no GPU-input encoder available for {width}x{height}: {err} — exiting.")
+                return
+            print(f"picked encoder: {encoder.name} ({encoder.codec.name})")
 
-                if mic is not None:
-                    pcm = mic.poll_pcm(timeout=0.0)
-                    if pcm is not None:
-                        pcm_bytes += len(pcm)
+            mic = None
+            try:
+                mic = AudioCapture.open("mic", 48000)
+                print(f"mic open: {mic.sample_rate()} Hz, {mic.channels()} ch")
+            except DeviceUnavailableError as err:
+                print(f"mic unavailable ({err}); recording video only")
 
-            # Audio note: the screen path is blocked before audio matters —
-            # Screen capture needs a live GPU device handle from C
-            # (mediaway-ffi/adr/0001, § Deferred), so the mic PCM is
-            # drained, not muxed.
-            mp4 = session.finish()  # terminal: consumes the session
+            with mic or nullcontext(), EncodeSession(encoder) as session:
+                deadline = time.monotonic() + RECORD_SECONDS
+                frames_written = 0
+                pcm_bytes = 0
+                try:
+                    while time.monotonic() < deadline:
+                        if session.write_frame_from_desktop_capture(screen):
+                            frames_written += 1
+                        else:
+                            time.sleep(0.004)
 
-    out_path = Path("out.mp4")
+                        if mic is not None:
+                            pcm = mic.poll_pcm(timeout=0.0)
+                            if pcm is not None:
+                                pcm_bytes += len(pcm)
+                except MediawayError as err:
+                    print(f"GPU-input encode unsupported on this backend ({err}) — exiting.")
+                    return
+
+                if frames_written == 0:
+                    print("screen capture opened but delivered no frames within the deadline — exiting.")
+                    return
+
+                mp4 = session.finish()  # terminal: consumes the session
+
+    out_path = Path("out_screen.mp4")
     out_path.write_bytes(mp4)
     print(
-        f"recorded {frames_recorded} frames over {RECORD_SECONDS:.0f} s "
+        f"bridged {frames_written} real screen frame(s) over {RECORD_SECONDS:.0f} s "
         f"(drained {pcm_bytes} PCM bytes) -> {out_path} ({len(mp4)} bytes)"
     )
 

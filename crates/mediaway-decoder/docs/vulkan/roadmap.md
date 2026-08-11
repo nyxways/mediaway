@@ -59,7 +59,7 @@ hardware-verified encode, AV1 encode driver-blocked).
       `I_PCM` P-frame content — real H.264 general-GOP decode, verified on
       the RTX 4090.
 
-### 2 — HEVC (2026-07-30: sans-io complete + tested; GPU decode not yet hardware-verified)
+### 2 — HEVC (2026-08-05: complete + hardware-verified)
 
 - [x] Own VPS/SPS/PPS parser (`hevc_params.rs`) — 2-byte NAL header, new
       code (not shared with H.264's 1-byte header parse); `StdVideoH265*`
@@ -73,16 +73,17 @@ hardware-verified encode, AV1 encode driver-blocked).
       `decoder_hevc.rs`) — mirrors the verified H.264 command sequence,
       **IDR pictures only this round** (a P/B-slice HEVC NAL returns
       `DecodeError::Unsupported` — general-GOP HEVC decode is follow-up work)
-- [ ] **Hardware verification — not yet achieved.**
+- [x] **Hardware verification — complete (2026-08-05).**
       `tests/hardware_hevc_decode.rs` chains this workspace's own
       hardware-verified `mediaway-encoder-vulkan::VulkanVideoEncoder` (real
-      bitstream, not hand-crafted CABAC) into `VulkanVideoDecoder`; two real
-      bugs were found and fixed (`HevcSps`/`HevcPps::to_std` silently
-      zeroing several `Std*Flags` bits regardless of what the real encoder
-      signaled), but the decoded picture still reads back all-zero — root
-      cause not yet found. Test soft-skips loudly rather than hard-failing
-      the default suite. See ADR-0001's 2026-07-30 HEVC addendum for the
-      full account, ruled-out hypotheses, and open leads.
+      bitstream, not hand-crafted CABAC) into `VulkanVideoDecoder`. Two real
+      `Std*Flags`-zeroing bugs found along the way were real but not the root
+      cause; the actual root cause was `HevcPps::parse` never reading
+      `pps_loop_filter_across_slices_enabled_flag`, a real conditional
+      slice-header bitstream bit — confirmed against FFmpeg's own
+      `libavcodec/hevc/{ps,hevcdec}.c`. Fixed: the test now hard-asserts
+      (`nonzero_luma=49152/49152`), no soft skip. See ADR-0001's 2026-08-05
+      addendum for the full root-cause account.
 
 ### 3 — AV1
 

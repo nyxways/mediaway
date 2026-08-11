@@ -24,6 +24,5 @@ Context section.
 
 **Status:** H.264 general-GOP decode is real and **hardware-verified** (hard
 pixel-value assertions — the first general-GOP decode backend in this
-workspace). HEVC is sans-io-real and unit-tested, but the GPU path still
-decodes all-zero (root cause not yet found, honestly soft-skipped). AV1
-decode is a follow-up.
+workspace). HEVC (IDR-only) is also real and **hardware-verified** (hard
+pixel-value assertions). AV1 decode is a follow-up.

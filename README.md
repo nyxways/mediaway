@@ -23,9 +23,10 @@
 
 <br>
 
-> **Status:** early development (`0.x`). **Not recommended for production.**  
-> **Pre-1.0:** public APIs, crate layout, and backends may change often (no stability guarantee).
-> Details: [docs/spec/status.md](docs/spec/status.md).
+> **Status:** early development (`0.x`), building toward **1.0** with the community.
+> **Not recommended for production yet.** Pre-1.0: public APIs, crate layout, and backends may
+> change often (no stability guarantee) — contributions and real-hardware testing are what move
+> each backend closer to 1.0. Details: [docs/spec/status.md](docs/spec/status.md).
 
 Rust media stack: **high-level pipelines** built from **first-class low-level** APIs — OS/GPU codec sessions, `GpuBufferHandle`, and **sans-io** mux/demux/bitstream cores. Prefer Zero-Copy paths (GPU handles **or** shared CPU buffers); name CPU readback, cross-API copies, and SW fallbacks when they exist.
 

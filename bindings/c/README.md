@@ -38,12 +38,14 @@ A streaming-first media stack. The C surface currently covers three capabilities
    adr/0003): `mediaway_audio_encoder_open` returns a session that streams AAC
    packets for the caller's own muxer.
 3. **Device — capture** (`<mediaway/device.h>`): Camera video capture (CPU frames),
-   Microphone/Loopback/ProcessLoopback audio capture (PCM), and device hotplug
-   (poll or callback mode). **Screen capture is NOT available from C in this pass** —
-   it requires a live GPU device handle (`ID3D11Device*`) with no CPU fallback, and its
-   representation is deferred; `mediaway_desktop_capture_open()` on a Screen-kind
-   config with the only C-constructible gpu_device (`NONE`) returns
-   `MEDIAWAY_DEVICE_STATUS_INVALID_INPUT`, and a Window-kind config returns
+   Screen video capture (GPU-only, Zero-Copy), Microphone/Loopback/ProcessLoopback
+   audio capture (PCM), and device hotplug (poll or callback mode). Screen capture
+   requires a live GPU device handle (`ID3D11Device*`) with no CPU fallback — a C
+   caller gets one from `mediaway_gpu_device_create()` (adapter auto-select or
+   explicit index; `mediaway-device` ADR-0007), then passes its
+   `mediaway_gpu_device_handle_t` into `mediaway_desktop_capture_config_screen()`.
+   `mediaway_gpu_adapter_list()` enumerates every adapter DXGI reports for a caller
+   that wants to pick explicitly. A Window-kind config still returns
    `MEDIAWAY_DEVICE_STATUS_UNSUPPORTED` (real, documented behavior — the
    device ABI is domain-split, `adr/0004-domain-feature-split.md`).
 
@@ -104,8 +106,8 @@ file must state what is real vs. aspirational.
 | `pipeline/encode_audio.c` | auto AAC encode of 96 synthetic F32 stereo frames → audio-only fMP4 (ABI v2) | ✅ link+run verified (96 packets → 27385 bytes fMP4) |
 | `device/camera_record.c` | camera + mic capture → H.264 + AAC → ONE two-track MP4 (remuxed; audio track registered with the encoder's AudioSpecificConfig) | ✅ link+run verified on real hardware (90 frames + 263 AAC packets → ~630 KB two-track fMP4); video-only fallback without mic/audio backend |
 | `device/capture_microphone.c` | microphone capture, raw PCM (no encode) | ✅ link+run verified (real mic) |
-| `pipeline/screen_record.c` | screen + mic → encode → MP4 | 🚧 demonstrates the real gap — Screen + NONE gpu → `INVALID_INPUT`, Window → `UNSUPPORTED`; exits gracefully |
-| `device/capture_screen.c` | screen capture only | 🚧 same gap demo, capture-only |
+| `pipeline/screen_record.c` | GPU device factory → screen + mic capture → encode (bridge) → MP4 | ✅ link+run verified on real hardware (GPU device create + real 1920x1080 screen capture + real mic; GPU-input H.264 encode gracefully skips on this dev machine's current encoder/driver — same known gap as `gpu_write_frame_smoke.rs`) |
+| `device/capture_screen.c` | GPU device factory → screen capture only | ✅ link+run verified on real hardware (5 real 1920x1080 frames polled) |
 
 No C example exercises Ogg/ADTS/FLV/MPEG-TS/MP3/WAV/WebM yet — `mux_roundtrip.c` covers
 MP4 only. The other 7 formats are exercised by `crates/mediaway-ffi/tests/*.rs`

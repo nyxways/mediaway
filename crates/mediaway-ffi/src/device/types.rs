@@ -155,6 +155,67 @@ pub struct MediawayDesktopCaptureConfig {
     pub gpu_device: MediawayGpuDeviceHandle,
 }
 
+/// One physical GPU adapter this machine's DXGI factory reports — output of
+/// [`crate::device::gpu::mediaway_gpu_adapter_list`]. See
+/// [ADR-0007](../../../mediaway-device/adr/0007-gpu-device-factory.md).
+///
+/// `name` is an owned, NUL-terminated C string; free the whole array with
+/// [`crate::device::gpu::mediaway_gpu_adapter_list_free`], not per-entry.
+#[cfg(feature = "desktop")]
+#[repr(C)]
+#[derive(Debug)]
+pub struct MediawayGpuAdapterInfo {
+    /// Position in the enumeration call's result order — pass to
+    /// [`MediawayGpuAdapterSelect`] to open a device against this exact adapter.
+    pub index: u32,
+    /// Adapter description string.
+    pub name: *mut std::os::raw::c_char,
+    /// PCI vendor ID.
+    pub vendor_id: u32,
+    /// PCI device ID.
+    pub device_id: u32,
+    /// Bytes of dedicated video memory this adapter reports.
+    pub dedicated_video_memory: u64,
+    /// `false` for a software rasterizer adapter.
+    pub is_hardware: bool,
+}
+
+/// Discriminant for [`MediawayGpuAdapterSelect`].
+#[cfg(feature = "desktop")]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediawayGpuAdapterSelectKind {
+    /// First hardware adapter DXGI reports (skips WARP/software).
+    Default = 0,
+    /// `index` names an entry from [`crate::device::gpu::mediaway_gpu_adapter_list`].
+    Index = 1,
+}
+
+/// Which adapter [`crate::device::gpu::mediaway_gpu_device_create`] opens a device
+/// against.
+#[cfg(feature = "desktop")]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MediawayGpuAdapterSelect {
+    /// Which selection strategy applies — see [`MediawayGpuAdapterSelectKind`].
+    pub kind: MediawayGpuAdapterSelectKind,
+    /// Meaningful only when `kind == Index`.
+    pub index: u32,
+}
+
+/// Device-creation knobs for [`crate::device::gpu::mediaway_gpu_device_create`].
+#[cfg(feature = "desktop")]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MediawayGpuDeviceOptions {
+    /// Which adapter to open the device against.
+    pub adapter: MediawayGpuAdapterSelect,
+    /// Whether video-decode/encode support is required.
+    pub video_support: bool,
+    /// Whether to enable the D3D11 debug layer.
+    pub debug_layer: bool,
+}
+
 /// Which of [`MediawayDesktopFrame`]'s two storage fields is valid.
 ///
 /// Re-exported from `common::types` (`adr/0003-gpu-handle-c-abi.md` §3 — added

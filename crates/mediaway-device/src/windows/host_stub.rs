@@ -4,6 +4,7 @@ use crate::{
     CaptureError, DeviceEvent, DeviceHotplug, DeviceInfo, DeviceKind, PermissionState, Support,
     Unavailable,
 };
+use mediaway_common::GpuDeviceHandle;
 
 /// Windows audio hotplug stub.
 pub struct WindowsDeviceHotplug {
@@ -107,5 +108,13 @@ impl GpuDevice {
     /// Unavailable off Windows.
     pub const fn create(_options: GpuDeviceOptions) -> Result<Self, CaptureError> {
         Err(CaptureError::Unsupported)
+    }
+
+    /// Unreachable in practice off Windows ([`create`](Self::create) always errs, so no
+    /// live instance exists to call this on). `WebGpu { device_id: 0 }` is a safe,
+    /// infallible placeholder — the only variant that needs no [`NativeHandle`](mediaway_common::NativeHandle)
+    /// (whose constructor is fallible), so there is nothing to unwrap.
+    pub const fn handle(&self) -> GpuDeviceHandle {
+        GpuDeviceHandle::WebGpu { device_id: 0 }
     }
 }

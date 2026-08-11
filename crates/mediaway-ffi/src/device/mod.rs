@@ -52,6 +52,8 @@ mod camera;
 mod desktop_audio;
 #[cfg(feature = "desktop")]
 mod desktop_video;
+#[cfg(feature = "desktop")]
+mod gpu;
 #[cfg(feature = "hotplug")]
 mod hotplug;
 
@@ -75,7 +77,8 @@ pub use types::{MediawayCameraCaptureConfig, MediawayCameraFrame};
 pub use types::{
     MediawayDesktopAudioCaptureConfig, MediawayDesktopAudioFrame, MediawayDesktopAudioSourceKind,
     MediawayDesktopCaptureConfig, MediawayDesktopCaptureSourceKind, MediawayDesktopFrame,
-    MediawayVideoFrameStorageKind,
+    MediawayGpuAdapterInfo, MediawayGpuAdapterSelect, MediawayGpuAdapterSelectKind,
+    MediawayGpuDeviceOptions, MediawayVideoFrameStorageKind,
 };
 #[cfg(feature = "hotplug")]
 pub use types::{MediawayDeviceEvent, MediawayDeviceEventKind, MediawayDeviceKind};
@@ -108,6 +111,11 @@ pub use desktop_video::{
     mediaway_desktop_capture_geometry, mediaway_desktop_capture_open,
     mediaway_desktop_capture_poll_frame, mediaway_desktop_capture_poll_frame_blocking,
     mediaway_desktop_capture_release_frame, mediaway_desktop_frame_free,
+};
+#[cfg(feature = "desktop")]
+pub use gpu::{
+    GpuDeviceSessionHandle, mediaway_gpu_adapter_list, mediaway_gpu_adapter_list_free,
+    mediaway_gpu_device_close, mediaway_gpu_device_create, mediaway_gpu_device_handle,
 };
 #[cfg(feature = "hotplug")]
 pub use hotplug::{

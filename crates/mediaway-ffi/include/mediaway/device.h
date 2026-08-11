@@ -23,6 +23,15 @@
  * fallback (adr/0003-gpu-handle-c-abi.md). Camera's config carries no
  * gpu_device field at all (every shipped Camera backend is CPU-only).
  *
+ * A caller with no pre-existing GPU device to bring (every non-Rust binding,
+ * and any Rust caller without an existing renderer device) creates one with
+ * `mediaway_gpu_device_create()` (adapter auto-select or explicit index,
+ * `mediaway-device` ADR-0007) and reads its `mediaway_gpu_device_handle_t`
+ * with `mediaway_gpu_device_handle()` to pass into Screen capture or GPU-input
+ * encode. `mediaway_gpu_adapter_list()` enumerates every adapter DXGI reports
+ * (name, VRAM, hardware-vs-software) for a caller that wants to pick
+ * explicitly rather than accept the default.
+ *
  * Ownership summary (adr/0001-capture-c-abi.md §6, adr/0003 §2/§3):
  *   - All capture config structs are plain value structs: no heap allocation,
  *     no free function, passed/returned by value.
@@ -121,6 +130,7 @@ typedef struct mediaway_desktop_capture mediaway_desktop_capture_t;
 typedef struct mediaway_audio_capture mediaway_audio_capture_t;
 typedef struct mediaway_desktop_audio_capture mediaway_desktop_audio_capture_t;
 typedef struct mediaway_device_hotplug mediaway_device_hotplug_t;
+typedef struct mediaway_gpu_device mediaway_gpu_device_t;
 
 /* ── Status codes (feature-independent, stable numbering) ────────────────────────── */
 
@@ -147,6 +157,51 @@ typedef enum mediaway_device_status {
  * device/buffer handle types (adr/device/0003-gpu-handle-c-abi.md) all come from
  * common.h. Polled GPU frame storage here is BORROWED, never freed by the caller — see
  * the file header's GPU HAZARDS section. */
+
+/* ── GPU device factory (mediaway-device ADR-0007) ───────────────────────────────── */
+
+/* Enumeration entry — mediaway_gpu_adapter_list() output; free the whole array
+ * (including each entry's `name`) with mediaway_gpu_adapter_list_free(). */
+typedef struct mediaway_gpu_adapter_info {
+    uint32_t index;      /* pass to mediaway_gpu_adapter_select_t's index field */
+    char *name;          /* owned NUL-terminated UTF-8; NULL after free */
+    uint32_t vendor_id;
+    uint32_t device_id;
+    uint64_t dedicated_video_memory; /* bytes */
+    bool is_hardware;    /* false for WARP/software adapters */
+} mediaway_gpu_adapter_info_t;
+
+typedef enum mediaway_gpu_adapter_select_kind {
+    MEDIAWAY_GPU_ADAPTER_SELECT_DEFAULT = 0, /* first hardware adapter DXGI reports */
+    MEDIAWAY_GPU_ADAPTER_SELECT_INDEX   = 1, /* mediaway_gpu_adapter_info_t.index */
+} mediaway_gpu_adapter_select_kind_t;
+
+typedef struct mediaway_gpu_adapter_select {
+    mediaway_gpu_adapter_select_kind_t kind;
+    uint32_t index; /* meaningful only when kind == INDEX */
+} mediaway_gpu_adapter_select_t;
+
+/* Plain value; no free. */
+typedef struct mediaway_gpu_device_options {
+    mediaway_gpu_adapter_select_t adapter;
+    bool video_support; /* D3D11_CREATE_DEVICE_VIDEO_SUPPORT */
+    bool debug_layer;   /* D3D11_CREATE_DEVICE_DEBUG */
+} mediaway_gpu_device_options_t;
+
+/* List every GPU adapter this machine's DXGI factory reports. Free with
+ * mediaway_gpu_adapter_list_free(), not per-entry. */
+mediaway_device_status_t mediaway_gpu_adapter_list(
+    mediaway_gpu_adapter_info_t **out_adapters, size_t *out_count);
+void mediaway_gpu_adapter_list_free(mediaway_gpu_adapter_info_t *adapters, size_t count);
+
+/* Create a real GPU device per `options`. Close with mediaway_gpu_device_close();
+ * every mediaway_gpu_device_handle_t obtained via mediaway_gpu_device_handle()
+ * becomes invalid the moment that call returns. */
+mediaway_device_status_t mediaway_gpu_device_create(
+    const mediaway_gpu_device_options_t *options, mediaway_gpu_device_t **out_device);
+mediaway_device_status_t mediaway_gpu_device_handle(
+    const mediaway_gpu_device_t *device, mediaway_gpu_device_handle_t *out_handle);
+void mediaway_gpu_device_close(mediaway_gpu_device_t *device);
 
 /* ── Camera (video, CPU-only) ────────────────────────────────────────────────────── */
 

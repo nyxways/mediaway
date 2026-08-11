@@ -32,6 +32,8 @@ mod capabilities;
 #[cfg(windows)]
 mod enumeration;
 #[cfg(windows)]
+mod gpu;
+#[cfg(windows)]
 mod hotplug;
 
 #[cfg(windows)]
@@ -39,12 +41,19 @@ pub use capabilities::{request_permission, support};
 #[cfg(windows)]
 pub use enumeration::enumerate;
 #[cfg(windows)]
+pub use gpu::{
+    GpuAdapterInfo, GpuAdapterSelect, GpuDevice, GpuDeviceOptions, enumerate_gpu_adapters,
+};
+#[cfg(windows)]
 pub use hotplug::WindowsDeviceHotplug;
 
 #[cfg(not(windows))]
 mod host_stub;
 #[cfg(not(windows))]
-pub use host_stub::{WindowsDeviceHotplug, enumerate, request_permission, support};
+pub use host_stub::{
+    GpuAdapterInfo, GpuAdapterSelect, GpuDevice, GpuDeviceOptions, WindowsDeviceHotplug, enumerate,
+    enumerate_gpu_adapters, request_permission, support,
+};
 
 /// Serializes tests that touch real hardware (WASAPI hotplug/`MMDeviceEnumerator`) across
 /// `lib_tests.rs`/`capabilities_tests.rs`/`enumeration_tests.rs`. Rust's default test

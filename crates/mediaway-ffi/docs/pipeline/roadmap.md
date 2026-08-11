@@ -20,7 +20,7 @@ C ABI facade over `mediaway`'s auto video encode -> fragmented MP4 convenience l
 
 ### 3 — CI + consumer smoke test
 
-- [ ] CI builds cleanly
+- [x] Workspace CI builds, lints, and runs the pipeline integration tests
 - [x] A minimal C (or C++) program links + encodes synthetic frames to
       `out.mp4`, matching `bindings/c/examples/encode_to_mp4.c`'s scenario
       (verified via `--target x86_64-pc-windows-gnu` + `gcc`: real WMF H.264
@@ -37,13 +37,12 @@ C ABI facade over `mediaway`'s auto video encode -> fragmented MP4 convenience l
   ABI v4) — real USB camera → real WMF H.264 → valid fMP4,
   `tests/capture_encode_bridge_smoke.rs`. Microphone audio composition into
   the same session is still the caller's job (out of this ADR's scope).
-- ~~Decode (`platform::AutoDecoder`)~~ — C ABI implemented
+- [x] Decode (`platform::AutoDecoder`) — C ABI implemented
   (`adr/pipeline/0004-auto-decode-c-abi.md`, `mediaway_decode_session_*`,
-  ABI v3), compiles/clippy clean, but its own integration test
-  (`tests/decode_smoke.rs`) is `#[ignore]`d — blocked on a real, pre-existing
-  `WindowsVideoDecoder` CPU-decode bug found while writing it, not a defect
-  in this FFI wrapper (`docs/ai/wiki/platform/windows-decode.md` § CPU
-  decode bug).
+  ABI v3), with an enabled Windows integration test
+  (`tests/decode_smoke.rs`) covering encode → MP4 mux → demux → decode and
+  checking decoded pixel content. The test skips only when no usable WMF
+  backend is available.
 - `cbindgen` migration — tooling adopted crate-wide
   (`docs/adr/0016-cbindgen-ffi-headers.md`'s 2026-08-05 addendum); this
   module's `include/mediaway/pipeline.h` itself is not yet migrated (still

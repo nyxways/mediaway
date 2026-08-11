@@ -255,6 +255,21 @@ fn encode_mux_demux_decode_round_trips() {
             frame.data_len >= nv12_len,
             "decoded frame implausibly small"
         );
+        // The synthetic encoder input is mid-gray; checking the decoded luma
+        // proves that the C ABI returned actual decoded pixels, not only that
+        // the decoder emitted frame-shaped metadata.
+        // SAFETY: `data`/`data_len` are valid until the matching free call.
+        let decoded_bytes = unsafe { std::slice::from_raw_parts(frame.data, frame.data_len) };
+        let luma_len = (WIDTH * HEIGHT) as usize;
+        let luma_sum: u64 = decoded_bytes[..luma_len]
+            .iter()
+            .map(|&sample| u64::from(sample))
+            .sum();
+        let mean_luma = luma_sum / u64::try_from(luma_len).expect("luma length fits u64");
+        assert!(
+            (120..=136).contains(&mean_luma),
+            "decoded luma mean {mean_luma} is not near the mid-gray source"
+        );
         decoded += 1;
         unsafe { mediaway_decoded_video_frame_free(&raw mut frame) };
     }

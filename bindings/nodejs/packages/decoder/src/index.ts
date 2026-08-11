@@ -1,13 +1,14 @@
 /**
- * @mediaway/encoder — pipeline capability: auto video decode + Opus audio decode.
+ * @mediaway/decoder — pipeline capability: auto video decode + Opus audio decode.
  *
- * Wraps the mediaway-ffi C ABI's decode sessions (adr/0004-auto-decode-c-abi.md,
- * adr/pipeline/0006-audio-decode-c-abi.md) — the same "C ABI real, no
- * language binding wired" gap the container format series closed for
- * mux/demux, closed here for decode. Both sessions mirror
- * `openAutoEncoder()`/`AudioEncoder`'s single-step shape (the handle IS the
- * decoder, no consumption trap); `NO_BACKEND` throws
- * `DecoderUnavailableError`, an expected/graceful outcome.
+ * Implements the DX contract in bindings/nodejs/README.md over the
+ * mediaway-ffi C ABI (via @mediaway/ffi). Split out of @mediaway/encoder into
+ * its own package (previously buried as encoder/src/decode.ts, undiscoverable
+ * and undocumented) — decode and encode are peer capabilities, mirroring the
+ * Rust crate split (`mediaway-decoder`/`mediaway-encoder`), not one depending
+ * on the other. Both sessions mirror `openAutoEncoder()`/`AudioEncoder`'s
+ * single-step shape (the handle IS the decoder, no consumption trap);
+ * `NO_BACKEND` throws `DecoderUnavailableError`, an expected/graceful outcome.
  */
 
 import {
@@ -21,11 +22,40 @@ import {
   type RawRational,
 } from "@mediaway/ffi";
 import { MediawayError, type Rational } from "@mediaway/container";
-import { checkPipeline, type PixelFormat, type VideoCodec } from "./index.js";
+
+export type { Rational } from "@mediaway/container";
+export { MediawayError } from "@mediaway/container";
+
+export type PixelFormat = "nv12" | "bgra8" | "rgba8" | "i420" | "yuy2";
+export type VideoCodec = "h264" | "hevc" | "av1" | "vp9";
 
 /** No decoder backend is openable for this config — expected on machines
  * without a usable decoder; catch it and exit gracefully. */
 export class DecoderUnavailableError extends MediawayError {}
+
+function checkPipeline(
+  status: number,
+  noBackendError: new (status: number, message: string) => MediawayError = DecoderUnavailableError
+): void {
+  if (status === 0) return;
+  if (status === 3) throw new noBackendError(status, "no backend compiled in or openable");
+  const names: Record<number, string> = {
+    1: "invalid argument",
+    2: "handle poisoned by an earlier panic",
+    4: "codec/pixel-format/geometry not supported",
+    5: "bad dimensions, rates, or frame metadata",
+    6: "encoder backend OS/API failure",
+    7: "session already finished or not open",
+    8: "muxer rejected the encoder's stream info",
+    9: "packet does not match the registered track",
+    10: "malformed container data",
+    11: "unknown error",
+    12: "internal panic (handle poisoned)",
+    13: "decoder backend OS/API failure",
+    14: "decode session already finished or not open",
+  };
+  throw new MediawayError(status, names[status] ?? "unknown pipeline error");
+}
 
 export interface VideoDecodeConfig {
   codec: VideoCodec;

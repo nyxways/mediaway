@@ -2,7 +2,7 @@
 
 > **Status: ✅ verified** — the `@mediaway/*` packages in `packages/` are real
 > (FFI over the C ABI via `koffi`) and the examples in `examples/` run against the
-> native libraries: mux/demux roundtrip, real H.264 encode, real camera + mic
+> native libraries: mux/demux roundtrip, real H.264 encode, real camera + mic + screen
 > capture. This README is the **DX contract** the packages implement; napi-rs is the
 > eventual official native-addon path, koffi the current implementation.
 
@@ -37,18 +37,26 @@ detail in [`../c/README.md`](../c/README.md)):
    `ts.ts`/`mp3.ts`) top comment. WAV is mux-only (`WavMuxer`, consuming `finish()`);
    demux is the one-shot `parseWav()` function, not a class at all. Fully real, all
    formats run-verified.
-2. **Pipeline — auto video encode → fMP4, plus decode**: one call picks the best
-   available OS/GPU encoder for a config, wires it into an internal MP4 muxer;
+2. **Pipeline — auto video encode → fMP4** (`@mediaway/encoder`): one call picks the
+   best available OS/GPU encoder for a config, wires it into an internal MP4 muxer;
    `finish()` returns complete MP4 bytes. The audio encoder is separate (ABI v2,
    adr/0003): `AudioEncoder.open()` streams AAC packets for the caller's own muxer.
-   Decode is the mirror shape (adr/0004, adr/pipeline/0006): `DecodeSession` wraps
-   the best available video decoder (CPU output only; Windows/WMF today),
-   `AudioDecodeSession` wraps the cross-platform Opus decoder — both single-step
+   `EncodeSession.writeFrameFromCameraCapture()`/`writeFrameFromDesktopCapture()` push a
+   `@mediaway/device` capture session's polled frame straight into the encoder — no
+   intermediate `VideoFrame`, no CPU copy for Screen's GPU frames (adr/pipeline/0005).
+   **Decode** is its own peer package, `@mediaway/decoder` (adr/0004, adr/pipeline/0006):
+   `DecodeSession` wraps the best available video decoder (CPU output only; Windows/WMF
+   today), `AudioDecodeSession` wraps the cross-platform Opus decoder — both single-step
    handles (the handle IS the decoder), `NO_BACKEND` throws `DecoderUnavailableError`
    gracefully.
-3. **Device — capture**: camera (CPU frames), microphone/loopback (PCM), hotplug.
-   **Screen capture is `UNSUPPORTED` from C today** (needs a GPU device handle with no
-   C representation yet) — an honest gap, not a bug.
+3. **Device — capture**: camera (CPU frames), Screen (GPU-only, Zero-Copy), microphone/
+   loopback (PCM). `@mediaway/device` now includes the GPU device factory
+   (`listGpuAdapters`/`GpuDevice`, `mediaway-device` ADR-0007): `openScreenCapture()`
+   creates a device internally (or accepts a caller-supplied one) instead of throwing.
+   `ScreenSession.pollFrame()` proves frames arrive but never copies pixels out (no CPU
+   readback path in the wrapped backend) — real pixels move through
+   `EncodeSession.writeFrameFromDesktopCapture()`'s Zero-Copy bridge instead. Hotplug has
+   no Node wrapper yet.
 
 ## The real ABI beneath (what the wrapper wraps)
 
@@ -73,8 +81,9 @@ authoritative layout.
 
 Per-capability npm packages mirroring the Rust crate split: `@mediaway/container`
 (`Muxer`, `Demuxer`, `Packet`, `VideoTrackInfo`, `AudioTrackInfo`, `Rational`),
-`@mediaway/encoder` (`AutoVideoEncodeConfig`, `openAutoEncoder`, `EncodeSession`,
-`VideoFrame`), `@mediaway/device` (capture sessions). TypeScript-first with
+`@mediaway/encoder` (`AutoVideoEncodeConfig`, `openAutoEncoder`, `EncodeSession`),
+`@mediaway/decoder` (`DecodeSession`, `AudioDecodeSession`), `@mediaway/device`
+(capture sessions, `GpuDevice`, `listGpuAdapters`). TypeScript-first with
 `strict` types.
 
 - **Typed structs as plain interfaces/objects**: `Rational = { num, den }`, track
@@ -109,8 +118,8 @@ aspirational):
 | `pipeline/decode-roundtrip.ts` | auto H.264 decode (encode→mux→demux→decode) + Opus audio decode round trip | ✅ run verified (10 video frames, 50 Opus frames) |
 | `device/camera-record.ts` | camera + mic → H.264 + AAC → ONE two-track MP4 (remuxed; audio track registered with the encoder's AudioSpecificConfig) | ✅ run verified on real hardware (46 frames + 140 AAC packets → ~264 KB two-track MP4); video-only fallback without mic/audio backend |
 | `device/capture-microphone.ts` | microphone capture, raw PCM | ✅ run verified (real mic) |
-| `pipeline/screen-record.ts` | screen + mic → encode → MP4 | 🚧 aspirational — `openScreenCapture()` throws `CaptureUnavailableError` today |
-| `device/capture-screen.ts` | screen capture only | 🚧 same gap, capture-only |
+| `pipeline/screen-record.ts` | GPU device factory → screen + mic capture → encode (bridge) → MP4 | ✅ run verified on real hardware (real 1920x1080 screen + mic capture; GPU-input H.264 encode itself gracefully skips on this dev machine's current encoder/driver — same known gap as `gpu_write_frame_smoke.rs`) |
+| `device/capture-screen.ts` | GPU device factory → screen capture only | ✅ run verified on real hardware (5 real 1920x1080 frames polled) |
 
 ## Testing
 
@@ -129,14 +138,17 @@ formats (WebM/Ogg/ADTS/FLV/MPEG-TS/MP3/WAV) the same way, reusing the
 C++/C#/Python bindings' own verified byte patterns.
 
 The DLL must be staged at `packages/ffi/native/mediaway_ffi.dll` (the release
-workflow stages it there via `tools/scripts/copy-native-dlls.ts`). Run the
-suite with one command, from `bindings/nodejs/`:
+workflow stages it there via `tools/scripts/copy-native-dlls.ts`; a stale
+staged copy is a common local-dev trap — re-run that script after any native
+ABI change before testing). Run the suite with one command, from `bindings/nodejs/`:
 
     bun install && npm test
 
-The `test` script rebuilds the `@mediaway/ffi` and `@mediaway/container` dist
-with `tsc` (no cargo — the DLL is already staged), type-checks the suite, and
-runs both test files via `tsx`.
+The `test` script rebuilds every `@mediaway/*` package's dist with `tsc` (no
+cargo — the DLL is already staged), type-checks the suite, and runs the test
+files via `tsx`. `bunfig.toml` pins `bun install` to hoisted workspace linking
+(bun's own default is per-package/isolated, which does not resolve `@mediaway/*`
+from root-level files like `test/*.ts`).
 
 Type-check the suite standalone (requires the dist build above to exist):
 

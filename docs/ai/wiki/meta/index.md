@@ -33,5 +33,6 @@
 | [crate-packaging](crate-packaging.md) | Naming: device + device-windows + device-web |
 | [docs-layout](docs-layout.md) | Crate-local vs workspace documentation |
 | [language-bindings](language-bindings.md) | `bindings/` aspirational examples per planned Tier B/C language |
+| [nodejs-gpu-device](nodejs-gpu-device.md) | Node.js GPU device factory + real Screen capture + capture-encode bridge |
 | [docs-book](docs-book.md) | `docs/book/` mdBook site · README anchor includes · GitHub Pages CI |
 | [examples-layout](examples-layout.md) | `examples/` sectors (container/encode/decode/device/pipeline) · `harness = false` cfg-gate gotcha |

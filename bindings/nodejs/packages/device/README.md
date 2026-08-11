@@ -55,16 +55,43 @@ await mic.close();
 
 ## Screen capture
 
+GPU-only, Zero-Copy — there is no CPU fallback in the wrapped Rust backend
+(`adr/0003-gpu-handle-c-abi.md` §4), so `openScreenCapture()` needs a live GPU
+device. It creates one internally by default (via the GPU device factory,
+`mediaway-device` ADR-0007):
+
 ```ts
 import { openScreenCapture } from "@mediaway/device";
 
-const screen = await openScreenCapture({
-  timeBase: { num: 1, den: 30 },
-  captureCursor: true,
-});
-const frame = screen.pollFrame(); // VideoFrame | null
-await screen.close();
+const screen = await openScreenCapture({ timeBase: { num: 1, den: 30 }, monitorIndex: 0 });
+console.log(`screen: ${screen.width}x${screen.height}`);
+const frame = screen.pollFrame(); // VideoFrame | null — data is ALWAYS empty (see below)
+await screen.close(); // also closes the internally-created GPU device
 ```
+
+`pollFrame()`'s `VideoFrame.data` is always empty — it proves frames are
+genuinely arriving (real `pts`/geometry) but does not copy pixels out (no CPU
+readback path for Screen). For real pixel data, feed the session straight
+into an encoder with `EncodeSession.writeFrameFromDesktopCapture()`
+(`@mediaway/encoder`), Zero-Copy end to end — see that package's README.
+
+## GPU device factory
+
+```ts
+import { listGpuAdapters, GpuDevice, openScreenCapture } from "@mediaway/device";
+
+const adapters = listGpuAdapters(); // name, vendorId, deviceId, dedicatedVideoMemoryBytes, isHardware
+const device = await GpuDevice.create({ adapterIndex: adapters[0].index });
+
+// Share one device across capture and encode (see @mediaway/encoder):
+const screen = await openScreenCapture({ timeBase: { num: 1, den: 30 }, gpuDevice: device });
+// ... screen.close() leaves `device` open since you supplied it — close it yourself:
+await screen.close();
+device.close();
+```
+
+Omit `adapterIndex` (or the whole `options` object) for the first hardware
+adapter DXGI reports.
 
 ## API
 
@@ -72,7 +99,9 @@ await screen.close();
 | --- | --- | --- |
 | `openCamera({ index, timeBase })` | `CameraSession` (`width`, `height`, `pixelFormat` = `"nv12"`) | `pollFrame(): VideoFrame \| null` |
 | `openMicrophone({ sampleRate, channels })` | `MicSession` (`sampleRate`, `channels`) | `pollFrame(): AudioFrame \| null` |
-| `openScreenCapture({ timeBase, captureCursor? })` | `ScreenSession` | `pollFrame(): VideoFrame \| null` |
+| `openScreenCapture({ timeBase, monitorIndex?, gpuDevice? })` | `ScreenSession` | `pollFrame(): VideoFrame \| null` (`data` always empty) |
+| `listGpuAdapters()` | — | `GpuAdapterInfo[]` |
+| `GpuDevice.create({ adapterIndex?, videoSupport?, debugLayer? })` | `GpuDevice` | — |
 
 Every session's `close()` is async (joins the backend worker thread).
 `CaptureUnavailableError` signals a missing device.

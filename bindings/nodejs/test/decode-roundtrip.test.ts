@@ -12,15 +12,17 @@
 
 import assert from "node:assert/strict";
 import {
-  AudioDecodeSession,
   AutoVideoEncodeConfig,
-  DecodeSession,
   EncodeSession,
   openAutoEncoder,
-  type DecodedAudioFrame,
-  type DecodedVideoFrame,
   type VideoFrame,
 } from "@mediaway/encoder";
+import {
+  AudioDecodeSession,
+  DecodeSession,
+  type DecodedAudioFrame,
+  type DecodedVideoFrame,
+} from "@mediaway/decoder";
 import { Demuxer, type VideoTrackInfo } from "@mediaway/container";
 import { pipeline, copyBytes, type RawAudioEncodeConfig, type RawAudioFrameView, type RawAudioPacket } from "@mediaway/ffi";
 

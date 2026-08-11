@@ -3,18 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Node.js bindings for Mediaway (@mediaway/container, @mediaway/encoder, @mediaway/device) over the C ABI",
+  "description": "Node.js bindings for Mediaway (@mediaway/container, @mediaway/encoder, @mediaway/decoder, @mediaway/device) over the C ABI",
   "workspaces": [
     "packages/*"
   ],
   "scripts": {
     "build": "bun ../../tools/scripts/build-node-packages.ts",
     "build:release": "bun ../../tools/scripts/build-node-packages.ts --release",
-    "test": "bun node_modules/typescript/bin/tsc -p packages/ffi/tsconfig.json && bun node_modules/typescript/bin/tsc -p packages/container/tsconfig.json && bun node_modules/typescript/bin/tsc -p packages/encoder/tsconfig.json && bun node_modules/typescript/bin/tsc --noEmit && node node_modules/tsx/dist/cli.mjs test/mux-roundtrip.test.ts && node node_modules/tsx/dist/cli.mjs test/all-formats-smoke.test.ts && node node_modules/tsx/dist/cli.mjs test/decode-roundtrip.test.ts"
+    "test": "bun node_modules/typescript/bin/tsc -p packages/ffi/tsconfig.json && bun node_modules/typescript/bin/tsc -p packages/container/tsconfig.json && bun node_modules/typescript/bin/tsc -p packages/device/tsconfig.json && bun node_modules/typescript/bin/tsc -p packages/decoder/tsconfig.json && bun node_modules/typescript/bin/tsc -p packages/encoder/tsconfig.json && bun node_modules/typescript/bin/tsc --noEmit && node node_modules/tsx/dist/cli.mjs test/mux-roundtrip.test.ts && node node_modules/tsx/dist/cli.mjs test/all-formats-smoke.test.ts && node node_modules/tsx/dist/cli.mjs test/decode-roundtrip.test.ts"
   },
   "devDependencies": {
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
     "@types/node": "^22.0.0"
-  }
+  },
+  "trustedDependencies": [
+    "koffi"
+  ]
 }

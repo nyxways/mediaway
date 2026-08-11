@@ -60,7 +60,7 @@ hub: per-language status legend, capability truth table, and scenario map.
     package that is **unverified** (no Unity Editor available to compile or
     run it). Design:
     [`docs/adr/0018-csharp-netstandard20-unity.md`](../../../adr/0018-csharp-netstandard20-unity.md).
-- **C++** — real under `bindings/cpp/`: RAII wrapper over the C ABI (`mediaway.hpp`), 7 examples compile `-Wall -Werror` and run for real.
+- **C++** — real under `bindings/cpp/`: RAII wrapper over the C ABI (`mediaway.hpp`), 9 examples compile and run for real. `device::GpuDevice` + the capture-to-encode bridge land here too — see [cpp-gpu-device](cpp-gpu-device.md).
 - **Python** — real under `bindings/python/mediaway/` (`ctypes`), 7 examples
   run; encode output byte-identical to C/C++/Node. `GpuDevice` + the
   capture-to-encode bridge land here too — see [python-gpu-device](python-gpu-device.md).
@@ -68,8 +68,8 @@ hub: per-language status legend, capability truth table, and scenario map.
   FFI); napi-rs is the eventual official path. Five packages now:
   `@mediaway/ffi`, `@mediaway/container`, `@mediaway/decoder`,
   `@mediaway/encoder`, `@mediaway/device`. GPU device factory + real Screen
-  capture + capture-to-encode bridge landed here first, then C#/Python
-  caught up (C++ still open) — see [nodejs-gpu-device](nodejs-gpu-device.md).
+  capture + capture-to-encode bridge landed here first — every binding has
+  parity now — see [nodejs-gpu-device](nodejs-gpu-device.md).
 - **Browser** — ✅ verified (ADR-0020): `@mediaway/browser` npm package — wasm
   mux/demux (`iso-bmff-wasm` promoted to real `Muxer`/`Demuxer` classes) +
   WebCodecs encode-to-MP4 (`EncodeSession`; avcC/ASC pulled from the first

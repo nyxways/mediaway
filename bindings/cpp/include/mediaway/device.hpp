@@ -14,8 +14,15 @@
 
 #include <memory>
 #include <optional>
+#include <string>
+#include <vector>
 
 namespace mediaway {
+
+// Forward declaration for the capture-to-encode bridge friend grant below
+// (adr/pipeline/0005-capture-encode-bridge-c-abi.md) — defined in
+// pipeline.hpp, which includes this header, not the other way around.
+namespace encoder { class EncodeSession; }
 
 namespace detail {
 
@@ -56,6 +63,110 @@ inline void audioCaptureClose(mediaway_audio_capture_t* capture) noexcept {
 
 namespace device {
 
+/// One enumerated DXGI adapter — mirrors mediaway_gpu_adapter_info_t.
+/// Returned by GpuDevice::listAdapters().
+struct GpuAdapter {
+    std::uint32_t index;
+    std::string name;
+    std::uint32_t vendorId;
+    std::uint32_t deviceId;
+    std::uint64_t dedicatedVideoMemory;  // bytes
+    bool isHardware;
+};
+
+struct GpuDeviceOptions {
+    std::optional<std::uint32_t> adapterIndex;  // nullopt = backend default adapter
+    bool videoSupport = false;  // required for GPU-input encode
+    bool debugLayer = false;
+};
+
+/// A real GPU device (e.g. a DirectX11 ID3D11Device) created by the native
+/// backend — closes the "no C++ caller can construct a GPU device" gap for
+/// ScreenCapture and GPU-input encode (encoder::VideoEncoderConfig::gpuDevice),
+/// both of which require a live device handle with no CPU fallback
+/// (adr/0007-gpu-device-factory.md).
+class GpuDevice {
+public:
+    /// Enumerate every DXGI adapter on this machine (name, VRAM, hardware-vs-software).
+    static std::vector<GpuAdapter> listAdapters() {
+        mediaway_gpu_adapter_info_t* adapters = nullptr;
+        std::size_t count = 0;
+        detail::checkDevice(mediaway_gpu_adapter_list(&adapters, &count));
+        std::vector<GpuAdapter> result;
+        try {
+            result.reserve(count);
+            for (std::size_t i = 0; i < count; ++i) {
+                const mediaway_gpu_adapter_info_t& raw = adapters[i];
+                result.push_back(GpuAdapter{
+                    raw.index,
+                    raw.name ? std::string(raw.name) : std::string(),
+                    raw.vendor_id,
+                    raw.device_id,
+                    raw.dedicated_video_memory,
+                    raw.is_hardware,
+                });
+            }
+        } catch (...) {
+            mediaway_gpu_adapter_list_free(adapters, count);
+            throw;
+        }
+        mediaway_gpu_adapter_list_free(adapters, count);
+        return result;
+    }
+
+    /// Create a real device from `options` (default or an explicit adapter index).
+    static GpuDevice create(const GpuDeviceOptions& options = {}) {
+        mediaway_gpu_device_options_t raw{};
+        if (options.adapterIndex) {
+            raw.adapter.kind = MEDIAWAY_GPU_ADAPTER_SELECT_INDEX;
+            raw.adapter.index = *options.adapterIndex;
+        } else {
+            raw.adapter.kind = MEDIAWAY_GPU_ADAPTER_SELECT_DEFAULT;
+            raw.adapter.index = 0;
+        }
+        raw.video_support = options.videoSupport;
+        raw.debug_layer = options.debugLayer;
+        mediaway_gpu_device_t* device = nullptr;
+        detail::checkDevice(mediaway_gpu_device_create(&raw, &device));
+        if (!device) {
+            detail::throwError(Status::Panic, MEDIAWAY_DEVICE_STATUS_INTERNAL_PANIC,
+                               "GPU device create returned no handle");
+        }
+        mediaway_gpu_device_handle_t handle{};
+        const mediaway_device_status_t st = mediaway_gpu_device_handle(device, &handle);
+        if (st != MEDIAWAY_DEVICE_STATUS_OK) {
+            mediaway_gpu_device_close(device);
+            detail::checkDevice(st);
+        }
+        return GpuDevice(device, handle);
+    }
+
+    ~GpuDevice() { close(); }
+    GpuDevice(GpuDevice&&) = default;
+    GpuDevice& operator=(GpuDevice&&) = default;
+    GpuDevice(const GpuDevice&) = delete;
+    GpuDevice& operator=(const GpuDevice&) = delete;
+
+    /// The caller-facing handle — pass this into ScreenCaptureConfig::gpuDevice
+    /// or encoder::VideoEncoderConfig::gpuDevice. Stays valid only while this
+    /// GpuDevice has not been closed/destroyed.
+    const mediaway_gpu_device_handle_t& handle() const noexcept { return handle_; }
+
+    /// Releases the native device. Every handle obtained from it becomes invalid immediately.
+    void close() noexcept {
+        if (device_) {
+            mediaway_gpu_device_close(device_.get());
+            device_.release();  // already closed; release so the deleter cannot double-close
+        }
+    }
+
+private:
+    explicit GpuDevice(mediaway_gpu_device_t* device, mediaway_gpu_device_handle_t handle)
+        : device_(device, &mediaway_gpu_device_close), handle_(handle) {}
+    std::unique_ptr<mediaway_gpu_device_t, void (*)(mediaway_gpu_device_t*)> device_;
+    mediaway_gpu_device_handle_t handle_;
+};
+
 /// One polled PCM chunk; data is raw interleaved F32 samples, and pts is the
 /// first sample index in the stream timebase.
 struct AudioFrame {
@@ -81,6 +192,9 @@ struct AudioCaptureConfig {
 struct ScreenCaptureConfig {
     std::uint32_t displayIndex;
     Rational frameRate;
+    /// Mandatory — from GpuDevice::create().handle(). Screen has no CPU
+    /// fallback; a MEDIAWAY_GPU_DEVICE_NONE handle is rejected as INVALID_INPUT.
+    mediaway_gpu_device_handle_t gpuDevice;
     std::uint32_t width = 0;   // 0 = native
     std::uint32_t height = 0;
 };
@@ -165,6 +279,8 @@ public:
     }
 
 private:
+    friend class encoder::EncodeSession;
+
     explicit VideoCapture(mediaway_camera_capture_t* handle, Rational frameRate)
         : handle_(handle, &detail::cameraCaptureClose), info_{0, 0, frameRate, PixelFormat::Nv12} {}
 
@@ -178,26 +294,34 @@ private:
         }
     }
 
+    /// Raw handle access for EncodeSession::writeFrameFromCameraCapture's
+    /// capture-to-encode bridge (adr/pipeline/0005) — the only sanctioned use
+    /// of this class's opaque pointer outside its own methods.
+    mediaway_camera_capture_t* rawHandle() const noexcept { return handle_.get(); }
+
     std::unique_ptr<mediaway_camera_capture_t, void (*)(mediaway_camera_capture_t*)> handle_;
     CaptureInfo info_;
 };
 
-/// A Screen capture session — NOT representable from C today. open() throws
-/// Error(Status::Unsupported): Screen needs a live GPU device handle
-/// (ID3D11Device*) with no CPU fallback, and its C representation is deferred
-/// (crates/mediaway-device-ffi/adr/0001 § Deferred). The rest of the class is
-/// wired to the desktop ABI (mediaway_desktop_capture_*) for when that lands.
+/// A real, Zero-Copy Screen (DXGI Desktop Duplication) capture session.
+/// Requires a live GpuDevice — see ScreenCaptureConfig::gpuDevice.
 class ScreenCapture {
 public:
-    /// Throws Error(Status::Unsupported) today — see the class comment. The
-    /// ideal surface (BGRA8 CPU frames at the display's native geometry) is
-    /// what the aspirational screen_record example targets.
+    /// Open display `config.displayIndex`. Throws Error(Status::NoDevice) when
+    /// no supported capture backend is compiled in here — catch it and
+    /// degrade gracefully, same as VideoCapture::open.
     static ScreenCapture open(const ScreenCaptureConfig& config) {
-        (void)config;
-        detail::throwError(Status::Unsupported, MEDIAWAY_DEVICE_STATUS_UNSUPPORTED,
-                           "Screen capture needs a live GPU device handle with no CPU "
-                           "fallback, and its C representation is deferred — not "
-                           "available from this binding today");
+        mediaway_desktop_capture_config_t raw = mediaway_desktop_capture_config_screen(
+            config.displayIndex, {config.frameRate.num, config.frameRate.den}, config.gpuDevice);
+        mediaway_desktop_capture_t* capture = nullptr;
+        detail::checkDevice(mediaway_desktop_capture_open(&raw, &capture));
+        if (!capture) {
+            detail::throwError(Status::Panic, MEDIAWAY_DEVICE_STATUS_INTERNAL_PANIC,
+                               "capture open returned no handle");
+        }
+        ScreenCapture session(capture, config.frameRate);
+        session.queryGeometry();
+        return session;
     }
 
     ~ScreenCapture() { close(); }
@@ -216,21 +340,32 @@ public:
     const CaptureInfo& info() const { return info_; }
 
     /// Poll the next frame without blocking; nullopt when nothing is ready.
-    /// CPU-storage frames only — a GPU frame surfaces as Status::CaptureError.
+    /// For a GPU-storage frame (the real case — Screen has no CPU fallback),
+    /// `data` stays empty: there is no CPU pixel readback path for GPU-backed
+    /// frames in the wrapped Rust backend (mediaway_desktop_frame_free is a
+    /// documented no-op for that case). This still proves a real frame arrived
+    /// via width/height/pts; real pixels only ever move through
+    /// EncodeSession::writeFrameFromDesktopCapture. Release with releaseFrame()
+    /// before the next acquiring poll.
     std::optional<VideoFrame> pollFrame() {
         mediaway_desktop_frame_t raw{};
         bool has = false;
         detail::checkDevice(mediaway_desktop_capture_poll_frame(handle_.get(), &raw, &has));
         if (!has) return std::nullopt;
-        if (raw.storage_kind != MEDIAWAY_VIDEO_FRAME_STORAGE_CPU) {
-            mediaway_desktop_frame_free(&raw);
-            detail::throwError(Status::CaptureError, MEDIAWAY_DEVICE_STATUS_UNSUPPORTED,
-                               "GPU-storage screen frames are not exposed by this wrapper");
+        Bytes data;
+        if (raw.storage_kind == MEDIAWAY_VIDEO_FRAME_STORAGE_CPU && raw.data_len > 0) {
+            data.assign(raw.data, raw.data + raw.data_len);
         }
-        Bytes data(raw.data, raw.data + raw.data_len);
         mediaway_desktop_frame_free(&raw);
         return VideoFrame{detail::fromAbiPixel(raw.pixel_format), raw.width, raw.height,
                           raw.pts, std::move(data)};
+    }
+
+    /// Release backend resources held by the last polled frame — the real
+    /// release point for a GPU-backed frame's texture; call before the next
+    /// frame-acquiring poll.
+    void releaseFrame() {
+        detail::checkDevice(mediaway_desktop_capture_release_frame(handle_.get()));
     }
 
     /// Close the session. BLOCKS up to one frame interval (joins the backend
@@ -243,9 +378,26 @@ public:
     }
 
 private:
+    friend class encoder::EncodeSession;
+
     explicit ScreenCapture(mediaway_desktop_capture_t* handle, Rational frameRate)
         : handle_(handle, &detail::desktopCaptureClose),
           info_{0, 0, frameRate, PixelFormat::Bgra8} {}
+
+    void queryGeometry() {
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+        if (mediaway_desktop_capture_geometry(handle_.get(), &width, &height) ==
+            MEDIAWAY_DEVICE_STATUS_OK) {
+            info_.width = width;
+            info_.height = height;
+        }
+    }
+
+    /// Raw handle access for EncodeSession::writeFrameFromDesktopCapture's
+    /// capture-to-encode bridge (adr/pipeline/0005) — the only sanctioned use
+    /// of this class's opaque pointer outside its own methods.
+    mediaway_desktop_capture_t* rawHandle() const noexcept { return handle_.get(); }
 
     std::unique_ptr<mediaway_desktop_capture_t, void (*)(mediaway_desktop_capture_t*)> handle_;
     CaptureInfo info_;

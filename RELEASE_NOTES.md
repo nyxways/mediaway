@@ -44,6 +44,16 @@
   of always raising `CaptureUnsupportedError`; `examples/device/capture_screen.py` and
   `examples/pipeline/screen_record.py` now run-verify real Screen capture on real hardware
   instead of only demonstrating the gap.
+- `mediaway::device::GpuDevice` (C++): `listAdapters()`/`create()` — the first way for a
+  C++ caller to construct a real `ID3D11Device` without raw COM interop.
+  `mediaway::device::ScreenCapture::open()` now opens real Zero-Copy Screen capture
+  (`ScreenCaptureConfig::gpuDevice`) instead of always throwing `Status::Unsupported`.
+- `mediaway::encoder::EncodeSession` (C++): the capture-to-encode bridge
+  (`writeFrameFromCameraCapture`/`writeFrameFromDesktopCapture`) —
+  `examples/device/capture_screen.cpp` and `examples/pipeline/screen_record.cpp` now
+  link+run-verify real Screen capture and the bridge on real hardware instead of only
+  demonstrating the gap. This completes GPU device factory + Screen capture +
+  capture-to-encode bridge parity across every planned binding (C, Node.js, C#, Python, C++).
 
 ### Changed
 
@@ -64,6 +74,12 @@
 - `bindings/python`: `examples/pipeline/screen_record.py`'s header claimed "no audio
   encoder exists in the ABI" — stale; `AudioEncoder` (ABI v2) already shipped and
   `camera_record.py`'s own header already documents that gap as closed.
+- `bindings/cpp`: `device::ScreenCapture::pollFrame()` unconditionally threw on a
+  GPU-storage frame — dead code that only surfaced once `ScreenCapture::open()` could
+  actually succeed, since GPU storage is the only real case for Screen (no CPU
+  fallback). Also never queried negotiated geometry (`info()` stayed `{0,0,...}`
+  forever) and had no `releaseFrame()` at all. `examples/pipeline/screen_record.cpp`'s
+  header carried the same stale "no audio encoder exists in the ABI" claim as Python's.
 
 ### Removed
 

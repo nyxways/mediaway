@@ -52,6 +52,11 @@ struct VideoEncoderConfig {
     std::uint32_t height;
     Rational frameRate;
     PixelFormat inputFormat = PixelFormat::Nv12;
+    /// MEDIAWAY_GPU_DEVICE_NONE (default) keeps the CPU-only path; a real
+    /// device (e.g. device::GpuDevice::create().handle()) opts into the
+    /// Zero-Copy/GPU-copy input path used by EncodeSession's capture-to-encode
+    /// bridge below.
+    mediaway_gpu_device_handle_t gpuDevice{};
 };
 
 /// An opened auto encoder: the best available backend for the config. open()
@@ -67,6 +72,7 @@ public:
             {config.frameRate.num, config.frameRate.den});
         raw.bitrate_bps = 0;  // backend default
         raw.pixel_format = detail::toAbiPixel(config.inputFormat);
+        raw.gpu_device = config.gpuDevice;
         mediaway_auto_encoder_t* encoder = nullptr;
         detail::checkPipeline(mediaway_auto_encoder_open(&raw, &encoder));
         if (!encoder) {
@@ -114,6 +120,30 @@ public:
         raw.raw_bytes = frame.data.empty() ? nullptr : frame.data.data();
         raw.raw_bytes_len = frame.data.size();
         detail::checkPipeline(mediaway_encode_session_write_frame(handle_.get(), &raw));
+    }
+
+    /// Poll one frame from `capture` and, if one was ready, push it straight
+    /// into the encoder in a single native call — no intermediate frame
+    /// struct crosses the FFI boundary
+    /// (adr/pipeline/0005-capture-encode-bridge-c-abi.md). Returns false (a
+    /// no-op) when no frame was ready yet, mirroring VideoCapture::pollFrame's
+    /// own contract.
+    bool writeFrameFromCameraCapture(device::VideoCapture& capture) {
+        bool wrote = false;
+        detail::checkPipeline(mediaway_encode_session_write_frame_from_camera_capture(
+            handle_.get(), capture.rawHandle(), &wrote));
+        return wrote;
+    }
+
+    /// Same bridge as writeFrameFromCameraCapture, but for Screen's GPU-only
+    /// frames — Zero-Copy, no CPU copy. Only valid on a session opened from a
+    /// VideoEncoderConfig whose gpuDevice is a real device, sharing the same
+    /// GPU device the capture itself was opened with.
+    bool writeFrameFromDesktopCapture(device::ScreenCapture& capture) {
+        bool wrote = false;
+        detail::checkPipeline(mediaway_encode_session_write_frame_from_desktop_capture(
+            handle_.get(), capture.rawHandle(), &wrote));
+        return wrote;
     }
 
     /// Flush the encoder + muxer; returns the complete fMP4 bytes. Consumes

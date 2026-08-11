@@ -39,7 +39,7 @@ What each scenario can actually do through the real ABI — a binding README tha
 | `encode_to_mp4` | — | auto video encode → fMP4 | — | ✅ yes |
 | `encode_audio` | — | auto AAC encode → audio-only fMP4 | — | ✅ yes (ABI v2, `adr/0003` in mediaway-ffi) |
 | `camera_record` | — | video + audio encode | camera + mic capture | ✅ **two-track MP4** (H.264 + AAC, remuxed; hardware-verified). Video-only fallback without mic/audio backend |
-| `screen_record` | — | video encode | screen capture | ✅ **yes**, via the GPU device factory (`mediaway_gpu_device_create`, `mediaway-device` ADR-0007) — Screen still needs a live GPU device handle (`ID3D11Device*`, no CPU fallback), but a C/Node/C#/Python caller can now create one itself instead of only rejecting the `NONE` placeholder. C++ parity is open follow-up work |
+| `screen_record` | — | video encode | screen capture | ✅ **yes**, via the GPU device factory (`mediaway_gpu_device_create`, `mediaway-device` ADR-0007) — Screen still needs a live GPU device handle (`ID3D11Device*`, no CPU fallback), but a C/Node/C#/Python/C++ caller can now create one itself instead of only rejecting the `NONE` placeholder. Every planned binding has parity now |
 
 ## Scenario map
 
@@ -51,10 +51,10 @@ sector subfolders (`container/`, `pipeline/`, `device/`), one file per scenario:
 | `container/mux_roundtrip.*` | [`examples/container/mux_demux_mp4.rs`](../examples/container/mux_demux_mp4.rs) | sans-io container mux + demux roundtrip | ✅ |
 | `pipeline/encode_to_mp4.*` | [`examples/pipeline/encode_to_mp4.rs`](../examples/pipeline/encode_to_mp4.rs) | auto video encoder → fragmented MP4 | ✅ |
 | `pipeline/encode_audio.*` | (synthetic-PCM sibling of the audio encode ABI) | auto AAC encoder → audio-only fragmented MP4 | ✅ |
-| `pipeline/screen_record.*` | [`examples/pipeline/screen_record.rs`](../examples/pipeline/screen_record.rs) | screen + mic capture → encode → MP4 | ✅ C, C#, Python, Node.js / native (browser) · 🚧 gap demo (C++) |
+| `pipeline/screen_record.*` | [`examples/pipeline/screen_record.rs`](../examples/pipeline/screen_record.rs) | screen + mic capture → encode → MP4 | ✅ C, C#, C++, Python, Node.js / native (browser) — every binding |
 | `device/camera_record.*` | [`examples/device/capture_camera.rs`](../examples/device/capture_camera.rs) | camera + mic capture → H.264 + AAC → ONE two-track MP4 | ✅ (video-only fallback without mic/audio backend) |
 | `device/capture_microphone.*` | [`examples/device/capture_microphone.rs`](../examples/device/capture_microphone.rs) | microphone capture, raw PCM | ✅ |
-| `device/capture_screen.*` | [`examples/device/capture_screen.rs`](../examples/device/capture_screen.rs) | screen capture only | ✅ C, Python, Node.js / native (browser) · 🚧 gap demo (C#, C++) — C# capability is real and hardware-verified via `Mediaway.Device.Tests`, but has no standalone `Device/` example file yet (see `pipeline/screen_record.*` row) |
+| `device/capture_screen.*` | [`examples/device/capture_screen.rs`](../examples/device/capture_screen.rs) | screen capture only | ✅ C, C++, Python, Node.js / native (browser) · 🚧 no standalone `Device/` example file (C# — capability is real and hardware-verified via `Mediaway.Device.Tests`; see `pipeline/screen_record.*` row) |
 
 ## Rules
 

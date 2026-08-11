@@ -119,14 +119,45 @@ C ABI facade over `mediaway-device`. Workspace index: [`docs/roadmap.md`](../../
       hardware needed, every case rejected before any backend/COM call).
       `cargo check --workspace` and `clippy --all-targets --all-features -D
       warnings` clean across all four touched crates.
-- [ ] `bindings/c/examples/screen_record.c` predates this ADR's
-      `gpu_device` parameter on `mediaway_video_capture_config_screen` — not
-      yet updated to actually exercise the new Screen path.
+- [x] `bindings/c/examples/pipeline/screen_record.c` and
+      `bindings/c/examples/device/capture_screen.c` updated to actually
+      exercise the Screen path, via Stage 7's GPU device factory — see below.
 - [ ] Real-hardware round-trip of the new C-facing
       `mediaway_video_capture_poll_frame_blocking`/`_capture_once` functions
       themselves (as opposed to the underlying Rust calls they wrap, which
       are already hardware-verified) — not exercised via a dedicated FFI test
       this pass; would need a `windows` dev-dependency in this crate.
+
+### 7 — GPU device factory (unblocking non-Rust Screen capture entirely)
+
+- [x] `mediaway_gpu_adapter_list`/`_list_free`, `mediaway_gpu_device_create`,
+      `mediaway_gpu_device_handle`, `mediaway_gpu_device_close` — C ABI over
+      `mediaway-device`'s `windows::{enumerate_gpu_adapters, GpuDevice}`
+      (`mediaway-device` ADR-0007). Closes the last real gap for Screen
+      capture from any non-Rust binding: before this, no C ABI function
+      anywhere could create or discover a GPU device, so every caller (Rust
+      test or FFI) had to hand-roll its own `D3D11CreateDevice`, and a
+      non-Rust caller had no way to do that at all.
+      `impl From<CommonGpuDeviceHandle> for GpuDeviceHandle`
+      (`common/gpu.rs`) added as the first output-direction conversion for
+      that type. See
+      [`docs/ai/wiki/device/gpu-device-factory-ffi.md`](../../../../docs/ai/wiki/device/gpu-device-factory-ffi.md).
+- [x] Capstone hardware test:
+      `tests/screen_capture_encode_bridge_smoke.rs` — factory-created device
+      → real Screen capture opened with it → the existing capture-to-encode
+      bridge (`adr/pipeline/0005`) → fMP4. `bindings/c/examples/device/capture_screen.c`
+      link+run-verified on real hardware (5 real 1920x1080 frames polled from
+      plain C); `bindings/c/examples/pipeline/screen_record.c` likewise (real
+      screen + mic capture; GPU-input H.264 encode itself gracefully skips on
+      this dev machine's current encoder/driver, a pre-existing limitation
+      shared with `gpu_write_frame_smoke.rs`, not introduced by this work).
+- [x] Found and fixed an unrelated real bug while verifying: this crate's
+      `mediaway_pipeline_ffi_abi_version()` still returned `5` while
+      `include/mediaway/pipeline.h`'s `MEDIAWAY_PIPELINE_FFI_ABI_VERSION` had
+      been bumped to `6` (adding `gop_size`/`rate_control_*` fields, #33) —
+      the runtime counterpart was missed at the time. Every C example's own
+      ABI-version self-check was silently failing as a result. Fixed:
+      runtime now also returns `6`.
 
 ### Deferred (not this crate's first pass)
 

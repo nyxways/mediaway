@@ -87,6 +87,46 @@ impl GpuDeviceHandle {
     }
 }
 
+impl From<CommonGpuDeviceHandle> for GpuDeviceHandle {
+    // `GpuDeviceHandle` is `#[non_exhaustive]`; see `GpuBufferHandle`'s identical
+    // wildcard-arm precedent below for why the overlap with no real arm's body is
+    // intentional, not a copy-paste bug.
+    fn from(handle: CommonGpuDeviceHandle) -> Self {
+        match handle {
+            CommonGpuDeviceHandle::DirectX11(native) => Self {
+                kind: GpuDeviceKind::DirectX11,
+                native: native.get(),
+                webgpu_device_id: 0,
+            },
+            CommonGpuDeviceHandle::DirectX12(native) => Self {
+                kind: GpuDeviceKind::DirectX12,
+                native: native.get(),
+                webgpu_device_id: 0,
+            },
+            CommonGpuDeviceHandle::Vulkan(native) => Self {
+                kind: GpuDeviceKind::Vulkan,
+                native: native.get(),
+                webgpu_device_id: 0,
+            },
+            CommonGpuDeviceHandle::Metal(native) => Self {
+                kind: GpuDeviceKind::Metal,
+                native: native.get(),
+                webgpu_device_id: 0,
+            },
+            CommonGpuDeviceHandle::WebGpu { device_id } => Self {
+                kind: GpuDeviceKind::WebGpu,
+                native: 0,
+                webgpu_device_id: device_id,
+            },
+            _ => Self {
+                kind: GpuDeviceKind::None,
+                native: 0,
+                webgpu_device_id: 0,
+            },
+        }
+    }
+}
+
 /// Discriminant for [`GpuBufferHandle`] — mirrors `mediaway_common::GpuBufferHandle`'s
 /// 7 variants.
 #[repr(C)]

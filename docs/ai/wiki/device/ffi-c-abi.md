@@ -12,8 +12,8 @@ GPU handles: [`adr/0003-gpu-handle-c-abi.md`](../../../../crates/mediaway-ffi/ad
 **Microphone / Loopback / ProcessLoopback** (audio) all ship — real,
 hardware-verified Windows backends. Screen requires a live
 `mediaway_gpu_device_handle_t` (`MEDIAWAY_GPU_DEVICE_DIRECTX11`) passed to
-`mediaway_video_capture_config_screen()` — no CPU fallback exists in the wrapped Rust
-backend. `mediaway_video_capture_open()` enforces the pairing: Camera + non-`NONE`
+`mediaway_desktop_capture_config_screen()` — no CPU fallback exists in the wrapped Rust
+backend. `mediaway_desktop_capture_open()` enforces the pairing: Camera + non-`NONE`
 `gpu_device`, or Screen + `NONE`/malformed `gpu_device`, both return
 `INVALID_INPUT` rather than silently ignoring the mismatch. Window capture is deferred (see below).
 
@@ -95,6 +95,6 @@ gcc -Icrates/mediaway-ffi/include bindings/c/examples/device/camera_record.c \
 `camera_record.c` links the merged lib and `#include`s `<mediaway/container.h>`,
 `<mediaway/device.h>`, and `<mediaway/pipeline.h>` together in one translation unit —
 co-inclusion is verified safe (`adr/common/0001-shared-header-consolidation.md`; the DLL
-must still sit next to the `.exe`). Verified pre-ADR-0003: real 1920x1080 "WeVO WV-1080"
-camera + 48000 Hz/1ch mic captured into `out_camera.mp4`. `screen_record.c` predates
-ADR-0003's `gpu_device` parameter and needs updating to build again — not done yet.
+must still sit next to the `.exe`). Verified: real 1920x1080 "WeVO WV-1080" camera +
+48000 Hz/1ch mic captured into `out_camera.mp4`; `capture_screen.c`/`screen_record.c`
+now build and link+run too, via [gpu-device-factory-ffi](gpu-device-factory-ffi.md).

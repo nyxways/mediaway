@@ -96,7 +96,12 @@ pub use types::{
 /// (`adr/0005-capture-encode-bridge-c-abi.md`).
 /// Bumped `4` -> `5`: added the Opus audio decode surface and wired `CodecKind::Opus`
 /// into the existing audio encode surface (`adr/pipeline/0006-audio-decode-c-abi.md`).
+/// Bumped `5` -> `6`: added `gop_size`/`rate_control_*` fields to
+/// `MediawayAutoVideoEncodeConfig`/`mediaway_auto_video_encode_config_t` and
+/// `mediaway_encode_session_set_bitrate` (D3D12 native GOP + CBR support) — the
+/// header macro was bumped in that change but this runtime counterpart was
+/// missed until now.
 #[unsafe(no_mangle)]
 pub const extern "C" fn mediaway_pipeline_ffi_abi_version() -> u32 {
-    5
+    6
 }

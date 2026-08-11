@@ -48,6 +48,12 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
       [ADR-0004](../adr/0004-audio-playback-traits.md))
 - [x] Camera (Media Foundation, `windows_camera` module) — hardware-verified
       against a real USB webcam; see `docs/windows/roadmap.md` Stage 4
+- [x] GPU adapter enumeration + configurable `DirectX11` device factory
+      (`windows::gpu`, [ADR-0007](../adr/0007-gpu-device-factory.md)) —
+      hardware-verified: a factory-created device drives a real DXGI screen
+      capture session end to end. The one place callers without a
+      pre-existing device (FFI/bindings, standalone tools) get a real
+      `GpuDeviceHandle` instead of hand-rolling `D3D11CreateDevice`.
 - [ ] Named BGRA→NV12 GpuCopy only if HW MFT rejects ARGB32
 
 ### 2 — Web

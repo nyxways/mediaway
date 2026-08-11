@@ -1,0 +1,8 @@
+# bun's default workspace linking is per-package/isolated (each package gets
+# its own node_modules/@mediaway/* symlinks), not hoisted to the root
+# node_modules the way npm workspaces are. Root-level files (test/*.ts, the
+# root tsconfig's --noEmit check) resolve "@mediaway/*" via plain Node module
+# lookup, which needs the hoisted layout — force it so `bun install` produces
+# the same root-resolvable structure npm would.
+[install]
+linker = "hoisted"

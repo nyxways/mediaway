@@ -25,6 +25,7 @@ import {
   type RawRational,
 } from "@mediaway/ffi";
 import { MediawayError, type Rational } from "@mediaway/container";
+import { NATIVE_HANDLE, type CameraSession, type GpuDevice, type ScreenSession } from "@mediaway/device";
 
 export type { Rational } from "@mediaway/container";
 export { MediawayError } from "@mediaway/container";
@@ -53,6 +54,12 @@ export class AutoVideoEncodeConfig {
   timeBase: Rational;
   bitrateBps?: number; // 0 / undefined = backend default
   pixelFormat?: PixelFormat;
+  /** Zero-Copy GPU input: the same device a Screen capture session was opened
+   * with (or any `GpuDevice`) — set together with `pixelFormat: "bgra8"` for
+   * `writeFrameFromDesktopCapture()`'s GPU frames (DXGI delivers BGRA8, not
+   * the NV12 default). Leave unset for CPU input (Camera, or manual
+   * `writeFrame()` with CPU-storage frames). */
+  gpuDevice?: GpuDevice;
 
   private constructor(codec: VideoCodec, width: number, height: number, timeBase: Rational) {
     this.codec = codec;
@@ -61,7 +68,7 @@ export class AutoVideoEncodeConfig {
     this.timeBase = timeBase;
   }
 
-  /** The ABI's defaults (backend-default bitrate, NV12 input). */
+  /** The ABI's defaults (backend-default bitrate, NV12 input, CPU-only). */
   static defaults(codec: VideoCodec, width: number, height: number, timeBase: Rational): AutoVideoEncodeConfig {
     return new AutoVideoEncodeConfig(codec, width, height, timeBase);
   }
@@ -77,6 +84,7 @@ export class AutoVideoEncodeConfig {
     if (this.bitrateBps !== undefined) raw.bitrate_bps = this.bitrateBps;
     const fmtMap: Record<string, number> = { nv12: 0, i420: 1, bgra8: 2, rgba8: 3, yuy2: 4 };
     if (this.pixelFormat !== undefined) raw.pixel_format = fmtMap[this.pixelFormat] ?? 0;
+    if (this.gpuDevice !== undefined) raw.gpu_device = this.gpuDevice[NATIVE_HANDLE]();
     return raw;
   }
 }
@@ -143,6 +151,36 @@ export class EncodeSession {
       gpu_buffer: { kind: 255, native_a: 0, native_b: 0, subresource: 0, webgpu_texture_id: 0 },
     };
     checkPipeline(pipeline.sessionWriteFrame(this.handle, raw));
+  }
+
+  /**
+   * Poll one frame from `capture` (a `CameraSession`, `@mediaway/device`) and
+   * push it straight into this session — no intermediate `VideoFrame`, no
+   * extra copy (`adr/pipeline/0005-capture-encode-bridge-c-abi.md`). Returns
+   * `false` when nothing was ready yet (not an error) — mirrors
+   * `CameraSession.pollFrame()`'s own null-vs-error shape.
+   */
+  async writeFrameFromCameraCapture(capture: CameraSession): Promise<boolean> {
+    const wrote: [boolean] = [false];
+    checkPipeline(
+      pipeline.sessionWriteFrameFromCameraCapture(this.handle, capture[NATIVE_HANDLE](), wrote)
+    );
+    return wrote[0];
+  }
+
+  /**
+   * Same shape as `writeFrameFromCameraCapture`, for a `ScreenSession`
+   * (`@mediaway/device`) instead of Camera. GPU frames pass through
+   * Zero-Copy: the polled frame's GPU handle moves straight into the encoder
+   * with no CPU copy — this is the real way to consume Screen frames (see
+   * `ScreenSession.pollFrame()`'s own doc: it never copies pixels out).
+   */
+  async writeFrameFromDesktopCapture(capture: ScreenSession): Promise<boolean> {
+    const wrote: [boolean] = [false];
+    checkPipeline(
+      pipeline.sessionWriteFrameFromDesktopCapture(this.handle, capture[NATIVE_HANDLE](), wrote)
+    );
+    return wrote[0];
   }
 
   /** Flush the encoder + muxer and return the complete fMP4 bytes. Terminal. */
@@ -325,5 +363,3 @@ export class AudioEncoder {
     }
   }
 }
-
-export * from "./decode.js";

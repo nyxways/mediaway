@@ -224,6 +224,26 @@ export const MwDesktopFrame = koffi.struct("MwDesktopFrame", {
   gpu_buffer: MwGpuBufferHandle,
 });
 
+export const MwGpuAdapterInfo = koffi.struct("MwGpuAdapterInfo", {
+  index: "uint32",
+  name: "str", // owned NUL-terminated UTF-8; freed via gpuAdapterListFree, not per-entry
+  vendor_id: "uint32",
+  device_id: "uint32",
+  dedicated_video_memory: "uint64",
+  is_hardware: "bool",
+});
+
+export const MwGpuAdapterSelect = koffi.struct("MwGpuAdapterSelect", {
+  kind: "int32", // 0 = Default, 1 = Index
+  index: "uint32", // meaningful only when kind == Index
+});
+
+export const MwGpuDeviceOptions = koffi.struct("MwGpuDeviceOptions", {
+  adapter: MwGpuAdapterSelect,
+  video_support: "bool",
+  debug_layer: "bool",
+});
+
 export const MwAudioConfig = koffi.struct("MwAudioConfig", {
   device_index: "uint32",
   time_base: MwRational,
@@ -597,6 +617,16 @@ export const pipeline = {
   decodedAudioFrameFree: pipelineLib.func(
     "void mediaway_decoded_audio_frame_free(MwDecodedAudioFrame *frame)"
   ),
+
+  // ── Capture-to-encode bridge (adr/pipeline/0005-capture-encode-bridge-c-abi.md) ──
+  // Pushes one polled frame from a device.h capture handle straight into a
+  // session — no intermediate MwCameraFrame/MwDesktopFrame, no extra copy.
+  sessionWriteFrameFromCameraCapture: pipelineLib.func(
+    "int mediaway_encode_session_write_frame_from_camera_capture(void *session, void *capture, _Out_ bool *out_wrote_frame)"
+  ),
+  sessionWriteFrameFromDesktopCapture: pipelineLib.func(
+    "int mediaway_encode_session_write_frame_from_desktop_capture(void *session, void *capture, _Out_ bool *out_wrote_frame)"
+  ),
 };
 
 // ── Device functions ───────────────────────────────────────────────────────────
@@ -650,6 +680,21 @@ export const device = {
   ),
   audioClose: deviceLib.func("int mediaway_audio_capture_close(void *capture)"),
   audioFrameFree: deviceLib.func("void mediaway_audio_frame_free(MwAudioFrame *frame)"),
+
+  // ── GPU device factory (mediaway-device ADR-0007) ─────────────────────────
+  gpuAdapterList: deviceLib.func(
+    "int mediaway_gpu_adapter_list(_Out_ MwGpuAdapterInfo **out_adapters, _Out_ size_t *out_count)"
+  ),
+  gpuAdapterListFree: deviceLib.func(
+    "void mediaway_gpu_adapter_list_free(MwGpuAdapterInfo *adapters, size_t count)"
+  ),
+  gpuDeviceCreate: deviceLib.func(
+    "int mediaway_gpu_device_create(MwGpuDeviceOptions *options, _Out_ void **out_device)"
+  ),
+  gpuDeviceHandle: deviceLib.func(
+    "int mediaway_gpu_device_handle(void *device, _Out_ MwGpuDeviceHandle *out_handle)"
+  ),
+  gpuDeviceClose: deviceLib.func("void mediaway_gpu_device_close(void *device)"),
 };
 
 // ── Copy helpers ───────────────────────────────────────────────────────────────
@@ -778,6 +823,21 @@ export interface RawCameraFrame {
   data_len: number;
 }
 
+/** `mediaway_desktop_frame_t` (Screen output) — unlike `RawCameraFrame`, GPU
+ * storage (`storage_kind == 1`) leaves `data`/`data_len` empty and carries the
+ * frame in `gpu_buffer` instead (borrowed — never freed by the caller). */
+export interface RawDesktopFrame {
+  pts: bigint | number;
+  duration: bigint | number;
+  width: number;
+  height: number;
+  pixel_format: number;
+  storage_kind: number;
+  data: unknown;
+  data_len: number;
+  gpu_buffer: RawGpuBufferHandle;
+}
+
 export interface RawAudioFrame {
   pts: bigint | number;
   duration: bigint | number;
@@ -799,6 +859,14 @@ export interface RawPipelineFrame {
   raw_bytes: unknown;
   raw_bytes_len: number;
   gpu_buffer: RawGpuBufferHandle;
+}
+
+/** `mediaway_gpu_device_handle_t` (Screen capture / GPU-input encode input,
+ * mediaway_gpu_device_handle()'s output). */
+export interface RawGpuDeviceHandle {
+  kind: number;
+  native: number | bigint;
+  webgpu_device_id: number | bigint;
 }
 
 /** `mediaway_gpu_buffer_handle_t`. */
@@ -901,4 +969,27 @@ export interface RawDecodedAudioFrame {
   sample_format: number;
   data: unknown;
   data_len: number;
+}
+
+/** `mediaway_gpu_adapter_info_t` (mediaway-device ADR-0007). */
+export interface RawGpuAdapterInfo {
+  index: number;
+  name: string;
+  vendor_id: number;
+  device_id: number;
+  dedicated_video_memory: bigint | number;
+  is_hardware: boolean;
+}
+
+/** `mediaway_gpu_adapter_select_t`. */
+export interface RawGpuAdapterSelect {
+  kind: number; // 0 = Default, 1 = Index
+  index: number;
+}
+
+/** `mediaway_gpu_device_options_t`. */
+export interface RawGpuDeviceOptions {
+  adapter: RawGpuAdapterSelect;
+  video_support: boolean;
+  debug_layer: boolean;
 }

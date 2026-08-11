@@ -18,14 +18,12 @@
  */
 
 import {
-  AudioDecodeSession,
   AutoVideoEncodeConfig,
-  DecodeSession,
-  DecoderUnavailableError,
   EncoderUnavailableError,
   openAutoEncoder,
   type VideoFrame,
 } from "@mediaway/encoder";
+import { AudioDecodeSession, DecodeSession, DecoderUnavailableError } from "@mediaway/decoder";
 import { Demuxer, type VideoTrackInfo } from "@mediaway/container";
 import { pipeline, copyBytes, type RawAudioEncodeConfig, type RawAudioFrameView, type RawAudioPacket } from "@mediaway/ffi";
 

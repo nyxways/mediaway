@@ -1,6 +1,6 @@
 {
   "name": "@mediaway/decoder",
-  "version": "0.1.0",
+  "version": "0.1.6",
   "description": "Rust-based, lightweight, fast — automatic hardware video decode + Opus audio decode for Node.js",
   "type": "module",
   "main": "./dist/index.js",

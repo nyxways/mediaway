@@ -31,7 +31,21 @@ Rust media stack: **high-level pipelines** built from **first-class low-level** 
 
 Design: [docs/spec/vision.md](docs/spec/vision.md).
 
-Covers device capture (camera, mic, screen), encode/decode, containers, and planned FFI / WASM bindings across Windows, Web, Linux, other. Layout: sans-io cores, facade crates with OS backends as `#[cfg]`-gated modules (e.g. `mediaway-device` contains `windows`/`linux`/`web`). C ABI: a single `mediaway-ffi` facade — [docs/spec/c-ffi.md](docs/spec/c-ffi.md) · [docs/spec/crate-packaging.md](docs/spec/crate-packaging.md).
+Covers device capture (camera, mic, screen), encode/decode, containers, and FFI / WASM bindings across Windows, Web, Linux, other. Layout: sans-io cores, facade crates with OS backends as `#[cfg]`-gated modules (e.g. `mediaway-device` contains `windows`/`linux`/`web`). C ABI: a single `mediaway-ffi` facade — [docs/spec/c-ffi.md](docs/spec/c-ffi.md) · [docs/spec/crate-packaging.md](docs/spec/crate-packaging.md).
+
+### Verified Windows slice
+
+The Windows H.264 path has an enabled end-to-end verification slice:
+
+- Rust API: H.264 encode → fragmented MP4 mux/demux → CPU decode, including a
+  trim/splice/re-encode round trip (`crates/mediaway/tests/trim_and_splice_windows.rs`).
+- C ABI: the same encode → MP4 mux/demux → decode flow through
+  `mediaway-ffi`, including decoded pixel-content assertions
+  (`crates/mediaway-ffi/tests/decode_smoke.rs`).
+
+These tests skip only when the host has no usable Windows Media Foundation
+backend. The slice is verified; broader production readiness, API stability,
+and cross-platform hardware coverage remain in progress.
 
 **Repository:** [github.com/nyxways/mediaway](https://github.com/nyxways/mediaway)
 
@@ -433,4 +447,3 @@ cargo install cargo-nextest gitleaks   # or scoop/brew for gitleaks
 - **License:** MIT OR Apache-2.0 — [LICENSE-MIT](LICENSE-MIT), [LICENSE-APACHE](LICENSE-APACHE).
 - **Cargo graph:** no GPL/LGPL (etc.) deps; no linking `libav`* / FFmpeg libraries in shipped crates. See [docs/spec/vision.md](docs/spec/vision.md) § License & dependency boundary.
 - System `ffmpeg` / `ffprobe` on `PATH` are optional **test/dev oracles** only ([ADR-0002](docs/adr/0002-system-oracle.md)).
-

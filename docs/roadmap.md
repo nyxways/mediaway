@@ -56,14 +56,12 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
       (`EncodeSession::open_with_audio` / `write_audio_frame`, `crates/mediaway/src/session.rs`);
       `tests/screen_mic_av_smoke.rs` migrated onto the native API — its hand-rolled
       second-track muxing is gone (Stage 1b in `crates/mediaway/docs/roadmap.md`).
-- [ ] **C ABI facade**: container + device C ABI mature and hardware-verified. `mediaway-ffi`'s
-      pipeline module now covers encode, decode (`AutoDecoder`,
-      `adr/pipeline/0004-auto-decode-c-abi.md`), and a capture-to-encode convenience bridge
-      (`adr/pipeline/0005-capture-encode-bridge-c-abi.md`, hardware-verified with a real USB
-      camera). Decode's C ABI is implemented and compiles/clippy clean but its own integration
-      test is `#[ignore]`d — blocked on a real, pre-existing `WindowsVideoDecoder` CPU-decode
-      bug found while adding it (`docs/roadmap.md` § Windows CPU Decode Bug), not a defect in
-      the FFI wrapper itself. Shared header types are consolidated into
+- [x] **Windows H.264 pipeline C ABI slice**: `mediaway-ffi` covers encode, MP4 mux/demux,
+      and decode (`AutoDecoder`, `adr/pipeline/0004-auto-decode-c-abi.md`) in one enabled
+      integration test (`tests/decode_smoke.rs`), with decoded pixel-content assertions.
+      The same slice is also covered at the Rust API level by the Windows trim/splice
+      round-trip. The broader C ABI facade remains open for wider hardware, capture, and
+      consumer-language CI coverage. Shared header types are consolidated into
       `include/mediaway/common.h` (`adr/common/0001-shared-header-consolidation.md`). `cbindgen`
       tooling adopted crate-wide (`docs/adr/0016-cbindgen-ffi-headers.md`) — generates a
       clean-compiling header for the whole crate; the three real `include/mediaway/*.h` headers

@@ -18,8 +18,10 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 - [x] Add `mediaway-decoder-windows` workspace member
 - [x] WMF H.264 decode (HW MFT, DX11 Zero-Copy out)
 - [x] HEVC / AV1 / VP9 HW decode open (same DXGI path; MFT may be absent)
-- [ ] CPU frame output path (`CpuFramesOk`)
-- [ ] Round-trip with demuxer + encoder tests
+- [x] CPU frame output path (`CpuFramesOk`) for Windows H.264
+- [x] H.264 CPU round-trip with demuxer + encoder tests
+      (`crates/mediaway/tests/trim_and_splice_windows.rs`); the test skips
+      gracefully when the host has no usable WMF encoder/decoder.
 
 ### 2 — Web
 

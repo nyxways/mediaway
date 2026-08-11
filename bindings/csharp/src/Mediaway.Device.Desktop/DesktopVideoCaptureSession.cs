@@ -20,6 +20,9 @@ internal sealed class DesktopVideoCaptureSession : IDesktopVideoCapture
 
     public uint Height { get; }
 
+    /// <summary>Consumed by Mediaway.Pipeline's capture-to-encode bridge — see the InternalsVisibleTo grant in AssemblyInfo.cs.</summary>
+    internal DesktopCaptureHandle Handle => _handle;
+
     internal static DesktopVideoCaptureSession OpenFrom(DesktopCaptureHandle handle)
     {
         var status = NativeMethods.mediaway_desktop_capture_geometry(handle, out uint width, out uint height);

@@ -29,6 +29,15 @@
   `AutoVideoEncodeConfig.gpuDevice` for Zero-Copy GPU input — `examples/device/capture-screen.ts`
   and `examples/pipeline/screen-record.ts` now run-verify real Screen capture on real
   hardware instead of only demonstrating the gap.
+- `Mediaway.Device` (C#): the GPU device factory (`GpuDevice.ListAdapters`/`Create`/
+  `TryCreate`) — the first way for a C# caller to construct a real `ID3D11Device` without
+  raw COM interop.
+- `Mediaway.Pipeline` (C#): the capture-to-encode bridge
+  (`EncodeSession.WriteFrameFromCameraCapture`/`WriteFrameFromDesktopCapture`) —
+  `ScreenRecord.cs` now builds its GPU device via the new factory and streams through the
+  bridge instead of a `NotImplementedException` placeholder, and
+  `Mediaway.Device.Tests`/`Mediaway.Pipeline.Tests` hardware-verify real Screen capture and
+  the bridge on real hardware instead of a hand-rolled test-only `D3D11CreateDevice`.
 
 ### Changed
 
@@ -41,6 +50,11 @@
   did not hoist `@mediaway/*` into the root `node_modules`, breaking root-level
   `tsc --noEmit`/`tsx` resolution for `test/*.ts` (pre-existing, reproduced even on
   files untouched by this change) — fixed via `bunfig.toml`'s `[install] linker = "hoisted"`.
+- `bindings/csharp`: `ScreenRecord.cs`'s `DrainAudioAsync` had an ambiguous bare
+  `AudioFrame` reference between `Mediaway.Device.Audio.AudioFrame` and
+  `Mediaway.Pipeline.AudioFrame` (pre-existing, only surfaced once `Mediaway.Pipeline`
+  referenced `Mediaway.Device.Camera`/`Mediaway.Device.Desktop` for the bridge above) —
+  fixed by fully qualifying the type.
 
 ### Removed
 

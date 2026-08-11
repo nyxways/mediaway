@@ -108,5 +108,17 @@ internal static unsafe partial class NativeMethods
 
     [DllImport(LibraryName, ExactSpelling = true)]
     internal static extern void mediaway_decoded_audio_frame_free(ref NativeDecodedAudioFrame frame);
+
+    // ── Capture-to-encode bridge (adr/pipeline/0005-capture-encode-bridge-c-abi.md) ──────
+
+    [DllImport(LibraryName, ExactSpelling = true)]
+    internal static extern MediawayPipelineStatus mediaway_encode_session_write_frame_from_camera_capture(
+        EncodeSessionHandle session, Mediaway.Device.Camera.Interop.CameraCaptureHandle capture,
+        out byte outWroteFrame);
+
+    [DllImport(LibraryName, ExactSpelling = true)]
+    internal static extern MediawayPipelineStatus mediaway_encode_session_write_frame_from_desktop_capture(
+        EncodeSessionHandle session, Mediaway.Device.Desktop.Interop.DesktopCaptureHandle capture,
+        out byte outWroteFrame);
 }
 #endif

@@ -31,6 +31,9 @@ internal sealed class CameraCaptureSession : IVideoCapture
 
     public uint Height { get; }
 
+    /// <summary>Consumed by Mediaway.Pipeline's capture-to-encode bridge — see the InternalsVisibleTo grant in AssemblyInfo.cs.</summary>
+    internal CameraCaptureHandle Handle => _handle;
+
     internal static CameraCaptureSession OpenFrom(CameraCaptureHandle handle)
     {
         var status = NativeMethods.mediaway_camera_capture_geometry(handle, out uint width, out uint height);

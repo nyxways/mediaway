@@ -11,6 +11,7 @@ handle, no consumption trap, `close()` is always safe.
 from __future__ import annotations
 
 from ctypes import byref, c_bool, c_size_t, c_uint16, c_uint32, c_void_p, cast, create_string_buffer
+from typing import TYPE_CHECKING
 
 import ctypes
 
@@ -18,6 +19,9 @@ from . import _ffi
 from ._container import _from_units, _to_units
 from ._errors import EncoderUnavailableError, MediawayError
 from ._types import AudioStreamInfo, Codec, Packet, PixelFormat, Rational, SampleFormat, VideoFrame
+
+if TYPE_CHECKING:
+    from ._device import GpuDevice, VideoCapture
 
 __all__ = ["AutoVideoEncoder", "EncodeSession", "AudioEncoder"]
 
@@ -67,12 +71,25 @@ class AutoVideoEncoder:
         width: int,
         height: int,
         frame_rate: Rational,
+        pixel_format: PixelFormat = PixelFormat.NV12,
+        bitrate_bps: int = 0,
+        gpu_device: "GpuDevice | None" = None,
     ) -> "AutoVideoEncoder":
         """Open the best available encoder for the config; raises
-        EncoderUnavailableError when no backend exists on this machine."""
+        EncoderUnavailableError when no backend exists on this machine.
+
+        `gpu_device` opts into the Zero-Copy/GPU-copy input path used by the
+        capture-to-encode bridge (`write_frame_from_desktop_capture`) — pass
+        the same `GpuDevice` the capture was opened with, and set
+        `pixel_format=PixelFormat.BGRA8` for Screen (DXGI Desktop Duplication
+        delivers BGRA8, not this method's NV12 default)."""
         raw = _ffi.pipeline.dll.mediaway_auto_video_encode_config_new(
             int(codec), width, height, _ffi.Rational(frame_rate.num, frame_rate.den)
         )
+        raw.pixel_format = int(pixel_format)
+        raw.bitrate_bps = bitrate_bps
+        if gpu_device is not None:
+            raw.gpu_device = gpu_device.handle
         out = c_void_p()
         _check_pipeline(_ffi.pipeline.dll.mediaway_auto_encoder_open(byref(raw), byref(out)))
         if not out.value:
@@ -122,6 +139,34 @@ class EncodeSession:
             raw.raw_bytes = cast(buf, _ffi.U8P)
             raw.raw_bytes_len = len(frame.data)
         _check_pipeline(_ffi.pipeline.dll.mediaway_encode_session_write_frame(self._handle, byref(raw)))
+
+    def write_frame_from_camera_capture(self, capture: "VideoCapture") -> bool:
+        """Poll one frame from `capture` and, if one was ready, push it
+        straight into the encoder in a single native call — no intermediate
+        frame struct crosses the FFI boundary
+        (adr/pipeline/0005-capture-encode-bridge-c-abi.md). Returns False (a
+        no-op) when no frame was ready yet, mirroring `VideoCapture.poll_frame`'s
+        own contract. `capture` must be a session opened via
+        `VideoCapture.open(source="camera")`."""
+        wrote = c_bool(False)
+        _check_pipeline(
+            _ffi.pipeline.dll.mediaway_encode_session_write_frame_from_camera_capture(
+                self._handle, capture._handle, byref(wrote)
+            )
+        )
+        return bool(wrote.value)
+
+    def write_frame_from_desktop_capture(self, capture: "VideoCapture") -> bool:
+        """Same bridge as `write_frame_from_camera_capture`, but for Screen's
+        GPU-only frames — Zero-Copy, no CPU copy. `capture` must be a session
+        opened via `VideoCapture.open(source="screen")`."""
+        wrote = c_bool(False)
+        _check_pipeline(
+            _ffi.pipeline.dll.mediaway_encode_session_write_frame_from_desktop_capture(
+                self._handle, capture._handle, byref(wrote)
+            )
+        )
+        return bool(wrote.value)
 
     def finish(self) -> bytes:
         """Flush the encoder + muxer and return the complete fMP4 bytes. Terminal."""

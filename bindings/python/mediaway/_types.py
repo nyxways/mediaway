@@ -18,6 +18,7 @@ __all__ = [
     "PixelFormat",
     "SampleFormat",
     "Rational",
+    "GpuAdapter",
     "VideoStreamInfo",
     "AudioStreamInfo",
     "Packet",
@@ -120,6 +121,19 @@ class Rational:
 
     def __str__(self) -> str:
         return f"{self.num}/{self.den}"
+
+
+@dataclass(frozen=True)
+class GpuAdapter:
+    """One enumerated DXGI adapter — mirrors mediaway_gpu_adapter_info_t.
+    Returned by `GpuDevice.list_adapters()`."""
+
+    index: int
+    name: str
+    vendor_id: int
+    device_id: int
+    dedicated_video_memory: int  # bytes
+    is_hardware: bool
 
 
 @dataclass(frozen=True)

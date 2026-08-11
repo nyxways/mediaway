@@ -5,7 +5,10 @@ context managers, exceptions, Rational-second timestamps, bytes for buffers.
 
 Capability truth (see the README's table): container mux/demux ✅ real,
 auto video encode -> fMP4 ✅ real, camera/mic capture ✅ real (CPU frames),
-Screen capture 🚧 unsupported by the ABI today (CaptureUnsupportedError).
+Screen capture ✅ real (GPU-backed, via the `GpuDevice` factory) + the
+capture-to-encode bridge (`EncodeSession.write_frame_from_camera_capture`/
+`write_frame_from_desktop_capture`); Window capture 🚧 still unsupported
+(CaptureUnsupportedError).
 """
 
 from ._container import Demuxer, LiveMuxer, Muxer
@@ -19,7 +22,7 @@ from ._container_ts import TsDemuxer, TsMuxer
 from ._container_wav import WavMuxer
 from ._container_wav import parse as wav_parse
 from ._decoder import AudioDecodeSession, DecodeSession
-from ._device import AudioCapture, VideoCapture
+from ._device import AudioCapture, GpuDevice, VideoCapture
 from ._encoder import AudioEncoder, AutoVideoEncoder, EncodeSession
 from ._errors import (
     CaptureUnsupportedError,
@@ -38,6 +41,7 @@ from ._types import (
     DecodedAudioFrame,
     DecodedVideoFrame,
     DecodePacket,
+    GpuAdapter,
     Mp3FrameHeader,
     MpegVersion,
     Packet,
@@ -86,6 +90,8 @@ __all__ = [
     "AudioDecodeSession",
     "VideoCapture",
     "AudioCapture",
+    "GpuDevice",
+    "GpuAdapter",
     "MediawayError",
     "EncoderUnavailableError",
     "DecoderUnavailableError",

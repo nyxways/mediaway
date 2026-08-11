@@ -9,8 +9,8 @@ catch-and-continue on missing hardware instead of crashing:
   - EncoderUnavailableError  — no encode backend compiled in / openable
   - DeviceUnavailableError   — no capture backend / device present
   - CaptureUnsupportedError  — the ABI returned UNSUPPORTED for this config
-    (today: Screen capture from the C ABI — needs a GPU device handle with no
-    C representation yet)
+    (today: Window capture — has no C constructor this pass; Screen capture
+    is real, see `GpuDevice`/`VideoCapture.open(source="screen")`)
 """
 
 from __future__ import annotations
@@ -66,9 +66,10 @@ class DeviceUnavailableError(MediawayError):
 class CaptureUnsupportedError(MediawayError):
     """The ABI rejected this capture configuration as unsupported.
 
-    Maps the device ABI's UNSUPPORTED outcome — today this is Screen capture
-    from the C ABI (requires a GPU device handle whose C representation is
-    deferred). Not a bug: a documented capability gap.
+    Maps the device ABI's UNSUPPORTED outcome — today this is Window capture
+    (`VideoCapture.open(source="window")`, no C constructor this pass). Not a
+    bug: a documented capability gap. Screen capture is real (see `GpuDevice`)
+    and does not raise this.
     """
 
 

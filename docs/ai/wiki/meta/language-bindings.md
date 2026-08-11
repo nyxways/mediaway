@@ -27,10 +27,12 @@ hub: per-language status legend, capability truth table, and scenario map.
   Each has an xUnit suite that runs against the real native DLL, not a mock —
   `Mediaway.Device.Tests` opens this machine's real USB camera + microphone
   and reads real frames; the recompiled `CameraRecord.cs` example produced a
-  real 1920x1080 `out_camera.mp4` end-to-end. `ScreenRecord.cs` still throws
-  `NotImplementedException` — no GPU device factory to build an
-  `ID3D11Device*` from yet (Node.js has one, `@mediaway/device`'s
-  `GpuDevice`; C# parity is open follow-up work). Design:
+  real 1920x1080 `out_camera.mp4` end-to-end. `Mediaway.Device` now also has
+  a real GPU device factory (`GpuDevice.ListAdapters`/`Create`) and
+  `Mediaway.Pipeline.EncodeSession` a real capture-to-encode bridge
+  (`WriteFrameFromCameraCapture`/`WriteFrameFromDesktopCapture`) — C# parity
+  with Node.js's `@mediaway/device` `GpuDevice` — see
+  [csharp-gpu-device](csharp-gpu-device.md). Design:
   [`docs/adr/0017-csharp-binding-package-layout.md`](../../../adr/0017-csharp-binding-package-layout.md),
   [`docs/adr/0019-csharp-device-package-split-and-hotplug-callback.md`](../../../adr/0019-csharp-device-package-split-and-hotplug-callback.md).
   Safety shape: `SafeHandle` per native handle, status→typed-exception

@@ -4,7 +4,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <!-- LibraryImport source generation (NativeD3D11 in CaptureTests.cs) emits unsafe code. -->
+    <!-- LibraryImport source generation (NativeCursor in CaptureTests.cs) emits unsafe code. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>

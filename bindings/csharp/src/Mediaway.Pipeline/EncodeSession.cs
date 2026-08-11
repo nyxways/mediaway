@@ -1,6 +1,8 @@
 using System.Buffers;
 using Mediaway.Common;
 using Mediaway.Common.Interop;
+using Mediaway.Device.Camera;
+using Mediaway.Device.Desktop;
 using Mediaway.Pipeline.Interop;
 
 namespace Mediaway.Pipeline;
@@ -72,6 +74,52 @@ public sealed class EncodeSession : IDisposable
             GpuBuffer = frame.GpuBuffer,
         };
         MediawayPipelineException.ThrowIfError(NativeMethods.mediaway_encode_session_write_frame(_handle, in native));
+    }
+
+    /// <summary>
+    /// Poll one frame from <paramref name="capture"/> and, if one was ready, push it straight
+    /// into the encoder in a single native call — no intermediate frame struct crosses the
+    /// FFI boundary, and Zero-Copy for GPU-backed frames
+    /// (adr/pipeline/0005-capture-encode-bridge-c-abi.md). Returns <see langword="false"/>
+    /// (a no-op) when no frame was ready yet, mirroring
+    /// <see cref="IVideoCapture.TryPollFrame"/>'s own contract.
+    /// </summary>
+    /// <param name="capture">Must be a session opened via <c>Camera.Open</c>/<c>TryOpen</c>.</param>
+    public bool WriteFrameFromCameraCapture(IVideoCapture capture)
+    {
+        if (capture is not CameraCaptureSession session)
+        {
+            throw new ArgumentException(
+                "capture must be a session opened via Camera.Open()/TryOpen().", nameof(capture));
+        }
+
+        var status = NativeMethods.mediaway_encode_session_write_frame_from_camera_capture(
+            _handle, session.Handle, out byte wroteFrame);
+        MediawayPipelineException.ThrowIfError(status);
+        return wroteFrame != 0;
+    }
+
+    /// <summary>
+    /// Poll one frame from <paramref name="capture"/> and, if one was ready, push it straight
+    /// into the encoder in a single native call — same bridge as
+    /// <see cref="WriteFrameFromCameraCapture"/>, but for Screen's GPU-only frames
+    /// (adr/pipeline/0005-capture-encode-bridge-c-abi.md). Only valid on a session opened
+    /// from a <see cref="VideoEncodeConfig"/> whose <see cref="VideoEncodeConfig.GpuDevice"/>
+    /// is a real device, sharing the same GPU device the capture itself was opened with.
+    /// </summary>
+    /// <param name="capture">Must be a session opened via <c>DesktopScreenCapture.Open</c>/<c>TryOpen</c>.</param>
+    public bool WriteFrameFromDesktopCapture(IDesktopVideoCapture capture)
+    {
+        if (capture is not DesktopVideoCaptureSession session)
+        {
+            throw new ArgumentException(
+                "capture must be a session opened via DesktopScreenCapture.Open()/TryOpen().", nameof(capture));
+        }
+
+        var status = NativeMethods.mediaway_encode_session_write_frame_from_desktop_capture(
+            _handle, session.Handle, out byte wroteFrame);
+        MediawayPipelineException.ThrowIfError(status);
+        return wroteFrame != 0;
     }
 
     /// <summary>

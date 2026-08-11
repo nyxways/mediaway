@@ -23,6 +23,10 @@
     <ProjectReference Include="..\..\src\Mediaway.Common\Mediaway.Common.csproj" />
     <ProjectReference Include="..\..\src\Mediaway.Container\Mediaway.Container.csproj" />
     <ProjectReference Include="..\..\src\Mediaway.Pipeline\Mediaway.Pipeline.csproj" />
+    <!-- ScreenCaptureEncodeBridgeTests.cs exercises the real GPU device factory + Screen
+         capture feeding EncodeSession.WriteFrameFromDesktopCapture. -->
+    <ProjectReference Include="..\..\src\Mediaway.Device\Mediaway.Device.csproj" />
+    <ProjectReference Include="..\..\src\Mediaway.Device.Desktop\Mediaway.Device.Desktop.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -16,6 +16,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Mediaway.Common\Mediaway.Common.csproj" />
+    <!-- Capture-to-encode bridge (adr/pipeline/0005-capture-encode-bridge-c-abi.md) takes a
+         raw CameraCaptureHandle/DesktopCaptureHandle — see the InternalsVisibleTo grants in
+         each project's Interop/AssemblyInfo.cs. -->
+    <ProjectReference Include="..\Mediaway.Device.Camera\Mediaway.Device.Camera.csproj" />
+    <ProjectReference Include="..\Mediaway.Device.Desktop\Mediaway.Device.Desktop.csproj" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">

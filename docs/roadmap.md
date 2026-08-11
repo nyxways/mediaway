@@ -78,17 +78,22 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
       `linux` modules) are compile-verified via WSL2 only — no run against physical `/dev/dri`
       hardware yet.
 - [ ] **Windows D3D12 Decoder Hang Investigation**: still reproduces `DXGI_ERROR_DEVICE_HUNG`
-      after 3 real bugs already fixed (readback pitch, NV12 chroma-plane barrier, RBSP bit
-      offset); root cause narrowed to the opaque DXVA picture-parameter blob, unresolved
+      after 4 real bugs already fixed (readback pitch, NV12 chroma-plane barrier, RBSP bit
+      offset, `BitOffsetToSliceData`); root cause narrowed to the opaque DXVA picture-parameter
+      blob, unresolved after 8 confirmed real hardware hangs — further live re-runs on the
+      primary dev machine are paused pending a new lead
       (`mediaway-decoder/adr/windows/0002-d3d12-native-video-decode.md`).
-- [ ] **Vulkan Video Decoder/Encoder Refinements**: HEVC GPU decode still reads back all-zero
-      pixels (root cause not found); AV1 encode is structurally hardware-verified but every
-      frame's OBU output is invalid — confirmed driver-maturity limitation, not a Mediaway bug;
-      AV1 decode has not been started.
-- [ ] **Windows CPU Decode Bug**: `WindowsVideoDecoder`'s `CpuFramesOk` H.264 path produces no
-      frames (single-packet input) or aborts the process on a Rust std UB check (multi-frame
-      muxed/demuxed input) — found 2026-08-05 while adding `mediaway-ffi`'s decode C ABI; root
-      cause not found (`docs/ai/wiki/platform/windows-decode.md` § CPU decode bug).
+- [x] **Vulkan HEVC Decode**: root cause found and fixed (a missed
+      `pps_loop_filter_across_slices_enabled_flag` slice-header bit) — real decode
+      hardware-verified on the RTX 4090, hard pixel assertions
+      (`mediaway-decoder/adr/vulkan/0001-vulkan-video-decode.md`'s 2026-08-05 addendum).
+- [ ] **Vulkan AV1 Encode/Decode**: encode is structurally hardware-verified but every frame's
+      OBU output is invalid — confirmed driver-maturity limitation, not a Mediaway bug; AV1
+      decode has not been started.
+- [x] **Windows CPU Decode Bug**: `WindowsVideoDecoder`'s `CpuFramesOk` H.264 path — both real
+      bugs (AVCC/Annex-B framing mismatch, and a test double-free misattributed as a decoder
+      abort) found and fixed 2026-08-05
+      (`docs/ai/wiki/platform/windows-decode.md` § CPU decode bug).
 - [x] **Opus Audio Codec Integration (encode)**: `WindowsAudioEncoder` dispatches `CodecKind::Opus`
       to `mediaway-sw`'s `SwOpusAudioEncoder` as a real `AudioEncoder` backend
       (`crates/mediaway-encoder/src/windows/mod.rs`).

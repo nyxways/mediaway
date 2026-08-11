@@ -187,20 +187,13 @@ fn decode_real_encoder_produced_idr_or_skip() {
     // encode of a flat picture should reconstruct close to that value — a
     // real, content-derived check (not just "decode did not error").
     //
-    // KNOWN UNRESOLVED BUG (see `adr/0001`'s 2026-07-30 HEVC addendum): on
-    // this crate's reference RTX 4090, this real encoder-produced bitstream
-    // currently decodes to an all-zero picture (no `VkResult` error at any
-    // step). Two real, confirmed-via-FFmpeg-source-comparison bugs were found
-    // and fixed while chasing this (SPS/PPS flags silently echoed as `0`
-    // regardless of what the real encoder signaled — `amp_enabled_flag`,
-    // `sample_adaptive_offset_enabled_flag`, and the several
-    // `StdVideoH265PictureParameterSet` flags/values `HevcPps::to_std` was
-    // hardcoding), but the picture still decodes blank after both fixes, so a
-    // further bug remains unidentified. Soft-skip rather than hard-fail —
-    // this workspace's hardware-gated tests must never fail the default
-    // suite for a real, not-yet-root-caused bug (same convention this
-    // crate's own H.264 test followed before its bug was found). Flip this
-    // back to a hard assertion once the remaining bug is found and fixed.
+    // Root-caused and fixed (see `adr/0001`'s 2026-08-05 HEVC addendum):
+    // `HevcPps::parse` never read `pps_loop_filter_across_slices_enabled_flag`,
+    // a real conditional slice-header bitstream bit — a one-bit misalignment
+    // right before CTU/CABAC data that produced the all-zero decode. Two
+    // earlier `Std*Flags`-zeroing bugs found while chasing this were real but
+    // not the root cause. This now hard-asserts (no soft skip) on the RTX
+    // 4090 reference hardware.
     let luma_len = WIDTH as usize * HEIGHT as usize;
     let luma_sample = data[(HEIGHT as usize / 2) * WIDTH as usize + WIDTH as usize / 2];
     let nonzero_luma = data[..luma_len].iter().filter(|&&b| b != 0).count();

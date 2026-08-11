@@ -1,6 +1,7 @@
 # Project status
 
-**Mediaway is early development (pre-1.0).** **Production use is not recommended.**
+**Mediaway is early development (pre-1.0), building toward 1.0 with the community.**
+**Production use is not recommended yet.**
 
 ## API stability (pre-1.0)
 
@@ -25,7 +26,7 @@ Suitable today: experimentation, design feedback, contributing, early integratio
 
 Not suitable yet: shipping end-user products that depend on Mediaway for encode/decode/mux in production.
 
-**Long game:** earn trust on correctness, stability, and performance for the scopes we claim — see [`maturity-bar.md`](maturity-bar.md).
+**Long game:** earn trust on correctness, stability, and performance for the scopes we claim — see [`maturity-bar.md`](maturity-bar.md). Getting there is a community effort: contributions, real-hardware verification, and bug reports each move a scope closer to 1.0.
 
 How to contribute: [`CONTRIBUTING.md`](../../CONTRIBUTING.md) · [`docs/contributing/`](../contributing/).
 

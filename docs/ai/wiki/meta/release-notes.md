@@ -23,7 +23,7 @@ renamed, or removed (source of truth: each package's own manifest, not this tabl
 | crates.io | `mediaway`, `mediaway-container`, `mediaway-encoder`, `mediaway-decoder`, `mediaway-device`, `mediaway-sw`, `mediaway-common`, freestanding cores (`iso-bmff`, `ebml-webm`, `flv-core`, `mpeg-ts-core`, `mpeg-audio`, `iso-cenc`, `ogg-core`, `adts-core`, `riff-wave-core`, `rtp-core`, ...) | `https://crates.io/crates/<name>` |
 | NuGet | `Mediaway.Common`, `Mediaway.Container`, `Mediaway.Device`, `Mediaway.Device.Audio`, `Mediaway.Device.Camera`, `Mediaway.Device.Desktop`, `Mediaway.Device.Hotplug`, `Mediaway.Pipeline` (PackageId defaults to `AssemblyName`, `bindings/csharp/src/Directory.Build.props`) | `https://www.nuget.org/packages/<PackageId>` |
 | PyPI | `mediaway` (`bindings/python/pyproject.toml`) | `https://pypi.org/project/<name>/` |
-| npm | `@mediaway/ffi`, `@mediaway/container`, `@mediaway/device`, `@mediaway/encoder`, `@mediaway/browser` (`bindings/{nodejs,browser}/packages/*/package.json`) | `https://www.npmjs.com/package/<name>` |
+| npm | `@mediaway/ffi`, `@mediaway/container`, `@mediaway/device`, `@mediaway/encoder`, `@mediaway/decoder`, `@mediaway/browser` (`bindings/{nodejs,browser}/packages/*/package.json`) | `https://www.npmjs.com/package/<name>` |
 | C headers | no registry — `mediaway_ffi.h` + CMake/CPack archives ship as GitHub Release assets | `https://github.com/nyxways/mediaway/releases/tag/v<version>` |
 
 Rust crates are the primary API, not a "binding" — the `## Bindings` section only

@@ -21,6 +21,20 @@ pub enum PixelFormat {
     Yuyv,
 }
 
+/// YUV sample range for [`PixelFormat::Nv12`] / [`PixelFormat::I420`] / [`PixelFormat::Yuyv`].
+/// Irrelevant for packed RGB formats ([`PixelFormat::Bgra8`] / [`PixelFormat::Rgba8`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
+pub enum ColorRange {
+    /// "Legal"/broadcast range: 8-bit luma 16-235, chroma 16-240 — the common camera/H.264
+    /// convention and this type's default.
+    #[default]
+    Video,
+    /// Full range: 8-bit luma/chroma 0-255 — common for screen-capture/graphics-originated
+    /// content.
+    Full,
+}
+
 /// Audio PCM / sample layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]

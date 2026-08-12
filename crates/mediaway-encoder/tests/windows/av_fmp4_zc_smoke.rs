@@ -63,6 +63,7 @@ fn av_fmp4_dx11_zero_copy_roundtrip() {
         time_base: Rational::new(1, 30),
         bitrate_bps: 500_000,
         pixel_format: PixelFormat::Nv12,
+        color_range: mediaway_common::ColorRange::Video,
         input: VideoInputPreference::ZeroCopyGpu,
         gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
         gop_size: 1,

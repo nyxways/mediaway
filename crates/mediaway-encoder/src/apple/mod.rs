@@ -1,0 +1,135 @@
+//! Apple (macOS + iOS) encode backend (`VideoToolbox` `VTCompressionSession`, via `objc2`).
+//!
+//! - [`VideoInputPreference::CpuUploadOk`](crate::VideoInputPreference): H.264 session via
+//!   `VTCompressionSession` + `upload_cpu_nv12` (`CVPixelBufferCreateWithPlanarBytes`, one
+//!   copy) — `kVTCompressionPropertyKey_MaxKeyFrameInterval` requests
+//!   [`VideoEncoderConfig::gop_size`] sync frames, device-dependent, not a byte-exact
+//!   guarantee like Linux's raw bitstream approach.
+//! - [`VideoInputPreference::ZeroCopyGpu`]: not implemented — returns
+//!   [`EncodeError::Unsupported`]. Deferred to a Zero-Copy `CVPixelBuffer`/`IOSurface` stage;
+//!   see [`docs/roadmap.md`](../docs/roadmap.md).
+//!
+//! Policy: [ADR-0001](../adr/apple/0001-videotoolbox-h264-cpu-upload.md) — binding choice
+//! (`objc2-video-toolbox`/`objc2-core-video`/`objc2-core-media`/`objc2-core-foundation`), scope,
+//! and the **zero compile verification as authored** caveat (this crate's dev environment
+//! cannot cross-compile Apple code at all — no Xcode/Apple SDK reachable outside macOS). Read
+//! that caveat before relying on this backend.
+
+// Unlike Android/Linux, VideoToolbox/CoreMedia/CoreVideo's `objc2-*` bindings are plain C-API
+// `unsafe fn` wrappers with no safe layer (see ADR-0001 § Unsafe surface) — this module carries
+// real `unsafe` blocks with `// SAFETY:` comments, matching `src/windows/`'s discipline. The
+// crate root's `#![allow(unsafe_code)]` (see `lib.rs`) applies here.
+
+#[cfg(not(feature = "video"))]
+compile_error!("enable the `video` feature on mediaway-encoder-apple");
+
+use crate::EncodeError;
+use crate::{VideoEncoder, VideoEncoderConfig};
+use mediaway_common::VideoFrame;
+use mediaway_common::{Bytes, Packet, StreamInfo};
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+mod videotoolbox;
+
+/// Apple video encode session (`VideoToolbox` H.264 when opened on macOS/iOS).
+pub struct AppleVideoEncoder {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    inner: Option<videotoolbox::VideoToolboxVideoEncoder>,
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+    _priv: (),
+}
+
+impl AppleVideoEncoder {
+    /// Open an Apple `VideoToolbox` video encoder for `config`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EncodeError::Unsupported`] when the codec/input path is not wired (currently:
+    /// anything but H.264 + [`VideoInputPreference::CpuUploadOk`]), or [`EncodeError::Backend`]
+    /// when `VTCompressionSessionCreate`/`VTSessionSetProperty` fails (a real, honest failure —
+    /// not every device has a given codec's HW encoder available — see ADR-0001).
+    ///
+    /// [`VideoInputPreference::CpuUploadOk`]: crate::VideoInputPreference::CpuUploadOk
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    pub fn open(config: &VideoEncoderConfig) -> Result<Self, EncodeError> {
+        let inner = videotoolbox::VideoToolboxVideoEncoder::open(config)?;
+        Ok(Self { inner: Some(inner) })
+    }
+
+    /// Host / non-Apple build: encoder unavailable.
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+    pub const fn open(_config: &VideoEncoderConfig) -> Result<Self, EncodeError> {
+        Err(EncodeError::Unsupported)
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+impl VideoEncoder for AppleVideoEncoder {
+    fn stream_info(&self) -> &StreamInfo {
+        #[allow(
+            clippy::option_if_let_else,
+            reason = "map_or_else forces 'static vs 'self lifetime clash"
+        )]
+        if let Some(e) = self.inner.as_ref() {
+            e.stream_info()
+        } else {
+            closed_stream_info()
+        }
+    }
+
+    fn push_frame(&mut self, frame: &VideoFrame) -> Result<(), EncodeError> {
+        self.inner
+            .as_mut()
+            .ok_or(EncodeError::Closed)?
+            .push_frame(frame)
+    }
+
+    fn poll_packet(&mut self) -> Result<Option<Packet>, EncodeError> {
+        self.inner
+            .as_mut()
+            .ok_or(EncodeError::Closed)?
+            .poll_packet()
+    }
+
+    fn flush(&mut self) -> Result<(), EncodeError> {
+        self.inner.as_mut().ok_or(EncodeError::Closed)?.flush()
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+impl VideoEncoder for AppleVideoEncoder {
+    fn stream_info(&self) -> &StreamInfo {
+        closed_stream_info()
+    }
+
+    fn push_frame(&mut self, _frame: &VideoFrame) -> Result<(), EncodeError> {
+        Err(EncodeError::Unsupported)
+    }
+
+    fn poll_packet(&mut self) -> Result<Option<Packet>, EncodeError> {
+        Ok(None)
+    }
+
+    fn flush(&mut self) -> Result<(), EncodeError> {
+        Err(EncodeError::Unsupported)
+    }
+}
+
+fn closed_stream_info() -> &'static StreamInfo {
+    use std::sync::OnceLock;
+    static INFO: OnceLock<StreamInfo> = OnceLock::new();
+    INFO.get_or_init(|| StreamInfo::Video {
+        id: 0,
+        codec: mediaway_common::CodecKind::H264,
+        time_base: mediaway_common::Rational::new(1, 30),
+        geometry: mediaway_common::VideoGeometry {
+            width: 0,
+            height: 0,
+        },
+        extra_data: Bytes::new(),
+    })
+}
+
+#[cfg(all(test, any(target_os = "macos", target_os = "ios")))]
+#[path = "lib_tests.rs"]
+mod tests;

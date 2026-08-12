@@ -10,7 +10,7 @@ mod frame;
 mod gpu;
 
 pub use bytes::Bytes;
-pub use formats::{PixelFormat, SampleFormat};
+pub use formats::{ColorRange, PixelFormat, SampleFormat};
 pub use frame::{AudioFrame, VideoFrame, VideoFrameStorage};
 pub use gpu::{GpuBufferHandle, GpuDeviceHandle, NativeHandle};
 

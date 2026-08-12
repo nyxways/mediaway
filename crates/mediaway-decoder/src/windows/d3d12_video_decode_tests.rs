@@ -176,6 +176,7 @@ fn h264_decode_idr_and_p_frame_or_skip() {
         time_base: Rational::new(1, 30),
         bitrate_bps: 500_000,
         pixel_format: PixelFormat::Nv12,
+        color_range: mediaway_common::ColorRange::Video,
         input: VideoInputPreference::CpuUploadOk,
         gpu_device: None,
         gop_size: 1,

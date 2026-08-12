@@ -103,6 +103,32 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
       (`WindowsAudioDecoder`-style backend switcher) exists yet — same follow-up gap as video's
       D3D12 decode integration.
 - [ ] **Pure Rust SW Codec Extensions**: Add CABAC, P-slice, and B-slice decoding to `mediaway-sw` H.264 decoder (currently Baseline CAVLC I-slice only).
+- [ ] **Android Encoder (first Android backend, first "Other" platform)**: `mediaway-encoder::android`
+      (NDK `AMediaCodec` via the `ndk` crate, H.264 CPU-upload only) implemented per
+      `mediaway-encoder/adr/android/0001-ndk-amediacodec-h264-cpu-upload.md` — **zero compile
+      verification as authored** (this dev environment has no Android NDK, a strictly weaker
+      starting point than Linux got via WSL2); a new `android` CI job
+      (`nttld/setup-ndk` + `cargo-ndk`, `arm64-v8a`, API 21, compile+clippy only) is the first
+      real gate before hardware verification is even attempted.
+- [x] **Apple Encoder (last "Other" platform)**: `mediaway-encoder::apple` (`VTCompressionSession`
+      via the `objc2-video-toolbox`/`objc2-core-video`/`objc2-core-media`/`objc2-core-foundation`
+      crates, H.264 CPU-upload only) implemented per
+      `mediaway-encoder/adr/apple/0001-videotoolbox-h264-cpu-upload.md` (**Accepted**), grounded
+      in a locally cloned `objc2` checkout (`local/vendor-ref/objc2/`) rather than web-fetched
+      API summaries — caught a real would-be bug (`CreateWithBytes` vs. `CreateWithPlanarBytes`
+      for NV12) before any code was written. **Zero compile verification as authored** — this
+      dev environment cannot even cross-compile Apple code (no legal path outside macOS/Xcode),
+      a harder gap than Android's NDK-only one; `apple-macos`/`apple-ios` CI jobs
+      (`.github/workflows/ci.yml`) are the first real gate. Per-packet `is_keyframe` is a
+      documented approximation (real `CFArray`/`CFDictionary` sync-attachment reading deferred).
+- [x] **`VideoEncoderConfig::color_range` (`ColorRange::Video`/`Full`)**: new shared field
+      (`mediaway-common`), threaded through every backend's `VideoEncoderConfig`/
+      `AutoVideoEncodeConfig` construction site (~25 call sites across the workspace). Only the
+      Apple `VideoToolbox` backend honors it today (`kCVPixelFormatType_420YpCbCr8BiPlanar{Video,
+      Full}Range`); Windows/Linux/Android accept the field but don't yet branch on it, same
+      capability-gated-fallback convention as `gop_size`. Also fixed a real bug found in the
+      same pass: the Android backend's `i-frame-interval` was hardcoded to `0` instead of being
+      computed from `VideoEncoderConfig::gop_size`.
 
 ### 3. Media Containers, Protocols & Image Formats
 - [ ] **Static Image Containers & Codecs**: Expand facade traits and container cores to support image formats (**AVIF**, **HEIC**, **WebP**, **PNG**, **JPEG**, **GIF**).

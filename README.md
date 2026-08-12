@@ -238,16 +238,17 @@ Node.js (C ABI FFI) and the Browser (WASM + WebCodecs) are two distinct JS/TS en
 
 | Mark | Meaning                                                                       |
 | ---- | ----------------------------------------------------------------------------- |
-| ✅    | First-class (tests for claimed scope)                                         |
-| ⚡    | Zero-Copy path — **no payload `memcpy`** (GPU handle **or** shared CPU buffer; implies ✅) |
-| 🆗   | Best-effort / prototype                                                       |
+| ✅    | **Hardware / real-session-verified** — real hardware or a real live session was actually exercised (not just "tests for the claimed scope" — implementation + unit tests alone are 🆗, not ✅) |
+| ⚡    | Zero-Copy path — **no payload `memcpy`** (GPU handle **or** shared CPU buffer); implies ✅ — still needs real hardware verification, not just that the Zero-Copy code path exists |
+| 🆗   | Implemented, compiles — **not (yet) verified** against real hardware / a real session |
 | 🛠️  | Planned                                                                       |
 | ❌   | Attempted and genuinely blocked — no upstream API to build on, a hard version/license conflict, or a real query returned "unsupported." Not a "ran out of time" 🛠️. |
 | 👻   | Not exercisable yet — **license/patent blocked**, no target hardware, out of scope, or no device/daemon/session available to run otherwise-tested code against |
 
 
 Cell = **encode/decode**. One mark means both; `A/B` means encode / decode.  
-For now only **Windows · Web · Linux** are planned; Apple / Android (and Metal / Apple / Qualcomm) are 👻.
+Platform build-out order is **Windows → Web → Linux → other**; Apple/Android/Metal/Qualcomm cells
+are 👻 except where a specific backend has actually landed (see each table's own notes).
 
 **Zero-Copy honesty:** ⚡ means no payload copy — a GPU handle **or** a shared CPU buffer, not "GPU only." Allocating a new `Vec` and copying into it is 🆗, not ⚡.
 
@@ -256,15 +257,20 @@ For now only **Windows · Web · Linux** are planned; Apple / Android (and Metal
 OS codec APIs (WMF, WebCodecs, VA-API, …) fed with CPU buffers (upload may apply); ⚡ here means a shared/borrowed buffer, not software encode.
 
 
-| Codec        | Windows  | Web      | Linux | Apple | Android |
-| ------------ | -------- | -------- | ----- | ----- | ------- |
-| H.264 / AVC  | 🆗 / 🆗  | 🆗 / 🆗 | 👻   | 👻    | 👻      |
-| HEVC / H.265 | 🆗 / 🆗 | ❌ / 🆗 | 🛠️   | 👻    | 👻      |
-| AV1          | 🛠️ / 🛠️ | 🆗      | 🛠️   | 👻    | 👻      |
-| VP9          | 🆗 / 🆗 | 🆗      | 🛠️   | 👻    | 👻      |
+| Codec        | Windows  | Web      | Linux   | Apple   | Android |
+| ------------ | -------- | -------- | ------- | ------- | ------- |
+| H.264 / AVC  | ✅ / ✅  | ✅ / ✅ | 🆗 / 🆗 | 🆗 / 👻 | 🆗 / 👻 |
+| HEVC / H.265 | ✅ / ✅ | ❌ / ✅ | 🛠️   | 👻    | 👻      |
+| AV1          | 🛠️ / 🛠️ | ✅      | 🛠️   | 👻    | 👻      |
+| VP9          | ✅ / ✅ | ✅      | 🛠️   | 👻    | 👻      |
 | ProRes       | 👻       | 👻       | 👻    | 👻    | 👻      |
 | AAC          | 🆗       | 🆗       | 🛠️   | 👻    | 👻      |
-| Opus         | 🆗 / 🆗 | 🛠️      | 🛠️   | 👻    | 👻      |
+| Opus         | ✅ / ✅ | 🛠️      | 🛠️   | 👻    | 👻      |
+
+> Linux H.264 (`cros-libva` VA-API), Apple H.264 encode (`VideoToolbox`), and Android H.264
+> encode (NDK `AMediaCodec`) are all implemented and compile-checked but **zero real-hardware
+> verification** — see `mediaway-{encoder,decoder}::linux`'s own ADRs and
+> `mediaway-encoder::{apple,android}`'s ADRs. Apple/Android have no decoder yet (👻).
 
 > Windows Opus: **encode** runs through `mediaway-sw` (no inbox encoder MFT exists —
 > verified via `MFTEnumEx`), wired into `WindowsAudioEncoder`; **decode** uses the inbox
@@ -282,7 +288,7 @@ Same OS APIs with GPU surfaces (`GpuBufferHandle`, DXGI, …). Video only — au
 
 | Codec        | Windows | Web | Linux | Apple | Android |
 | ------------ | ------- | --- | ----- | ----- | ------- |
-| H.264 / AVC  | ⚡ / 🆗  | 🆗 | 🛠️   | 👻    | 👻      |
+| H.264 / AVC  | 🆗 / 🆗  | ✅ | 🛠️   | 👻    | 👻      |
 | HEVC / H.265 | 🆗 / 🆗  | 🛠️ | 🛠️   | 👻    | 👻      |
 | AV1          | 🆗 / 🆗  | 🛠️ | 🛠️   | 👻    | 👻      |
 | VP9          | 🆗 / 🆗  | 🛠️ | 🛠️   | 👻    | 👻      |
@@ -300,8 +306,8 @@ Adapters: [`mediaway`](crates/mediaway/README.md) `wgpu` module 🆗 (DX12 ↔ W
 
 | Codec        | D3D11  | D3D12 | Vulkan | Metal |
 | ------------ | ------ | ----- | ------ | ----- |
-| H.264 / AVC  | ⚡ / 🆗 | 🆗 / 🛠️ | 🆗 / 🆗 | 👻    |
-| HEVC / H.265 | 🆗 / 🆗 | 🆗 / 🛠️ | 🆗 / 🆗 | 👻    |
+| H.264 / AVC  | 🆗 / 🆗 | ✅ / 🛠️ | ✅ / ✅ | 👻    |
+| HEVC / H.265 | 🆗 / 🆗 | ✅ / 🛠️ | ✅ / ✅ | 👻    |
 | AV1          | 🆗 / 🆗 | 🛠️    | ❌ / 🛠️ | 👻    |
 | VP9          | 🆗 / 🆗 | 👻    | 👻     | 👻    |
 
@@ -318,9 +324,9 @@ Detail: [`mediaway`](crates/mediaway/README.md) `wgpu` module · `mediaway-encod
 
 | Codec        | NVIDIA | AMD | Intel | Apple | Qualcomm |
 | ------------ | ------ | --- | ----- | ----- | -------- |
-| H.264 / AVC  | 🆗     | 🛠️ | 🆗   | 👻    | 👻       |
-| HEVC / H.265 | 🆗    | 🛠️ | 🆗   | 👻    | 👻       |
-| AV1          | 🆗    | 🛠️ | ❌   | 👻    | 👻       |
+| H.264 / AVC  | ✅     | 🛠️ | ✅   | 👻    | 👻       |
+| HEVC / H.265 | ✅    | 🛠️ | ✅   | 👻    | 👻       |
+| AV1          | ✅    | 🛠️ | ❌   | 👻    | 👻       |
 | VP9          | 👻     | 👻  | 👻    | 👻    | 👻       |
 
 
@@ -336,8 +342,17 @@ Detail: [`mediaway`](crates/mediaway/README.md) `wgpu` module · `mediaway-encod
 | [AV1](crates/mediaway-sw/README.md)               | 🆗     |
 | VP9                                                | 👻     |
 | AAC                                                | 👻     |
-| [Opus](crates/mediaway-sw/README.md)         | 🆗     |
+| [Opus](crates/mediaway-sw/README.md)         | ✅     |
 | [PCM / raw](crates/mediaway-sw/README.md)         | 🆗     |
+
+> CPU/SW has no "hardware" to verify against — ✅ here means tested end-to-end against
+> real/independent signal (round-trip cross-checked by another verified codec implementation
+> or a real encoded file), not just a unit test of the bitstream logic. Opus is ✅: SW-encoded
+> output was decoded correctly by the hardware-verified WMF Opus decoder, and SW decode passes
+> its own quantitative (RMS-energy) round-trip test. H.264 stays 🆗: real decode exists but was
+> only ever run against one hand-crafted synthetic vector (no CABAC / P·B-slice / deblocking
+> yet — no real-world file is decodable today). AV1 stays 🆗: `rav1e`'s own ADR states pixel-level
+> output correctness is explicitly unverified (no in-workspace AV1 decoder to check against).
 
 <!-- ANCHOR_END: codec-support -->
 
@@ -349,14 +364,22 @@ Freestanding mux/demux cores plus the `mediaway-container` facade (wraps all eig
 
 | Format                                          | Mux | Demux |
 | ------------------------------------------------ | --- | ----- |
-| [MP4 / fMP4](crates/iso-bmff/README.md)           | 🆗  | 🆗    |
-| [WebM](crates/ebml-webm/README.md)                | 🆗  | 🆗    |
+| [MP4 / fMP4](crates/iso-bmff/README.md)           | ✅  | ✅    |
+| [WebM](crates/ebml-webm/README.md)                | ✅  | ✅    |
 | [WAV / RIFF (PCM)](crates/riff-wave-core/README.md)    | 🆗  | 🆗    |
-| [ADTS (raw AAC)](crates/adts-core/README.md)           | 🆗  | 🆗    |
-| [MP3 (MPEG Layer III)](crates/mpeg-audio/README.md) | 🆗  | 🆗    |
+| [ADTS (raw AAC)](crates/adts-core/README.md)           | ✅  | ✅    |
+| [MP3 (MPEG Layer III)](crates/mpeg-audio/README.md) | 🆗  | ✅    |
 | [Ogg](crates/ogg-core/README.md)                       | 🆗  | 🆗    |
-| [FLV](crates/flv-core/README.md)                       | 🆗  | 🆗    |
-| [MPEG-TS](crates/mpeg-ts-core/README.md)               | 🆗  | 🆗    |
+| [FLV](crates/flv-core/README.md)                       | ✅  | ✅    |
+| [MPEG-TS](crates/mpeg-ts-core/README.md)               | 🆗  | ✅    |
+
+> ✅ here means round-tripped/cross-checked against a real, independent `ffprobe` oracle
+> (FATE-style corpus, `nb_read_packets` comparison) with no documented gap in that comparison.
+> WAV's oracle only compares `channels`/`sample_rate` (not packetized) and Ogg's stays a
+> `must_not_panic` check for most samples (ffprobe's frame count excludes header packets) —
+> both real gaps in the comparison rigor, not just unverified code, so both stay 🆗. MP3 mux and
+> MPEG-TS mux aren't wired to the shared `Mux` trait and have no independent oracle check of
+> their own output (self round-trip tests only) — their demux sides do and are ✅.
 
 <!-- ANCHOR_END: container-support -->
 
@@ -369,10 +392,22 @@ What `mediaway-device` backends target (camera, mic, **screen**, **window**). Sa
 
 | Source           | [Windows](crates/mediaway-device/README.md) | [Web](crates/mediaway-device/README.md) | [Linux](crates/mediaway-device/README.md) | Apple | Android |
 | ---------------- | ------- | --- | ----- | ----- | ------- |
-| Camera (video)   | 🆗      | 🆗  | 👻   | 👻    | 👻      |
-| Microphone       | 🆗      | 🆗  | 👻   | 👻    | 👻      |
-| Screen / display | ⚡       | 🆗  | 👻   | 👻    | 👻      |
-| Window           | 🆗      | 🆗  | 👻   | 👻    | 👻      |
+| Camera (video)   | ✅      | 🆗  | 🆗   | 🆗    | 🆗      |
+| Microphone       | ✅      | 🆗  | 🆗   | 🆗    | 🆗      |
+| Screen / display | ✅       | 🆗  | 🆗   | 🆗    | 🆗      |
+| Window           | 🆗      | 🆗  | 🆗   | 👻    | 👻      |
+
+> Linux (V4L2 camera, PipeWire mic, portal+PipeWire screen/window) and the new Apple
+> (`AVCaptureSession`/`AVAudioEngine`/`ScreenCaptureKit`/`ReplayKit`) and Android (Camera2
+> NDK/AAudio/`MediaProjection`) backends are all implemented and compile-checked but **zero
+> real-hardware verification** — see each platform's own crate ADRs. Apple/Android have no
+> window-capture backend (👻).
+
+> Windows Screen was ⚡ (Zero-Copy) until `mediaway-device` ADR-0006's shared/refcounted
+> session redesign: every `open()` (including the lone-consumer case) now pays one real
+> per-frame `CopyResource`, so it is honestly ✅ (hardware-verified: two concurrent sessions
+> receive independent frames; a GPU-factory-created device drives a real capture session end
+> to end) rather than Zero-Copy today.
 
 <!-- ANCHOR_END: device-capture -->
 

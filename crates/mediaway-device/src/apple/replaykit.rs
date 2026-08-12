@@ -393,7 +393,11 @@ impl DesktopVideoCapture for AppleScreenCapture {
             reason = "map_or_else forces 'static vs 'self lifetime clash"
         )]
         if let Some(session) = self.inner.as_ref() {
-            session.infos.video.get().unwrap_or_else(unknown_video_info)
+            session
+                .infos
+                .video
+                .get()
+                .unwrap_or_else(|| unknown_video_info())
         } else {
             unknown_video_info()
         }
@@ -437,7 +441,7 @@ impl DesktopAudioCapture for AppleScreenCapture {
                 .infos
                 .app_audio
                 .get()
-                .unwrap_or_else(unknown_audio_info)
+                .unwrap_or_else(|| unknown_audio_info())
         } else {
             unknown_audio_info()
         }
@@ -474,7 +478,7 @@ impl AudioCapture for AppleScreenCapture {
                 .infos
                 .mic_audio
                 .get()
-                .unwrap_or_else(unknown_audio_info)
+                .unwrap_or_else(|| unknown_audio_info())
         } else {
             unknown_audio_info()
         }
@@ -642,7 +646,11 @@ impl DesktopVideoCapture for AppleBroadcastExtensionCapture {
             reason = "map_or_else forces 'static vs 'self lifetime clash"
         )]
         if let Some(session) = self.inner.as_ref() {
-            session.infos.video.get().unwrap_or_else(unknown_video_info)
+            session
+                .infos
+                .video
+                .get()
+                .unwrap_or_else(|| unknown_video_info())
         } else {
             unknown_video_info()
         }
@@ -685,7 +693,7 @@ impl DesktopAudioCapture for AppleBroadcastExtensionCapture {
                 .infos
                 .app_audio
                 .get()
-                .unwrap_or_else(unknown_audio_info)
+                .unwrap_or_else(|| unknown_audio_info())
         } else {
             unknown_audio_info()
         }
@@ -721,7 +729,7 @@ impl AudioCapture for AppleBroadcastExtensionCapture {
                 .infos
                 .mic_audio
                 .get()
-                .unwrap_or_else(unknown_audio_info)
+                .unwrap_or_else(|| unknown_audio_info())
         } else {
             unknown_audio_info()
         }

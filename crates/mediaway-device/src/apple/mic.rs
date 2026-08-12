@@ -129,8 +129,11 @@ impl AppleMicrophoneCapture {
                     if channel_ptrs.is_null() {
                         return;
                     }
+                    // SAFETY: `channel_ptrs` points to `channels_usize` valid, non-null `f32`
+                    // pointers (checked above), each valid for `frame_length` elements — same
+                    // `AVAudioPCMBuffer` contract as the `floatChannelData` call above.
                     let interleaved =
-                        interleave_pcm_f32(channel_ptrs, channels_usize, frame_length);
+                        unsafe { interleave_pcm_f32(channel_ptrs, channels_usize, frame_length) };
                     let pts = next_pts
                         .fetch_add(i64::try_from(frame_length).unwrap_or(0), Ordering::Relaxed);
                     push_frame(

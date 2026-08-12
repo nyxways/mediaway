@@ -11,14 +11,17 @@
 use mediaway_common::Bytes;
 use objc2_core_media::CMSampleBuffer;
 use objc2_core_video::{
-    CVPixelBuffer, CVPixelBufferGetBaseAddressOfPlane, CVPixelBufferGetBytesPerRowOfPlane,
+    CVPixelBufferGetBaseAddressOfPlane, CVPixelBufferGetBytesPerRowOfPlane,
     CVPixelBufferGetHeightOfPlane, CVPixelBufferGetPlaneCount, CVPixelBufferGetWidthOfPlane,
     CVPixelBufferLockBaseAddress, CVPixelBufferLockFlags, CVPixelBufferUnlockBaseAddress,
 };
 
 /// Extract one owned NV12-shaped (bi-planar 4:2:0) frame from `sample_buffer`'s image buffer.
-/// Returns `None` if the buffer has no image, does not downcast to `CVPixelBuffer`, or is not
-/// bi-planar (never silently mis-reads a layout it didn't verify).
+/// Returns `None` if the buffer has no image or is not bi-planar (never silently mis-reads a
+/// layout it didn't verify) — `CVPixelBuffer`/`CVImageBuffer`/`CVBuffer` are all the same Rust
+/// type in this `objc2-core-video` version (chained `pub type` aliases down to `CVBuffer`, no
+/// distinct `ConcreteType` to downcast to), so bi-planar-ness is checked at runtime
+/// (`plane_count == 2`) below instead of via a type-level downcast.
 ///
 /// # Safety
 ///
@@ -27,8 +30,7 @@ use objc2_core_video::{
 /// synchronous sample-buffer delivery callback).
 pub(super) unsafe fn extract_nv12(sample_buffer: &CMSampleBuffer) -> Option<(Bytes, u32, u32)> {
     // SAFETY: caller's contract (this fn's own `# Safety`).
-    let image_buffer = unsafe { sample_buffer.image_buffer() }?;
-    let pixel_buffer = image_buffer.downcast::<CVPixelBuffer>().ok()?;
+    let pixel_buffer = unsafe { sample_buffer.image_buffer() }?;
 
     // SAFETY: `pixel_buffer` is a valid, retained `CVPixelBuffer`.
     let status =

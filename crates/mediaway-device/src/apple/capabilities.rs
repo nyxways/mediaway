@@ -23,6 +23,12 @@ use objc2_av_foundation::{
 /// docs on [`super::replaykit`]). [`DeviceKind::Window`]/[`DeviceKind::Loopback`]/
 /// [`DeviceKind::ProcessLoopback`] have no Apple backend this session.
 #[must_use]
+#[allow(
+    clippy::missing_const_for_fn,
+    reason = "const-eligible on macOS (screen_support is a literal) but not on iOS, where \
+              screen_support makes a real RPScreenRecorder FFI call — can't be const on one \
+              platform and not the other from a single fn body"
+)]
 pub fn support(kind: DeviceKind) -> Support {
     match kind {
         DeviceKind::Camera | DeviceKind::Microphone => Support::Supported,

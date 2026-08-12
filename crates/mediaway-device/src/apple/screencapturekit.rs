@@ -328,17 +328,29 @@ fn take_sender<T>(state: &Mutex<Option<SyncSender<T>>>) -> Option<SyncSender<T>>
     state.lock().ok().and_then(|mut guard| guard.take())
 }
 
+/// Carries a `Retained::into_raw` pointer across the `sync_channel` in
+/// [`fetch_shareable_content`]. Plain `*mut T` is `!Send` (Rust never auto-derives `Send` for raw
+/// pointers, unlike references) even though this specific value is safe to hand to another
+/// thread: it is a `+1`-retained, uniquely-owned handle that no other thread touches until
+/// [`Retained::from_raw`] reconstitutes it — Apple's retain/release calls themselves are safe
+/// from any thread, so only the Rust-level `Send` bound needed asserting.
+struct SendRetainedPtr<T>(*mut T);
+
+// SAFETY: see the struct's own doc comment — the pointer is a uniquely-owned, `+1`-retained
+// handle at the point it is sent, never concurrently accessed from two threads.
+unsafe impl<T> Send for SendRetainedPtr<T> {}
+
 /// Bridges `SCShareableContent::getShareableContentWithCompletionHandler` (a real, confirmed
 /// async completion-handler call — see module docs) to a synchronous return.
 ///
 /// The completion handler may run on any thread the OS chooses, so the retained result crosses
 /// threads via this function's `sync_channel`. `Retained<SCShareableContent>` is not `Send`
-/// (`SCShareableContent`'s thread-safety is undocumented), so the channel carries a raw `+1`
-/// pointer (`Retained::into_raw`/`Retained::from_raw` — a plain pointer value, genuinely `Send`)
-/// instead of the `Retained` itself; only the actual retain/release calls (safe on any thread per
-/// Apple's memory-management contract) happen on either side of the crossing.
+/// (`SCShareableContent`'s thread-safety is undocumented), so the channel carries a
+/// [`SendRetainedPtr`]-wrapped `+1` pointer instead of the `Retained` itself; only the actual
+/// retain/release calls (safe on any thread per Apple's memory-management contract) happen on
+/// either side of the crossing.
 fn fetch_shareable_content() -> Result<Retained<SCShareableContent>, CaptureError> {
-    let (tx, rx) = sync_channel::<Result<*mut SCShareableContent, CaptureError>>(1);
+    let (tx, rx) = sync_channel::<Result<SendRetainedPtr<SCShareableContent>, CaptureError>>(1);
     let tx = Arc::new(Mutex::new(Some(tx)));
     // `RcBlock<F>` takes exactly one generic parameter — the `dyn Fn(...)` block signature itself
     // — not a separate lifetime/fn-pointer/marker-trait triple.
@@ -352,7 +364,7 @@ fn fetch_shareable_content() -> Result<Retained<SCShareableContent>, CaptureErro
                 // callback returns; `into_raw` hands that +1 ownership across the channel as a
                 // plain pointer value.
                 unsafe { Retained::retain(content) }
-                    .map(Retained::into_raw)
+                    .map(|r| SendRetainedPtr(Retained::into_raw(r)))
                     .ok_or(CaptureError::Backend)
             };
             if let Some(tx) = take_sender(&tx) {
@@ -365,9 +377,9 @@ fn fetch_shareable_content() -> Result<Retained<SCShareableContent>, CaptureErro
     let ptr = rx
         .recv_timeout(COMPLETION_TIMEOUT)
         .map_err(|_| CaptureError::Backend)??;
-    // SAFETY: `ptr` is exactly the `Retained::into_raw` pointer produced above, carrying the same
-    // +1 retain count `from_raw` expects.
-    unsafe { Retained::from_raw(ptr) }.ok_or(CaptureError::Backend)
+    // SAFETY: `ptr.0` is exactly the `Retained::into_raw` pointer produced above, carrying the
+    // same +1 retain count `from_raw` expects.
+    unsafe { Retained::from_raw(ptr.0) }.ok_or(CaptureError::Backend)
 }
 
 fn start_capture(stream: &SCStream) -> Result<(), CaptureError> {

@@ -32,6 +32,18 @@
   NDK before it is trusted; not wired into any cross-platform capture-selection API yet. See
   `crates/mediaway-device/adr/android/0001-camera2-ndk-native-camera-capture.md`,
   `0002-aaudio-microphone-capture.md`, `0003-mediaprojection-jni-screen-capture.md`.
+- `mediaway-device::apple`: first Apple device-capture backend — camera (`AVCaptureSession` +
+  an `objc2` `define_class!` delegate), microphone (`AVAudioEngine` input tap), macOS screen
+  (`ScreenCaptureKit`), and iOS screen (`ReplayKit` in-app capture, plus a push-in/pull-out
+  `AppleBroadcastExtensionCapture` sink for a host project's own Broadcast Upload Extension
+  target — this crate cannot build that `.appex` target itself; see the host-extension contract
+  in `crates/mediaway-device/adr/apple/0004-replaykit-ios-inapp-screen-capture.md`). Zero
+  compile verification as authored (no macOS/Xcode in the dev environment) — the
+  `apple-macos`/`apple-ios` CI jobs now also lint `mediaway-device`; not wired into any
+  cross-platform capture-selection API yet. See
+  `crates/mediaway-device/adr/apple/0001-avfoundation-camera-capture.md`,
+  `0002-avaudioengine-microphone-capture.md`, `0003-screencapturekit-macos-screen-capture.md`,
+  `0004-replaykit-ios-inapp-screen-capture.md`.
 
 ### Changed
 

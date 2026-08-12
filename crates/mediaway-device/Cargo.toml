@@ -91,6 +91,96 @@ ndk-sys = "0.6"
 jni = "0.22"
 
 
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+# Objective-C runtime core — `define_class!`/`msg_send!`/`Retained`/`ProtocolObject` for the
+# camera/screen-capture delegate classes. See adr/apple/0001 § "materially different kind of
+# Apple API than the encoder's VideoToolbox" (real Cocoa classes + delegate protocols, unlike
+# mediaway-encoder::apple's plain-C VideoToolbox calls).
+objc2 = { version = "0.6" }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "NSArray",
+    "NSDictionary",
+    "NSError",
+    "NSObject",
+    "NSString",
+    "NSValue",
+] }
+block2 = { version = "0.6" }
+dispatch2 = { version = "0.3" }
+objc2-core-foundation = { version = "0.3", default-features = false, features = [
+    "CFString",
+    "CFDictionary",
+    "CFArray",
+    "CFNumber",
+] }
+objc2-core-media = { version = "0.3", default-features = false, features = [
+    "CMBase",
+    "CMFormatDescription",
+    "CMSampleBuffer",
+    "CMTime",
+    "CMTimeRange",
+    "CMBlockBuffer",
+] }
+objc2-core-video = { version = "0.3", default-features = false, features = [
+    "CVBuffer",
+    "CVImageBuffer",
+    "CVPixelBuffer",
+    "CVReturn",
+] }
+objc2-core-audio-types = { version = "0.3", default-features = false, features = [
+    "CoreAudioBaseTypes",
+] }
+objc2-av-foundation = { version = "0.3", default-features = false, features = [
+    "AVCaptureDevice",
+    "AVCaptureInput",
+    "AVCaptureOutput",
+    "AVCaptureOutputBase",
+    "AVCaptureSession",
+    "AVCaptureVideoDataOutput",
+    "AVMediaFormat",
+    "block2",
+    "objc2-core-media",
+] }
+objc2-avf-audio = { version = "0.3", default-features = false, features = [
+    "AVAudioBuffer",
+    "AVAudioEngine",
+    "AVAudioFormat",
+    "AVAudioNode",
+    "AVAudioTime",
+    "AVAudioTypes",
+    "block2",
+] }
+
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# ScreenCaptureKit (macOS 12.3+, see adr/apple/0003) — macOS-only, unlike the `any(macos, ios)`
+# dependencies above.
+objc2-screen-capture-kit = { version = "0.3", default-features = false, features = [
+    "SCStream",
+    "SCShareableContent",
+    "block2",
+    "objc2-core-media",
+    "dispatch2",
+] }
+# `CGPreflightScreenCaptureAccess`/`CGRequestScreenCaptureAccess` (adr/apple/0003 § permission
+# model) — plain, safe C functions.
+objc2-core-graphics = { version = "0.3", default-features = false, features = [
+    "CGWindow",
+] }
+
+
+[target.'cfg(target_os = "ios")'.dependencies]
+# ReplayKit (adr/apple/0004) — iOS-only in this crate even though the crate itself also
+# compiles on macOS (macOS keeps ScreenCaptureKit instead, see adr/apple/0003 § dependency
+# review).
+objc2-replay-kit = { version = "0.3", default-features = false, features = [
+    "RPScreenRecorder",
+    "RPBroadcastExtension",
+    "block2",
+    "objc2-core-media",
+] }
+
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = { workspace = true }
 js-sys = { workspace = true }

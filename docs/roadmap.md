@@ -142,6 +142,21 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
       capability-gated-fallback convention as `gop_size`. Also fixed a real bug found in the
       same pass: the Android backend's `i-frame-interval` was hardcoded to `0` instead of being
       computed from `VideoEncoderConfig::gop_size`.
+- [x] **Apple Device capture (camera + mic + screen, one vertical slice)**:
+      `mediaway-device::apple` — `AVCaptureSession` + a `define_class!` delegate for camera (this
+      workspace's first Objective-C delegate-class pattern, unlike Android's C-callback or the
+      encoder's C-function-pointer designs), `AVAudioEngine` input tap for mic (found a real
+      planar-vs-interleaved PCM mismatch before any code was written), `ScreenCaptureKit` for
+      macOS screen (this crate's first genuinely-async `open()`, bridging two real
+      completion-handler calls), and `ReplayKit` for iOS screen — both an in-app
+      `AppleScreenCapture` (video + app audio + mic audio) and a push-in/pull-out
+      `AppleBroadcastExtensionCapture` sink for a host project's own Broadcast Upload Extension
+      `.appex` target (this crate cannot build that target itself; the host-extension contract
+      is documented in `mediaway-device/adr/apple/0004`, mirroring how Android's `MediaProjection`
+      ADR documented its own host-`Activity` contract). **Zero compile verification as
+      authored** (no macOS/Xcode in this dev environment); `apple-macos`/`apple-ios` CI jobs
+      extended with a `mediaway-device` lint step in the same PR. All 4 ADRs
+      (`mediaway-device/adr/apple/0001-0004`) Accepted.
 
 ### 3. Media Containers, Protocols & Image Formats
 - [ ] **Static Image Containers & Codecs**: Expand facade traits and container cores to support image formats (**AVIF**, **HEIC**, **WebP**, **PNG**, **JPEG**, **GIF**).

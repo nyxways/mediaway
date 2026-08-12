@@ -68,7 +68,18 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 
 ### 4 — Other
 
-- [ ] `mediaway-device-apple` as scheduled
+- [x] `mediaway-device::apple` (camera/mic/screen) implemented per 4 **Accepted** ADRs
+      ([0001](../adr/apple/0001-avfoundation-camera-capture.md) camera (`AVCaptureSession` +
+      `objc2`) · [0002](../adr/apple/0002-avaudioengine-microphone-capture.md) mic
+      (`AVAudioEngine` tap) · [0003](../adr/apple/0003-screencapturekit-macos-screen-capture.md)
+      macOS screen (`ScreenCaptureKit`) ·
+      [0004](../adr/apple/0004-replaykit-ios-inapp-screen-capture.md) iOS screen (`ReplayKit`
+      in-app `AppleScreenCapture` **and** a Broadcast Upload Extension push-sink,
+      `AppleBroadcastExtensionCapture`)) — grounded in the locally cloned
+      `local/vendor-ref/objc2/`, no macOS/Xcode in this dev environment so **zero compile
+      verification as authored**. Reuses `mediaway-encoder::apple`'s existing
+      `apple-macos`/`apple-ios` CI jobs, extended with a `mediaway-device` lint step in the same
+      PR. See [wiki: apple-capture](../../../docs/ai/wiki/device/apple-capture.md).
 - [x] Android (`mediaway-device::android`): camera (Camera2 NDK) + mic (AAudio) + screen
       (`MediaProjection` + JNI) implemented per 3 **Accepted** ADRs
       ([0001](../adr/android/0001-camera2-ndk-native-camera-capture.md) camera ·

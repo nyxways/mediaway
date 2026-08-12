@@ -294,18 +294,20 @@ jobs:
           cargo ndk -t arm64-v8a -p 26 clippy -p mediaway-device --all-features --all-targets -- -D warnings
 
   apple-macos:
-    name: apple compile (macOS, mediaway-encoder)
+    name: apple compile (macOS, mediaway-encoder, mediaway-device)
     runs-on: macos-14
     needs: [affected]
     # Compile + lint only, same accepted shape as `wasm`/`android` above: this workspace's dev
     # environment cannot legally cross-compile Apple code at all outside macOS — see
-    # crates/mediaway-encoder/adr/apple/0001-videotoolbox-h264-cpu-upload.md
-    # § CI verification plan. `macos-14` is a pinned image (not `macos-latest`), same
-    # reproducibility philosophy as the `android` job's pinned NDK version.
+    # crates/mediaway-encoder/adr/apple/0001-videotoolbox-h264-cpu-upload.md and
+    # crates/mediaway-device/adr/apple/000{1,2,3}-*.md § CI verification plan. `macos-14` is a
+    # pinned image (not `macos-latest`), same reproducibility philosophy as the `android` job's
+    # pinned NDK version.
     if: >-
       ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/')) &&
           (needs.affected.outputs.set == 'ALL' ||
           contains(needs.affected.outputs.set, 'mediaway-encoder') ||
+          contains(needs.affected.outputs.set, 'mediaway-device') ||
           contains(needs.affected.outputs.set, 'mediaway-common')) }}
     steps:
       - uses: actions/checkout@v4
@@ -317,16 +319,24 @@ jobs:
         run: |
           cargo clippy -p mediaway-encoder --all-features --all-targets -- -D warnings
 
+      - name: Lint mediaway-device for macOS (native)
+        run: |
+          cargo clippy -p mediaway-device --all-features --all-targets -- -D warnings
+
   apple-ios:
-    name: apple compile (iOS cross-compile, mediaway-encoder)
+    name: apple compile (iOS cross-compile, mediaway-encoder, mediaway-device)
     runs-on: macos-14
     needs: [affected]
     # Compile-only, cross-compiled — no simulator boot, mirroring the `android` job's
-    # no-emulator scope discipline.
+    # no-emulator scope discipline. `mediaway-device`'s iOS-only `AppleBroadcastExtensionCapture`
+    # (adr/apple/0004) compiles here too — it's ordinary `#[cfg(target_os = "ios")]` Rust code,
+    # no extension-specific toolchain needed to compile, only to actually build/ship a real
+    # `.appex` target (which this crate cannot do — see that ADR's own CI verification plan).
     if: >-
       ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/')) &&
           (needs.affected.outputs.set == 'ALL' ||
           contains(needs.affected.outputs.set, 'mediaway-encoder') ||
+          contains(needs.affected.outputs.set, 'mediaway-device') ||
           contains(needs.affected.outputs.set, 'mediaway-common')) }}
     steps:
       - uses: actions/checkout@v4
@@ -340,6 +350,10 @@ jobs:
       - name: Lint mediaway-encoder for iOS (cross-compile)
         run: |
           cargo clippy --target aarch64-apple-ios -p mediaway-encoder --all-features --all-targets -- -D warnings
+
+      - name: Lint mediaway-device for iOS (cross-compile)
+        run: |
+          cargo clippy --target aarch64-apple-ios -p mediaway-device --all-features --all-targets -- -D warnings
 
   e2e-web:
     name: e2e-web (optional)

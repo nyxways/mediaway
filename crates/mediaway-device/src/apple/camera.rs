@@ -38,7 +38,7 @@ use mediaway_common::{
 };
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
-use objc2::{AnyThread, Ivars, define_class, msg_send};
+use objc2::{AnyThread, DefinedClass, define_class, msg_send};
 use objc2_av_foundation::{
     AVCaptureConnection, AVCaptureDevice, AVCaptureDeviceInput, AVCaptureOutput, AVCaptureSession,
     AVCaptureVideoDataOutput, AVCaptureVideoDataOutputSampleBufferDelegate, AVMediaTypeVideo,
@@ -57,14 +57,17 @@ struct FrameQueue {
 /// `FRAME_QUEUE_CAP`.
 const FRAME_QUEUE_CAP: usize = 4;
 
+struct CameraDelegateIvars {
+    queue: Arc<FrameQueue>,
+    next_pts: AtomicI64,
+}
+
 define_class!(
     #[unsafe(super(objc2_foundation::NSObject))]
     #[thread_kind = AnyThread]
     #[name = "MediawayCameraDelegate"]
-    struct CameraDelegate {
-        queue: Arc<FrameQueue>,
-        next_pts: AtomicI64,
-    }
+    #[ivars = CameraDelegateIvars]
+    struct CameraDelegate;
 
     unsafe impl NSObjectProtocol for CameraDelegate {}
 
@@ -79,8 +82,8 @@ define_class!(
             // SAFETY: `sample_buffer` is valid for the duration of this delegate callback —
             // Apple's documented contract for `captureOutput:didOutputSampleBuffer:fromConnection:`.
             if let Some(data) = unsafe { super::pixel::extract_nv12(sample_buffer) } {
-                let pts = self.next_pts().fetch_add(1, Ordering::Relaxed);
-                push_frame(self.queue().as_ref(), data, pts);
+                let pts = self.ivars().next_pts.fetch_add(1, Ordering::Relaxed);
+                push_frame(self.ivars().queue.as_ref(), data, pts);
             }
         }
     }
@@ -89,7 +92,7 @@ define_class!(
 impl CameraDelegate {
     fn new(queue: Arc<FrameQueue>) -> Retained<Self> {
         let this = Self::alloc();
-        let this = this.set_ivars(Ivars::<Self> {
+        let this = this.set_ivars(CameraDelegateIvars {
             queue,
             next_pts: AtomicI64::new(0),
         });

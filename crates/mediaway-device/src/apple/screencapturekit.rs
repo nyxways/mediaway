@@ -31,7 +31,7 @@ use mediaway_common::{
 };
 use objc2::rc::Retained;
 use objc2::runtime::{NSObjectProtocol, ProtocolObject};
-use objc2::{AnyThread, Ivars, define_class, msg_send};
+use objc2::{AnyThread, DefinedClass, define_class, msg_send};
 use objc2_core_media::CMSampleBuffer;
 use objc2_core_video::kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
 use objc2_foundation::{NSArray, NSError, NSObject};
@@ -56,13 +56,16 @@ struct FrameQueue {
 /// Bounded, drop-oldest delivered-frame queue depth — mirrors `apple::camera`/`android::camera`.
 const FRAME_QUEUE_CAP: usize = 4;
 
+struct StreamOutputIvars {
+    queue: Arc<FrameQueue>,
+}
+
 define_class!(
     #[unsafe(super(NSObject))]
     #[thread_kind = AnyThread]
     #[name = "MediawayScreenStreamOutput"]
-    struct StreamOutput {
-        queue: Arc<FrameQueue>,
-    }
+    #[ivars = StreamOutputIvars]
+    struct StreamOutput;
 
     unsafe impl NSObjectProtocol for StreamOutput {}
 
@@ -80,7 +83,7 @@ define_class!(
             // SAFETY: `sample_buffer` is valid for the duration of this callback — Apple's
             // documented `SCStreamOutput` contract.
             if let Some(data) = unsafe { super::pixel::extract_nv12(sample_buffer) } {
-                push_frame(self.queue().as_ref(), data);
+                push_frame(self.ivars().queue.as_ref(), data);
             }
         }
     }
@@ -89,26 +92,29 @@ define_class!(
 impl StreamOutput {
     fn new(queue: Arc<FrameQueue>) -> Retained<Self> {
         let this = Self::alloc();
-        let this = this.set_ivars(Ivars::<Self> { queue });
+        let this = this.set_ivars(StreamOutputIvars { queue });
         // SAFETY: standard `define_class!` init pattern.
         unsafe { msg_send![super(this), init] }
     }
+}
+
+struct StreamDelegateIvars {
+    stopped: Arc<AtomicBool>,
 }
 
 define_class!(
     #[unsafe(super(NSObject))]
     #[thread_kind = AnyThread]
     #[name = "MediawayScreenStreamDelegate"]
-    struct StreamDelegate {
-        stopped: Arc<AtomicBool>,
-    }
+    #[ivars = StreamDelegateIvars]
+    struct StreamDelegate;
 
     unsafe impl NSObjectProtocol for StreamDelegate {}
 
     unsafe impl SCStreamDelegate for StreamDelegate {
         #[unsafe(method(stream:didStopWithError:))]
         unsafe fn stream_did_stop_with_error(&self, _stream: &SCStream, _error: &NSError) {
-            self.stopped().store(true, Ordering::SeqCst);
+            self.ivars().stopped.store(true, Ordering::SeqCst);
         }
     }
 );
@@ -116,7 +122,7 @@ define_class!(
 impl StreamDelegate {
     fn new(stopped: Arc<AtomicBool>) -> Retained<Self> {
         let this = Self::alloc();
-        let this = this.set_ivars(Ivars::<Self> { stopped });
+        let this = this.set_ivars(StreamDelegateIvars { stopped });
         // SAFETY: standard `define_class!` init pattern.
         unsafe { msg_send![super(this), init] }
     }

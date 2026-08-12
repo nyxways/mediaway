@@ -361,7 +361,29 @@ fn open_camera_session(
     device_lost: Arc<AtomicBool>,
 ) -> Result<(CameraResources, StreamInfo, PixelFormat), CaptureError> {
     let mut res = CameraResources::default();
+    open_camera_device(&mut res, device_lost)?;
+    let format = configure_capture_session(&mut res)?;
 
+    let info = StreamInfo::Video {
+        id: 0,
+        codec: CodecKind::RawVideo,
+        time_base,
+        geometry: VideoGeometry {
+            width: CAPTURE_WIDTH.unsigned_abs(),
+            height: CAPTURE_HEIGHT.unsigned_abs(),
+        },
+        extra_data: Bytes::new(),
+    };
+    Ok((res, info, format))
+}
+
+/// Creates the `ACameraManager`, resolves the first camera ID, and opens the device
+/// synchronously (see module docs § Correction) — the first half of the former
+/// `open_camera_session` body, split out to stay under `clippy::too_many_lines`.
+fn open_camera_device(
+    res: &mut CameraResources,
+    device_lost: Arc<AtomicBool>,
+) -> Result<(), CaptureError> {
     // SAFETY: `ACameraManager_create` either returns a valid, owned pointer or null (checked
     // below) — no preconditions.
     res.manager = unsafe { ndk_sys::ACameraManager_create() };
@@ -372,7 +394,7 @@ fn open_camera_session(
     let camera_id = first_camera_id(res.manager)?;
 
     let device_state = Box::new(DeviceState { lost: device_lost });
-    let device_state_ptr: *mut DeviceState = &*device_state as *const DeviceState as *mut _;
+    let device_state_ptr: *mut DeviceState = (&raw const *device_state).cast_mut();
     let mut state_callbacks = ndk_sys::ACameraDevice_StateCallbacks {
         context: device_state_ptr.cast(),
         onDisconnected: Some(on_device_disconnected),
@@ -394,7 +416,14 @@ fn open_camera_session(
     if status.0 != 0 || res.device.is_null() {
         return Err(map_camera_status(status));
     }
+    Ok(())
+}
 
+/// Sets up the `ImageReader`, capture session, and repeating request on `res.device` (already
+/// open), then detects the real negotiated plane format from the first acquired image — the
+/// second half of the former `open_camera_session` body, split out to stay under
+/// `clippy::too_many_lines`.
+fn configure_capture_session(res: &mut CameraResources) -> Result<PixelFormat, CaptureError> {
     let reader = ImageReader::new(
         CAPTURE_WIDTH,
         CAPTURE_HEIGHT,
@@ -491,20 +520,7 @@ fn open_camera_session(
 
     // First image acquired below determines the real plane layout — `open()` fails
     // (`CaptureError::Unsupported`) rather than guessing when it doesn't provably match.
-    let format =
-        detect_first_image_format(res.image_reader.as_ref().ok_or(CaptureError::Backend)?)?;
-
-    let info = StreamInfo::Video {
-        id: 0,
-        codec: CodecKind::RawVideo,
-        time_base,
-        geometry: VideoGeometry {
-            width: CAPTURE_WIDTH.unsigned_abs(),
-            height: CAPTURE_HEIGHT.unsigned_abs(),
-        },
-        extra_data: Bytes::new(),
-    };
-    Ok((res, info, format))
+    detect_first_image_format(res.image_reader.as_ref().ok_or(CaptureError::Backend)?)
 }
 
 /// Blocks briefly (bounded retries at [`POLL_INTERVAL`]) for the first repeating-request image
@@ -523,7 +539,7 @@ fn detect_first_image_format(reader: &ImageReader) -> Result<PixelFormat, Captur
 /// Real `ACameraManager_getCameraIdList` count, no device opened — used by
 /// `capabilities::camera_support` as a cheaper-than-`open` support probe, mirroring
 /// `linux::camera::enumerate_camera_paths`'s own cost class.
-pub(crate) fn camera_id_count() -> usize {
+pub fn camera_id_count() -> usize {
     // SAFETY: `ACameraManager_create` either returns a valid, owned pointer or null (checked
     // below) — no preconditions.
     let manager = unsafe { ndk_sys::ACameraManager_create() };
@@ -627,13 +643,13 @@ fn copy_rows(
 /// Build one tightly packed frame buffer from `image`'s planes, honoring each plane's real
 /// `plane_row_stride` (which may exceed the tight row width — device alignment padding).
 fn pack_image(image: &Image, format: PixelFormat) -> Option<Bytes> {
-    let width = image.width().ok()?.max(0) as usize;
-    let height = image.height().ok()?.max(0) as usize;
+    let width = usize::try_from(image.width().ok()?).unwrap_or(0);
+    let height = usize::try_from(image.height().ok()?).unwrap_or(0);
     if width == 0 || height == 0 {
         return None;
     }
     let y = image.plane_data(0).ok()?;
-    let y_stride = image.plane_row_stride(0).ok()?.max(0) as usize;
+    let y_stride = usize::try_from(image.plane_row_stride(0).ok()?).unwrap_or(0);
     if y_stride < width {
         return None;
     }
@@ -645,7 +661,7 @@ fn pack_image(image: &Image, format: PixelFormat) -> Option<Bytes> {
         PixelFormat::I420 => {
             let u = image.plane_data(1).ok()?;
             let v = image.plane_data(2).ok()?;
-            let chroma_stride = image.plane_row_stride(1).ok()?.max(0) as usize;
+            let chroma_stride = usize::try_from(image.plane_row_stride(1).ok()?).unwrap_or(0);
             let chroma_w = width / 2;
             let chroma_rows = height / 2;
             if chroma_stride < chroma_w {
@@ -656,7 +672,7 @@ fn pack_image(image: &Image, format: PixelFormat) -> Option<Bytes> {
         }
         PixelFormat::Nv12 => {
             let uv = image.plane_data(1).ok()?;
-            let uv_stride = image.plane_row_stride(1).ok()?.max(0) as usize;
+            let uv_stride = usize::try_from(image.plane_row_stride(1).ok()?).unwrap_or(0);
             let chroma_rows = height / 2;
             if uv_stride < width {
                 return None;

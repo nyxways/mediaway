@@ -1,6 +1,6 @@
-//! Android microphone capture via AAudio (`ndk::audio`, blocking `read()` path).
+//! Android microphone capture via `AAudio` (`ndk::audio`, blocking `read()` path).
 //!
-//! See [ADR-0002](adr/android/0002-aaudio-microphone-capture.md). AAudio's `data_callback`
+//! See [ADR-0002](adr/android/0002-aaudio-microphone-capture.md). `AAudio`'s `data_callback`
 //! model is deliberately **not** used here — its own doc comments forbid taking a mutex inside
 //! it, which this crate's shared `Arc<Mutex<VecDeque<AudioFrame>>>` queue shape (mirroring
 //! `linux::mic`/`mediaway-device-windows` `wasapi.rs`) would violate. The blocking `read()` path
@@ -49,22 +49,22 @@ struct MicSession {
     worker: Option<JoinHandle<()>>,
 }
 
-/// Android microphone capture via an AAudio input stream (`Shared` sharing mode,
+/// Android microphone capture via an `AAudio` input stream (`Shared` sharing mode,
 /// `LowLatency` performance mode, system default input device only this slice).
 pub struct AndroidMicrophoneCapture {
     inner: Option<MicSession>,
 }
 
 impl AndroidMicrophoneCapture {
-    /// Open AAudio microphone capture for `config`.
+    /// Open `AAudio` microphone capture for `config`.
     ///
     /// # Errors
     ///
-    /// Returns [`CaptureError::Unsupported`] for a non-[`Select::Default`] selection (AAudio has
-    /// no NDK input-device enumeration API — only the system default input, `device_id(0)`, is
-    /// reachable without a JNI round trip into `android.media.AudioManager`) or a non-`F32`
+    /// Returns [`CaptureError::Unsupported`] for a non-[`Select::Default`] selection (`AAudio`
+    /// has no NDK input-device enumeration API — only the system default input, `device_id(0)`,
+    /// is reachable without a JNI round trip into `android.media.AudioManager`) or a non-`F32`
     /// `sample_format`. Returns [`CaptureError::InvalidInput`] for a zero-denominator time base.
-    /// Returns [`CaptureError::Backend`] when the AAudio stream fails to build or open.
+    /// Returns [`CaptureError::Backend`] when the `AAudio` stream fails to build or open.
     pub fn open(config: &AudioCaptureConfig) -> Result<Self, CaptureError> {
         if config.select != Select::Default {
             return Err(CaptureError::Unsupported);
@@ -201,7 +201,7 @@ fn run_mic_worker(
     }
     let _ = tx_info.send(Ok(info));
 
-    let channels = channels as usize;
+    let channels = usize::try_from(channels).unwrap_or(0);
     let mut buffer = vec![0f32; READ_CHUNK_FRAMES as usize * channels];
     let mut pts: i64 = 0;
     while !stop.load(Ordering::Relaxed) {
@@ -264,10 +264,10 @@ fn push_frame(queue: &SharedQueue, sample_rate: u32, channels: usize, pts: i64, 
     }
 }
 
-/// Reinterpret an `f32` PCM chunk as its little-endian byte representation — AAudio's
+/// Reinterpret an `f32` PCM chunk as its little-endian byte representation — `AAudio`'s
 /// `PCM_Float` samples are native-endian `f32`, which is little-endian on every Android ABI
 /// this crate targets (`arm64-v8a`/`armeabi-v7a`/`x86`/`x86_64`).
-fn bytemuck_f32_to_bytes(samples: &[f32]) -> &[u8] {
+const fn bytemuck_f32_to_bytes(samples: &[f32]) -> &[u8] {
     // SAFETY: `f32` has no padding/invalid bit patterns and `[f32]`'s alignment is a multiple
     // of `[u8]`'s — reinterpreting the slice's byte length is always in-bounds.
     unsafe {

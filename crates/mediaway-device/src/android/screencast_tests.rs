@@ -1,4 +1,5 @@
 use super::*;
+use mediaway_common::NativeHandle;
 
 #[test]
 fn push_frame_drops_oldest_past_capacity() {

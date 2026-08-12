@@ -14,7 +14,7 @@ use mediaway_common::Rational;
 ///
 /// [`DeviceKind::Camera`] enumerates real Camera2 NDK camera IDs (`ACameraManager_getCameraIdList`,
 /// no device opened). [`DeviceKind::Microphone`] has no cheap AAudio-level "is a mic present"
-/// query (unlike PipeWire's daemon-connect probe on Linux) — every real Android device ships at
+/// query (unlike `PipeWire`'s daemon-connect probe on Linux) — every real Android device ships at
 /// least one microphone, so this reports [`Support::Supported`] unconditionally rather than
 /// pretending an unavailable probe exists. [`DeviceKind::Screen`]/[`DeviceKind::Window`]/
 /// [`DeviceKind::Loopback`]/[`DeviceKind::ProcessLoopback`] have no backend reachable from this
@@ -60,8 +60,8 @@ fn camera_id_count() -> usize {
 /// first.
 ///
 /// [`DeviceKind::Microphone`] returns [`PermissionState::Unknown`] rather than attempting a
-/// real open: unlike Camera2's distinct `ACAMERA_ERROR_PERMISSION_DENIED` status, AAudio has no
-/// documented, reliable way to distinguish a RECORD_AUDIO permission denial from any other
+/// real open: unlike Camera2's distinct `ACAMERA_ERROR_PERMISSION_DENIED` status, `AAudio` has no
+/// documented, reliable way to distinguish a `RECORD_AUDIO` permission denial from any other
 /// `open_stream` failure (see `mic.rs`'s `open_stream`, which maps all such failures to the
 /// same [`CaptureError::Backend`]) — reporting [`PermissionState::Denied`] or
 /// [`PermissionState::Granted`] here would claim a distinction this backend cannot actually

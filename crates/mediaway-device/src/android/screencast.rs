@@ -217,7 +217,7 @@ fn run_screencast_worker(
 /// failure is returned (not sent) so the caller ([`run_screencast_worker`]) sends it instead —
 /// avoids a double-send race between this function and its caller.
 fn run_screencast_session(
-    env: &mut jni::Env,
+    env: &mut jni::Env<'_>,
     media_projection_raw: jni::sys::jobject,
     cfg: &AndroidScreenCaptureConfig,
     queue: &FrameQueue,
@@ -227,7 +227,7 @@ fn run_screencast_session(
     // SAFETY: caller's contract (`run_screencast_worker`'s own `# Safety`) guarantees
     // `media_projection_raw` is a live, already-global JNI reference this function now owns —
     // `Global`'s `Drop` will `DeleteGlobalRef` it when this function returns.
-    let media_projection = unsafe { env.global_from_raw::<JObject>(media_projection_raw) };
+    let media_projection = unsafe { env.global_from_raw::<JObject<'_>>(media_projection_raw) };
 
     let width = i32::try_from(cfg.width).map_err(|_| CaptureError::InvalidInput)?;
     let height = i32::try_from(cfg.height).map_err(|_| CaptureError::InvalidInput)?;
@@ -332,7 +332,7 @@ fn pack_rgba_image(
     height: u32,
 ) -> Option<Bytes> {
     let data = image.plane_data(0).ok()?;
-    let stride = image.plane_row_stride(0).ok()?.max(0) as usize;
+    let stride = usize::try_from(image.plane_row_stride(0).ok()?).unwrap_or(0);
     let row_bytes = (width as usize).checked_mul(4)?;
     if stride < row_bytes {
         return None;

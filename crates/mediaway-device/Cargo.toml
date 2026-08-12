@@ -100,6 +100,7 @@ objc2 = { version = "0.6" }
 objc2-foundation = { version = "0.3", default-features = false, features = [
     "NSArray",
     "NSDictionary",
+    "NSEnumerator",
     "NSError",
     "NSObject",
     "NSString",
@@ -123,6 +124,8 @@ objc2-core-media = { version = "0.3", default-features = false, features = [
     # Gates `CMAudioFormatDescriptionGetStreamBasicDescription` and the
     # `AudioStreamBasicDescription` interop used by `apple::replaykit`'s app/mic audio extraction.
     "objc2-core-audio-types",
+    # Gates `CMSampleBuffer::image_buffer` (`apple::pixel`'s shared CVPixelBuffer readback).
+    "objc2-core-video",
 ] }
 objc2-core-video = { version = "0.3", default-features = false, features = [
     "CVBase",
@@ -143,12 +146,16 @@ objc2-av-foundation = { version = "0.3", default-features = false, features = [
     "AVCaptureVideoDataOutput",
     "AVMediaFormat",
     "block2",
+    # Gates `setSampleBufferDelegate:queue:`'s `DispatchQueue` parameter.
+    "dispatch2",
     "objc2-core-media",
 ] }
 objc2-avf-audio = { version = "0.3", default-features = false, features = [
     "AVAudioBuffer",
     "AVAudioEngine",
     "AVAudioFormat",
+    # Gates `AVAudioEngine::inputNode` (with `AVAudioNode`).
+    "AVAudioIONode",
     "AVAudioNode",
     "AVAudioTime",
     "AVAudioTypes",

@@ -155,10 +155,10 @@ impl AppleScreenCapture {
     /// [`CaptureError::InvalidInput`] when no display is reported. Returns
     /// [`CaptureError::Backend`] on `ScreenCaptureKit` failure or completion-handler timeout.
     pub fn open(config: &DesktopVideoCaptureConfig) -> Result<Self, CaptureError> {
-        let DesktopCaptureSource::Screen { select } = config.source else {
+        let DesktopCaptureSource::Screen { select } = &config.source else {
             return Err(CaptureError::Unsupported);
         };
-        if select != Select::Default {
+        if *select != Select::Default {
             return Err(CaptureError::Unsupported);
         }
         if config.output != CaptureOutputPreference::CpuFramesOk {

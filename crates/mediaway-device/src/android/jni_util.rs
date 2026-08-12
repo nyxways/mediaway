@@ -21,7 +21,7 @@ use jni::errors::Error as JniError;
 /// session — this function trusts that contract, it cannot verify it.
 pub(super) unsafe fn with_attached_env<F, T, E>(vm_ptr: *mut jni::sys::JavaVM, f: F) -> Result<T, E>
 where
-    F: FnOnce(&mut jni::Env) -> Result<T, E>,
+    F: FnOnce(&mut jni::Env<'_>) -> Result<T, E>,
     E: From<JniError>,
 {
     // SAFETY: caller's contract (this fn's own `# Safety`) guarantees `vm_ptr` is valid.
@@ -35,7 +35,7 @@ where
 /// causes without inspecting the thrown exception's type, which this slice does not do).
 impl From<JniError> for crate::CaptureError {
     fn from(_error: JniError) -> Self {
-        crate::CaptureError::Backend
+        Self::Backend
     }
 }
 

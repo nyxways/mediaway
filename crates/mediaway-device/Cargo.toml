@@ -77,6 +77,20 @@ pipewire = { workspace = true }
 v4l = { workspace = true }
 
 
+[target.'cfg(target_os = "android")'.dependencies]
+# Safe NDK bindings — AAudio (mic) + ImageReader/NativeWindow (camera + screencast output).
+# `nativewindow`/`bitmap`/`sync` intentionally omitted (unused). See
+# adr/android/0001-camera2-ndk-native-camera-capture.md · 0002-aaudio-microphone-capture.md.
+ndk = { version = "0.9", features = ["audio", "media"] }
+# Raw Camera2 NDK FFI — no safe wrapper crate exists (see adr/android/0001). Pinned to the same
+# version `ndk` 0.9 itself depends on, so both crates resolve to one `ndk-sys` instance and
+# their `ANativeWindow`/etc. types are identical (not just structurally compatible).
+ndk-sys = "0.6"
+# JNI calls for `MediaProjection.createVirtualDisplay`/`.stop()` — this crate's first JNI
+# dependency, needed only by `android::screencast`. See adr/android/0003.
+jni = "0.22"
+
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = { workspace = true }
 js-sys = { workspace = true }

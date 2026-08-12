@@ -103,13 +103,26 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
       (`WindowsAudioDecoder`-style backend switcher) exists yet — same follow-up gap as video's
       D3D12 decode integration.
 - [ ] **Pure Rust SW Codec Extensions**: Add CABAC, P-slice, and B-slice decoding to `mediaway-sw` H.264 decoder (currently Baseline CAVLC I-slice only).
-- [ ] **Android Encoder (first Android backend, first "Other" platform)**: `mediaway-encoder::android`
+- [x] **Android Encoder (first Android backend, first "Other" platform)**: `mediaway-encoder::android`
       (NDK `AMediaCodec` via the `ndk` crate, H.264 CPU-upload only) implemented per
       `mediaway-encoder/adr/android/0001-ndk-amediacodec-h264-cpu-upload.md` — **zero compile
       verification as authored** (this dev environment has no Android NDK, a strictly weaker
       starting point than Linux got via WSL2); a new `android` CI job
       (`nttld/setup-ndk` + `cargo-ndk`, `arm64-v8a`, API 21, compile+clippy only) is the first
       real gate before hardware verification is even attempted.
+- [x] **Android Device capture (camera + mic + screen, one vertical slice)**:
+      `mediaway-device::android` — Camera2 NDK raw `ndk-sys` FFI camera (a real gap found:
+      `ndk-sys` has no `camera2ndk` link directive, closed via a new crate `build.rs`), AAudio
+      microphone (blocking `read()`, not the mutex-hostile `data_callback` model), and
+      `MediaProjection` + JNI screen capture — the last domain needs a real host-app (Kotlin/
+      Java) consent-flow contract documented in
+      `mediaway-device/adr/android/0003-mediaprojection-jni-screen-capture.md`, since
+      `android-activity`'s stock `AndroidApp` has no `onActivityResult` hook at all (confirmed
+      via its real source). minSdk **26** for this crate (AAudio + the native `Surface` bridge
+      both need it) — differs from `mediaway-encoder::android`'s 21, a separately scoped
+      decision. **Zero compile verification as authored**; `android` CI job extended with a
+      `mediaway-device` (`-p 26`) lint step in the same PR. All three ADRs
+      (`mediaway-device/adr/android/0001-0003`) Accepted.
 - [x] **Apple Encoder (last "Other" platform)**: `mediaway-encoder::apple` (`VTCompressionSession`
       via the `objc2-video-toolbox`/`objc2-core-video`/`objc2-core-media`/`objc2-core-foundation`
       crates, H.264 CPU-upload only) implemented per

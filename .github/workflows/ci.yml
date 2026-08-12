@@ -234,17 +234,22 @@ jobs:
             --target wasm32-unknown-unknown --release
 
   android:
-    name: android compile (mediaway-encoder)
+    name: android compile (mediaway-encoder, mediaway-device)
     runs-on: ubuntu-latest
     needs: [affected]
     # Compile-only, same accepted shape as the `wasm` job above: this workspace's dev
     # environment cannot run/test an Android target either — see
-    # crates/mediaway-encoder/adr/android/0001-ndk-amediacodec-h264-cpu-upload.md
-    # § CI verification plan.
+    # crates/mediaway-encoder/adr/android/0001-ndk-amediacodec-h264-cpu-upload.md and
+    # crates/mediaway-device/adr/android/000{1,2,3}-*.md § CI verification plan. The two
+    # crates lint at different Android API levels (`-p 21` vs `-p 26`) because
+    # mediaway-device::android needs AAudio + the native `Surface` bridge (both API 26+),
+    # while mediaway-encoder::android's AMediaCodec usage only needs API 21 — two separately
+    # scoped minSdk decisions, not a contradiction.
     if: >-
       ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/')) &&
           (needs.affected.outputs.set == 'ALL' ||
           contains(needs.affected.outputs.set, 'mediaway-encoder') ||
+          contains(needs.affected.outputs.set, 'mediaway-device') ||
           contains(needs.affected.outputs.set, 'mediaway-common')) }}
     steps:
       - uses: actions/checkout@v4
@@ -276,11 +281,17 @@ jobs:
           # Different SCCACHE_GHA_VERSION ⇒ isolated GHA blob namespace (docs: mozilla/sccache GHA.md)
           echo "SCCACHE_GHA_VERSION=mediaway-${MEDIAWAY_CACHE_NS}-v1" >> "$GITHUB_ENV"
 
-      - name: Lint mediaway-encoder for Android (arm64-v8a)
+      - name: Lint mediaway-encoder for Android (arm64-v8a, API 21)
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           cargo ndk -t arm64-v8a -p 21 clippy -p mediaway-encoder --all-features --all-targets -- -D warnings
+
+      - name: Lint mediaway-device for Android (arm64-v8a, API 26)
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          cargo ndk -t arm64-v8a -p 26 clippy -p mediaway-device --all-features --all-targets -- -D warnings
 
   apple-macos:
     name: apple compile (macOS, mediaway-encoder)

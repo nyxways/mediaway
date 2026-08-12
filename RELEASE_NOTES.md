@@ -24,6 +24,14 @@
   YUV sample range for encoder input. Only the Apple backend honors it so far; other backends
   accept the field without yet branching on it (documented capability-gated fallback, same
   convention as `gop_size`).
+- `mediaway-device::android`: first Android device-capture backend — camera (Camera2 NDK raw
+  FFI), microphone (AAudio blocking read), and screen (`MediaProjection` + JNI, with a
+  documented host-app consent-flow contract). minSdk 26 (differs from
+  `mediaway-encoder::android`'s 21). Zero compile verification as authored (no Android NDK in
+  the dev environment) — the `android` CI job now also lints `mediaway-device` against a real
+  NDK before it is trusted; not wired into any cross-platform capture-selection API yet. See
+  `crates/mediaway-device/adr/android/0001-camera2-ndk-native-camera-capture.md`,
+  `0002-aaudio-microphone-capture.md`, `0003-mediaprojection-jni-screen-capture.md`.
 
 ### Changed
 

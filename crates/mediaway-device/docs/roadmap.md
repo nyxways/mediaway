@@ -68,4 +68,14 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 
 ### 4 — Other
 
-- [ ] `mediaway-device-apple` / `mediaway-device-android` as scheduled
+- [ ] `mediaway-device-apple` as scheduled
+- [x] Android (`mediaway-device::android`): camera (Camera2 NDK) + mic (AAudio) + screen
+      (`MediaProjection` + JNI) implemented per 3 **Accepted** ADRs
+      ([0001](../adr/android/0001-camera2-ndk-native-camera-capture.md) camera ·
+      [0002](../adr/android/0002-aaudio-microphone-capture.md) mic ·
+      [0003](../adr/android/0003-mediaprojection-jni-screen-capture.md) screen) — **zero compile
+      verification as authored**, no Android NDK in this dev environment; `android` CI job
+      (`.github/workflows/ci.yml`) extended with a `mediaway-device` (`-p 26`) lint step in the
+      same PR, ahead of hardware verification. minSdk 26 (differs from
+      `mediaway-encoder::android`'s 21). See
+      [wiki: android-capture](../../../docs/ai/wiki/device/android-capture.md).

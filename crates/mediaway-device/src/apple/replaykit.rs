@@ -218,8 +218,13 @@ unsafe fn extract_pcm(sample_buffer: &CMSampleBuffer) -> Option<AudioFrame> {
     let audio_description = format_description
         .downcast::<CMAudioFormatDescription>()
         .ok()?;
+    // `CMAudioFormatDescription` has no inherent `stream_basic_description` method — the real API
+    // is the free function `CMAudioFormatDescriptionGetStreamBasicDescription`.
+    //
     // SAFETY: `audio_description` is a valid, just-downcast format description.
-    let asbd_ptr = unsafe { audio_description.stream_basic_description() };
+    let asbd_ptr = unsafe {
+        objc2_core_media::CMAudioFormatDescriptionGetStreamBasicDescription(&audio_description)
+    };
     if asbd_ptr.is_null() {
         return None;
     }
@@ -244,9 +249,19 @@ unsafe fn extract_pcm(sample_buffer: &CMSampleBuffer) -> Option<AudioFrame> {
     let total_len = unsafe { block_buffer.data_length() };
     let mut length_at_offset: usize = 0;
     let mut data_ptr: *mut c_char = std::ptr::null_mut();
-    // SAFETY: `block_buffer` is valid; `length_at_offset`/`data_ptr` are valid local out-params.
+    // `data_pointer`'s real signature takes raw out-parameter pointers (`*mut usize`,
+    // `*mut *mut c_char`), not `Option<&mut T>` — a null pointer means "don't care" for
+    // `total_length_out`.
+    //
+    // SAFETY: `block_buffer` is valid; `length_at_offset`/`data_ptr` are valid local out-params,
+    // each a valid pointer for the call's duration.
     let status = unsafe {
-        block_buffer.data_pointer(0, Some(&mut length_at_offset), None, Some(&mut data_ptr))
+        block_buffer.data_pointer(
+            0,
+            &mut length_at_offset,
+            std::ptr::null_mut(),
+            &mut data_ptr,
+        )
     };
     if status != 0 || data_ptr.is_null() || length_at_offset != total_len {
         // Not a single contiguous range — never silently mis-read a discontiguous buffer.
@@ -282,8 +297,11 @@ struct InAppSession {
     // Kept alive for the whole session — `startCaptureWithHandler` retains its own reference,
     // but this crate's own convention (mirrors every other delegate/callback backend) is to
     // hold the block alive explicitly too.
+    //
+    // `RcBlock<F>` takes exactly one generic parameter — the `dyn Fn(...)` block signature itself
+    // — not a separate lifetime/fn-pointer/marker-trait triple.
     _capture_handler:
-        RcBlock<'static, fn(std::ptr::NonNull<CMSampleBuffer>, RPSampleBufferType, *mut NSError)>,
+        RcBlock<dyn Fn(std::ptr::NonNull<CMSampleBuffer>, RPSampleBufferType, *mut NSError)>,
 }
 
 /// iOS in-app screen capture (`RPScreenRecorder`), including app audio and microphone audio.
@@ -314,8 +332,7 @@ impl AppleScreenCapture {
         let next_pts_cb = Arc::clone(&next_pts);
 
         let capture_handler: RcBlock<
-            'static,
-            fn(std::ptr::NonNull<CMSampleBuffer>, RPSampleBufferType, *mut NSError),
+            dyn Fn(std::ptr::NonNull<CMSampleBuffer>, RPSampleBufferType, *mut NSError),
         > = RcBlock::new(
             move |sample_buffer: std::ptr::NonNull<CMSampleBuffer>,
                   kind: RPSampleBufferType,
@@ -480,25 +497,23 @@ impl Drop for AppleScreenCapture {
 fn start_in_app_capture(
     recorder: &RPScreenRecorder,
     capture_handler: &RcBlock<
-        'static,
-        fn(std::ptr::NonNull<CMSampleBuffer>, RPSampleBufferType, *mut NSError),
+        dyn Fn(std::ptr::NonNull<CMSampleBuffer>, RPSampleBufferType, *mut NSError),
     >,
 ) -> Result<(), CaptureError> {
     let (tx, rx) = sync_channel::<Result<(), CaptureError>>(1);
     let tx = Arc::new(Mutex::new(Some(tx)));
-    let completion: RcBlock<'static, fn(*mut NSError), dyn Send + Sync> =
-        RcBlock::new(move |error: *mut NSError| {
-            let result = if error.is_null() {
-                Ok(())
-            } else {
-                Err(CaptureError::Backend)
-            };
-            if let Ok(mut guard) = tx.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(result);
-                }
+    let completion: RcBlock<dyn Fn(*mut NSError)> = RcBlock::new(move |error: *mut NSError| {
+        let result = if error.is_null() {
+            Ok(())
+        } else {
+            Err(CaptureError::Backend)
+        };
+        if let Ok(mut guard) = tx.lock() {
+            if let Some(tx) = guard.take() {
+                let _ = tx.send(result);
             }
-        });
+        }
+    });
     // SAFETY: `recorder` is the valid shared singleton; `capture_handler`/`completion` are both
     // valid, kept alive for at least the duration of this call (`capture_handler` for the whole
     // session via the caller's own field, `completion` for this call via this local binding).
@@ -513,10 +528,11 @@ fn start_in_app_capture(
 fn stop_in_app_capture(recorder: &RPScreenRecorder) -> Result<(), CaptureError> {
     let (tx, rx) = sync_channel::<Result<(), CaptureError>>(1);
     let tx = Arc::new(Mutex::new(Some(tx)));
-    // `stopCaptureWithHandler` takes a plain (non-`Sendable`) `Block` per the real generated
-    // signature — confirmed by direct source read, not assumed from `startCaptureWithHandler`'s
-    // own `SendableBlock` completion handler shape.
-    let handler: RcBlock<'static, fn(*mut NSError)> = RcBlock::new(move |error: *mut NSError| {
+    // `stopCaptureWithHandler`'s completion handler is `Option<&block2::DynBlock<dyn Fn(*mut
+    // NSError)>>` per the real generated signature — the same plain (non-`Send`/`Sync`) block
+    // shape `startCaptureWithHandler_completionHandler`'s own completion handler uses; this
+    // crate's `objc2`/`block2` version has no `Send`/`Sync`-bounded block variant at all.
+    let handler: RcBlock<dyn Fn(*mut NSError)> = RcBlock::new(move |error: *mut NSError| {
         let result = if error.is_null() {
             Ok(())
         } else {

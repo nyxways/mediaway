@@ -26,7 +26,6 @@
 #![allow(unsafe_code)]
 
 use std::collections::VecDeque;
-use std::ffi::CStr;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -38,7 +37,7 @@ use mediaway_common::{
     VideoGeometry,
 };
 use objc2::rc::Retained;
-use objc2::runtime::ProtocolObject;
+use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{AnyThread, Ivars, define_class, msg_send};
 use objc2_av_foundation::{
     AVCaptureConnection, AVCaptureDevice, AVCaptureDeviceInput, AVCaptureOutput, AVCaptureSession,
@@ -136,7 +135,10 @@ impl AppleCameraCapture {
         }
 
         // SAFETY: `AVMediaTypeVideo` is a valid, process-lifetime static constant.
-        let media_type = unsafe { AVMediaTypeVideo };
+        // `AVMediaTypeVideo` itself is `Option<&'static AVMediaType>` (an optional CF/Foundation
+        // static), so it must be unwrapped before use as `defaultDeviceWithMediaType`'s plain
+        // `&AVMediaType` parameter.
+        let media_type = unsafe { AVMediaTypeVideo }.ok_or(CaptureError::Backend)?;
         // SAFETY: plain class method, no preconditions.
         let device = unsafe { AVCaptureDevice::defaultDeviceWithMediaType(media_type) }
             .ok_or(CaptureError::InvalidInput)?;
@@ -172,7 +174,12 @@ impl AppleCameraCapture {
         let key: &NSString =
             unsafe { &*(std::ptr::from_ref(kCVPixelBufferPixelFormatTypeKey) as *const NSString) };
         let value = NSNumber::numberWithUnsignedInt(requested_format);
-        let settings = NSDictionary::from_slices(&[key], &[value.as_ref()]);
+        // `setVideoSettings` requires `NSDictionary<NSString, AnyObject>` — `NSNumber`'s declared
+        // inheritance chain (`NSValue`, `NSObject`) has no direct `AsRef<AnyObject>`, so this goes
+        // through a plain `Deref`-coercing reference instead of `.as_ref()` (which would otherwise
+        // pin the dictionary's value type to `NSNumber`, not `AnyObject`).
+        let value: &AnyObject = &value;
+        let settings = NSDictionary::from_slices(&[key], &[value]);
         // SAFETY: `output` is valid; `settings` is a well-formed dictionary with the one
         // documented supported key.
         unsafe { output.setVideoSettings(Some(&settings)) };
@@ -182,9 +189,9 @@ impl AppleCameraCapture {
         });
         // clone: delegate ivar needs its own strong ref to push frames
         let delegate = CameraDelegate::new(Arc::clone(&queue));
-        let label = CStr::from_bytes_with_nul(b"dev.mediaway.camera\0")
-            .map_err(|_| CaptureError::Backend)?;
-        let dispatch_queue = DispatchQueue::new(Some(label), DispatchQueueAttr::SERIAL);
+        // `DispatchQueue::new` takes a plain `&str` label (not `Option<&CStr>`) and is a safe,
+        // always-safe-to-call constructor — no `unsafe` needed.
+        let dispatch_queue = DispatchQueue::new("dev.mediaway.camera", DispatchQueueAttr::SERIAL);
         let delegate_protocol = ProtocolObject::from_ref(&*delegate);
         // SAFETY: `output` is valid; `delegate_protocol`/`dispatch_queue` are both valid, kept
         // alive by this session's own fields for its whole lifetime.

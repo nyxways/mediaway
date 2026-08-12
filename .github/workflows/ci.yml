@@ -285,13 +285,13 @@ jobs:
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
-          cargo ndk -t arm64-v8a -p 21 clippy -p mediaway-encoder --all-features --all-targets -- -D warnings
+          cargo ndk -t arm64-v8a --platform 21 clippy -p mediaway-encoder --all-features --all-targets -- -D warnings
 
       - name: Lint mediaway-device for Android (arm64-v8a, API 26)
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
-          cargo ndk -t arm64-v8a -p 26 clippy -p mediaway-device --all-features --all-targets -- -D warnings
+          cargo ndk -t arm64-v8a --platform 26 clippy -p mediaway-device --all-features --all-targets -- -D warnings
 
   apple-macos:
     name: apple compile (macOS, mediaway-encoder, mediaway-device)

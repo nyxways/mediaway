@@ -45,7 +45,11 @@ struct MicSession {
     // block, but this crate's own convention (mirrors AAudio's boxed callbacks) is to hold every
     // callback/delegate object alive explicitly rather than relying solely on the OS API's own
     // internal retain.
-    _tap_block: RcBlock<'static, fn(NonNull<AVAudioPCMBuffer>, NonNull<AVAudioTime>)>,
+    //
+    // `RcBlock<F>` takes exactly one generic parameter — the `dyn Fn(...)` block signature itself
+    // (see `block2::RcBlock`'s own doc example, `RcBlock<dyn Fn(&'a i32) + 'b>`), not a separate
+    // lifetime/fn-pointer/marker-trait triple.
+    _tap_block: RcBlock<dyn Fn(NonNull<AVAudioPCMBuffer>, NonNull<AVAudioTime>)>,
 }
 
 /// Apple microphone capture via an `AVAudioEngine` input tap (system default input only this
@@ -100,7 +104,7 @@ impl AppleMicrophoneCapture {
         let queue_tap = Arc::clone(&queue);
         let next_pts = Arc::new(AtomicI64::new(0));
 
-        let tap_block: RcBlock<'static, fn(NonNull<AVAudioPCMBuffer>, NonNull<AVAudioTime>)> =
+        let tap_block: RcBlock<dyn Fn(NonNull<AVAudioPCMBuffer>, NonNull<AVAudioTime>)> =
             RcBlock::new(
                 move |buf: NonNull<AVAudioPCMBuffer>, _when: NonNull<AVAudioTime>| {
                     // SAFETY: `buf` is a valid, non-null `AVAudioPCMBuffer` for the duration of this
@@ -134,10 +138,16 @@ impl AppleMicrophoneCapture {
 
         // SAFETY: `input` is a valid input node with no tap currently installed (just created);
         // `format: None` reuses the node's own current format per the doc comment's guidance for
-        // tapping an input bus; `tap_block` is a valid block reference kept alive by this
-        // session's own `_tap_block` field.
+        // tapping an input bus; the raw block pointer is kept alive by this session's own
+        // `_tap_block` field for the whole session, matching `AVAudioNodeTapBlock`'s real
+        // parameter type (`*mut block2::DynBlock<...>`, not a `&RcBlock<...>` reference).
         unsafe {
-            input.installTapOnBus_bufferSize_format_block(0, TAP_BUFFER_FRAMES, None, &tap_block);
+            input.installTapOnBus_bufferSize_format_block(
+                0,
+                TAP_BUFFER_FRAMES,
+                None,
+                RcBlock::as_ptr(&tap_block),
+            );
         }
 
         // SAFETY: `engine` has a tap installed and is ready to start.

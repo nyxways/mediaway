@@ -14,7 +14,6 @@
 #![allow(unsafe_code)]
 
 use std::collections::VecDeque;
-use std::ffi::CStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{SyncSender, sync_channel};
 use std::sync::{Arc, Mutex};
@@ -69,7 +68,7 @@ define_class!(
 
     unsafe impl SCStreamOutput for StreamOutput {
         #[unsafe(method(stream:didOutputSampleBuffer:ofType:))]
-        fn stream_did_output_sample_buffer_of_type(
+        unsafe fn stream_did_output_sample_buffer_of_type(
             &self,
             _stream: &SCStream,
             sample_buffer: &CMSampleBuffer,
@@ -108,7 +107,7 @@ define_class!(
 
     unsafe impl SCStreamDelegate for StreamDelegate {
         #[unsafe(method(stream:didStopWithError:))]
-        fn stream_did_stop_with_error(&self, _stream: &SCStream, _error: &NSError) {
+        unsafe fn stream_did_stop_with_error(&self, _stream: &SCStream, _error: &NSError) {
             self.stopped().store(true, Ordering::SeqCst);
         }
     }
@@ -173,11 +172,16 @@ impl AppleScreenCapture {
             SCContentFilter::initWithDisplay_excludingWindows(filter, &display, &excluded)
         };
 
-        let stream_config = SCStreamConfiguration::new();
-        stream_config.setWidth(CAPTURE_WIDTH);
-        stream_config.setHeight(CAPTURE_HEIGHT);
-        stream_config.setPixelFormat(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange);
-        stream_config.setShowsCursor(true);
+        // SAFETY: plain, always-safe-to-call constructor.
+        let stream_config = unsafe { SCStreamConfiguration::new() };
+        // SAFETY: `stream_config` is a valid, freshly created configuration object; these are
+        // plain property setters with no additional preconditions.
+        unsafe {
+            stream_config.setWidth(CAPTURE_WIDTH);
+            stream_config.setHeight(CAPTURE_HEIGHT);
+            stream_config.setPixelFormat(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange);
+            stream_config.setShowsCursor(true);
+        }
 
         let queue = Arc::new(FrameQueue {
             frames: Mutex::new(VecDeque::new()),
@@ -201,9 +205,10 @@ impl AppleScreenCapture {
             )
         };
 
-        let label = CStr::from_bytes_with_nul(b"dev.mediaway.screencapturekit\0")
-            .map_err(|_| CaptureError::Backend)?;
-        let dispatch_queue = DispatchQueue::new(Some(label), DispatchQueueAttr::SERIAL);
+        // `DispatchQueue::new` takes a plain `&str` label (not `Option<&CStr>`) and is a safe,
+        // always-safe-to-call constructor — no `unsafe` needed.
+        let dispatch_queue =
+            DispatchQueue::new("dev.mediaway.screencapturekit", DispatchQueueAttr::SERIAL);
         let output_protocol = ProtocolObject::from_ref(&*output);
         // SAFETY: `stream` is valid; `output_protocol`/`dispatch_queue` are kept alive by this
         // session's own fields.
@@ -322,23 +327,25 @@ fn take_sender<T>(state: &Mutex<Option<SyncSender<T>>>) -> Option<SyncSender<T>>
 fn fetch_shareable_content() -> Result<Retained<SCShareableContent>, CaptureError> {
     let (tx, rx) = sync_channel::<Result<Retained<SCShareableContent>, CaptureError>>(1);
     let tx = Arc::new(Mutex::new(Some(tx)));
-    let block: RcBlock<'static, fn(*mut SCShareableContent, *mut NSError), dyn Send + Sync> =
-        RcBlock::new(
-            move |content: *mut SCShareableContent, _error: *mut NSError| {
-                let result = if content.is_null() {
-                    Err(CaptureError::Backend)
-                } else {
-                    // SAFETY: a completion-handler callback parameter is a borrowed (+0) object per
-                    // ordinary Cocoa convention; `retain` takes ownership for use after this
-                    // callback returns.
-                    unsafe { Retained::retain(content) }.ok_or(CaptureError::Backend)
-                };
-                if let Some(tx) = take_sender(&tx) {
-                    let _ = tx.send(result);
-                }
-            },
-        );
-    SCShareableContent::getShareableContentWithCompletionHandler(&block);
+    // `RcBlock<F>` takes exactly one generic parameter — the `dyn Fn(...)` block signature itself
+    // — not a separate lifetime/fn-pointer/marker-trait triple.
+    let block: RcBlock<dyn Fn(*mut SCShareableContent, *mut NSError)> = RcBlock::new(
+        move |content: *mut SCShareableContent, _error: *mut NSError| {
+            let result = if content.is_null() {
+                Err(CaptureError::Backend)
+            } else {
+                // SAFETY: a completion-handler callback parameter is a borrowed (+0) object per
+                // ordinary Cocoa convention; `retain` takes ownership for use after this
+                // callback returns.
+                unsafe { Retained::retain(content) }.ok_or(CaptureError::Backend)
+            };
+            if let Some(tx) = take_sender(&tx) {
+                let _ = tx.send(result);
+            }
+        },
+    );
+    // SAFETY: `block` is a valid, kept-alive-for-the-call block reference.
+    unsafe { SCShareableContent::getShareableContentWithCompletionHandler(&block) };
     rx.recv_timeout(COMPLETION_TIMEOUT)
         .map_err(|_| CaptureError::Backend)?
 }
@@ -346,18 +353,19 @@ fn fetch_shareable_content() -> Result<Retained<SCShareableContent>, CaptureErro
 fn start_capture(stream: &SCStream) -> Result<(), CaptureError> {
     let (tx, rx) = sync_channel::<Result<(), CaptureError>>(1);
     let tx = Arc::new(Mutex::new(Some(tx)));
-    let block: RcBlock<'static, fn(*mut NSError), dyn Send + Sync> =
-        RcBlock::new(move |error: *mut NSError| {
-            let result = if error.is_null() {
-                Ok(())
-            } else {
-                Err(CaptureError::Backend)
-            };
-            if let Some(tx) = take_sender(&tx) {
-                let _ = tx.send(result);
-            }
-        });
-    stream.startCaptureWithCompletionHandler(Some(&block));
+    let block: RcBlock<dyn Fn(*mut NSError)> = RcBlock::new(move |error: *mut NSError| {
+        let result = if error.is_null() {
+            Ok(())
+        } else {
+            Err(CaptureError::Backend)
+        };
+        if let Some(tx) = take_sender(&tx) {
+            let _ = tx.send(result);
+        }
+    });
+    // SAFETY: `stream` is a valid, fully configured stream; `block` is a valid, kept-alive-for-
+    // the-call block reference.
+    unsafe { stream.startCaptureWithCompletionHandler(Some(&block)) };
     rx.recv_timeout(COMPLETION_TIMEOUT)
         .map_err(|_| CaptureError::Backend)?
 }
@@ -365,18 +373,19 @@ fn start_capture(stream: &SCStream) -> Result<(), CaptureError> {
 fn stop_capture(stream: &SCStream) -> Result<(), CaptureError> {
     let (tx, rx) = sync_channel::<Result<(), CaptureError>>(1);
     let tx = Arc::new(Mutex::new(Some(tx)));
-    let block: RcBlock<'static, fn(*mut NSError), dyn Send + Sync> =
-        RcBlock::new(move |error: *mut NSError| {
-            let result = if error.is_null() {
-                Ok(())
-            } else {
-                Err(CaptureError::Backend)
-            };
-            if let Some(tx) = take_sender(&tx) {
-                let _ = tx.send(result);
-            }
-        });
-    stream.stopCaptureWithCompletionHandler(Some(&block));
+    let block: RcBlock<dyn Fn(*mut NSError)> = RcBlock::new(move |error: *mut NSError| {
+        let result = if error.is_null() {
+            Ok(())
+        } else {
+            Err(CaptureError::Backend)
+        };
+        if let Some(tx) = take_sender(&tx) {
+            let _ = tx.send(result);
+        }
+    });
+    // SAFETY: `stream` is a valid, running stream; `block` is a valid, kept-alive-for-the-call
+    // block reference.
+    unsafe { stream.stopCaptureWithCompletionHandler(Some(&block)) };
     rx.recv_timeout(COMPLETION_TIMEOUT)
         .map_err(|_| CaptureError::Backend)?
 }

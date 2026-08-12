@@ -120,8 +120,12 @@ objc2-core-media = { version = "0.3", default-features = false, features = [
     "CMTime",
     "CMTimeRange",
     "CMBlockBuffer",
+    # Gates `CMAudioFormatDescriptionGetStreamBasicDescription` and the
+    # `AudioStreamBasicDescription` interop used by `apple::replaykit`'s app/mic audio extraction.
+    "objc2-core-audio-types",
 ] }
 objc2-core-video = { version = "0.3", default-features = false, features = [
+    "CVBase",
     "CVBuffer",
     "CVImageBuffer",
     "CVPixelBuffer",

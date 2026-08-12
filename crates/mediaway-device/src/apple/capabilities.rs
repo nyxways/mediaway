@@ -75,12 +75,22 @@ pub fn request_permission(kind: DeviceKind) -> Result<PermissionState, CaptureEr
         return Ok(PermissionState::NotSupported);
     }
     match kind {
-        DeviceKind::Camera => Ok(map_authorization(unsafe {
-            AVCaptureDevice::authorizationStatusForMediaType(AVMediaTypeVideo)
-        })),
-        DeviceKind::Microphone => Ok(map_authorization(unsafe {
-            AVCaptureDevice::authorizationStatusForMediaType(AVMediaTypeAudio)
-        })),
+        DeviceKind::Camera => {
+            // SAFETY: `AVMediaTypeVideo` is a valid, process-lifetime static constant (itself
+            // `Option<&'static AVMediaType>`, hence the `ok_or` below);
+            // `authorizationStatusForMediaType` is a plain, always-safe-to-call class method.
+            let media_type = unsafe { AVMediaTypeVideo }.ok_or(CaptureError::Backend)?;
+            Ok(map_authorization(unsafe {
+                AVCaptureDevice::authorizationStatusForMediaType(media_type)
+            }))
+        }
+        DeviceKind::Microphone => {
+            // SAFETY: same as above, for `AVMediaTypeAudio`.
+            let media_type = unsafe { AVMediaTypeAudio }.ok_or(CaptureError::Backend)?;
+            Ok(map_authorization(unsafe {
+                AVCaptureDevice::authorizationStatusForMediaType(media_type)
+            }))
+        }
         DeviceKind::Screen => screen_permission(),
         _ => Ok(PermissionState::NotSupported),
     }
@@ -98,8 +108,9 @@ fn map_authorization(status: AVAuthorizationStatus) -> PermissionState {
 
 #[cfg(target_os = "macos")]
 fn screen_permission() -> Result<PermissionState, CaptureError> {
-    // SAFETY: plain, safe, no-dialog C function.
-    let granted = unsafe { objc2_core_graphics::CGPreflightScreenCaptureAccess() };
+    // `CGPreflightScreenCaptureAccess` is a safe wrapper (`pub extern "C-unwind" fn`, not `pub
+    // unsafe fn`) around the real no-dialog C function — no `unsafe` needed to call it.
+    let granted = objc2_core_graphics::CGPreflightScreenCaptureAccess();
     Ok(if granted {
         PermissionState::Granted
     } else {

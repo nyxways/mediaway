@@ -99,9 +99,12 @@ fn frame_rate_hint_computes_from_timebase() {
 
 #[test]
 fn cmtime_from_pts_carries_value_and_timescale() {
+    // `CMTime` is `#[repr(C, packed(4))]` — copy fields to locals before comparing, taking a
+    // reference to a packed field directly is unaligned UB.
     let t = cmtime_from_pts(42, 30);
-    assert_eq!(t.value, 42);
-    assert_eq!(t.timescale, 30);
+    let (value, timescale) = (t.value, t.timescale);
+    assert_eq!(value, 42);
+    assert_eq!(timescale, 30);
 }
 
 #[test]

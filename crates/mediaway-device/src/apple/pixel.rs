@@ -10,7 +10,11 @@
 
 use mediaway_common::Bytes;
 use objc2_core_media::CMSampleBuffer;
-use objc2_core_video::{CVPixelBuffer, CVPixelBufferLockFlags};
+use objc2_core_video::{
+    CVPixelBuffer, CVPixelBufferGetBaseAddressOfPlane, CVPixelBufferGetBytesPerRowOfPlane,
+    CVPixelBufferGetHeightOfPlane, CVPixelBufferGetPlaneCount, CVPixelBufferGetWidthOfPlane,
+    CVPixelBufferLockBaseAddress, CVPixelBufferLockFlags, CVPixelBufferUnlockBaseAddress,
+};
 
 /// Extract one owned NV12-shaped (bi-planar 4:2:0) frame from `sample_buffer`'s image buffer.
 /// Returns `None` if the buffer has no image, does not downcast to `CVPixelBuffer`, or is not
@@ -27,29 +31,30 @@ pub(super) unsafe fn extract_nv12(sample_buffer: &CMSampleBuffer) -> Option<(Byt
     let pixel_buffer = image_buffer.downcast::<CVPixelBuffer>().ok()?;
 
     // SAFETY: `pixel_buffer` is a valid, retained `CVPixelBuffer`.
-    let status = unsafe { pixel_buffer.lock_base_address(CVPixelBufferLockFlags::ReadOnly) };
+    let status =
+        unsafe { CVPixelBufferLockBaseAddress(&pixel_buffer, CVPixelBufferLockFlags::ReadOnly) };
     if status != 0 {
         return None;
     }
 
     let result = (|| {
-        let plane_count = pixel_buffer.plane_count();
+        let plane_count = CVPixelBufferGetPlaneCount(&pixel_buffer);
         if plane_count != 2 {
             return None;
         }
-        let width = u32::try_from(pixel_buffer.width_of_plane(0)).ok()?;
-        let height = u32::try_from(pixel_buffer.height_of_plane(0)).ok()?;
+        let width = u32::try_from(CVPixelBufferGetWidthOfPlane(&pixel_buffer, 0)).ok()?;
+        let height = u32::try_from(CVPixelBufferGetHeightOfPlane(&pixel_buffer, 0)).ok()?;
         let mut out = Vec::new();
         for plane in 0..2 {
-            let plane_width = pixel_buffer.width_of_plane(plane);
-            let plane_height = pixel_buffer.height_of_plane(plane);
-            let row_bytes = pixel_buffer.bytes_per_row_of_plane(plane);
+            let plane_width = CVPixelBufferGetWidthOfPlane(&pixel_buffer, plane);
+            let plane_height = CVPixelBufferGetHeightOfPlane(&pixel_buffer, plane);
+            let row_bytes = CVPixelBufferGetBytesPerRowOfPlane(&pixel_buffer, plane);
             let row_width_bytes = if plane == 0 {
                 plane_width
             } else {
                 plane_width * 2
             };
-            let base = pixel_buffer.base_address_of_plane(plane);
+            let base = CVPixelBufferGetBaseAddressOfPlane(&pixel_buffer, plane);
             if base.is_null() || row_bytes < row_width_bytes {
                 return None;
             }
@@ -69,6 +74,6 @@ pub(super) unsafe fn extract_nv12(sample_buffer: &CMSampleBuffer) -> Option<(Byt
     })();
 
     // SAFETY: `pixel_buffer` is the same, still-valid buffer locked above.
-    unsafe { pixel_buffer.unlock_base_address(CVPixelBufferLockFlags::ReadOnly) };
+    unsafe { CVPixelBufferUnlockBaseAddress(&pixel_buffer, CVPixelBufferLockFlags::ReadOnly) };
     result
 }

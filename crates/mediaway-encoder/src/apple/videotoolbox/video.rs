@@ -17,15 +17,17 @@ use mediaway_common::{
 };
 
 use objc2_core_foundation::{
-    CFNumber, CFNumberType, CFRetained, CFString, kCFBooleanFalse, kCFBooleanTrue,
+    CFBoolean, CFNumber, CFNumberType, CFRetained, CFString, CFType, kCFBooleanFalse,
+    kCFBooleanTrue,
 };
 use objc2_core_media::{
-    CMBlockBuffer, CMFormatDescription, CMSampleBuffer, CMTime, CMVideoFormatDescription,
-    kCMTimeIndefinite,
+    CMFormatDescription, CMSampleBuffer, CMTime,
+    CMVideoFormatDescriptionGetH264ParameterSetAtIndex, kCMTimeIndefinite,
 };
 use objc2_core_video::{
-    CVPixelBuffer, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
-    kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, kCVReturnSuccess,
+    CVPixelBuffer, CVPixelBufferCreateWithPlanarBytes,
+    kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+    kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
 };
 use objc2_video_toolbox::{
     VTCompressionSession, VTEncodeInfoFlags, VTSessionSetProperty,
@@ -108,13 +110,13 @@ impl VideoToolboxVideoEncoder {
         // in `Drop`, see that impl and ADR-0001 § Callback design.
         let refcon_ptr = Arc::into_raw(Arc::clone(&shared));
 
-        let mut session_out: Option<CFRetained<VTCompressionSession>> = None;
+        let mut session_ptr: *mut VTCompressionSession = std::ptr::null_mut();
         // SAFETY: `output_callback` is a real `extern "C-unwind" fn` matching
         // `VTCompressionOutputCallback`'s exact signature; `refcon_ptr` is a valid, live pointer
         // for at least the session's lifetime (reclaimed only in `Drop`, after `invalidate()`);
-        // `session_out` starts `None` as `VTCompressionSession::new` requires.
+        // `session_ptr` starts null.
         let status = unsafe {
-            VTCompressionSession::new(
+            VTCompressionSession::create(
                 None,
                 width,
                 height,
@@ -124,20 +126,24 @@ impl VideoToolboxVideoEncoder {
                 None,
                 Some(compression_output_callback),
                 refcon_ptr.cast::<c_void>().cast_mut(),
-                &mut session_out,
+                NonNull::from(&mut session_ptr),
             )
         };
-        let Some(session) = session_out else {
+        if status != NO_ERROR {
             // SAFETY: reclaims the extra strong count taken above; no callback can have fired
             // since the session was never successfully created.
             drop(unsafe { Arc::from_raw(refcon_ptr) });
             return Err(EncodeError::Backend);
-        };
-        if status != NO_ERROR {
-            // SAFETY: same reasoning as the `None` branch above.
+        }
+        let Some(session_ptr) = NonNull::new(session_ptr) else {
+            // SAFETY: same reasoning as the failure branch above.
             drop(unsafe { Arc::from_raw(refcon_ptr) });
             return Err(EncodeError::Backend);
-        }
+        };
+        // SAFETY: `session_ptr` is a valid, non-null pointer VideoToolbox returned alongside a
+        // `NO_ERROR` status — `VTCompressionSessionCreate`'s Create Rule guarantees this carries
+        // a +1 owned reference, which `CFRetained::from_raw` takes ownership of.
+        let session = unsafe { CFRetained::from_raw(session_ptr) };
 
         if let Err(e) = configure_properties(&session, config) {
             // SAFETY: same reasoning as the earlier failure branches — no callback can have
@@ -188,7 +194,7 @@ impl VideoEncoder for VideoToolboxVideoEncoder {
         let pts = cmtime_from_pts(frame.pts, self.shared.time_base_den);
 
         // SAFETY: `pixel_buffer` is a freshly created, valid `CVPixelBuffer`; `source_frame_
-        // refcon`/`info_flags_out` are intentionally unused (`null_mut`/`None`) — this backend
+        // refcon`/`info_flags_out` are intentionally unused (both `null_mut`) — this backend
         // recovers timing from the output `CMSampleBuffer` itself (see `handle_output`), not a
         // threaded-through refcon.
         let status = unsafe {
@@ -198,7 +204,7 @@ impl VideoEncoder for VideoToolboxVideoEncoder {
                 kCMTimeIndefinite,
                 None,
                 std::ptr::null_mut(),
-                None,
+                std::ptr::null_mut(),
             )
         };
         if status != NO_ERROR {
@@ -333,46 +339,16 @@ fn handle_output(shared: &SharedState, sample_buffer: &CMSampleBuffer) {
 /// SPS/PPS → `avcC`, reusing the existing `iso_bmff::bitstream::avc::to_avcc` helper (already
 /// used by `src/windows/wmf/video.rs`) rather than writing a new avcC builder — see ADR-0001.
 fn extract_avcc_extra_data(format_desc: &CMFormatDescription) -> Option<Bytes> {
-    let mut sps_ptr: *const u8 = std::ptr::null();
-    let mut sps_len: usize = 0;
-    let mut pps_ptr: *const u8 = std::ptr::null();
-    let mut pps_len: usize = 0;
-    let mut count: usize = 0;
-
-    // SAFETY: `format_desc` is a valid, retained `CMFormatDescription` (obtained from the
-    // callback's sample buffer); all out-pointers below are valid local stack slots.
-    let status_sps = unsafe {
-        CMVideoFormatDescription::h264_parameter_set_at_index(
-            format_desc,
-            0,
-            Some(&mut sps_ptr),
-            Some(&mut sps_len),
-            Some(&mut count),
-            None,
-        )
-    };
-    if status_sps != NO_ERROR || count < 2 || sps_ptr.is_null() {
+    let (sps_ptr, sps_len, param_count) = h264_parameter_set_at_index(format_desc, 0)?;
+    if param_count < 2 {
         return None;
     }
-    // SAFETY: same reasoning as the SPS call above.
-    let status_pps = unsafe {
-        CMVideoFormatDescription::h264_parameter_set_at_index(
-            format_desc,
-            1,
-            Some(&mut pps_ptr),
-            Some(&mut pps_len),
-            None,
-            None,
-        )
-    };
-    if status_pps != NO_ERROR || pps_ptr.is_null() {
-        return None;
-    }
+    let (pps_ptr, pps_len, _) = h264_parameter_set_at_index(format_desc, 1)?;
 
     // SAFETY: VideoToolbox guarantees `sps_ptr`/`pps_ptr` point at `sps_len`/`pps_len` valid
     // bytes of `format_desc`'s own internal memory for as long as `format_desc` is retained
-    // (per `h264_parameter_set_at_index`'s own doc comment); copied out immediately below, no
-    // pointer outlives this function.
+    // (per `CMVideoFormatDescriptionGetH264ParameterSetAtIndex`'s own doc comment); copied out
+    // immediately below, no pointer outlives this function.
     let (sps, pps) = unsafe {
         (
             std::slice::from_raw_parts(sps_ptr, sps_len),
@@ -387,6 +363,34 @@ fn extract_avcc_extra_data(format_desc: &CMFormatDescription) -> Option<Bytes> {
     annex_b.extend_from_slice(pps);
 
     iso_bmff::bitstream::avc::to_avcc(&annex_b).avcc
+}
+
+/// One parameter-set NAL unit (pointer + length, into `format_desc`'s own internal memory) plus
+/// the total parameter-set count in `format_desc`'s AVC decoder configuration record.
+fn h264_parameter_set_at_index(
+    format_desc: &CMFormatDescription,
+    index: usize,
+) -> Option<(*const u8, usize, usize)> {
+    let mut ptr: *const u8 = std::ptr::null();
+    let mut len: usize = 0;
+    let mut count: usize = 0;
+
+    // SAFETY: `format_desc` is a valid, retained `CMFormatDescription` (obtained from the
+    // callback's sample buffer); all out-pointers below are valid local stack slots.
+    let status = unsafe {
+        CMVideoFormatDescriptionGetH264ParameterSetAtIndex(
+            format_desc,
+            index,
+            &mut ptr,
+            &mut len,
+            &mut count,
+            std::ptr::null_mut(),
+        )
+    };
+    if status != NO_ERROR || ptr.is_null() {
+        return None;
+    }
+    Some((ptr, len, count))
 }
 
 /// Copy CPU NV12 bytes into a fresh `CVPixelBuffer` (`CVPixelBufferCreateWithPlanarBytes`,
@@ -423,7 +427,7 @@ fn upload_cpu_nv12(
     };
 
     let release_ref_con = Box::into_raw(owned).cast::<c_void>();
-    let mut pixel_buffer_out: Option<CFRetained<CVPixelBuffer>> = None;
+    let mut pixel_buffer_ptr: *mut CVPixelBuffer = std::ptr::null_mut();
 
     let Some(plane_base_address_ptr) = NonNull::new(plane_base_address.as_mut_ptr()) else {
         // SAFETY: reclaims the box handed to VideoToolbox above — creation never reached the
@@ -448,9 +452,9 @@ fn upload_cpu_nv12(
     // `number_of_planes = 2`; `release_callback` is a real `extern "C-unwind" fn` matching
     // `CVPixelBufferReleasePlanarBytesCallback`'s exact signature; `release_ref_con` is the
     // `Box::into_raw` pointer this function just took, reclaimed exactly once by that callback;
-    // `pixel_buffer_out` starts `None` as required.
+    // `pixel_buffer_ptr` starts null as required.
     let cv_return = unsafe {
-        CVPixelBuffer::with_planar_bytes(
+        CVPixelBufferCreateWithPlanarBytes(
             None,
             width as usize,
             height as usize,
@@ -465,12 +469,17 @@ fn upload_cpu_nv12(
             Some(release_planar_bytes),
             release_ref_con,
             None,
-            &mut pixel_buffer_out,
+            NonNull::from(&mut pixel_buffer_ptr),
         )
     };
 
-    match (cv_return, pixel_buffer_out) {
-        (NO_ERROR, Some(pixel_buffer)) => Ok(pixel_buffer),
+    match (cv_return, NonNull::new(pixel_buffer_ptr)) {
+        (NO_ERROR, Some(pixel_buffer_ptr)) => {
+            // SAFETY: `pixel_buffer_ptr` is a valid, non-null pointer returned alongside a
+            // `NO_ERROR` status — `CVPixelBufferCreateWithPlanarBytes`'s Create Rule guarantees
+            // this carries a +1 owned reference, which `CFRetained::from_raw` takes ownership of.
+            Ok(unsafe { CFRetained::from_raw(pixel_buffer_ptr) })
+        }
         _ => {
             // SAFETY: creation failed before VideoToolbox could take ownership of the box (the
             // release callback is never invoked on a `CVPixelBufferCreateWithPlanarBytes`
@@ -564,17 +573,19 @@ unsafe fn set_bool_property(
     key: &CFString,
     value: bool,
 ) -> Result<(), EncodeError> {
-    // SAFETY: reading a real `extern "C"` static CFBoolean singleton.
+    // SAFETY: reading a real `extern "C"` static CFBoolean singleton — already `Option`-typed
+    // (nullable), so this is passed through as-is rather than re-wrapped in `Some(..)`.
     let cf_bool = unsafe {
         if value {
             kCFBooleanTrue
         } else {
             kCFBooleanFalse
         }
-    };
+    }
+    .map(|b: &CFBoolean| -> &CFType { b });
     // SAFETY: `session` derefs to `&VTSession` per CF toll-free bridging; `cf_bool` is a valid
     // static singleton.
-    let status = unsafe { VTSessionSetProperty(session, key, Some(cf_bool)) };
+    let status = unsafe { VTSessionSetProperty(session, key, cf_bool) };
     if status == NO_ERROR {
         Ok(())
     } else {
@@ -608,7 +619,7 @@ fn frame_rate_hint(time_base: mediaway_common::Rational) -> i32 {
     if time_base.num == 0 {
         return 30;
     }
-    i32::try_from(time_base.den / time_base.num)
+    i32::try_from(u64::from(time_base.den) / time_base.num)
         .unwrap_or(30)
         .max(1)
 }

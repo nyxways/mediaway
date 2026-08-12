@@ -4,7 +4,8 @@
     clippy::print_stderr,
     clippy::cast_possible_wrap,
     clippy::significant_drop_tightening,
-    reason = "test modules may unwrap / print"
+    clippy::panic,
+    reason = "test modules may unwrap / print / panic on assertion failure"
 )]
 
 use super::*;

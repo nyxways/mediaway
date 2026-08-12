@@ -539,7 +539,7 @@ fn detect_first_image_format(reader: &ImageReader) -> Result<PixelFormat, Captur
 /// Real `ACameraManager_getCameraIdList` count, no device opened — used by
 /// `capabilities::camera_support` as a cheaper-than-`open` support probe, mirroring
 /// `linux::camera::enumerate_camera_paths`'s own cost class.
-pub fn camera_id_count() -> usize {
+pub(super) fn camera_id_count() -> usize {
     // SAFETY: `ACameraManager_create` either returns a valid, owned pointer or null (checked
     // below) — no preconditions.
     let manager = unsafe { ndk_sys::ACameraManager_create() };

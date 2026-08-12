@@ -65,7 +65,7 @@ struct FrameQueues {
 }
 
 impl FrameQueues {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             video: Mutex::new(VecDeque::new()),
             app_audio: Mutex::new(VecDeque::new()),
@@ -84,7 +84,7 @@ struct StreamInfos {
 }
 
 impl StreamInfos {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             video: std::sync::OnceLock::new(),
             app_audio: std::sync::OnceLock::new(),
@@ -272,11 +272,7 @@ unsafe fn extract_pcm(sample_buffer: &CMSampleBuffer) -> Option<AudioFrame> {
     let bytes = unsafe { std::slice::from_raw_parts(data_ptr.cast::<u8>(), total_len) };
 
     let bytes_per_frame = 4usize.saturating_mul(channels as usize);
-    let num_frames = if bytes_per_frame == 0 {
-        0
-    } else {
-        total_len / bytes_per_frame
-    };
+    let num_frames = total_len.checked_div(bytes_per_frame).unwrap_or(0);
 
     // `asbd.mSampleRate > 0.0` is checked above; real audio sample rates (e.g. 44100/48000) are
     // always small positive integers, exact in `u32`.
@@ -571,9 +567,10 @@ struct ExtensionSession {
     next_pts: AtomicI64,
 }
 
-/// Push-in / pull-out sink for a Broadcast Upload Extension's `RPBroadcastSampleHandler`. See
-/// module docs and ADR-0004 § Host-extension contract — this type has **no OS session of its
-/// own**; the host extension's own real Swift/Objective-C code (this crate cannot write it)
+/// Push-in / pull-out sink for a Broadcast Upload Extension's `RPBroadcastSampleHandler`.
+///
+/// See module docs and ADR-0004 § Host-extension contract — this type has **no OS session of
+/// its own**; the host extension's own real Swift/Objective-C code (this crate cannot write it)
 /// calls [`Self::push_sample_buffer`] once per `processSampleBuffer:withType:` invocation.
 pub struct AppleBroadcastExtensionCapture {
     inner: Option<ExtensionSession>,
@@ -628,12 +625,11 @@ impl AppleBroadcastExtensionCapture {
         Ok(())
     }
 
-    fn close_inner(&mut self) -> Result<(), CaptureError> {
+    fn close_inner(&mut self) {
         // No ReplayKit-related teardown — the host extension's own `broadcastFinished`/
         // `finishBroadcastWithError` handlers own that (ADR-0004 § Host-extension contract
         // step 6). This just drops the queues.
         self.inner = None;
-        Ok(())
     }
 }
 
@@ -676,7 +672,7 @@ impl DesktopVideoCapture for AppleBroadcastExtensionCapture {
     }
 
     fn close(&mut self) -> Result<(), CaptureError> {
-        self.close_inner()
+        Ok(self.close_inner())
     }
 }
 
@@ -712,7 +708,7 @@ impl DesktopAudioCapture for AppleBroadcastExtensionCapture {
     }
 
     fn close(&mut self) -> Result<(), CaptureError> {
-        self.close_inner()
+        Ok(self.close_inner())
     }
 }
 
@@ -748,13 +744,13 @@ impl AudioCapture for AppleBroadcastExtensionCapture {
     }
 
     fn close(&mut self) -> Result<(), CaptureError> {
-        self.close_inner()
+        Ok(self.close_inner())
     }
 }
 
 impl Drop for AppleBroadcastExtensionCapture {
     fn drop(&mut self) {
-        let _ = self.close_inner();
+        self.close_inner();
     }
 }
 

@@ -112,9 +112,11 @@ struct CameraSession {
     _dispatch_queue: DispatchRetained<DispatchQueue>,
 }
 
-/// Apple camera capture session (`AVCaptureSession`, CPU NV12 frames, `VideoRange` — real camera
-/// hardware convention, deliberately diverging from `mediaway-encoder::apple`'s `FullRange`
-/// choice for its own synthetic encode input). See module docs for scope.
+/// Apple camera capture session (`AVCaptureSession`, CPU NV12 frames).
+///
+/// Uses `VideoRange` — the real camera hardware convention, deliberately diverging from
+/// `mediaway-encoder::apple`'s `FullRange` choice for its own synthetic encode input. See module
+/// docs for scope.
 pub struct AppleCameraCapture {
     inner: Option<CameraSession>,
 }
@@ -182,7 +184,7 @@ impl AppleCameraCapture {
         // Foundation bridging guarantee) — reinterpreting its reference as `&NSString` is the
         // standard technique for using a `CF*` string constant as an `NSDictionary` key.
         let key: &NSString =
-            unsafe { &*(std::ptr::from_ref(kCVPixelBufferPixelFormatTypeKey) as *const NSString) };
+            unsafe { &*std::ptr::from_ref(kCVPixelBufferPixelFormatTypeKey).cast::<NSString>() };
         let value = NSNumber::numberWithUnsignedInt(requested_format);
         // `setVideoSettings` requires `NSDictionary<NSString, AnyObject>` — `NSNumber`'s declared
         // inheritance chain (`NSValue`, `NSObject`) has no direct `AsRef<AnyObject>`, so this goes

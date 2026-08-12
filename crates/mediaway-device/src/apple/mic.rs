@@ -52,9 +52,10 @@ struct MicSession {
     _tap_block: RcBlock<dyn Fn(NonNull<AVAudioPCMBuffer>, NonNull<AVAudioTime>)>,
 }
 
-/// Apple microphone capture via an `AVAudioEngine` input tap (system default input only this
-/// slice — `AVAudioEngine.inputNode` has no per-device selection API without a separate
-/// `AVAudioSession` dependency this backend does not add).
+/// Apple microphone capture via an `AVAudioEngine` input tap.
+///
+/// System default input only this slice — `AVAudioEngine.inputNode` has no per-device selection
+/// API without a separate `AVAudioSession` dependency this backend does not add.
 pub struct AppleMicrophoneCapture {
     inner: Option<MicSession>,
 }
@@ -91,7 +92,7 @@ impl AppleMicrophoneCapture {
         let format = unsafe { input.outputFormatForBus(0) };
         // SAFETY: `format` is a valid, just-obtained `AVAudioFormat`.
         let (sample_rate, channels) = unsafe { (format.sampleRate(), format.channelCount()) };
-        if !(sample_rate > 0.0) || channels == 0 {
+        if sample_rate <= 0.0 || channels == 0 {
             return Err(CaptureError::Backend);
         }
         let channels_usize = channels as usize;

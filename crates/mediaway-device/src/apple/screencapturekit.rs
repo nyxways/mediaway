@@ -330,8 +330,15 @@ fn take_sender<T>(state: &Mutex<Option<SyncSender<T>>>) -> Option<SyncSender<T>>
 
 /// Bridges `SCShareableContent::getShareableContentWithCompletionHandler` (a real, confirmed
 /// async completion-handler call — see module docs) to a synchronous return.
+///
+/// The completion handler may run on any thread the OS chooses, so the retained result crosses
+/// threads via this function's `sync_channel`. `Retained<SCShareableContent>` is not `Send`
+/// (`SCShareableContent`'s thread-safety is undocumented), so the channel carries a raw `+1`
+/// pointer (`Retained::into_raw`/`Retained::from_raw` — a plain pointer value, genuinely `Send`)
+/// instead of the `Retained` itself; only the actual retain/release calls (safe on any thread per
+/// Apple's memory-management contract) happen on either side of the crossing.
 fn fetch_shareable_content() -> Result<Retained<SCShareableContent>, CaptureError> {
-    let (tx, rx) = sync_channel::<Result<Retained<SCShareableContent>, CaptureError>>(1);
+    let (tx, rx) = sync_channel::<Result<*mut SCShareableContent, CaptureError>>(1);
     let tx = Arc::new(Mutex::new(Some(tx)));
     // `RcBlock<F>` takes exactly one generic parameter — the `dyn Fn(...)` block signature itself
     // — not a separate lifetime/fn-pointer/marker-trait triple.
@@ -342,8 +349,11 @@ fn fetch_shareable_content() -> Result<Retained<SCShareableContent>, CaptureErro
             } else {
                 // SAFETY: a completion-handler callback parameter is a borrowed (+0) object per
                 // ordinary Cocoa convention; `retain` takes ownership for use after this
-                // callback returns.
-                unsafe { Retained::retain(content) }.ok_or(CaptureError::Backend)
+                // callback returns; `into_raw` hands that +1 ownership across the channel as a
+                // plain pointer value.
+                unsafe { Retained::retain(content) }
+                    .map(Retained::into_raw)
+                    .ok_or(CaptureError::Backend)
             };
             if let Some(tx) = take_sender(&tx) {
                 let _ = tx.send(result);
@@ -352,8 +362,12 @@ fn fetch_shareable_content() -> Result<Retained<SCShareableContent>, CaptureErro
     );
     // SAFETY: `block` is a valid, kept-alive-for-the-call block reference.
     unsafe { SCShareableContent::getShareableContentWithCompletionHandler(&block) };
-    rx.recv_timeout(COMPLETION_TIMEOUT)
-        .map_err(|_| CaptureError::Backend)?
+    let ptr = rx
+        .recv_timeout(COMPLETION_TIMEOUT)
+        .map_err(|_| CaptureError::Backend)??;
+    // SAFETY: `ptr` is exactly the `Retained::into_raw` pointer produced above, carrying the same
+    // +1 retain count `from_raw` expects.
+    unsafe { Retained::from_raw(ptr) }.ok_or(CaptureError::Backend)
 }
 
 fn start_capture(stream: &SCStream) -> Result<(), CaptureError> {

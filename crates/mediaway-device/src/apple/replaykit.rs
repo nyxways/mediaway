@@ -239,7 +239,7 @@ unsafe fn extract_pcm(sample_buffer: &CMSampleBuffer) -> Option<AudioFrame> {
         return None;
     }
     let channels = asbd.mChannelsPerFrame;
-    if channels == 0 || !(asbd.mSampleRate > 0.0) {
+    if channels == 0 || asbd.mSampleRate <= 0.0 {
         return None;
     }
 

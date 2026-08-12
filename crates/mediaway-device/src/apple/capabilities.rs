@@ -32,7 +32,7 @@ pub fn support(kind: DeviceKind) -> Support {
 }
 
 #[cfg(target_os = "macos")]
-fn screen_support() -> Support {
+const fn screen_support() -> Support {
     Support::Supported
 }
 
@@ -91,12 +91,12 @@ pub fn request_permission(kind: DeviceKind) -> Result<PermissionState, CaptureEr
                 AVCaptureDevice::authorizationStatusForMediaType(media_type)
             }))
         }
-        DeviceKind::Screen => screen_permission(),
+        DeviceKind::Screen => Ok(screen_permission()),
         _ => Ok(PermissionState::NotSupported),
     }
 }
 
-fn map_authorization(status: AVAuthorizationStatus) -> PermissionState {
+const fn map_authorization(status: AVAuthorizationStatus) -> PermissionState {
     match status {
         AVAuthorizationStatus::Authorized => PermissionState::Granted,
         AVAuthorizationStatus::Denied | AVAuthorizationStatus::Restricted => {
@@ -107,20 +107,20 @@ fn map_authorization(status: AVAuthorizationStatus) -> PermissionState {
 }
 
 #[cfg(target_os = "macos")]
-fn screen_permission() -> Result<PermissionState, CaptureError> {
+fn screen_permission() -> PermissionState {
     // `CGPreflightScreenCaptureAccess` is a safe wrapper (`pub extern "C-unwind" fn`, not `pub
     // unsafe fn`) around the real no-dialog C function — no `unsafe` needed to call it.
     let granted = objc2_core_graphics::CGPreflightScreenCaptureAccess();
-    Ok(if granted {
+    if granted {
         PermissionState::Granted
     } else {
         PermissionState::Unknown
-    })
+    }
 }
 
 #[cfg(target_os = "ios")]
-fn screen_permission() -> Result<PermissionState, CaptureError> {
-    Ok(PermissionState::Unknown)
+const fn screen_permission() -> PermissionState {
+    PermissionState::Unknown
 }
 
 #[cfg(test)]

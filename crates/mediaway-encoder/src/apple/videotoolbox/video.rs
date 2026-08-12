@@ -421,9 +421,12 @@ fn upload_cpu_nv12(
     let mut plane_height = [height as usize, (height / 2) as usize];
     let mut plane_bytes_per_row = [width as usize, width as usize];
 
+    // `ColorRange` is `#[non_exhaustive]` (declared in a different crate) — an unmatched future
+    // variant is a real "we don't know this range" case, not reachable today.
     let pixel_format_type = match color_range {
         ColorRange::Video => kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
         ColorRange::Full => kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+        _ => return Err(EncodeError::Unsupported),
     };
 
     let release_ref_con = Box::into_raw(owned).cast::<c_void>();

@@ -265,7 +265,7 @@ fn frame_rate_hint(time_base: mediaway_common::Rational) -> i32 {
     if time_base.num == 0 {
         return 30;
     }
-    i32::try_from(time_base.den / time_base.num)
+    i32::try_from(u64::from(time_base.den) / time_base.num)
         .unwrap_or(30)
         .max(1)
 }

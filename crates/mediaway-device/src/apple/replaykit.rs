@@ -672,7 +672,8 @@ impl DesktopVideoCapture for AppleBroadcastExtensionCapture {
     }
 
     fn close(&mut self) -> Result<(), CaptureError> {
-        Ok(self.close_inner())
+        self.close_inner();
+        Ok(())
     }
 }
 
@@ -708,7 +709,8 @@ impl DesktopAudioCapture for AppleBroadcastExtensionCapture {
     }
 
     fn close(&mut self) -> Result<(), CaptureError> {
-        Ok(self.close_inner())
+        self.close_inner();
+        Ok(())
     }
 }
 
@@ -744,7 +746,8 @@ impl AudioCapture for AppleBroadcastExtensionCapture {
     }
 
     fn close(&mut self) -> Result<(), CaptureError> {
-        Ok(self.close_inner())
+        self.close_inner();
+        Ok(())
     }
 }
 

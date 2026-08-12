@@ -2,7 +2,7 @@
 //! (`AVCaptureVideoDataOutputSampleBufferDelegate`). See
 //! [ADR-0001](adr/apple/0001-avfoundation-camera-capture.md).
 //!
-//! Unlike VideoToolbox's plain C function-pointer callback (`mediaway-encoder::apple`),
+//! Unlike `VideoToolbox`'s plain C function-pointer callback (`mediaway-encoder::apple`),
 //! `AVCaptureVideoDataOutput`'s frame delivery is a full Objective-C protocol conformance — Rust
 //! code defines a real class (`CameraDelegate`, via `objc2`'s `define_class!`) that implements
 //! [`AVCaptureVideoDataOutputSampleBufferDelegate`] and hands an instance to
@@ -160,9 +160,16 @@ impl AppleCameraCapture {
         // SAFETY: `output` is a valid, freshly created output.
         let available = unsafe { output.availableVideoCVPixelFormatTypes() };
         let requested_format = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
+        // `requested_format` is a fixed, known FourCC-style `OSType` constant — reinterpreting
+        // its bits as `i32` to compare against `NSNumber::intValue()` never wraps in practice.
+        #[allow(
+            clippy::cast_possible_wrap,
+            reason = "requested_format is a fixed FourCC-style OSType constant, not user input"
+        )]
+        let requested_format_i32 = requested_format as i32;
         let format_available = available
             .iter()
-            .any(|n| n.intValue() == requested_format as i32);
+            .any(|n| n.intValue() == requested_format_i32);
         if !format_available {
             return Err(CaptureError::Unsupported);
         }

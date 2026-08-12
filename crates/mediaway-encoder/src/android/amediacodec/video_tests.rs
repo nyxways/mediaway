@@ -10,6 +10,10 @@
     clippy::print_stderr,
     reason = "test modules may unwrap / print"
 )]
+#![allow(
+    clippy::float_cmp,
+    reason = "i_frame_interval_secs is exact small-integer division (e.g. 60/30), always exact in f32"
+)]
 
 use super::*;
 use mediaway_common::{CodecKind, Rational};

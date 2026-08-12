@@ -258,9 +258,9 @@ unsafe fn extract_pcm(sample_buffer: &CMSampleBuffer) -> Option<AudioFrame> {
     let status = unsafe {
         block_buffer.data_pointer(
             0,
-            &mut length_at_offset,
+            &raw mut length_at_offset,
             std::ptr::null_mut(),
-            &mut data_ptr,
+            &raw mut data_ptr,
         )
     };
     if status != 0 || data_ptr.is_null() || length_at_offset != total_len {
@@ -278,10 +278,19 @@ unsafe fn extract_pcm(sample_buffer: &CMSampleBuffer) -> Option<AudioFrame> {
         total_len / bytes_per_frame
     };
 
+    // `asbd.mSampleRate > 0.0` is checked above; real audio sample rates (e.g. 44100/48000) are
+    // always small positive integers, exact in `u32`.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "mSampleRate > 0.0 checked above; real sample rates are small positive integers"
+    )]
+    let sample_rate = asbd.mSampleRate as u32;
+
     Some(AudioFrame {
         pts: 0,
         duration: u64::try_from(num_frames).unwrap_or(0),
-        sample_rate: asbd.mSampleRate as u32,
+        sample_rate,
         channels: u16::try_from(channels).unwrap_or(0),
         format: SampleFormat::F32,
         data: Bytes::copy_from_slice(bytes),

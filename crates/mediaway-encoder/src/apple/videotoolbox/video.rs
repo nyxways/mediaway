@@ -80,6 +80,10 @@ pub(crate) struct VideoToolboxVideoEncoder {
 // `&mut self` API surface already enforces that for the Rust side); the only shared mutable
 // state reachable from another thread is `SharedState`, which uses `Mutex`/`OnceLock`/`AtomicU64`
 // internally.
+#[allow(
+    clippy::non_send_fields_in_send_ty,
+    reason = "CFRetained<VTCompressionSession> is a Core Foundation object — see the SAFETY comment above"
+)]
 unsafe impl Send for VideoToolboxVideoEncoder {}
 
 impl VideoToolboxVideoEncoder {
@@ -381,9 +385,9 @@ fn h264_parameter_set_at_index(
         CMVideoFormatDescriptionGetH264ParameterSetAtIndex(
             format_desc,
             index,
-            &mut ptr,
-            &mut len,
-            &mut count,
+            &raw mut ptr,
+            &raw mut len,
+            &raw mut count,
             std::ptr::null_mut(),
         )
     };
@@ -395,7 +399,7 @@ fn h264_parameter_set_at_index(
 
 /// Copy CPU NV12 bytes into a fresh `CVPixelBuffer` (`CVPixelBufferCreateWithPlanarBytes`,
 /// planar Y/UV base addresses into an owned, heap-allocated copy of `data`, released exactly
-/// once by VideoToolbox via `release_planar_bytes`) — a genuine CPU→driver copy, named to match
+/// once by `VideoToolbox` via `release_planar_bytes`) — a genuine CPU→driver copy, named to match
 /// the Windows/Linux/Android `upload_cpu_*` cost-disclosure convention.
 ///
 /// `color_range` selects `kCVPixelFormatType_420YpCbCr8BiPlanar{Video,Full}Range` — see
@@ -476,26 +480,23 @@ fn upload_cpu_nv12(
         )
     };
 
-    match (cv_return, NonNull::new(pixel_buffer_ptr)) {
-        (NO_ERROR, Some(pixel_buffer_ptr)) => {
-            // SAFETY: `pixel_buffer_ptr` is a valid, non-null pointer returned alongside a
-            // `NO_ERROR` status — `CVPixelBufferCreateWithPlanarBytes`'s Create Rule guarantees
-            // this carries a +1 owned reference, which `CFRetained::from_raw` takes ownership of.
-            Ok(unsafe { CFRetained::from_raw(pixel_buffer_ptr) })
-        }
-        _ => {
-            // SAFETY: creation failed before VideoToolbox could take ownership of the box (the
-            // release callback is never invoked on a `CVPixelBufferCreateWithPlanarBytes`
-            // failure) — reclaim it here instead, the only path that would otherwise leak it.
-            drop(unsafe { Box::from_raw(release_ref_con.cast::<Vec<u8>>()) });
-            Err(EncodeError::Backend)
-        }
+    if let (NO_ERROR, Some(pixel_buffer_ptr)) = (cv_return, NonNull::new(pixel_buffer_ptr)) {
+        // SAFETY: `pixel_buffer_ptr` is a valid, non-null pointer returned alongside a
+        // `NO_ERROR` status — `CVPixelBufferCreateWithPlanarBytes`'s Create Rule guarantees
+        // this carries a +1 owned reference, which `CFRetained::from_raw` takes ownership of.
+        Ok(unsafe { CFRetained::from_raw(pixel_buffer_ptr) })
+    } else {
+        // SAFETY: creation failed before VideoToolbox could take ownership of the box (the
+        // release callback is never invoked on a `CVPixelBufferCreateWithPlanarBytes`
+        // failure) — reclaim it here instead, the only path that would otherwise leak it.
+        drop(unsafe { Box::from_raw(release_ref_con.cast::<Vec<u8>>()) });
+        Err(EncodeError::Backend)
     }
 }
 
 /// SAFETY: `release_ref_con` is exactly the `Box::into_raw(Box::new(Vec<u8>))` pointer
 /// `upload_cpu_nv12` passed as `release_ref_con` to `CVPixelBufferCreateWithPlanarBytes` —
-/// VideoToolbox calls this callback exactly once, when the pixel buffer's retain count reaches
+/// `VideoToolbox` calls this callback exactly once, when the pixel buffer's retain count reaches
 /// zero, and never otherwise touches `release_ref_con`.
 unsafe extern "C-unwind" fn release_planar_bytes(
     release_ref_con: *mut c_void,
@@ -629,16 +630,16 @@ fn frame_rate_hint(time_base: mediaway_common::Rational) -> i32 {
 
 /// Build the input `CMTime` for `encode_frame` from `pts` (in `time_base_den` ticks) — mirrors
 /// how Linux/Android treat `frame.pts` as a direct tick count in the caller's timebase.
-const fn cmtime_from_pts(pts: i64, time_base_den: u32) -> CMTime {
+fn cmtime_from_pts(pts: i64, time_base_den: u32) -> CMTime {
     CMTime {
         value: pts,
-        timescale: time_base_den as i32,
+        timescale: i32::try_from(time_base_den).unwrap_or(i32::MAX),
         flags: objc2_core_media::CMTimeFlags::Valid,
         epoch: 0,
     }
 }
 
-/// Rescale a `CMTime` (the encoder's own returned timescale, which VideoToolbox is free to pick
+/// Rescale a `CMTime` (the encoder's own returned timescale, which `VideoToolbox` is free to pick
 /// independently of what [`cmtime_from_pts`] requested) back into `time_base_den` ticks.
 fn cmtime_to_pts(time: CMTime, time_base_den: u32) -> i64 {
     if time.timescale == 0 {

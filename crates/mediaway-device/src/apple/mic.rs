@@ -95,6 +95,13 @@ impl AppleMicrophoneCapture {
             return Err(CaptureError::Backend);
         }
         let channels_usize = channels as usize;
+        // `sample_rate > 0.0` is checked just above; real audio sample rates (e.g. 44100/48000)
+        // are always small positive integers, exact in `u32`.
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "sample_rate > 0.0 checked above; real sample rates are small positive integers"
+        )]
         let sample_rate_u32 = sample_rate as u32;
 
         let queue = Arc::new(SharedQueue {

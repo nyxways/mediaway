@@ -137,7 +137,7 @@ impl AmediaCodecVideoEncoder {
                         .map_err(|_| EncodeError::Backend)?;
                     return Ok(());
                 }
-                DequeuedInputBufferResult::TryAgainLater => continue,
+                DequeuedInputBufferResult::TryAgainLater => {}
             }
         }
         Err(EncodeError::Backend)
@@ -171,7 +171,7 @@ impl AmediaCodecVideoEncoder {
                     let full = output_buffer.buffer();
                     let end = start.saturating_add(len).min(full.len());
                     let payload = full.get(start..end).unwrap_or(&[]).to_vec();
-                    let pts = i64::try_from(info.presentation_time_us()).unwrap_or(0);
+                    let pts = info.presentation_time_us();
                     let is_eos = flags & BUFFER_FLAG_END_OF_STREAM != 0;
                     self.codec
                         .release_output_buffer(output_buffer, false)
@@ -250,6 +250,10 @@ impl VideoEncoder for AmediaCodecVideoEncoder {
 /// `gop_size` (frames) through `frame_rate` into seconds. Device-dependent, not a hard spec
 /// guarantee — the closest lever to Linux ADR-0001's deterministic per-frame-IDR guarantee. See
 /// this module's doc comment.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "gop_size/frame_rate are small encoder-config integers, always exact in f32"
+)]
 fn i_frame_interval_secs(gop_size: u32, frame_rate: i32) -> f32 {
     if gop_size <= 1 {
         0.0

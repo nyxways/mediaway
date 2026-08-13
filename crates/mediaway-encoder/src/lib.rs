@@ -38,6 +38,8 @@ pub use error::EncodeError;
 pub use video::{RateControlConfig, VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 
 // ── merged platform/domain modules (ADR-0021) ──
+pub mod android;
+pub mod apple;
 pub mod linux;
 pub mod nvenc;
 pub mod quicksync;

@@ -66,6 +66,7 @@ fn encode_frames(frames: &[VideoFrame]) -> Option<Vec<u8>> {
         time_base: Rational::new(1, 30),
         bitrate_bps: 2_000_000,
         pixel_format: PixelFormat::Nv12,
+        color_range: mediaway_common::ColorRange::Video,
         input: VideoInputPreference::CpuUploadOk,
         gpu_device: None,
         gop_size: 1,

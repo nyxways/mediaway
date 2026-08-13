@@ -18,6 +18,7 @@ const fn tiny_h264_cfg() -> VideoEncoderConfig {
         time_base: Rational::new(1, 30),
         bitrate_bps: 500_000,
         pixel_format: mediaway_common::PixelFormat::Nv12,
+        color_range: mediaway_common::ColorRange::Video,
         input: VideoInputPreference::CpuUploadOk,
         gpu_device: None,
         gop_size: 1,

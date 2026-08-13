@@ -8,7 +8,7 @@
 #![forbid(unsafe_code)]
 
 use crate::video::{RateControlConfig, VideoEncoderConfig, VideoInputPreference};
-use mediaway_common::{CodecKind, GpuDeviceHandle, PixelFormat, Rational};
+use mediaway_common::{CodecKind, ColorRange, GpuDeviceHandle, PixelFormat, Rational};
 
 /// How pixels reached the encoder (benchmark / caveat labels).
 ///
@@ -114,6 +114,10 @@ pub struct AutoVideoEncodeConfig {
     pub bitrate_bps: u32,
     /// Hint when a CPU upload path is selected.
     pub pixel_format: PixelFormat,
+    /// YUV sample range of `pixel_format`'s input bytes, forwarded straight to
+    /// [`VideoEncoderConfig::color_range`] — see its docs for the capability-gated fallback
+    /// contract. Defaults to [`ColorRange::Video`].
+    pub color_range: ColorRange,
     /// Worst [`EncodePathClass`] this session will accept, independent of `backend`.
     /// Defaults to [`EncodePathClass::CpuUpload`] (Zero-Copy / GPU-copy / CPU-upload
     /// all allowed; Readback / Software require deliberately raising this).
@@ -153,6 +157,7 @@ impl AutoVideoEncodeConfig {
             time_base,
             bitrate_bps: 0,
             pixel_format: PixelFormat::Nv12,
+            color_range: ColorRange::Video,
             max_path_class: EncodePathClass::CpuUpload,
             gpu_device: None,
             backend: BackendSelection::Auto,
@@ -175,6 +180,7 @@ impl AutoVideoEncodeConfig {
             time_base: self.time_base,
             bitrate_bps: self.bitrate_bps,
             pixel_format: self.pixel_format,
+            color_range: self.color_range,
             input,
             gpu_device,
             gop_size: self.gop_size,

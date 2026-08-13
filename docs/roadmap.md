@@ -103,6 +103,60 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
       (`WindowsAudioDecoder`-style backend switcher) exists yet — same follow-up gap as video's
       D3D12 decode integration.
 - [ ] **Pure Rust SW Codec Extensions**: Add CABAC, P-slice, and B-slice decoding to `mediaway-sw` H.264 decoder (currently Baseline CAVLC I-slice only).
+- [x] **Android Encoder (first Android backend, first "Other" platform)**: `mediaway-encoder::android`
+      (NDK `AMediaCodec` via the `ndk` crate, H.264 CPU-upload only) implemented per
+      `mediaway-encoder/adr/android/0001-ndk-amediacodec-h264-cpu-upload.md` — **zero compile
+      verification as authored** (this dev environment has no Android NDK, a strictly weaker
+      starting point than Linux got via WSL2); a new `android` CI job
+      (`nttld/setup-ndk` + `cargo-ndk`, `arm64-v8a`, API 21, compile+clippy only) is the first
+      real gate before hardware verification is even attempted.
+- [x] **Android Device capture (camera + mic + screen, one vertical slice)**:
+      `mediaway-device::android` — Camera2 NDK raw `ndk-sys` FFI camera (a real gap found:
+      `ndk-sys` has no `camera2ndk` link directive, closed via a new crate `build.rs`), AAudio
+      microphone (blocking `read()`, not the mutex-hostile `data_callback` model), and
+      `MediaProjection` + JNI screen capture — the last domain needs a real host-app (Kotlin/
+      Java) consent-flow contract documented in
+      `mediaway-device/adr/android/0003-mediaprojection-jni-screen-capture.md`, since
+      `android-activity`'s stock `AndroidApp` has no `onActivityResult` hook at all (confirmed
+      via its real source). minSdk **26** for this crate (AAudio + the native `Surface` bridge
+      both need it) — differs from `mediaway-encoder::android`'s 21, a separately scoped
+      decision. **Zero compile verification as authored**; `android` CI job extended with a
+      `mediaway-device` (`-p 26`) lint step in the same PR. All three ADRs
+      (`mediaway-device/adr/android/0001-0003`) Accepted.
+- [x] **Apple Encoder (last "Other" platform)**: `mediaway-encoder::apple` (`VTCompressionSession`
+      via the `objc2-video-toolbox`/`objc2-core-video`/`objc2-core-media`/`objc2-core-foundation`
+      crates, H.264 CPU-upload only) implemented per
+      `mediaway-encoder/adr/apple/0001-videotoolbox-h264-cpu-upload.md` (**Accepted**), grounded
+      in a locally cloned `objc2` checkout (`local/vendor-ref/objc2/`) rather than web-fetched
+      API summaries — caught a real would-be bug (`CreateWithBytes` vs. `CreateWithPlanarBytes`
+      for NV12) before any code was written. **Zero compile verification as authored** — this
+      dev environment cannot even cross-compile Apple code (no legal path outside macOS/Xcode),
+      a harder gap than Android's NDK-only one; `apple-macos`/`apple-ios` CI jobs
+      (`.github/workflows/ci.yml`) are the first real gate. Per-packet `is_keyframe` is a
+      documented approximation (real `CFArray`/`CFDictionary` sync-attachment reading deferred).
+- [x] **`VideoEncoderConfig::color_range` (`ColorRange::Video`/`Full`)**: new shared field
+      (`mediaway-common`), threaded through every backend's `VideoEncoderConfig`/
+      `AutoVideoEncodeConfig` construction site (~25 call sites across the workspace). Only the
+      Apple `VideoToolbox` backend honors it today (`kCVPixelFormatType_420YpCbCr8BiPlanar{Video,
+      Full}Range`); Windows/Linux/Android accept the field but don't yet branch on it, same
+      capability-gated-fallback convention as `gop_size`. Also fixed a real bug found in the
+      same pass: the Android backend's `i-frame-interval` was hardcoded to `0` instead of being
+      computed from `VideoEncoderConfig::gop_size`.
+- [x] **Apple Device capture (camera + mic + screen, one vertical slice)**:
+      `mediaway-device::apple` — `AVCaptureSession` + a `define_class!` delegate for camera (this
+      workspace's first Objective-C delegate-class pattern, unlike Android's C-callback or the
+      encoder's C-function-pointer designs), `AVAudioEngine` input tap for mic (found a real
+      planar-vs-interleaved PCM mismatch before any code was written), `ScreenCaptureKit` for
+      macOS screen (this crate's first genuinely-async `open()`, bridging two real
+      completion-handler calls), and `ReplayKit` for iOS screen — both an in-app
+      `AppleScreenCapture` (video + app audio + mic audio) and a push-in/pull-out
+      `AppleBroadcastExtensionCapture` sink for a host project's own Broadcast Upload Extension
+      `.appex` target (this crate cannot build that target itself; the host-extension contract
+      is documented in `mediaway-device/adr/apple/0004`, mirroring how Android's `MediaProjection`
+      ADR documented its own host-`Activity` contract). **Zero compile verification as
+      authored** (no macOS/Xcode in this dev environment); `apple-macos`/`apple-ios` CI jobs
+      extended with a `mediaway-device` lint step in the same PR. All 4 ADRs
+      (`mediaway-device/adr/apple/0001-0004`) Accepted.
 
 ### 3. Media Containers, Protocols & Image Formats
 - [ ] **Static Image Containers & Codecs**: Expand facade traits and container cores to support image formats (**AVIF**, **HEIC**, **WebP**, **PNG**, **JPEG**, **GIF**).

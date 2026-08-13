@@ -9,9 +9,10 @@
 //! - [`audio`] — `AudioCapture` (microphone) + `AudioPlayback` (render endpoint) — "Audio"
 //!   here means both I/O directions, not capture alone.
 //!
-//! Platform backends (`windows`, `windows_audio`, `windows_camera`, `windows_desktop`,
-//! `linux`, `web`) are `#[cfg]`-gated modules in this same crate rather than separate crates —
-//! see [ADR-0021](https://github.com/nyxways/mediaway/blob/main/docs/adr/0021-workspace-consolidation.md).
+//! Platform backends (`android`, `apple`, `windows`, `windows_audio`, `windows_camera`,
+//! `windows_desktop`, `linux`, `web`) are `#[cfg]`-gated modules in this same crate rather than
+//! separate crates — see
+//! [ADR-0021](https://github.com/nyxways/mediaway/blob/main/docs/adr/0021-workspace-consolidation.md).
 
 #![allow(unsafe_code)]
 
@@ -28,6 +29,8 @@ pub use error::CaptureError;
 pub use hotplug::{DeviceEvent, DeviceHotplug};
 
 // ── merged platform/domain modules (ADR-0021) ──
+pub mod android;
+pub mod apple;
 pub mod audio;
 pub mod camera;
 pub mod desktop;

@@ -4,7 +4,7 @@
 
 use crate::error::EncodeError;
 use mediaway_common::{
-    CodecKind, GpuDeviceHandle, Packet, PixelFormat, Rational, StreamInfo, VideoFrame,
+    CodecKind, ColorRange, GpuDeviceHandle, Packet, PixelFormat, Rational, StreamInfo, VideoFrame,
 };
 
 /// How the caller prefers to feed frames.
@@ -33,6 +33,12 @@ pub struct VideoEncoderConfig {
     pub bitrate_bps: u32,
     /// Preferred input pixel format when the backend converts.
     pub pixel_format: PixelFormat,
+    /// YUV sample range of [`Self::pixel_format`]'s input bytes (irrelevant for packed RGB
+    /// formats). Defaults to [`ColorRange::Video`]. A backend that cannot honor a non-default
+    /// value falls back to its native default and must document that fallback on its own
+    /// encoder type's rustdoc, per `caveats-and-clarity.md` — same convention as
+    /// [`Self::gop_size`] / [`Self::rate_control`].
+    pub color_range: ColorRange,
     /// Input path preference (Zero-Copy vs CPU upload).
     pub input: VideoInputPreference,
     /// GPU device handle when [`VideoInputPreference::ZeroCopyGpu`].
@@ -95,6 +101,7 @@ impl VideoEncoderConfig {
             time_base,
             bitrate_bps: 0,
             pixel_format: PixelFormat::Nv12,
+            color_range: ColorRange::Video,
             input: VideoInputPreference::ZeroCopyGpu,
             gpu_device: None,
             gop_size: 1,
@@ -113,6 +120,7 @@ impl VideoEncoderConfig {
             time_base,
             bitrate_bps: 0,
             pixel_format: PixelFormat::Nv12,
+            color_range: ColorRange::Video,
             input: VideoInputPreference::ZeroCopyGpu,
             gpu_device: None,
             gop_size: 1,
@@ -131,6 +139,7 @@ impl VideoEncoderConfig {
             time_base,
             bitrate_bps: 0,
             pixel_format: PixelFormat::Nv12,
+            color_range: ColorRange::Video,
             input: VideoInputPreference::ZeroCopyGpu,
             gpu_device: None,
             gop_size: 1,
@@ -149,6 +158,7 @@ impl VideoEncoderConfig {
             time_base,
             bitrate_bps: 0,
             pixel_format: PixelFormat::Nv12,
+            color_range: ColorRange::Video,
             input: VideoInputPreference::ZeroCopyGpu,
             gpu_device: None,
             gop_size: 1,

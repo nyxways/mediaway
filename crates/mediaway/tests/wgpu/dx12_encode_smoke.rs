@@ -150,6 +150,7 @@ fn wgpu_dx12_bridge_encodes_h264_or_skip() {
         time_base: Rational::new(1, 30),
         bitrate_bps: 500_000,
         pixel_format: PixelFormat::Bgra8,
+        color_range: mediaway_common::ColorRange::Video,
         input: VideoInputPreference::ZeroCopyGpu,
         gpu_device: Some(gpu_device),
         gop_size: 1,

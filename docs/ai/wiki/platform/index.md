@@ -5,6 +5,7 @@
 | [order](order.md) | Build order: Windows → Web → Linux → other |
 | [windows-encode](windows-encode.md) | WMF + DX11 encoder backend status |
 | [windows-encode-d3d12](windows-encode-d3d12.md) | D3D12 native Video Encode API: H.264/HEVC/AV1 all-intra, GOP, row-based intra refresh — hardware findings |
+| [windows-encode-gpu-input](windows-encode-gpu-input.md) | D3D12 encoder GPU-input Zero-Copy design (wgpu + native capture callers) — Proposed, no code |
 | [windows-decode](windows-decode.md) | WMF + DX11 decoder Zero-Copy out; D3D12 native decode (H.264 implemented, **paused** on a real GPU-TDR hang) |
 | [web-encode](web-encode.md) | WebCodecs + WASM mux (browser) |
 | [linux-encode](linux-encode.md) | VA-API H.264 CPU-upload encode backend; zero HW verification caveat |

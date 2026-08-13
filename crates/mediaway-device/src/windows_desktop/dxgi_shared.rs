@@ -1,19 +1,24 @@
 //! Shared, refcounted DXGI Desktop Duplication sessions.
 //!
-//! See [ADR-0006](../adr/0006-shared-desktop-duplication.md). A dedicated driver
-//! thread owns the real `IDXGIOutputDuplication` exclusively and fans frames out
-//! to attached consumers via one `CopyResource` per consumer per frame — a real,
-//! documented cost the exclusive (single-consumer) path in `dxgi.rs` does not pay.
+//! See [ADR-0006](../adr/windows/0006-shared-desktop-duplication.md) (shared driver
+//! thread, registry keying) and [ADR-0007](../adr/windows/0007-ring-buffer-shared-desktop-duplication.md)
+//! (ring-buffered fan-out this module implements). A dedicated driver thread owns the
+//! real `IDXGIOutputDuplication` exclusively and publishes each frame into a
+//! fixed-depth ring of GPU textures; any number of caught-up consumers share a
+//! published frame via a cheap `Arc` clone — a real Zero-Copy fan-out, not a
+//! per-consumer `CopyResource`. The one remaining mandatory copy is
+//! `AcquireNextFrame` → ring slot (required: the DDA-owned resource becomes invalid
+//! the instant `ReleaseFrame` runs).
 //!
 //! **Thread-ownership discipline**: every COM/D3D11 object this module touches
-//! (`ID3D11Device`, `IDXGIOutputDuplication`, per-consumer `ID3D11Texture2D`) is
+//! (`ID3D11Device`, `IDXGIOutputDuplication`, ring/transient `ID3D11Texture2D`) is
 //! constructed and used *only* on the driver thread that owns it — never moved
 //! across threads. This mirrors the fix `mediaway-device-ffi` ADR-0002 landed
 //! for `WindowsDeviceHotplug: Send` (constructing COM objects lazily, on the
 //! thread that will own them, rather than proving `Send` for a type built
-//! elsewhere). The cross-thread-visible state (`ConsumerRegistry`) is
-//! plain-old-data only (`u64`/`usize`/enum) — trivially `Send + Sync` with no
-//! `unsafe impl` required.
+//! elsewhere). The cross-thread-visible state (`ConsumerRegistry`, [`Ring`],
+//! [`RingSlot`]) is plain-old-data only (`u64`/`usize`/`AtomicU64`/`Arc`) —
+//! trivially `Send + Sync` with no `unsafe impl` required anywhere in this module.
 
 #![allow(unsafe_code)]
 // `dxgi_shared` is a private module (`mod dxgi_shared;`, not `pub mod`), so
@@ -28,12 +33,12 @@ use mediaway_common::{
     VideoFrameStorage, VideoGeometry,
 };
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError, Weak, mpsc};
 use std::thread::JoinHandle;
 use windows::Win32::Graphics::Direct3D11::{
     D3D11_BIND_SHADER_RESOURCE, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, ID3D11Device,
-    ID3D11Texture2D,
+    ID3D11DeviceContext, ID3D11Texture2D,
 };
 use windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC};
 use windows::Win32::Graphics::Dxgi::{
@@ -44,30 +49,63 @@ use windows::core::Interface;
 
 const POLL_TIMEOUT_MS: u32 = 16;
 
+/// Ring depth — a throughput/latency tuning knob, not a correctness bound (see
+/// [ADR-0007](../adr/windows/0007-ring-buffer-shared-desktop-duplication.md) § Q1):
+/// correctness (no torn reads, driver never blocks) holds at any depth ≥ 1 because
+/// of the transient-publish fallback in [`publish_tick`]. 3 gives headroom for a
+/// consumer viewing the previous frame while the driver just produced a new one,
+/// plus one slot of slack.
+const RING_DEPTH: usize = 3;
+
 fn registry() -> &'static Mutex<HashMap<DeviceId, Weak<SharedDuplication>>> {
     static REGISTRY: OnceLock<Mutex<HashMap<DeviceId, Weak<SharedDuplication>>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SlotState {
-    /// Ready to receive the next copied frame.
-    Empty,
-    /// A frame has been copied in and not yet handed to the consumer.
-    Pending,
-    /// Handed to the consumer via `poll_frame`; not yet `release_frame`d.
-    Held,
+/// One ring slot's cross-thread-visible identity — plain data only (a raw pointer
+/// bit pattern + an atomic counter), never the actual COM object, so this is
+/// trivially `Send + Sync` with no `unsafe impl`.
+///
+/// Reclaimable by the driver once `Arc::strong_count(&self) == 1` for one of the
+/// `RING_DEPTH` fixed slots (only the ring's own `Ring::slots` entry holds it — see
+/// [`publish_tick`]). A transient slot (Q1 fallback) is never a member of
+/// `Ring::slots`; the driver instead tracks its own extra clone in
+/// [`DriverRing::transient`] and drops it (releasing the backing texture, see
+/// [`reclaim_transient`]) once nothing outside that tracking clone references it.
+struct RingSlot {
+    /// Raw `ID3D11Texture2D*` bit pattern. Never dereferenced off the driver
+    /// thread — only read back into a [`NativeHandle`] for the returned
+    /// [`VideoFrame`], same discipline `ConsumerRecord` used before this ADR.
+    raw_texture_ptr: usize,
+    /// Bumped by the driver each time this slot's content is refreshed. `0`
+    /// means "never published" — lets a consumer distinguish "nothing new
+    /// since my last poll" from "nothing has ever been published" without an
+    /// extra flag.
+    generation: AtomicU64,
 }
 
-/// Cross-thread-visible consumer bookkeeping — plain data only, no COM types,
-/// so this is trivially `Send + Sync`.
+/// The published-frame ring, shared between the driver thread (writer) and every
+/// attached consumer's calling thread (reader via [`poll_shared_frame`]).
+struct Ring {
+    /// Fixed-depth, allocated once at driver startup — never resized per-tick.
+    slots: Vec<Arc<RingSlot>>,
+    /// Currently-published slot; consumers `Arc::clone` this on `poll_frame`.
+    latest: Mutex<Arc<RingSlot>>,
+}
+
+/// Cross-thread-visible consumer bookkeeping — plain data + one `Arc`, no COM
+/// types, so this is trivially `Send + Sync`.
 struct ConsumerRecord {
     id: u64,
-    /// Raw `ID3D11Texture2D*` bit pattern for this consumer's dedicated
-    /// texture. Never dereferenced off the driver thread — only read back
-    /// into a [`NativeHandle`] for the returned [`VideoFrame`].
-    raw_texture_ptr: usize,
-    state: SlotState,
+    /// Generation last handed to this consumer (0 = never polled), so a
+    /// caught-up consumer's `poll_frame` is a cheap "nothing new" check
+    /// without touching the ring.
+    last_seen_generation: u64,
+    /// `Some` between `poll_frame` and `release_frame` — the consumer's own
+    /// strong reference. Its `Drop` (in `release_shared_frame`) *is* the
+    /// recycle signal (ADR-0007 § Q2): once no consumer holds a slot and it
+    /// is no longer `Ring::latest`, the driver is free to overwrite it.
+    held: Option<Arc<RingSlot>>,
 }
 
 enum ControlMsg {
@@ -86,6 +124,7 @@ enum ControlMsg {
 /// see [`Drop`] impl.
 pub(crate) struct SharedDuplication {
     consumers: Arc<Mutex<Vec<ConsumerRecord>>>,
+    ring: Arc<Ring>,
     control_tx: mpsc::Sender<ControlMsg>,
     shutdown: Arc<AtomicBool>,
     driver_thread: Mutex<Option<JoinHandle<()>>>,
@@ -164,7 +203,7 @@ fn spawn_driver(
     let consumers: Arc<Mutex<Vec<ConsumerRecord>>> = Arc::new(Mutex::new(Vec::new()));
     let shutdown = Arc::new(AtomicBool::new(false));
     let (control_tx, control_rx) = mpsc::channel();
-    let (ready_tx, ready_rx) = mpsc::channel::<Result<StreamInfo, CaptureError>>();
+    let (ready_tx, ready_rx) = mpsc::channel::<Result<(StreamInfo, Arc<Ring>), CaptureError>>();
 
     let thread_consumers = Arc::clone(&consumers);
     let thread_shutdown = Arc::clone(&shutdown);
@@ -182,8 +221,8 @@ fn spawn_driver(
         })
         .map_err(|_| CaptureError::Backend)?;
 
-    let stream_info = match ready_rx.recv() {
-        Ok(Ok(info)) => info,
+    let (stream_info, ring) = match ready_rx.recv() {
+        Ok(Ok(parts)) => parts,
         Ok(Err(e)) => {
             let _ = handle.join();
             return Err(e);
@@ -196,6 +235,7 @@ fn spawn_driver(
 
     Ok(Arc::new(SharedDuplication {
         consumers,
+        ring,
         control_tx,
         shutdown,
         driver_thread: Mutex::new(Some(handle)),
@@ -205,15 +245,15 @@ fn spawn_driver(
 }
 
 /// Runs entirely on its own thread. Every COM object created here
-/// (`device`, `duplication`, per-consumer `ID3D11Texture2D`) lives and dies
-/// on this thread only — never sent elsewhere.
+/// (`device`, `duplication`, ring/transient `ID3D11Texture2D`s) lives and
+/// dies on this thread only — never sent elsewhere.
 fn driver_loop(
     device_raw: usize,
     output_index: u32,
     consumers: &Arc<Mutex<Vec<ConsumerRecord>>>,
     shutdown: &Arc<AtomicBool>,
     control_rx: &mpsc::Receiver<ControlMsg>,
-    ready_tx: &mpsc::Sender<Result<StreamInfo, CaptureError>>,
+    ready_tx: &mpsc::Sender<Result<(StreamInfo, Arc<Ring>), CaptureError>>,
 ) {
     let opened = open_duplication(device_raw, output_index);
     let (device, duplication, stream_info) = match opened {
@@ -223,18 +263,31 @@ fn driver_loop(
             return;
         }
     };
-    // clone: sent to the opener over the ready channel while also kept here
-    // for every subsequent `attach_consumer` call's geometry lookup.
-    if ready_tx.send(Ok(stream_info.clone())).is_err() {
+
+    let desc = texture_desc(&stream_info);
+    let ring_init = create_ring(&device, &desc);
+    let (ring, ring_textures) = match ring_init {
+        Ok(parts) => parts,
+        Err(e) => {
+            let _ = ready_tx.send(Err(e));
+            return;
+        }
+    };
+    let ring = Arc::new(ring);
+
+    // clone: `ring` is kept here for this thread's own per-tick publishing
+    // while a second strong ref is sent to the opener for `SharedDuplication`.
+    if ready_tx.send(Ok((stream_info, Arc::clone(&ring)))).is_err() {
         // Opener already gave up (e.g. panicked) — nothing left to serve.
         return;
     }
 
-    // Driver-thread-only: the actual COM texture objects. Never exposed
-    // through `consumers` (which only ever holds the raw pointer bit
-    // pattern), so this map itself never needs to be `Send`.
-    let mut textures: HashMap<u64, ID3D11Texture2D> = HashMap::new();
     let mut next_id: u64 = 0;
+    // Driver-thread-only tracking of transient (Q1 fallback) slots: each
+    // entry is the driver's own extra `Arc<RingSlot>` clone (so its
+    // `strong_count` reveals whether any consumer still references it) paired
+    // with the backing COM texture, reclaimed together in `reclaim_transient`.
+    let mut transient: Vec<(Arc<RingSlot>, ID3D11Texture2D)> = Vec::new();
 
     loop {
         if shutdown.load(Ordering::SeqCst) {
@@ -244,17 +297,10 @@ fn driver_loop(
         while let Ok(msg) = control_rx.try_recv() {
             match msg {
                 ControlMsg::Attach { reply } => {
-                    let result = attach_consumer(
-                        &device,
-                        &stream_info,
-                        &mut next_id,
-                        &mut textures,
-                        consumers,
-                    );
-                    let _ = reply.send(result);
+                    let id = attach_consumer(&mut next_id, consumers);
+                    let _ = reply.send(Ok(id));
                 }
                 ControlMsg::Detach { id } => {
-                    textures.remove(&id);
                     let mut guard = consumers.lock().unwrap_or_else(PoisonError::into_inner);
                     guard.retain(|c| c.id != id);
                 }
@@ -290,13 +336,24 @@ fn driver_loop(
             continue;
         };
 
-        copy_to_ready_consumers(&device, &source_texture, consumers, &textures);
+        // SAFETY: GetImmediateContext is a simple accessor on a live device,
+        // called on the same thread that owns `device` throughout.
+        if let Ok(context) = unsafe { device.GetImmediateContext() } {
+            reclaim_transient(&mut transient);
+            publish_tick(
+                &device,
+                &context,
+                &source_texture,
+                &ring,
+                &ring_textures,
+                &mut transient,
+                &desc,
+            );
+        }
 
         // SAFETY: ReleaseFrame pairs with the AcquireNextFrame above — this
-        // thread releases immediately after copying out to every ready
-        // consumer, never holding the DXGI-owned frame across loop
-        // iterations (unlike the per-consumer `Held` state, which only
-        // gates each consumer's *own* dedicated texture).
+        // thread releases immediately after copying into the ring, never
+        // holding the DXGI-owned frame across loop iterations.
         let _ = unsafe { duplication.ReleaseFrame() };
     }
 }
@@ -341,9 +398,6 @@ fn open_duplication(
     let stream_info = StreamInfo::Video {
         id: 0,
         codec: CodecKind::RawVideo,
-        // clone: `time_base` is a `Copy` `Rational` field read via `Default`
-        // below in `mediaway_common::Rational::new` — no clone actually
-        // needed; kept `time_base` construction explicit per-caller instead.
         time_base: mediaway_common::Rational::new(1, 60),
         geometry: VideoGeometry { width, height },
         extra_data: Bytes::new(),
@@ -352,18 +406,15 @@ fn open_duplication(
     Ok((device, duplication, stream_info))
 }
 
-fn attach_consumer(
-    device: &ID3D11Device,
-    stream_info: &StreamInfo,
-    next_id: &mut u64,
-    textures: &mut HashMap<u64, ID3D11Texture2D>,
-    consumers: &Arc<Mutex<Vec<ConsumerRecord>>>,
-) -> Result<u64, CaptureError> {
+/// Shared `ID3D11Texture2D` description for every ring/transient slot —
+/// BGRA8, GPU-resident, shader-readable (matches what `dx11.rs`'s Zero-Copy
+/// WMF wrap expects on the encode side).
+fn texture_desc(stream_info: &StreamInfo) -> D3D11_TEXTURE2D_DESC {
     let geometry = stream_info.geometry().unwrap_or(VideoGeometry {
         width: 0,
         height: 0,
     });
-    let desc = D3D11_TEXTURE2D_DESC {
+    D3D11_TEXTURE2D_DESC {
         Width: geometry.width,
         Height: geometry.height,
         MipLevels: 1,
@@ -377,64 +428,139 @@ fn attach_consumer(
         BindFlags: D3D11_BIND_SHADER_RESOURCE.0 as u32,
         MiscFlags: 0,
         CPUAccessFlags: 0,
-    };
+    }
+}
+
+/// Create one GPU-resident `ID3D11Texture2D` matching `desc` — no initial
+/// data; content arrives via `CopyResource` in `publish_tick`.
+fn create_texture(
+    device: &ID3D11Device,
+    desc: &D3D11_TEXTURE2D_DESC,
+) -> Result<ID3D11Texture2D, CaptureError> {
     let mut texture: Option<ID3D11Texture2D> = None;
-    // SAFETY: CreateTexture2D with no initial data — first content arrives
-    // via the copy loop, not here. `ID3D11Device` methods (unlike the
-    // immediate context) are documented thread-safe for resource creation,
-    // but this call still only ever happens on the driver thread here by
-    // construction, matching this module's stricter single-thread-touches-COM
-    // discipline.
+    // SAFETY: `ID3D11Device` methods (unlike the immediate context) are
+    // documented thread-safe for resource creation, but this call still only
+    // ever happens on the driver thread here by construction, matching this
+    // module's stricter single-thread-touches-COM discipline.
     unsafe {
         device
-            .CreateTexture2D(&raw const desc, None, Some(&raw mut texture))
+            .CreateTexture2D(&raw const *desc, None, Some(&raw mut texture))
             .map_err(|_| CaptureError::Backend)?;
     }
-    let texture = texture.ok_or(CaptureError::Backend)?;
-    let raw_texture_ptr = Interface::as_raw(&texture) as usize;
+    texture.ok_or(CaptureError::Backend)
+}
 
+/// Allocate the `RING_DEPTH` fixed ring slots once, at driver startup.
+/// Returns the cross-thread-visible [`Ring`] plus the driver-thread-only
+/// backing textures, index-aligned with `Ring::slots`.
+fn create_ring(
+    device: &ID3D11Device,
+    desc: &D3D11_TEXTURE2D_DESC,
+) -> Result<(Ring, Vec<ID3D11Texture2D>), CaptureError> {
+    let mut slots = Vec::with_capacity(RING_DEPTH);
+    let mut textures = Vec::with_capacity(RING_DEPTH);
+    for _ in 0..RING_DEPTH {
+        let texture = create_texture(device, desc)?;
+        let raw_texture_ptr = Interface::as_raw(&texture) as usize;
+        slots.push(Arc::new(RingSlot {
+            raw_texture_ptr,
+            generation: AtomicU64::new(0),
+        }));
+        textures.push(texture);
+    }
+    // First slot is the initial `latest` (generation 0 == "never published" —
+    // `poll_shared_frame` treats that as "no frame yet", not a real frame).
+    let latest = Arc::clone(&slots[0]);
+    Ok((
+        Ring {
+            slots,
+            latest: Mutex::new(latest),
+        },
+        textures,
+    ))
+}
+
+fn attach_consumer(next_id: &mut u64, consumers: &Arc<Mutex<Vec<ConsumerRecord>>>) -> u64 {
     let id = *next_id;
     *next_id += 1;
-    textures.insert(id, texture);
     consumers
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .push(ConsumerRecord {
             id,
-            raw_texture_ptr,
-            state: SlotState::Empty,
+            last_seen_generation: 0,
+            held: None,
         });
-    Ok(id)
+    id
 }
 
-fn copy_to_ready_consumers(
+/// Publish `source`'s content into the ring for this tick: find a fixed slot
+/// nothing outside the ring's own bookkeeping references
+/// (`Arc::strong_count == 1`, ADR-0007 § Q1), copy into it, bump its
+/// generation, and republish it as `latest`. If every fixed slot is currently
+/// referenced (a straggling consumer or two), fall back to a one-off
+/// transient slot instead of blocking or touching a slot a consumer is
+/// mid-read on.
+fn publish_tick(
     device: &ID3D11Device,
+    context: &ID3D11DeviceContext,
     source: &ID3D11Texture2D,
-    consumers: &Arc<Mutex<Vec<ConsumerRecord>>>,
-    textures: &HashMap<u64, ID3D11Texture2D>,
+    ring: &Ring,
+    ring_textures: &[ID3D11Texture2D],
+    transient: &mut Vec<(Arc<RingSlot>, ID3D11Texture2D)>,
+    desc: &D3D11_TEXTURE2D_DESC,
 ) {
-    // SAFETY: GetImmediateContext is a simple accessor on a live device,
-    // called on the same thread that owns `device` throughout.
-    let Ok(context) = (unsafe { device.GetImmediateContext() }) else {
-        return;
-    };
-    let mut guard = consumers.lock().unwrap_or_else(PoisonError::into_inner);
-    for record in guard.iter_mut() {
-        // Slow-consumer policy (ADR-0006): skip, don't overwrite a
-        // not-yet-consumed `Pending` frame, and never touch a `Held` texture
-        // a consumer may still be reading via its GPU handle.
-        if record.state != SlotState::Empty {
-            continue;
-        }
-        let Some(dest) = textures.get(&record.id) else {
-            continue;
+    let free = ring
+        .slots
+        .iter()
+        .position(|slot| Arc::strong_count(slot) == 1);
+
+    if let Some(index) = free {
+        let Some(dest_texture) = ring_textures.get(index) else {
+            return;
         };
         // SAFETY: full-resource copy, same device, both textures created
-        // with matching dimensions/format — `dest` is this consumer's own
-        // dedicated texture, never shared with another consumer.
-        unsafe { context.CopyResource(dest, source) };
-        record.state = SlotState::Pending;
+        // with matching dimensions/format; `dest_texture` is a fixed ring
+        // slot this driver thread exclusively owns.
+        unsafe { context.CopyResource(dest_texture, source) };
+        let slot = &ring.slots[index];
+        slot.generation.fetch_add(1, Ordering::AcqRel);
+        *ring.latest.lock().unwrap_or_else(PoisonError::into_inner) = Arc::clone(slot);
+        return;
     }
+
+    // Q1 fallback: every fixed slot is referenced. Allocate a one-off
+    // transient texture rather than touching a slot a consumer is mid-read
+    // on or growing the ring permanently.
+    let Ok(texture) = create_texture(device, desc) else {
+        return; // Best-effort: skip this tick's publish on allocation failure.
+    };
+    // SAFETY: same reasoning as the fixed-slot copy above.
+    unsafe { context.CopyResource(&texture, source) };
+    let raw_texture_ptr = Interface::as_raw(&texture) as usize;
+    let slot = Arc::new(RingSlot {
+        raw_texture_ptr,
+        generation: AtomicU64::new(1),
+    });
+    *ring.latest.lock().unwrap_or_else(PoisonError::into_inner) = Arc::clone(&slot);
+    // The driver's own tracking clone (`slot`) plus `ring.latest`'s clone
+    // above are the baseline refcount, mirroring a fixed slot's
+    // array-entry-plus-latest baseline — see `reclaim_transient`.
+    transient.push((slot, texture));
+}
+
+/// Drop this driver thread's tracking reference (and, once no consumer clone
+/// remains either, the backing COM texture) for any transient slot no longer
+/// referenced by anything beyond the driver's own tracking clone.
+///
+/// A transient entry's baseline is 2 strong refs (the driver's tracking
+/// clone here + `Ring::latest`, or a consumer's `held` clone once one polls
+/// it) — once superseded as `latest` and released by every consumer,
+/// `strong_count` drops to 1 (only this function's own tracking clone), at
+/// which point it is safe to drop both the `Arc` and the COM texture
+/// together, on this driver thread.
+fn reclaim_transient(transient: &mut Vec<(Arc<RingSlot>, ID3D11Texture2D)>) {
+    transient.retain(|(slot, _texture)| Arc::strong_count(slot) > 1);
 }
 
 /// Detach `consumer_id` from `shared` — best-effort; the driver thread
@@ -447,6 +573,18 @@ pub(crate) fn detach(shared: &SharedDuplication, consumer_id: u64) {
 
 /// Poll the shared consumer's pending frame, mirroring
 /// `crate::desktop::DesktopVideoCapture::poll_frame`'s contract.
+///
+/// # Caveat
+///
+/// A caller must finish **issuing** any GPU work that reads the returned
+/// frame's texture (e.g. handing it to WMF's Zero-Copy encode input) before
+/// calling [`release_shared_frame`] — issue-then-drop, never
+/// drop-then-issue-later. The recycle signal is this handle's `Arc` drop, not
+/// a GPU completion fence (see
+/// [ADR-0007](../adr/windows/0007-ring-buffer-shared-desktop-duplication.md) § Q2);
+/// safety rests on D3D11 immediate-context command-submission ordering on the
+/// shared device, the same trust model the existing WMF Zero-Copy path
+/// already relies on and has hardware-verified.
 pub(crate) fn poll_shared_frame(
     shared: &SharedDuplication,
     consumer_id: u64,
@@ -460,14 +598,24 @@ pub(crate) fn poll_shared_frame(
         .iter_mut()
         .find(|c| c.id == consumer_id)
         .ok_or(CaptureError::Closed)?;
-    let raw_texture_ptr = match record.state {
-        SlotState::Held => return Err(CaptureError::Backend),
-        SlotState::Empty => return Ok(None),
-        SlotState::Pending => {
-            record.state = SlotState::Held;
-            record.raw_texture_ptr
-        }
-    };
+    if record.held.is_some() {
+        return Err(CaptureError::Backend);
+    }
+
+    let latest = Arc::clone(
+        &shared
+            .ring
+            .latest
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner),
+    );
+    let generation = latest.generation.load(Ordering::Acquire);
+    if generation == 0 || generation == record.last_seen_generation {
+        return Ok(None);
+    }
+    let raw_texture_ptr = latest.raw_texture_ptr;
+    record.last_seen_generation = generation;
+    record.held = Some(latest);
     drop(guard);
 
     let geometry = shared.stream_info.geometry().unwrap_or(VideoGeometry {
@@ -491,7 +639,9 @@ pub(crate) fn poll_shared_frame(
 }
 
 /// Release the shared consumer's held frame, mirroring
-/// `crate::desktop::DesktopVideoCapture::release_frame`'s contract.
+/// `crate::desktop::DesktopVideoCapture::release_frame`'s contract. Dropping
+/// the held `Arc<RingSlot>` here is the sole recycle signal — see
+/// [`poll_shared_frame`]'s caveat.
 pub(crate) fn release_shared_frame(
     shared: &SharedDuplication,
     consumer_id: u64,
@@ -504,9 +654,7 @@ pub(crate) fn release_shared_frame(
         .iter_mut()
         .find(|c| c.id == consumer_id)
         .ok_or(CaptureError::Closed)?;
-    if record.state == SlotState::Held {
-        record.state = SlotState::Empty;
-    }
+    record.held = None;
     drop(guard);
     Ok(())
 }

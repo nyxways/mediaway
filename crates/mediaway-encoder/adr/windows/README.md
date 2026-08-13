@@ -9,6 +9,8 @@
 | [0005](0005-bgra-dxgi-input.md) | BGRA (ARGB32) Zero-Copy encode input | Accepted |
 | [0006](0006-d3d12-shared-to-d3d11.md) | D3D12 shared → native D3D11 (GpuCopy) | Accepted |
 | [0007](0007-d3d12-native-video-encode.md) | D3D12 native video encode (H.264, CPU-upload) | Accepted |
+| [0008](0008-d3d12-native-encode-gpu-input.md) | D3D12 native encode: GPU-texture (Zero-Copy) input | Proposed |
+| [0009](0009-native-capture-shared-handle-zero-copy.md) | Native (non-wgpu) capture-to-encode shared-handle Zero-Copy | Proposed |
 
 Template: copy from [`mediaway-encoder/adr/template.md`](../../mediaway-encoder/adr/template.md).
 

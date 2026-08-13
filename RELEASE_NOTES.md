@@ -47,6 +47,14 @@
 
 ### Changed
 
+- Windows `WindowsScreenCapture`: shared (multi-consumer) sessions now fan out each frame via a
+  fixed-depth ring of GPU textures any number of caught-up consumers share through cheap `Arc`
+  clones, replacing the previous one-`CopyResource`-per-attached-consumer design — a straggling
+  consumer degrades to its own transient copy only, never blocking the driver thread or other
+  consumers. Compiled and linted on real hardware; end-to-end frame delivery through the new
+  ring is not yet hardware-verified (see
+  `crates/mediaway-device/adr/windows/0007-ring-buffer-shared-desktop-duplication.md`).
+
 ### Fixed
 
 - Android `mediaway-encoder::android` backend: `AMediaFormat`'s `i-frame-interval` (seconds

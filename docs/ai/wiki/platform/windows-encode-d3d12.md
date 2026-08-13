@@ -96,3 +96,5 @@ a real, distinct encode API separate from feeding D3D12 textures into WMF, reach
 See [ADR-0007](../../../../crates/mediaway-encoder/adr/windows/0007-d3d12-native-video-encode.md)
 (+ its 2026-08-06 and 2026-08-07 addenda) for full detail on every finding above, including
 how the debug layer (`ID3D12InfoQueue`) surfaced each one.
+
+GPU-input Zero-Copy design (Proposed, no code): [windows-encode-gpu-input.md](windows-encode-gpu-input.md).

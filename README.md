@@ -404,10 +404,14 @@ What `mediaway-device` backends target (camera, mic, **screen**, **window**). Sa
 > window-capture backend (👻).
 
 > Windows Screen was ⚡ (Zero-Copy) until `mediaway-device` ADR-0006's shared/refcounted
-> session redesign: every `open()` (including the lone-consumer case) now pays one real
-> per-frame `CopyResource`, so it is honestly ✅ (hardware-verified: two concurrent sessions
-> receive independent frames; a GPU-factory-created device drives a real capture session end
-> to end) rather than Zero-Copy today.
+> session redesign made every `open()` (including the lone-consumer case) pay one real
+> per-frame `CopyResource`. ADR-0007 replaced that per-consumer copy with a ring buffer any
+> number of caught-up consumers share via cheap `Arc` clones (real Zero-Copy fan-out for the
+> common case; a straggling consumer degrades to its own transient copy only). It is still
+> honestly ✅, not ⚡: ADR-0006's redesign itself is hardware-verified (two concurrent
+> sessions receive independent frames), but ADR-0007's ring has only compiled and passed
+> lint on real hardware — actual frame delivery through it is not yet hardware-verified
+> end to end (attempted, blocked by a locked dev session at the time; see ADR-0007).
 
 <!-- ANCHOR_END: device-capture -->
 

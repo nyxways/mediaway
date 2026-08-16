@@ -267,18 +267,6 @@ OS codec APIs (WMF, WebCodecs, VA-API, …) fed with CPU buffers (upload may app
 | AAC          | 🆗       | 🆗       | 🛠️   | 👻    | 👻      |
 | Opus         | ✅ / ✅ | 🛠️      | 🛠️   | 👻    | 👻      |
 
-> Linux H.264 (`cros-libva` VA-API), Apple H.264 encode (`VideoToolbox`), and Android H.264
-> encode (NDK `AMediaCodec`) are all implemented and compile-checked but **zero real-hardware
-> verification** — see `mediaway-{encoder,decoder}::linux`'s own ADRs and
-> `mediaway-encoder::{apple,android}`'s ADRs. Apple/Android have no decoder yet (👻).
-
-> Windows Opus: **encode** runs through `mediaway-sw` (no inbox encoder MFT exists —
-> verified via `MFTEnumEx`), wired into `WindowsAudioEncoder`; **decode** uses the inbox
-> decoder MFT session (`CMSOpusDecMFT`), public as
-> `mediaway_decoder::windows::WmfOpusDecoder` — both verified end-to-end
-> (encode→Ogg→ffprobe 2.000 s + mpv; decode of ffmpeg-produced Opus → exact PCM).
-
-
 Detail: backends live as `#[cfg]`-gated modules — `mediaway-decoder::{windows, web, linux}`, `mediaway-encoder::{windows, web, linux}`.
 
 ### OS · GPU
@@ -345,15 +333,6 @@ Detail: [`mediaway`](crates/mediaway/README.md) `wgpu` module · `mediaway-encod
 | [Opus](crates/mediaway-sw/README.md)         | ✅     |
 | [PCM / raw](crates/mediaway-sw/README.md)         | 🆗     |
 
-> CPU/SW has no "hardware" to verify against — ✅ here means tested end-to-end against
-> real/independent signal (round-trip cross-checked by another verified codec implementation
-> or a real encoded file), not just a unit test of the bitstream logic. Opus is ✅: SW-encoded
-> output was decoded correctly by the hardware-verified WMF Opus decoder, and SW decode passes
-> its own quantitative (RMS-energy) round-trip test. H.264 stays 🆗: real decode exists but was
-> only ever run against one hand-crafted synthetic vector (no CABAC / P·B-slice / deblocking
-> yet — no real-world file is decodable today). AV1 stays 🆗: `rav1e`'s own ADR states pixel-level
-> output correctness is explicitly unverified (no in-workspace AV1 decoder to check against).
-
 <!-- ANCHOR_END: codec-support -->
 
 ## Container support
@@ -373,14 +352,6 @@ Freestanding mux/demux cores plus the `mediaway-container` facade (wraps all eig
 | [FLV](crates/flv-core/README.md)                       | ✅  | ✅    |
 | [MPEG-TS](crates/mpeg-ts-core/README.md)               | 🆗  | ✅    |
 
-> ✅ here means round-tripped/cross-checked against a real, independent `ffprobe` oracle
-> (FATE-style corpus, `nb_read_packets` comparison) with no documented gap in that comparison.
-> WAV's oracle only compares `channels`/`sample_rate` (not packetized) and Ogg's stays a
-> `must_not_panic` check for most samples (ffprobe's frame count excludes header packets) —
-> both real gaps in the comparison rigor, not just unverified code, so both stay 🆗. MP3 mux and
-> MPEG-TS mux aren't wired to the shared `Mux` trait and have no independent oracle check of
-> their own output (self round-trip tests only) — their demux sides do and are ✅.
-
 <!-- ANCHOR_END: container-support -->
 
 ## Device
@@ -396,22 +367,6 @@ What `mediaway-device` backends target (camera, mic, **screen**, **window**). Sa
 | Microphone       | ✅      | 🆗  | 🆗   | 🆗    | 🆗      |
 | Screen / display | ✅       | 🆗  | 🆗   | 🆗    | 🆗      |
 | Window           | 🆗      | 🆗  | 🆗   | 👻    | 👻      |
-
-> Linux (V4L2 camera, PipeWire mic, portal+PipeWire screen/window) and the new Apple
-> (`AVCaptureSession`/`AVAudioEngine`/`ScreenCaptureKit`/`ReplayKit`) and Android (Camera2
-> NDK/AAudio/`MediaProjection`) backends are all implemented and compile-checked but **zero
-> real-hardware verification** — see each platform's own crate ADRs. Apple/Android have no
-> window-capture backend (👻).
-
-> Windows Screen was ⚡ (Zero-Copy) until `mediaway-device` ADR-0006's shared/refcounted
-> session redesign made every `open()` (including the lone-consumer case) pay one real
-> per-frame `CopyResource`. ADR-0007 replaced that per-consumer copy with a ring buffer any
-> number of caught-up consumers share via cheap `Arc` clones (real Zero-Copy fan-out for the
-> common case; a straggling consumer degrades to its own transient copy only). It is still
-> honestly ✅, not ⚡: ADR-0006's redesign itself is hardware-verified (two concurrent
-> sessions receive independent frames), but ADR-0007's ring has only compiled and passed
-> lint on real hardware — actual frame delivery through it is not yet hardware-verified
-> end to end (attempted, blocked by a locked dev session at the time; see ADR-0007).
 
 <!-- ANCHOR_END: device-capture -->
 

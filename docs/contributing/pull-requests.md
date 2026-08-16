@@ -47,6 +47,7 @@ Tick every item that applies. **N/A** is fine when truly irrelevant — do not s
 - [ ] Commit messages: English Conventional Commits
 - [ ] PR title and body: **English**
 - [ ] No bare `TODO` / `FIXME` (use `TODO(#issue)`)
+- [ ] AI attribution (if applicable): model ID + harness only, e.g. `Assisted-By: claude-sonnet-5 (Claude Code)` — see [`commits.md`](../conventions/commits.md) § AI agent attribution
 
 ### Documentation sync (when code or design changes)
 

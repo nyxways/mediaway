@@ -22,6 +22,7 @@ Details: [`docs/contributing/pull-requests.md`](../docs/contributing/pull-reques
 
 - [ ] Own diff reviewed
 - [ ] English commits + PR text
+- [ ] AI attribution (if applicable): `Assisted-By: <model-id> (<harness>)`, no persona/agent name
 - [ ] fmt / clippy `-D warnings` / tests (or explained)
 - [ ] No secrets / test-media blobs / GPL·FFmpeg crates / `local/` scratch
 - [ ] Source files ≤1000 lines

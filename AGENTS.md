@@ -187,7 +187,7 @@ Do not write `implementation_plan.md` or wait for Proceed. Exception: the 1–2 
 ### 8. Commits
 
 **Commit only when the user explicitly asks.** Format: [`docs/conventions/commits.md`](docs/conventions/commits.md) — Conventional Commits; **English** subject/body (and English PRs). Hook checks format only.
-- Do not put AI agent names or `Co-Authored-By` in commits/PRs.
+- If the AI agent's model is known, attribute it as API model ID + harness only (no persona/agent name, no `Co-Authored-By`) — format and placement in [`docs/conventions/commits.md`](docs/conventions/commits.md) § AI agent attribution. Ask the user if the model is unknown.
 
 ### 9. Token-efficient execution
 

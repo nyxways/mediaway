@@ -12,4 +12,4 @@
 # English only — AGENTS.md language policy (commits and PRs are English).
 #
 # body: why, not what. Streaming/sync-vs-async, Zero-Copy vs copy when it matters.
-# footer: BREAKING CHANGE: ... | Refs: #N
+# footer: BREAKING CHANGE: ... | Refs: #N | Assisted-By: <model-id> (<harness>) if known

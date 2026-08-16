@@ -78,12 +78,25 @@ The `-ffi` crates stay under their core/backend scopes
 
 - `BREAKING CHANGE: ...` or `feat(scope)!: ...`
 - `Refs: #123`
+- `Assisted-By: <api-model-id> (<harness>)` — only when the model is known; see § AI agent attribution
 
 ## Pull requests
 
 - Title: Conventional Commits style or short English summary
 - Body: English — Summary + Test plan (checklist)
-- Do not mention AI agent names in PR text
+- AI attribution: see § AI agent attribution — model ID + harness only, no agent persona name
+
+## AI agent attribution
+
+When an AI coding agent authors or materially assists a commit/PR and its model
+is known, note the **API model ID and harness** — not a marketing/persona name
+(e.g. "Claude"), and never a `Co-Authored-By` trailer (no fabricated identity/email).
+
+- Commit footer: `Assisted-By: <api-model-id> (<harness>)`
+  — e.g. `Assisted-By: claude-sonnet-5 (Claude Code)`
+- PR body: the same line, placed wherever it reads naturally (e.g. end of Testing or Notes).
+- If the model is unknown or the agent is unsure, ask the user instead of guessing.
+- This is attribution only — it does not replace the human accountable for the change.
 
 ## Templates
 

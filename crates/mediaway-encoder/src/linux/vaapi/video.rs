@@ -486,7 +486,7 @@ fn validate(config: &VideoEncoderConfig) -> Result<(), EncodeError> {
     }
     // Non-macroblock-aligned resolutions need SPS frame-cropping fields, out of scope here
     // (ADR-0001 § Scope).
-    if config.width % 16 != 0 || config.height % 16 != 0 {
+    if !config.width.is_multiple_of(16) || !config.height.is_multiple_of(16) {
         return Err(EncodeError::Unsupported);
     }
     if config.pixel_format != PixelFormat::Nv12 {

@@ -14,6 +14,12 @@
   own DPB). Zero compile verification and zero runtime verification as authored (no Android NDK
   or device/emulator in the dev environment); not wired into `auto`/`capability` yet. See
   `crates/mediaway-decoder/adr/android/0001-ndk-amediacodec-h264-cpu-out.md`.
+- `mediaway-encoder::amf`: AMD AMF video encode backend (`shiguredo_amf`), H.264 CPU-upload
+  encode only, Linux `x86_64` only (the crate's own platform limit). Compile-verified on real
+  Linux `x86_64` via WSL2 (including the `AMF_PLANE_TYPE`/`amf_pts`/`amf_size` types confirmed
+  against real crate source) — **zero real AMD GPU/driver hardware verification** (none
+  available in this workspace). Not wired into `auto`/`capability` yet. See
+  `crates/mediaway-encoder/adr/amf/0002-amf-linux-shiguredo-amf-h264-cpu-upload.md`.
 - `mediaway-encoder::android`: first Android backend (NDK `AMediaCodec` via the `ndk` crate),
   H.264 CPU-upload encode only. Zero compile verification as authored (no Android NDK in the
   dev environment) — a new CI job compiles/lints it against a real NDK before it is trusted;

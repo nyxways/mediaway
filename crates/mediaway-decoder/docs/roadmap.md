@@ -30,12 +30,17 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 
 ### 3 — Linux
 
-- [ ] Add `mediaway-decoder-linux`
-- [ ] VA-API / Vulkan Video decode
-- [ ] `mediaway-decoder-vulkan` (portable, not OS-suffixed — see its own
-      [ADR-0001](../../mediaway-decoder-vulkan/adr/0001-vulkan-video-decode.md)):
-      ADR + scaffold only so far, H.264/HEVC/AV1 + general P/B-frame GOP
-      scope, nothing implemented or hardware-verified yet
+- [x] `linux::vaapi` module: VA-API H.264 CPU-output decode, IDR-only —
+      see [adr/linux/0001](../adr/linux/0001-vaapi-h264-cpu-out.md)
+- [x] `linux::vaapi` P-slice decode: single-forward-reference P-slices,
+      sliding-window DPB ported from `vulkan/dpb.rs` — implemented,
+      compile+test-verified on real WSL2 Linux (`libva-dev`); **zero
+      real-hardware verification** (no VA-API device available this
+      session); see [adr/linux/0002](../adr/linux/0002-vaapi-h264-p-slice-dpb.md)
+- [x] `vulkan` module (portable, not OS-suffixed — see
+      [adr/vulkan/0001](../adr/vulkan/0001-vulkan-video-decode.md)): H.264
+      general-GOP decode **hardware-verified** (RTX 4090); HEVC IDR decode
+      **hardware-verified**; HEVC P/B and AV1 still deferred
 
 ### 4 — Other
 

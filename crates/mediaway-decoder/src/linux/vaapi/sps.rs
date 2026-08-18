@@ -26,6 +26,9 @@ pub(super) struct Sps {
     pub(super) pic_order_cnt_type: u32,
     /// `log2_max_pic_order_cnt_lsb_minus4` (only meaningful when `pic_order_cnt_type == 0`).
     pub(super) log2_max_pic_order_cnt_lsb_minus4: u32,
+    /// `max_num_ref_frames` — sizes this session's DPB and surface pool (see `dpb.rs`,
+    /// `h264.rs::ensure_pipeline`) and fills `VAPictureParameterBufferH264::num_ref_frames`.
+    pub(super) max_num_ref_frames: u32,
     /// `gaps_in_frame_num_value_allowed_flag`.
     pub(super) gaps_in_frame_num_value_allowed_flag: bool,
     /// `pic_width_in_mbs_minus1`.
@@ -67,7 +70,7 @@ impl Sps {
             return Err(DecodeError::Unsupported);
         }
         let log2_max_pic_order_cnt_lsb_minus4 = r.read_ue().map_err(map_err)?;
-        let _max_num_ref_frames = r.read_ue().map_err(map_err)?;
+        let max_num_ref_frames = r.read_ue().map_err(map_err)?;
         let gaps_in_frame_num_value_allowed_flag = r.read_bit().map_err(map_err)? != 0;
         let pic_width_in_mbs_minus1 = r.read_ue().map_err(map_err)?;
         let pic_height_in_map_units_minus1 = r.read_ue().map_err(map_err)?;
@@ -85,6 +88,7 @@ impl Sps {
             log2_max_frame_num_minus4,
             pic_order_cnt_type,
             log2_max_pic_order_cnt_lsb_minus4,
+            max_num_ref_frames,
             gaps_in_frame_num_value_allowed_flag,
             pic_width_in_mbs_minus1,
             pic_height_in_map_units_minus1,

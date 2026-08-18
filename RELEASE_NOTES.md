@@ -68,6 +68,15 @@
 
 ### Changed
 
+- `mediaway-decoder::linux` (`linux::vaapi`) H.264 decode: extended from IDR-only to real GOP
+  (IPPP...) decode — single-forward-reference P-slices and non-IDR I-slices now route through a
+  shared per-picture pipeline with a sliding-window DPB ported from `mediaway-decoder::vulkan`'s
+  hardware-verified DPB/POC arithmetic. No B-slices, reference-list reordering, long-term
+  references, weighted prediction, CABAC P-slices, or multi-reference decode this round (all
+  rejected honestly, not misparsed). Compile- and test-verified on real Linux (WSL2 Ubuntu, real
+  `libva-dev` headers/bindgen output) — **zero real VA-API hardware verification** (no working
+  VA-API device available in this workspace). See
+  `crates/mediaway-decoder/adr/linux/0002-vaapi-h264-p-slice-dpb.md`.
 - `mediaway`'s `wgpu` dependency bumped from 26.x to 30.x (workspace MSRV now 1.96 clears
   30.x's rustc floor). Fixed six real breaking-API changes in the DX12 HAL escape-hatch bridges
   (`create_texture_from_hal`'s new `initial_state` parameter, `PollType::Wait`'s new struct

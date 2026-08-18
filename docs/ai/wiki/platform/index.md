@@ -9,7 +9,7 @@
 | [windows-decode](windows-decode.md) | WMF + DX11 decoder Zero-Copy out; D3D12 native decode (H.264 implemented, **paused** on a real GPU-TDR hang) |
 | [web-encode](web-encode.md) | WebCodecs + WASM mux (browser) |
 | [linux-encode](linux-encode.md) | VA-API H.264 CPU-upload encode backend; zero HW verification caveat |
-| [linux-decode](linux-decode.md) | VA-API H.264 CPU-output decode backend (IDR-only); zero HW verification caveat |
+| [linux-decode](linux-decode.md) | VA-API H.264 CPU-output decode backend — real GOP (IPPP...) decode via a sliding-window DPB, single-forward-reference P-slices (ADR-0002); zero HW verification caveat |
 | [android-encode](android-encode.md) | NDK `AMediaCodec` H.264 CPU-upload encode — implemented, zero compile verification until CI |
 | [android-decode](android-decode.md) | NDK `AMediaCodec` H.264 CPU-output decode — **implemented, zero compile/runtime verification**; general-GOP (not IDR-only), decoder-chosen output layout |
 | [apple-encode](apple-encode.md) | `VideoToolbox` `VTCompressionSession` H.264 CPU-upload encode — implemented, zero compile verification until CI |

@@ -67,6 +67,8 @@ fn pps_rbsp(
     entropy_coding_mode_flag: u8,
     pic_order_present_flag: u8,
     num_slice_groups_minus1: u32,
+    num_ref_idx_l0_default_active_minus1: u32,
+    weighted_pred_flag: u8,
     pic_init_qp_minus26: i32,
     pic_init_qs_minus26: i32,
     chroma_qp_index_offset: i32,
@@ -81,9 +83,9 @@ fn pps_rbsp(
     w.push_bit(entropy_coding_mode_flag);
     w.push_bit(pic_order_present_flag);
     w.push_ue(num_slice_groups_minus1);
-    w.push_ue(0); // num_ref_idx_l0_default_active_minus1
+    w.push_ue(num_ref_idx_l0_default_active_minus1);
     w.push_ue(0); // num_ref_idx_l1_default_active_minus1
-    w.push_bit(0); // weighted_pred_flag
+    w.push_bit(weighted_pred_flag);
     w.push_bits(0, 2); // weighted_bipred_idc
     w.push_se(pic_init_qp_minus26);
     w.push_se(pic_init_qs_minus26);
@@ -102,10 +104,12 @@ fn pps_rbsp(
 
 #[test]
 fn parses_pps_without_extension_infers_second_chroma_qp_offset() {
-    let rbsp = pps_rbsp(0, 0, 0, 0, 0, 2, 1, 0, 0, None);
+    let rbsp = pps_rbsp(0, 0, 0, 0, 0, 0, 0, 2, 1, 0, 0, None);
     let pps = Pps::parse(&rbsp).expect("valid PPS parses");
     assert_eq!(pps.pic_parameter_set_id, 0);
     assert!(!pps.entropy_coding_mode_flag);
+    assert_eq!(pps.num_ref_idx_l0_default_active, 1); // minus1 == 0
+    assert!(!pps.weighted_pred_flag);
     assert_eq!(pps.chroma_qp_index_offset, 2);
     assert_eq!(pps.second_chroma_qp_index_offset, 2); // inferred equal per spec
     assert!(pps.deblocking_filter_control_present_flag);
@@ -113,29 +117,31 @@ fn parses_pps_without_extension_infers_second_chroma_qp_offset() {
 
 #[test]
 fn parses_pps_with_trivial_extension_reads_second_chroma_qp_offset() {
-    let rbsp = pps_rbsp(1, 1, 0, -2, -2, 2, 0, 1, 0, Some((0, 0, 3)));
+    let rbsp = pps_rbsp(1, 1, 0, 2, 1, -2, -2, 2, 0, 1, 0, Some((0, 0, 3)));
     let pps = Pps::parse(&rbsp).expect("valid PPS with trivial extension parses");
     assert!(pps.entropy_coding_mode_flag);
     assert!(pps.pic_order_present_flag);
+    assert_eq!(pps.num_ref_idx_l0_default_active, 3); // minus1 == 2
+    assert!(pps.weighted_pred_flag);
     assert_eq!(pps.chroma_qp_index_offset, 2);
     assert_eq!(pps.second_chroma_qp_index_offset, 3);
 }
 
 #[test]
 fn rejects_multiple_slice_groups() {
-    let rbsp = pps_rbsp(0, 0, 1, 0, 0, 0, 0, 0, 0, None);
+    let rbsp = pps_rbsp(0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, None);
     assert_eq!(Pps::parse(&rbsp), Err(DecodeError::Unsupported));
 }
 
 #[test]
 fn rejects_transform_8x8_extension() {
-    let rbsp = pps_rbsp(0, 0, 0, 0, 0, 0, 0, 0, 0, Some((1, 0, 0)));
+    let rbsp = pps_rbsp(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, Some((1, 0, 0)));
     assert_eq!(Pps::parse(&rbsp), Err(DecodeError::Unsupported));
 }
 
 #[test]
 fn rejects_custom_scaling_matrix_extension() {
-    let rbsp = pps_rbsp(0, 0, 0, 0, 0, 0, 0, 0, 0, Some((0, 1, 0)));
+    let rbsp = pps_rbsp(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, Some((0, 1, 0)));
     assert_eq!(Pps::parse(&rbsp), Err(DecodeError::Unsupported));
 }
 

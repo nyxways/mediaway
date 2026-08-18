@@ -1,7 +1,9 @@
-//! VA-API H.264 decode session (IDR pictures only, single slice per picture, progressive,
-//! `pic_order_cnt_type == 0`, CPU NV12 output).
+//! VA-API H.264 decode session — I and single-forward-reference P slices, single slice per
+//! picture, progressive, `pic_order_cnt_type == 0`, CPU NV12 output.
 //!
-//! See [ADR-0001](../../adr/0001-vaapi-h264-cpu-out.md): binding choice, scope, and the
+//! See [ADR-0001](../../adr/0001-vaapi-h264-cpu-out.md) for the original IDR-only baseline and
+//! [ADR-0002](../../adr/linux/0002-vaapi-h264-p-slice-dpb.md) for the sliding-window DPB /
+//! single-forward-reference P-slice extension this file implements — both name the
 //! zero-hardware-verification caveat for this crate as authored.
 
 use std::collections::VecDeque;
@@ -17,21 +19,18 @@ use cros_libva::{
     BufferType, Config, Context, Display, H264PicFields, H264SeqFields, IQMatrix,
     IQMatrixBufferH264, Picture, PictureH264, PictureParameter, PictureParameterBufferH264,
     SliceParameter, SliceParameterBufferH264, Surface, VA_FOURCC_NV12, VA_INVALID_SURFACE,
-    VA_PICTURE_H264_INVALID, VA_RT_FORMAT_YUV420, VAConfigAttrib, VAConfigAttribType, VAEntrypoint,
-    VAImageFormat,
+    VA_PICTURE_H264_INVALID, VA_PICTURE_H264_SHORT_TERM_REFERENCE, VA_RT_FORMAT_YUV420,
+    VAConfigAttrib, VAConfigAttribType, VAEntrypoint, VAImageFormat,
 };
 
 use super::codec::h264_profile_candidates;
+use super::dpb::{
+    Dpb, DpbSlot, H264_MAX_DPB_SLOTS, default_ref_pic_list0, derive_pic_order_cnt_msb,
+};
 use super::nv12::copy_nv12_from_planes;
 use super::pps::Pps;
 use super::slice::SliceHeader;
 use super::sps::Sps;
-
-/// Driver surfaces kept in rotation. Structural parity with `mediaway-encoder-linux`'s
-/// identical pool: every picture is decoded fully synchronously within one `push_packet` call
-/// (`vaSyncSurface` before this function returns), so pipelining is not exploited yet, but a
-/// small ring keeps this crate's shape parallel to its encode sibling.
-const SURFACE_POOL_SIZE: usize = 4;
 
 /// A decode pipeline bound to one negotiated profile + coded resolution, created lazily the
 /// first time an SPS is available — `open()` cannot know the profile/coded resolution before
@@ -42,11 +41,16 @@ struct Pipeline {
     /// identical `_config` field).
     _config: Config,
     context: Rc<Context>,
+    /// DPB-slot-indexed: `surfaces[i]` is the physical surface backing `dpb`'s slot `i`.
     surfaces: Vec<Option<Surface<()>>>,
-    next_surface: usize,
+    dpb: Dpb,
     coded_width: u32,
     coded_height: u32,
     nv12_format: VAImageFormat,
+    /// From `Sps::max_num_ref_frames` — `VAPictureParameterBufferH264::num_ref_frames` is filled
+    /// from this static per-stream value (`FFmpeg`'s `fill_vaapi_pic` convention), not a
+    /// per-picture "currently occupied" count. See adr/linux/0002 § VA-API-specific plumbing.
+    max_num_ref_frames: u32,
 }
 
 /// VA-API H.264 decode session. See module docs for scope.
@@ -60,6 +64,10 @@ pub(crate) struct VaapiH264Decoder {
     declared_height: u32,
     pending: VecDeque<VideoFrame>,
     flushed: bool,
+    /// Carried across pictures for `derive_pic_order_cnt_msb` (ITU-T H.264 § 8.2.1.1); reset to
+    /// `0` on every IDR. Mirrors `vulkan::decoder::H264Session`'s identical pair.
+    prev_poc_msb: i32,
+    prev_poc_lsb: u32,
 }
 
 impl VaapiH264Decoder {
@@ -89,11 +97,13 @@ impl VaapiH264Decoder {
             declared_height: config.height,
             pending: VecDeque::new(),
             flushed: false,
+            prev_poc_msb: 0,
+            prev_poc_lsb: 0,
         })
     }
 
-    /// Create the `Config`/`Surface`/`Context` pipeline on first use. A no-op once created —
-    /// dynamic resolution/profile renegotiation mid-session is unsupported this session.
+    /// Create the `Config`/`Surface`/`Context`/`Dpb` pipeline on first use. A no-op once created
+    /// — dynamic resolution/profile renegotiation mid-session is unsupported this session.
     fn ensure_pipeline(&mut self, sps: Sps) -> Result<(), DecodeError> {
         if self.pipeline.is_some() {
             return Ok(());
@@ -143,6 +153,14 @@ impl VaapiH264Decoder {
             .create_config(attrs, profile, VAEntrypoint::VAEntrypointVLD)
             .map_err(|_| DecodeError::Backend)?;
 
+        // +1: room for the picture currently being decoded alongside every active short-term
+        // reference — verbatim port of vulkan/decoder.rs's own sizing comment (see
+        // adr/linux/0002 § VaapiH264Decoder struct shape).
+        let pool_size = usize::try_from(sps.max_num_ref_frames)
+            .unwrap_or(usize::MAX)
+            .saturating_add(1)
+            .clamp(1, H264_MAX_DPB_SLOTS);
+
         let surfaces = self
             .display
             .create_surfaces(
@@ -151,7 +169,7 @@ impl VaapiH264Decoder {
                 coded_width,
                 coded_height,
                 None,
-                vec![(); SURFACE_POOL_SIZE],
+                vec![(); pool_size],
             )
             .map_err(|_| DecodeError::Backend)?;
 
@@ -172,25 +190,173 @@ impl VaapiH264Decoder {
             _config: config,
             context,
             surfaces: surfaces.into_iter().map(Some).collect(),
-            next_surface: 0,
+            dpb: Dpb::new(pool_size),
             coded_width,
             coded_height,
             nv12_format,
+            max_num_ref_frames: sps.max_num_ref_frames,
         });
         Ok(())
     }
 
+    /// Allocate the destination slot for a new picture via `Dpb::allocate_slot` (sliding-window
+    /// eviction if the DPB is full) and take its physical surface.
     fn take_surface_slot(&mut self) -> Result<(usize, Surface<()>), DecodeError> {
         let pipeline = self.pipeline.as_mut().ok_or(DecodeError::Backend)?;
-        let slot = pipeline.next_surface;
-        pipeline.next_surface = (pipeline.next_surface + 1) % pipeline.surfaces.len();
-        let surface = pipeline.surfaces[slot].take().ok_or(DecodeError::Backend)?;
-        Ok((slot, surface))
+        let index = pipeline
+            .dpb
+            .allocate_slot()
+            .map_err(|_| DecodeError::Backend)?;
+        let surface = pipeline.surfaces[index]
+            .take()
+            .ok_or(DecodeError::Backend)?;
+        Ok((index, surface))
     }
 
-    /// Decode one IDR picture. Takes `&self` (not `&mut self`) so the caller can hand the
-    /// returned surface back into `self.pipeline` afterward without a double mutable borrow —
-    /// mirrors `mediaway-encoder-linux`'s `encode_one` shape.
+    /// Decode one I or P picture, following the per-picture ordering ported from
+    /// `vulkan/decoder.rs::decode_slice_h264` (see adr/linux/0002 § Per-picture decode
+    /// ordering's 8 numbered steps — this function's block comments mark each step).
+    #[allow(
+        clippy::too_many_lines,
+        reason = "linear per-picture decode sequence (slice header already parsed by caller -> \
+                  DPB update -> ref-list build -> slot allocate -> upload -> GPU submit -> \
+                  output) — splitting further would just move consecutive steps of the same \
+                  picture's decode into a same-file helper, mirroring vulkan/decoder.rs's \
+                  identical allow/reasoning for decode_slice_h264"
+    )]
+    fn decode_picture(
+        &mut self,
+        packet: &Packet,
+        original_nal: &[u8],
+        unit: &NalUnit,
+        sps: &Sps,
+        pps: &Pps,
+        header: &SliceHeader,
+    ) -> Result<VideoFrame, DecodeError> {
+        let is_reference = unit.ref_idc != 0;
+
+        // Step 2: an IDR picture clears the whole DPB and resets cross-picture POC state.
+        if header.is_idr {
+            self.pipeline
+                .as_mut()
+                .ok_or(DecodeError::Backend)?
+                .dpb
+                .clear_all();
+            self.prev_poc_msb = 0;
+            self.prev_poc_lsb = 0;
+        }
+
+        // Step 3: FrameNumWrap is defined relative to *this* picture — refresh every occupied
+        // slot before either sliding-window eviction (step 6) or RefPicList0 construction
+        // (step 5) can use it.
+        let max_frame_num = 1u32
+            .checked_shl(sps.log2_max_frame_num_minus4 + 4)
+            .ok_or(DecodeError::InvalidInput)?;
+        self.pipeline
+            .as_mut()
+            .ok_or(DecodeError::Backend)?
+            .dpb
+            .refresh_frame_num_wraps(header.frame_num, max_frame_num);
+
+        // Step 4: derive PicOrderCnt; only reference pictures perpetuate prev_poc state.
+        let max_pic_order_cnt_lsb = 1u32
+            .checked_shl(sps.log2_max_pic_order_cnt_lsb_minus4 + 4)
+            .ok_or(DecodeError::InvalidInput)?;
+        let poc_msb = derive_pic_order_cnt_msb(
+            header.pic_order_cnt_lsb,
+            self.prev_poc_msb,
+            self.prev_poc_lsb,
+            max_pic_order_cnt_lsb,
+        );
+        let pic_order_cnt = poc_msb
+            .checked_add_unsigned(header.pic_order_cnt_lsb)
+            .ok_or(DecodeError::InvalidInput)?;
+        if is_reference {
+            self.prev_poc_msb = poc_msb;
+            self.prev_poc_lsb = header.pic_order_cnt_lsb;
+        }
+
+        // Step 5: resolve reference(s) from the DPB's current state *before* allocating the
+        // destination slot — allocate_slot (step 6) may sliding-window-evict a reference slot as
+        // a side effect, so the reference(s) this picture uses must be captured first. Safe
+        // because the DPB is sized max_num_ref_frames + 1 (ensure_pipeline), guaranteeing a
+        // genuinely free slot whenever every active reference is still occupied.
+        let is_p_slice = header.slice_type == 0;
+        let (reference_frames, ref_pic0, max_num_ref_frames) = {
+            let pipeline = self.pipeline.as_ref().ok_or(DecodeError::Backend)?;
+            // VA-API wants every occupied DPB slot here (not just the active RefPicList0),
+            // matching FFmpeg's fill_vaapi_ReferenceFrames convention — see adr/linux/0002
+            // § VA-API-specific plumbing.
+            let reference_frames: Vec<(cros_libva::VASurfaceID, DpbSlot)> = pipeline
+                .dpb
+                .occupied_slots()
+                .filter_map(|(index, slot)| {
+                    pipeline.surfaces[index]
+                        .as_ref()
+                        .map(|surface| (surface.id(), *slot))
+                })
+                .collect();
+            let ref_pic0 = if is_p_slice {
+                let default_list = default_ref_pic_list0(&pipeline.dpb);
+                let index = *default_list.first().ok_or(DecodeError::InvalidInput)?;
+                let slot = *pipeline.dpb.slot(index).ok_or(DecodeError::Backend)?;
+                let surface_id = pipeline.surfaces[index]
+                    .as_ref()
+                    .ok_or(DecodeError::Backend)?
+                    .id();
+                Some((surface_id, slot))
+            } else {
+                None
+            };
+            (reference_frames, ref_pic0, pipeline.max_num_ref_frames)
+        };
+
+        // Step 6: allocate the destination slot now that references are captured, take its
+        // physical surface.
+        let (dst_slot_index, surface) = self.take_surface_slot()?;
+
+        // Step 7: build parameter buffers from the resolved reference(s) + destination surface
+        // as CurrPic; VA-API call order is unchanged from the IDR-only path — only parameter
+        // buffer *contents* change.
+        let (returned_surface, result) = self.decode_one(
+            surface,
+            packet,
+            original_nal,
+            unit,
+            sps,
+            pps,
+            header,
+            pic_order_cnt,
+            &reference_frames,
+            ref_pic0,
+            max_num_ref_frames,
+        );
+        if let Some(pipeline) = self.pipeline.as_mut() {
+            pipeline.surfaces[dst_slot_index] = Some(returned_surface);
+        }
+        let frame = result?;
+
+        // Step 8: on success, register this slot as a reference if applicable.
+        if is_reference {
+            let frame_num_wrap = i32::try_from(header.frame_num).unwrap_or(0);
+            self.pipeline
+                .as_mut()
+                .ok_or(DecodeError::Backend)?
+                .dpb
+                .insert(
+                    dst_slot_index,
+                    DpbSlot::new_reference(header.frame_num, frame_num_wrap, pic_order_cnt),
+                )
+                .map_err(|_| DecodeError::Backend)?;
+        }
+
+        Ok(frame)
+    }
+
+    /// Build parameter buffers and run the VA-API decode sequence for one already-allocated
+    /// surface. Takes `&self` (not `&mut self`) so the caller can hand the returned surface back
+    /// into `self.pipeline` afterward without a double mutable borrow — mirrors
+    /// `mediaway-encoder-linux`'s `encode_one` shape.
     #[allow(clippy::too_many_arguments)]
     fn decode_one(
         &self,
@@ -201,6 +367,10 @@ impl VaapiH264Decoder {
         sps: &Sps,
         pps: &Pps,
         header: &SliceHeader,
+        pic_order_cnt: i32,
+        reference_frames: &[(cros_libva::VASurfaceID, DpbSlot)],
+        ref_pic0: Option<(cros_libva::VASurfaceID, DpbSlot)>,
+        max_num_ref_frames: u32,
     ) -> (Surface<()>, Result<VideoFrame, DecodeError>) {
         let Some(pipeline) = self.pipeline.as_ref() else {
             return (surface, Err(DecodeError::Backend));
@@ -212,9 +382,18 @@ impl VaapiH264Decoder {
         let surface_id = surface.id();
 
         let outcome = (|| -> Result<(Bytes, Surface<()>), DecodeError> {
-            let pic_param = build_pic_param(sps, pps, unit, header, surface_id)?;
+            let pic_param = build_pic_param(
+                sps,
+                pps,
+                unit,
+                header,
+                surface_id,
+                pic_order_cnt,
+                reference_frames,
+                max_num_ref_frames,
+            )?;
             let iq_matrix = IQMatrixBufferH264::new([[16u8; 16]; 6], [[16u8; 64]; 2]);
-            let slice_param = build_slice_param(header, original_nal.len())?;
+            let slice_param = build_slice_param(header, original_nal.len(), ref_pic0)?;
             let slice_data_bytes = original_nal.to_vec();
 
             let pic_param_buf = context
@@ -313,26 +492,20 @@ impl VideoDecoder for VaapiH264Decoder {
                 NalUnitType::Pps => {
                     self.pps = Some(Pps::parse(unit.rbsp.as_ref())?);
                 }
-                NalUnitType::IdrSlice => {
+                NalUnitType::IdrSlice | NalUnitType::NonIdrSlice => {
+                    let is_idr = matches!(unit.unit_type, NalUnitType::IdrSlice);
                     let sps = self.sps.ok_or(DecodeError::InvalidInput)?;
                     let pps = self.pps.ok_or(DecodeError::InvalidInput)?;
-                    let header = SliceHeader::parse(unit.rbsp.as_ref(), unit.ref_idc, &sps, &pps)?;
+                    let header =
+                        SliceHeader::parse(unit.rbsp.as_ref(), unit.ref_idc, is_idr, &sps, &pps)?;
                     if header.pic_parameter_set_id != pps.pic_parameter_set_id {
                         return Err(DecodeError::InvalidInput);
                     }
                     self.ensure_pipeline(sps)?;
-                    let (slot, surface) = self.take_surface_slot()?;
-                    let (returned_surface, result) =
-                        self.decode_one(surface, packet, nal, &unit, &sps, &pps, &header);
-                    if let Some(pipeline) = self.pipeline.as_mut() {
-                        pipeline.surfaces[slot] = Some(returned_surface);
-                    }
-                    let frame = result?;
+                    let frame = self.decode_picture(packet, nal, &unit, &sps, &pps, &header)?;
                     self.pending.push_back(frame);
                 }
-                // Non-IDR slices (P/B/non-IDR I) are out of scope this session — see
-                // ADR-0001 § Scope. SEI/AUD/end-of-sequence/-stream/filler are ignored.
-                NalUnitType::NonIdrSlice => return Err(DecodeError::Unsupported),
+                // SEI/AUD/end-of-sequence/-stream/filler are ignored.
                 _ => {}
             }
         }
@@ -363,10 +536,32 @@ fn build_pic_param(
     unit: &NalUnit,
     header: &SliceHeader,
     surface_id: cros_libva::VASurfaceID,
+    pic_order_cnt: i32,
+    reference_frames: &[(cros_libva::VASurfaceID, DpbSlot)],
+    max_num_ref_frames: u32,
 ) -> Result<PictureParameterBufferH264, DecodeError> {
-    let poc = i32::try_from(header.pic_order_cnt_lsb).map_err(|_| DecodeError::InvalidInput)?;
-    let curr_pic = PictureH264::new(surface_id, header.frame_num, 0, poc, poc);
-    let reference_frames: [PictureH264; 16] = std::array::from_fn(|_| invalid_picture());
+    let curr_pic = PictureH264::new(
+        surface_id,
+        header.frame_num,
+        0,
+        pic_order_cnt,
+        pic_order_cnt,
+    );
+    let mut reference_frames_array: [PictureH264; 16] = std::array::from_fn(|_| invalid_picture());
+    // reference_frames.len() is bounded by H264_MAX_DPB_SLOTS (16), same as this array, so this
+    // never silently truncates a real reference.
+    for (slot_entry, (ref_surface_id, dpb_slot)) in reference_frames_array
+        .iter_mut()
+        .zip(reference_frames.iter())
+    {
+        *slot_entry = PictureH264::new(
+            *ref_surface_id,
+            dpb_slot.frame_num,
+            VA_PICTURE_H264_SHORT_TERM_REFERENCE,
+            dpb_slot.pic_order_cnt,
+            dpb_slot.pic_order_cnt,
+        );
+    }
 
     let seq_fields = H264SeqFields::new(
         1, // chroma_format_idc: 4:2:0 (implied by baseline/main profile_idc)
@@ -375,7 +570,7 @@ fn build_pic_param(
         1, // frame_mbs_only_flag: progressive only (enforced by Sps::parse)
         0, // mb_adaptive_frame_field_flag: unused, frame_mbs_only_flag == 1
         u32::from(sps.direct_8x8_inference_flag),
-        0, // min_luma_bi_pred_size8x8: unused (no B slices this session)
+        0, // min_luma_bi_pred_size8x8: unused (no B slices this scope)
         sps.log2_max_frame_num_minus4,
         sps.pic_order_cnt_type,
         sps.log2_max_pic_order_cnt_lsb_minus4,
@@ -383,8 +578,8 @@ fn build_pic_param(
     );
     let pic_fields = H264PicFields::new(
         u32::from(pps.entropy_coding_mode_flag),
-        0, // weighted_pred_flag: unused (I slices only)
-        0, // weighted_bipred_idc: unused (I slices only)
+        0, // weighted_pred_flag: rejected on P slices by SliceHeader::parse, irrelevant for I
+        0, // weighted_bipred_idc: unused (no B slices this scope)
         0, // transform_8x8_mode_flag: rejected by Pps::parse when the PPS sets it
         0, // field_pic_flag: unused, frame_mbs_only_flag == 1
         u32::from(pps.constrained_intra_pred_flag),
@@ -407,15 +602,16 @@ fn build_pic_param(
     let second_chroma_qp_index_offset =
         i8::try_from(pps.second_chroma_qp_index_offset).map_err(|_| DecodeError::InvalidInput)?;
     let frame_num = u16::try_from(header.frame_num).map_err(|_| DecodeError::InvalidInput)?;
+    let num_ref_frames = u8::try_from(max_num_ref_frames).map_err(|_| DecodeError::InvalidInput)?;
 
     Ok(PictureParameterBufferH264::new(
         curr_pic,
-        reference_frames,
+        reference_frames_array,
         pic_width_in_mbs_minus1,
         pic_height_in_mbs_minus1,
         0, // bit_depth_luma_minus8: 8-bit only (baseline/main)
         0, // bit_depth_chroma_minus8: 8-bit only (baseline/main)
-        0, // num_ref_frames: none kept (IDR-only, no DPB — see ADR-0001 § Scope)
+        num_ref_frames,
         &seq_fields,
         // num_slice_groups_minus1 / slice_group_map_type / slice_group_change_rate_minus1:
         // FMO unused — Pps::parse already rejected num_slice_groups_minus1 > 0.
@@ -434,8 +630,18 @@ fn build_pic_param(
 fn build_slice_param(
     header: &SliceHeader,
     nal_len: usize,
+    ref_pic0: Option<(cros_libva::VASurfaceID, DpbSlot)>,
 ) -> Result<SliceParameterBufferH264, DecodeError> {
-    let ref_pic_list_0: [PictureH264; 32] = std::array::from_fn(|_| invalid_picture());
+    let mut ref_pic_list_0: [PictureH264; 32] = std::array::from_fn(|_| invalid_picture());
+    if let Some((surface_id, slot)) = ref_pic0 {
+        ref_pic_list_0[0] = PictureH264::new(
+            surface_id,
+            slot.frame_num,
+            VA_PICTURE_H264_SHORT_TERM_REFERENCE,
+            slot.pic_order_cnt,
+            slot.pic_order_cnt,
+        );
+    }
     let ref_pic_list_1: [PictureH264; 32] = std::array::from_fn(|_| invalid_picture());
     let slice_data_size = u32::try_from(nal_len).map_err(|_| DecodeError::InvalidInput)?;
     // "relative to and includes the NAL unit byte" (ITU-T H.264 VA-API buffer contract) — the
@@ -459,17 +665,19 @@ fn build_slice_param(
         slice_data_bit_offset,
         first_mb_in_slice,
         header.slice_type,
-        0, // direct_spatial_mv_pred_flag: unused (I slice)
-        0, // num_ref_idx_l0_active_minus1: unused (I slice)
-        0, // num_ref_idx_l1_active_minus1: unused (I slice)
-        0, // cabac_init_idc: unused (I slice)
+        0, // direct_spatial_mv_pred_flag: unused (no B slices this scope)
+        // num_ref_idx_l0_active_minus1: always 0 — num_ref_idx_l0_active is exactly 1 for P
+        // slices (enforced by SliceHeader::parse), 0/unused for I slices.
+        0,
+        0, // num_ref_idx_l1_active_minus1: unused (no B slices this scope)
+        0, // cabac_init_idc: unused (CABAC P-slices rejected by SliceHeader::parse)
         slice_qp_delta,
         header.disable_deblocking_filter_idc,
         slice_alpha_c0_offset_div2,
         slice_beta_offset_div2,
         ref_pic_list_0,
         ref_pic_list_1,
-        0, // luma_log2_weight_denom: unused (no weighted prediction)
+        0, // luma_log2_weight_denom: unused (weighted prediction rejected by SliceHeader::parse)
         0, // chroma_log2_weight_denom: unused
         0,
         [0i16; 32],
@@ -486,8 +694,7 @@ fn build_slice_param(
     ))
 }
 
-/// An unused `VAPictureH264` DPB / reference-list slot (this crate keeps no DPB — IDR-only
-/// decode, see ADR-0001 § Scope).
+/// An unused `VAPictureH264` DPB / reference-list slot.
 fn invalid_picture() -> PictureH264 {
     PictureH264::new(VA_INVALID_SURFACE, 0, VA_PICTURE_H264_INVALID, 0, 0)
 }

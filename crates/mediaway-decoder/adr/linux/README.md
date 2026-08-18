@@ -3,6 +3,7 @@
 | ID | Title | Status |
 |----|-------|--------|
 | [0001](0001-vaapi-h264-cpu-out.md) | VA-API via `cros-libva`, H.264 CPU-output decode | Accepted |
+| [0002](0002-vaapi-h264-p-slice-dpb.md) | VA-API H.264 single-forward-reference P-slice decode (DPB port from `vulkan/dpb.rs`) | Accepted |
 
 Template: copy from [`mediaway-decoder/adr/template.md`](../../mediaway-decoder/adr/template.md).
 

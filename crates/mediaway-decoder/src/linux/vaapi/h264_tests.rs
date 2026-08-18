@@ -15,6 +15,7 @@ fn test_sps() -> Sps {
         log2_max_frame_num_minus4: 4,
         pic_order_cnt_type: 0,
         log2_max_pic_order_cnt_lsb_minus4: 4,
+        max_num_ref_frames: 1,
         gaps_in_frame_num_value_allowed_flag: false,
         pic_width_in_mbs_minus1: 3,
         pic_height_in_map_units_minus1: 3,
@@ -27,6 +28,8 @@ fn test_pps() -> Pps {
         pic_parameter_set_id: 0,
         entropy_coding_mode_flag: false,
         pic_order_present_flag: false,
+        num_ref_idx_l0_default_active: 1,
+        weighted_pred_flag: false,
         pic_init_qp_minus26: 0,
         pic_init_qs_minus26: 0,
         chroma_qp_index_offset: 0,
@@ -43,12 +46,23 @@ fn test_header() -> SliceHeader {
         slice_type: 2,
         pic_parameter_set_id: 0,
         frame_num: 0,
+        is_idr: true,
         pic_order_cnt_lsb: 0,
+        num_ref_idx_l0_active: 0,
         slice_qp_delta: 0,
         disable_deblocking_filter_idc: 0,
         slice_alpha_c0_offset_div2: 0,
         slice_beta_offset_div2: 0,
         bits_consumed: 20,
+    }
+}
+
+fn test_p_header() -> SliceHeader {
+    SliceHeader {
+        slice_type: 0,
+        num_ref_idx_l0_active: 1,
+        is_idr: false,
+        ..test_header()
     }
 }
 
@@ -111,14 +125,55 @@ fn build_pic_param_succeeds_for_in_range_fields() {
     let pps = test_pps();
     let header = test_header();
     let unit = test_idr_unit();
-    let result = build_pic_param(&sps, &pps, &unit, &header, 1);
+    let result = build_pic_param(
+        &sps,
+        &pps,
+        &unit,
+        &header,
+        1,
+        0,
+        &[],
+        sps.max_num_ref_frames,
+    );
+    assert!(result.is_ok());
+}
+
+#[test]
+fn build_pic_param_succeeds_with_reference_frames() {
+    let sps = test_sps();
+    let pps = test_pps();
+    let header = test_p_header();
+    let unit = NalUnit {
+        ref_idc: 1,
+        unit_type: NalUnitType::NonIdrSlice,
+        rbsp: Bytes::new(),
+    };
+    let reference_frames = [(2u32, DpbSlot::new_reference(0, 0, 0))];
+    let result = build_pic_param(
+        &sps,
+        &pps,
+        &unit,
+        &header,
+        1,
+        2,
+        &reference_frames,
+        sps.max_num_ref_frames,
+    );
     assert!(result.is_ok());
 }
 
 #[test]
 fn build_slice_param_succeeds_and_reports_correct_bit_offset() {
     let header = test_header();
-    let result = build_slice_param(&header, 42);
+    let result = build_slice_param(&header, 42, None);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn build_slice_param_succeeds_with_p_slice_reference() {
+    let header = test_p_header();
+    let ref_pic0 = Some((2u32, DpbSlot::new_reference(0, 0, 0)));
+    let result = build_slice_param(&header, 42, ref_pic0);
     assert!(result.is_ok());
 }
 
@@ -127,7 +182,7 @@ fn build_slice_param_rejects_nal_length_overflowing_u32() {
     let header = test_header();
     // usize can exceed u32::MAX on 64-bit hosts; the conversion must be rejected, not panic.
     let huge = usize::try_from(u32::MAX).expect("u32::MAX fits usize") + 1;
-    let result = build_slice_param(&header, huge);
+    let result = build_slice_param(&header, huge, None);
     assert_eq!(result.err(), Some(DecodeError::InvalidInput));
 }
 

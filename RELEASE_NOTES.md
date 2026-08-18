@@ -65,6 +65,29 @@
   `crates/mediaway-device/adr/apple/0001-avfoundation-camera-capture.md`,
   `0002-avaudioengine-microphone-capture.md`, `0003-screencapturekit-macos-screen-capture.md`,
   `0004-replaykit-ios-inapp-screen-capture.md`.
+- `mediaway-encoder::linux` (`linux::vaapi`) HEVC encode: HEVC Main profile
+  single-forward-reference P-frame GOP alongside the existing H.264 path, dispatched behind a
+  new `VaapiVideoSession` enum (no `Box<dyn>`). `hevc_gop.rs`'s `GopState` is a verbatim port of
+  `mediaway-encoder::vulkan::hevc_gop::GopState`; `EncSequenceParameterBufferHEVC`/
+  `EncPictureParameterBufferHEVC`/`EncSliceParameterBufferHEVC` construction is fresh (VA-API's
+  own HEVC encode buffers carry no `StdVideoH265*`-equivalent field set — the driver synthesizes
+  VPS/SPS/PPS itself), grounded in FFmpeg's real `vaapi_encode_h265.c` conventions. SAO and
+  temporal-MVP are deliberately disabled in the emitted SPS to keep this encoder's output the
+  simplest possible shape for the sibling VA-API HEVC decoder to round-trip. Compile- and
+  test-verified on real Linux (WSL2 Ubuntu, real `libva-dev` headers/bindgen output) — **zero
+  real VA-API hardware verification**. See
+  `crates/mediaway-encoder/adr/linux/0003-vaapi-hevc-p-frame-gop.md`.
+- `mediaway-decoder::linux` (`linux::vaapi`) HEVC decode: HEVC Main profile IDR I-slices and
+  single-forward-reference P-slices alongside the existing H.264 path, dispatched behind a new
+  `VaapiVideoSession` enum (no `Box<dyn>`). No hardware-verified porting source existed for this
+  path (Vulkan's own HEVC decode is IDR-only), so the single-slot `HevcDpb` (`hevc_dpb.rs`) and
+  the slice-header parser (`hevc_slice.rs`, extended well past `vulkan::hevc_slice.rs`'s own
+  stopping point — SAO, temporal-MVP, merge-cand count, QP deltas) are fresh designs grounded in
+  ITU-T H.265 and FFmpeg's real `vaapi_hevc.c`. Any short-term RPS shape other than exactly one
+  immediately-preceding reference is rejected as `Unsupported`; CRA/random-access pictures are a
+  permanent scope cut. Compile- and test-verified on real Linux (WSL2 Ubuntu, real `libva-dev`
+  headers/bindgen output) — **zero real VA-API hardware verification**. See
+  `crates/mediaway-decoder/adr/linux/0003-vaapi-hevc-p-slice-dpb.md`.
 
 ### Changed
 

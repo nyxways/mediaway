@@ -39,4 +39,7 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 
 ### 4 — Other
 
-- [ ] `mediaway-decoder-apple` / `mediaway-decoder-android` as scheduled
+- [x] `android` module: NDK `AMediaCodec` H.264 CPU NV12 decode, general GOP —
+      zero compile/runtime verification (no NDK/device in dev env); see
+      [adr/android/0001](../adr/android/0001-ndk-amediacodec-h264-cpu-out.md)
+- [ ] `apple` module (VideoToolbox decode) as scheduled

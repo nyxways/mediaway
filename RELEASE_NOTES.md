@@ -8,6 +8,12 @@
 
 ### Added
 
+- `mediaway-decoder::android`: first Android decode backend (NDK `AMediaCodec` via the `ndk`
+  crate), H.264 CPU NV12 output only, `COLOR_FormatYUV420SemiPlanar` only (reject-not-guess on
+  any other reported output color format), general GOP (not IDR-only — the device manages its
+  own DPB). Zero compile verification and zero runtime verification as authored (no Android NDK
+  or device/emulator in the dev environment); not wired into `auto`/`capability` yet. See
+  `crates/mediaway-decoder/adr/android/0001-ndk-amediacodec-h264-cpu-out.md`.
 - `mediaway-encoder::android`: first Android backend (NDK `AMediaCodec` via the `ndk` crate),
   H.264 CPU-upload encode only. Zero compile verification as authored (no Android NDK in the
   dev environment) — a new CI job compiles/lints it against a real NDK before it is trusted;

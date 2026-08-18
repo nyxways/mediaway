@@ -11,6 +11,7 @@
 | [linux-encode](linux-encode.md) | VA-API H.264 CPU-upload encode backend; zero HW verification caveat |
 | [linux-decode](linux-decode.md) | VA-API H.264 CPU-output decode backend (IDR-only); zero HW verification caveat |
 | [android-encode](android-encode.md) | NDK `AMediaCodec` H.264 CPU-upload encode — implemented, zero compile verification until CI |
+| [android-decode](android-decode.md) | NDK `AMediaCodec` H.264 CPU-output decode — **implemented, zero compile/runtime verification**; general-GOP (not IDR-only), decoder-chosen output layout |
 | [apple-encode](apple-encode.md) | `VideoToolbox` `VTCompressionSession` H.264 CPU-upload encode — implemented, zero compile verification until CI |
 | [vulkan-encode](vulkan-encode.md) | Vulkan Video H.264 encode: capability probe + real minimal session, hardware-verified |
 | [vulkan-decode](vulkan-decode.md) | Vulkan Video decode: H.264 **hardware-verified** (first general-GOP backend in workspace); HEVC IDR decode **hardware-verified** too (P/B deferred) |

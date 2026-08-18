@@ -42,4 +42,10 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 - [x] `android` module: NDK `AMediaCodec` H.264 CPU NV12 decode, general GOP —
       zero compile/runtime verification (no NDK/device in dev env); see
       [adr/android/0001](../adr/android/0001-ndk-amediacodec-h264-cpu-out.md)
-- [ ] `apple` module (VideoToolbox decode) as scheduled
+- [x] `apple` module: `VTDecompressionSession` H.264 general-GOP CPU-output decode
+      (`src/apple/`, one SPS + one PPS, 4-byte AVCC length size only) — compiles/lints on this
+      Windows host (the real `objc2-*`-calling code is `cfg`-gated to Apple targets; pure
+      `codec.rs` tick/NV12 helpers are host-testable and covered by real unit tests), **zero
+      compile verification of the Apple-only code path itself** (no Apple SDK in this dev
+      environment) — not wired into `auto`/`capability` yet; see
+      [adr/apple/0001](../adr/apple/0001-videotoolbox-h264-cpu-out.md)

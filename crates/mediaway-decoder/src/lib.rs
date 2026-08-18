@@ -18,6 +18,7 @@ pub use video::{VideoDecoder, VideoDecoderConfig, VideoOutputPreference};
 
 // ── merged platform/domain modules (ADR-0021) ──
 pub mod android;
+pub mod apple;
 pub mod linux;
 #[cfg(not(target_family = "wasm"))] // Vulkan Video — desktop only (vulkanalia/libloading)
 pub mod vulkan;

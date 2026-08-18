@@ -1,0 +1,9 @@
+# mediaway-decoder-apple — ADRs
+
+| ID | Title | Status |
+|----|-------|--------|
+| [0001](0001-videotoolbox-h264-cpu-out.md) | `VideoToolbox` `VTDecompressionSession` via `objc2`, H.264 CPU-output decode | Accepted |
+
+Template: copy from [`mediaway-decoder/adr/template.md`](../template.md).
+
+Crate-local only. Workspace ADRs: [`docs/adr/`](../../../../docs/adr/).

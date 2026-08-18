@@ -13,6 +13,7 @@
 | [android-encode](android-encode.md) | NDK `AMediaCodec` H.264 CPU-upload encode — implemented, zero compile verification until CI |
 | [android-decode](android-decode.md) | NDK `AMediaCodec` H.264 CPU-output decode — **implemented, zero compile/runtime verification**; general-GOP (not IDR-only), decoder-chosen output layout |
 | [apple-encode](apple-encode.md) | `VideoToolbox` `VTCompressionSession` H.264 CPU-upload encode — implemented, zero compile verification until CI |
+| [apple-decode](apple-decode.md) | `VideoToolbox` `VTDecompressionSession` H.264 general-GOP CPU-output decode — ADR only, zero compile verification |
 | [vulkan-encode](vulkan-encode.md) | Vulkan Video H.264 encode: capability probe + real minimal session, hardware-verified |
 | [vulkan-decode](vulkan-decode.md) | Vulkan Video decode: H.264 **hardware-verified** (first general-GOP backend in workspace); HEVC IDR decode **hardware-verified** too (P/B deferred) |
 | [support-matrix](support-matrix.md) | Link to human OS/GPU/CPU codec tables |

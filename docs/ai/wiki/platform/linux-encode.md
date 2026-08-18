@@ -26,6 +26,16 @@
   this backend's `pic_order_cnt_type = 2` output is not decodable by this workspace's own
   `mediaway-decoder::linux::vaapi` (which only accepts `pic_order_cnt_type == 0`) — a real,
   pre-existing, deliberately-unresolved cross-crate interop gap.
+- ADR: [0003](../../../../crates/mediaway-encoder/adr/linux/0003-vaapi-av1-key-frame-and-inter-gop.md) —
+  **Design only, blocked**: AV1 `KEY_FRAME` baseline + single-forward-reference `INTER_FRAME` GOP,
+  porting the OBU byte-writer from `mediaway-encoder::windows::d3d12_video_encode::bitstream_av1`
+  and the GOP state machine from `mediaway-encoder::vulkan::av1_gop`. Cannot be implemented against
+  `cros-libva` 0.0.13 as pinned: real AV1 VA-API encode needs the app to submit a packed
+  `frame_header_obu()` bitstream buffer, a `BufferType` variant `cros-libva` does not wrap (and
+  this crate's own `#![forbid(unsafe_code)]` rules out a local raw-FFI workaround) — needs a
+  `cros-libva` fork/upstream PR first. There is **no VA-API HEVC ADR** in this workspace (HEVC
+  exists only on the Vulkan backend) — an earlier task brief's premise to the contrary was
+  checked and found false; see the ADR's own § Note.
 
 ## ⚠️ Hardware verification status
 

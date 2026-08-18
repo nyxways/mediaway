@@ -65,6 +65,15 @@
   `crates/mediaway-device/adr/apple/0001-avfoundation-camera-capture.md`,
   `0002-avaudioengine-microphone-capture.md`, `0003-screencapturekit-macos-screen-capture.md`,
   `0004-replaykit-ios-inapp-screen-capture.md`.
+- `mediaway-decoder::linux`: AV1 `KEY_FRAME`-only VA-API decode (`VAProfileAV1Profile0`,
+  `VAEntrypointVLD`), single tile, Main profile, every optional coding tool (segmentation, film
+  grain, CDEF, loop restoration, superres, warped motion) rejected as `Unsupported` if signaled.
+  A spec-derived OBU/sequence-header/frame-header parser — no AV1 decode existed anywhere in
+  this workspace to port from. Dispatched alongside the existing H.264 VA-API decoder via a new
+  `VaapiVideoDecoder` enum. Compile + clippy + test-verified on real WSL2 Linux — **zero
+  real-hardware verification** (no VA-API device available this session), same standing caveat
+  as this backend's H.264 path. See
+  `crates/mediaway-decoder/adr/linux/0003-vaapi-av1-key-frame-decode.md`.
 
 ### Changed
 

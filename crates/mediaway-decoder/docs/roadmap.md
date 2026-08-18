@@ -39,4 +39,12 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 
 ### 4 — Other
 
-- [ ] `mediaway-decoder-apple` / `mediaway-decoder-android` as scheduled
+- [x] ADR: `mediaway-decoder::apple` — `VTDecompressionSession` H.264 general-GOP CPU-output
+      decode ([ADR-apple/0001](../adr/apple/0001-videotoolbox-h264-cpu-out.md))
+- [x] `mediaway-decoder::apple` implemented per that ADR (`src/apple/`, one SPS + one PPS,
+      4-byte AVCC length size only) — compiles/lints on this Windows host (the real
+      `objc2-*`-calling code is `cfg`-gated to Apple targets; pure `codec.rs` tick/NV12 helpers
+      are host-testable and covered by real unit tests), **zero compile verification of the
+      Apple-only code path itself** (no Apple SDK in this dev environment) — not wired into
+      `auto`/`capability` yet
+- [ ] `mediaway-decoder::android` as scheduled

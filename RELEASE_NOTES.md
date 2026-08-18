@@ -13,6 +13,15 @@
   dev environment) — a new CI job compiles/lints it against a real NDK before it is trusted;
   not wired into `auto`/`capability` yet. See
   `crates/mediaway-encoder/adr/android/0001-ndk-amediacodec-h264-cpu-upload.md`.
+- `mediaway-decoder::apple`: first Apple decode backend (`VideoToolbox`
+  `VTDecompressionSession` via `objc2-*`), H.264 CPU NV12 (`VideoRange`) readback decode only,
+  one module for both macOS and iOS. General GOP (P/B frames) — VideoToolbox owns the DPB and
+  P/B-frame reordering internally via `kVTDecodeFrame_EnableTemporalProcessing`; this crate
+  builds no reference-picture list itself. Scope this stage: exactly one SPS + one PPS, 4-byte
+  AVCC length-prefix size only. Zero compile verification as authored (this dev environment
+  cannot cross-compile Apple code at all outside macOS/Xcode) — new Apple CI jobs compile/lint
+  it against real Apple SDKs before it is trusted; not wired into `auto`/`capability` yet. See
+  `crates/mediaway-decoder/adr/apple/0001-videotoolbox-h264-cpu-out.md`.
 - `mediaway-encoder::apple`: last "Other" platform encoder backend (`VideoToolbox`
   `VTCompressionSession` via `objc2-*`), H.264 CPU-upload encode only, one module for both
   macOS and iOS. Zero compile verification as authored (this dev environment cannot

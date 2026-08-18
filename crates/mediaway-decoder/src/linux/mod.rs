@@ -34,11 +34,12 @@ use mediaway_common::{Bytes, Packet, StreamInfo};
 #[cfg(target_os = "linux")]
 mod vaapi;
 
-/// Linux video decode session (VA-API H.264 when opened on Linux).
+/// Linux video decode session (VA-API H.264/HEVC when opened on Linux — ADR-0003 unifies both
+/// codecs behind `vaapi::VaapiVideoSession`).
 #[cfg(feature = "video")]
 pub struct LinuxVideoDecoder {
     #[cfg(target_os = "linux")]
-    inner: Option<vaapi::VaapiH264Decoder>,
+    inner: Option<vaapi::VaapiVideoSession>,
     #[cfg(not(target_os = "linux"))]
     _priv: (),
 }
@@ -50,14 +51,14 @@ impl LinuxVideoDecoder {
     /// # Errors
     ///
     /// Returns [`DecodeError::Unsupported`] when the codec/output path is not wired
-    /// (currently: anything but H.264 + [`VideoOutputPreference::CpuFramesOk`]), or
+    /// (currently: anything but H.264/HEVC + [`VideoOutputPreference::CpuFramesOk`]), or
     /// [`DecodeError::Backend`] on VA-API failure. No `/dev/dri/renderD*` VA-API display is
     /// expected in most CI/dev environments — see ADR-0001's hardware caveat.
     ///
     /// [`VideoOutputPreference::CpuFramesOk`]: crate::VideoOutputPreference::CpuFramesOk
     #[cfg(target_os = "linux")]
     pub fn open(config: &VideoDecoderConfig) -> Result<Self, DecodeError> {
-        let inner = vaapi::VaapiH264Decoder::open(config)?;
+        let inner = vaapi::VaapiVideoSession::open(config)?;
         Ok(Self { inner: Some(inner) })
     }
 

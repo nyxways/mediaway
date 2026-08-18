@@ -41,3 +41,15 @@ fn only_h264_codec_kind_is_supported() {
     assert!(!is_supported_video_codec(CodecKind::Av1));
     assert!(!is_supported_video_codec(CodecKind::Vp9));
 }
+
+#[test]
+fn main_profile_idc_yields_hevc_main_only() {
+    let candidates = hevc_profile_candidates(1).expect("main supported");
+    assert_eq!(candidates, vec![cros_libva::VAProfile::VAProfileHEVCMain]);
+}
+
+#[test]
+fn non_main_hevc_profile_idc_is_unsupported() {
+    assert_eq!(hevc_profile_candidates(2), Err(DecodeError::Unsupported));
+    assert_eq!(hevc_profile_candidates(0), Err(DecodeError::Unsupported));
+}

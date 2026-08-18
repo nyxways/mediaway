@@ -40,3 +40,23 @@ fn open_vaapi_h264_cpu_or_skip() {
     dec.flush().expect("flush without packets");
     assert!(dec.poll_frame().expect("poll").is_none());
 }
+
+/// Attempts to open a real VA-API display and HEVC CPU-output decode session through the public
+/// [`LinuxVideoDecoder`] wrapper (delegation to `vaapi::VaapiVideoSession::Hevc`).
+///
+/// **Expected to skip in this development session** — same zero-real-hardware disposition as
+/// `open_vaapi_h264_cpu_or_skip` above. See
+/// [`adr/linux/0003-vaapi-hevc-p-slice-dpb.md`](../adr/linux/0003-vaapi-hevc-p-slice-dpb.md).
+#[test]
+fn open_vaapi_hevc_cpu_or_skip() {
+    let cfg = VideoDecoderConfig::hevc(64, 64, Rational::new(1, 30));
+    let mut dec = match LinuxVideoDecoder::open(&cfg) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("skip: no VA-API display available ({e:?})");
+            return;
+        }
+    };
+    dec.flush().expect("flush without packets");
+    assert!(dec.poll_frame().expect("poll").is_none());
+}

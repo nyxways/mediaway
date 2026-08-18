@@ -70,7 +70,10 @@ ashpd = { workspace = true, default-features = false, features = [
     "async-io",
 ] }
 # Safe Rust bindings to libpipewire (build-time pkg-config: libpipewire-0.3).
-pipewire = { workspace = true }
+# `v0_3_44` unlocks `pw::keys::TARGET_OBJECT` (mic.rs device targeting, ADR-0004
+# addendum) — PipeWire 0.3.44 released 2021; every mainstream distro's PipeWire
+# packages this workspace targets are newer.
+pipewire = { workspace = true, features = ["v0_3_44"] }
 # Safe V4L2 bindings for camera capture (build-time: bindgen + libclang +
 # system <linux/videodev2.h>, no runtime library link). See
 # adr/0002-v4l2-camera-capture.md.

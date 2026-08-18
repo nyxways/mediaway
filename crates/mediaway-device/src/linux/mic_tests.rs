@@ -7,8 +7,8 @@
 )]
 
 use super::*;
-use crate::Select;
 use crate::audio::AudioCaptureConfig;
+use crate::{DeviceId, Select};
 use mediaway_common::{Rational, SampleFormat};
 
 #[test]
@@ -37,6 +37,19 @@ fn usable_pcm_len_exact_multiple_is_unchanged() {
 fn non_default_select_is_unsupported() {
     let cfg = AudioCaptureConfig {
         select: Select::NameContains("nonexistent".to_owned()),
+        time_base: Rational::new(1, 48_000),
+        sample_format: SampleFormat::F32,
+    };
+    assert!(matches!(
+        LinuxMicrophoneCapture::open(&cfg),
+        Err(CaptureError::Unsupported)
+    ));
+}
+
+#[test]
+fn non_pipewire_device_id_select_is_unsupported() {
+    let cfg = AudioCaptureConfig {
+        select: Select::Id(DeviceId::from_wasapi_endpoint_id("not-a-pipewire-node")),
         time_base: Rational::new(1, 48_000),
         sample_format: SampleFormat::F32,
     };

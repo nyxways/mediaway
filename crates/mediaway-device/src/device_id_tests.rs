@@ -52,6 +52,25 @@ fn dxgi_output_display_and_from_str_round_trip() {
 }
 
 #[test]
+fn pipewire_display_and_from_str_round_trip() {
+    let id = DeviceId::from_pipewire_node_name("alsa_input.usb-Blue_Microphones-00.mono-fallback");
+    let text = id.to_string();
+    assert_eq!(
+        text,
+        "pipewire:alsa_input.usb-Blue_Microphones-00.mono-fallback"
+    );
+    let parsed = DeviceId::from_str(&text).expect("round trip");
+    assert_eq!(parsed, id);
+    assert_eq!(
+        parsed.as_pipewire_node_name(),
+        Some("alsa_input.usb-Blue_Microphones-00.mono-fallback")
+    );
+    assert_eq!(parsed.as_wasapi_endpoint_id(), None);
+    assert_eq!(parsed.as_media_foundation_symbolic_link(), None);
+    assert_eq!(parsed.as_dxgi_output_device_name(), None);
+}
+
+#[test]
 fn from_str_rejects_unknown_prefix() {
     let err = DeviceId::from_str("bogus:whatever").expect_err("unknown tag prefix");
     assert_eq!(err, ParseDeviceIdError("bogus:whatever".to_owned()));

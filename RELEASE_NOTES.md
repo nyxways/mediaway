@@ -96,6 +96,11 @@
 - Apple `mediaway-encoder::apple` backend: `Packet::is_keyframe` was a `gop_size <= 1 ||
   packet_index == 0` approximation, not real per-sample sync-frame detection. Now reads the
   real `kCMSampleAttachmentKey_NotSync` attachment VideoToolbox sets on each encoded sample.
+- Linux `mediaway-device::linux` microphone capture: `Select` only ever accepted `Default` —
+  a non-default `PipeWire` source could not be targeted at all. `DeviceId` gained a
+  `PipeWire(String)` (`node.name`) variant; `Select::Id(DeviceId::from_pipewire_node_name(..))`
+  now sets `PW_KEY_TARGET_OBJECT` on the capture stream. Real-hardware (real `libpipewire` link)
+  compile and unit-test verified via WSL2.
 
 ### Removed
 

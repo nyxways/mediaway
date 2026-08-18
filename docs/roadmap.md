@@ -89,7 +89,9 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
       (`mediaway-decoder/adr/vulkan/0001-vulkan-video-decode.md`'s 2026-08-05 addendum).
 - [ ] **Vulkan AV1 Encode/Decode**: encode is structurally hardware-verified but every frame's
       OBU output is invalid — confirmed driver-maturity limitation, not a Mediaway bug; AV1
-      decode has not been started.
+      decode has not been started on this backend. (VA-API/Linux AV1 `KEY_FRAME`-only decode
+      landed separately, compile+test-verified, zero real-hardware verification — see
+      `mediaway-decoder/adr/linux/0003-vaapi-av1-key-frame-decode.md`.)
 - [x] **Windows CPU Decode Bug**: `WindowsVideoDecoder`'s `CpuFramesOk` H.264 path — both real
       bugs (AVCC/Annex-B framing mismatch, and a test double-free misattributed as a decoder
       abort) found and fixed 2026-08-05

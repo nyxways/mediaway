@@ -37,6 +37,11 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
       compile+test-verified on real WSL2 Linux (`libva-dev`); **zero
       real-hardware verification** (no VA-API device available this
       session); see [adr/linux/0002](../adr/linux/0002-vaapi-h264-p-slice-dpb.md)
+- [x] `linux::vaapi` AV1 `KEY_FRAME`-only decode: single tile, Main profile, spec-derived OBU/
+      sequence-header/frame-header parser (no AV1 decode precedent existed anywhere in this
+      workspace to port from) — implemented, compile+clippy+test-verified on real WSL2 Linux;
+      **zero real-hardware verification** (no VA-API device available this session); see
+      [adr/linux/0003](../adr/linux/0003-vaapi-av1-key-frame-decode.md)
 - [x] `vulkan` module (portable, not OS-suffixed — see
       [adr/vulkan/0001](../adr/vulkan/0001-vulkan-video-decode.md)): H.264
       general-GOP decode **hardware-verified** (RTX 4090); HEVC IDR decode

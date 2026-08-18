@@ -3,8 +3,10 @@
 - Module: `mediaway-decoder::linux`
 - Bindings: [`cros-libva`](https://crates.io/crates/cros-libva) (BSD-3-Clause, `cfg(target_os =
   "linux")` dependency only — never pulled into non-Linux builds)
-- Codec: H.264 baseline/main only (`vaapi/codec.rs` → `VAProfileH264ConstrainedBaseline` /
-  `VAProfileH264Main`, `VAEntrypointVLD`)
+- Codec: H.264 baseline/main (`vaapi/codec.rs` → `VAProfileH264ConstrainedBaseline` /
+  `VAProfileH264Main`, `VAEntrypointVLD`) and AV1 Main profile `KEY_FRAME`-only
+  (`VAProfileAV1Profile0`, `VAEntrypointVLD`) — dispatched via `vaapi::VaapiVideoDecoder`, an
+  enum over the two per-codec decoders (no `Box<dyn VideoDecoder>`)
 - Scope: I and single-forward-reference P slices (real GOP/IPPP... decode), single slice per
   picture, `pic_order_cnt_type == 0`, progressive. Sliding-window DPB (`vaapi/dpb.rs`, ported
   from `vulkan/dpb.rs`), `RefPicList0[0]`-only reference (no reordering, no long-term refs, no
@@ -36,6 +38,23 @@
   (`pred_weight_table()`, `cabac_init_idc` unhandled) — rejected honestly
   here rather than inherited silently. Still zero real VA-API hardware
   verification.
+- ADR: [0003](../../../../crates/mediaway-decoder/adr/linux/0003-vaapi-av1-key-frame-decode.md) —
+  **Implemented, WSL2 compile+test-verified**: AV1 `KEY_FRAME`-only decode (`vaapi/av1.rs` +
+  `vaapi/av1/{obu,bits,sequence_header,frame_header,tile_info}.rs`), single tile, Main profile,
+  every optional coding tool (segmentation/film grain/CDEF/loop restoration/superres/warped
+  motion) rejected as `Unsupported` if signaled. No AV1 decode existed anywhere in this
+  workspace to port from — the bitstream parser (`sequence_header_obu()`/`uncompressed_header()`)
+  is spec-derived, cross-checked (not copied) against
+  `mediaway-encoder::windows::d3d12_video_encode::bitstream_av1`'s OBU **writer** (inverse
+  direction) and `mediaway_sw::h264::BitReader` (raw-bit primitive reuse; new local
+  `uvlc()`/`su(n)`/`ns(n)` decoders for AV1's own variable-length codes). No `cros-libva` gap on
+  the decode side (unlike its encoder sibling) — decode never needs a packed-header buffer;
+  `VAProfileAV1Profile0`/`VAEntrypointVLD`/`VAAV1TransformationType` all resolved correctly
+  against real WSL2 bindgen output on the first compile pass. Accepts both legal AV1 framings
+  (`OBU_FRAME`, and the split `OBU_FRAME_HEADER` + `OBU_TILE_GROUP` pair). `INTER_FRAME`/GOP
+  decode explicitly deferred: harder here than H.264's same-pass DPB extension (no porting
+  precedent, AV1's CDF-forward-adaptation + 9-way reference-slot model). **Zero real VA-API
+  hardware verification**, same caveat as ADR-0001/0002.
 
 ## ⚠️ Hardware verification status
 

@@ -780,7 +780,11 @@ fn seed_params(extra_data: &Bytes) -> (Option<Sps>, Option<Pps>) {
 }
 
 fn validate(config: &VideoDecoderConfig) -> Result<(), DecodeError> {
-    if !super::codec::is_supported_video_codec(config.codec) {
+    // `is_supported_video_codec` is this vaapi backend's whole-of-crate "does any decoder here
+    // handle this codec" check (used by `linux::mod`'s dispatcher); this decoder itself only
+    // ever handles H.264 — an AV1 config must route to `VaapiAv1Decoder` instead, not silently
+    // be accepted here.
+    if config.codec != mediaway_common::CodecKind::H264 {
         return Err(DecodeError::Unsupported);
     }
     if config.pixel_format != PixelFormat::Nv12 {

@@ -31,10 +31,19 @@ pub(super) fn h264_profile_candidates(
     }
 }
 
+/// VA-API profile candidates for AV1 decode — this crate's AV1 `SequenceHeader::parse` already
+/// rejects any `seq_profile` other than `0` (Main — see
+/// `adr/linux/0003-vaapi-av1-key-frame-decode.md` § Scope), so this always returns the single
+/// Main-profile candidate.
+#[must_use]
+pub(super) fn av1_profile_candidates() -> Vec<cros_libva::VAProfile::Type> {
+    vec![cros_libva::VAProfile::VAProfileAV1Profile0]
+}
+
 /// Whether this crate's video decode path accepts `codec`.
 #[must_use]
 pub(super) const fn is_supported_video_codec(codec: CodecKind) -> bool {
-    matches!(codec, CodecKind::H264)
+    matches!(codec, CodecKind::H264 | CodecKind::Av1)
 }
 
 #[cfg(test)]

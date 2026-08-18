@@ -81,6 +81,10 @@ windows = { workspace = true, features = [
 cros-libva = { workspace = true }
 
 
+[target.'cfg(target_os = "android")'.dependencies]
+ndk = { version = "0.9", features = ["media"] }
+
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = { workspace = true }
 js-sys = { workspace = true }

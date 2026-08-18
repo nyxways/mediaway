@@ -1508,6 +1508,7 @@ dependencies = [
  "mediaway-common",
  "mediaway-encoder",
  "mediaway-sw",
+ "ndk",
  "smallvec",
  "thiserror 2.0.19",
  "vulkanalia",

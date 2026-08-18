@@ -389,7 +389,14 @@ impl VideoEncoder for VaapiVideoEncoder {
 /// attribute's internal packed-value bit layout (low bits = max P/forward references, per
 /// general `va_enc_h264.h` convention) was not independently confirmed against a real driver
 /// this session, but this binary supported/unsupported check does not depend on that layout.
-fn probe_supports_p_frames(display: &Display, profile: cros_libva::VAProfile::Type) -> bool {
+///
+/// `pub(super)`: genuinely codec-agnostic (parameterized by `profile` already) — reused directly
+/// by `hevc.rs` (ADR-0003) rather than duplicated, mirroring `gop.rs::WORKSPACE_DPB_CAP`'s own
+/// same-crate reuse precedent.
+pub(super) fn probe_supports_p_frames(
+    display: &Display,
+    profile: cros_libva::VAProfile::Type,
+) -> bool {
     let mut attribs = [VAConfigAttrib {
         type_: VAConfigAttribType::VAConfigAttribEncMaxRefFrames,
         value: 0,
@@ -406,7 +413,11 @@ fn probe_supports_p_frames(display: &Display, profile: cros_libva::VAProfile::Ty
 /// on drop) — a genuine CPU→driver copy, named to match the Windows backend's
 /// `upload_cpu_nv12` cost-disclosure convention. `data` must be tightly packed NV12
 /// (`width * height` Y bytes followed by `width * height / 2` interleaved UV bytes).
-fn upload_cpu_nv12(
+///
+/// `pub(super)`: pure pixel-copy logic with nothing H.264-specific about it — reused directly by
+/// `hevc.rs` (ADR-0003) rather than duplicated, same reuse rationale as
+/// [`probe_supports_p_frames`].
+pub(super) fn upload_cpu_nv12(
     surface: &Surface<()>,
     data: &[u8],
     width: u32,
@@ -707,7 +718,9 @@ fn mb_count(dim: u32) -> Result<u16, EncodeError> {
     u16::try_from(dim / 16).map_err(|_| EncodeError::InvalidInput)
 }
 
-fn nv12_size(width: u32, height: u32) -> Result<usize, EncodeError> {
+/// `pub(super)`: pure byte-size arithmetic, codec-agnostic — reused directly by `hevc.rs`
+/// (ADR-0003) rather than duplicated, same reuse rationale as [`probe_supports_p_frames`].
+pub(super) fn nv12_size(width: u32, height: u32) -> Result<usize, EncodeError> {
     let w = usize::try_from(width).map_err(|_| EncodeError::InvalidInput)?;
     let h = usize::try_from(height).map_err(|_| EncodeError::InvalidInput)?;
     w.checked_mul(h)

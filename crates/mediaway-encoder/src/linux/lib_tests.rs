@@ -93,3 +93,47 @@ fn open_h264_cpu_upload_or_skip_without_hw() {
     }
     eprintln!("LinuxVideoEncoder packets={packets}");
 }
+
+/// ADR-0003: end-to-end through the public [`LinuxVideoEncoder`] wrapper for HEVC (delegation to
+/// `vaapi::VaapiVideoSession::Hevc`). **Expected to skip in the session that authored this
+/// crate** — see
+/// [`adr/linux/0003-vaapi-hevc-p-frame-gop.md`](../adr/linux/0003-vaapi-hevc-p-frame-gop.md)
+/// § Zero real-hardware verification and `vaapi::hevc_tests::vaapi_open_and_encode_or_skip_without_hw`
+/// for the lower-level equivalent.
+#[test]
+fn open_hevc_cpu_upload_or_skip_without_hw() {
+    let mut cfg = tiny_h264_cfg();
+    cfg.codec = mediaway_common::CodecKind::Hevc;
+    let mut enc = match LinuxVideoEncoder::open(&cfg) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("skip: LinuxVideoEncoder::open failed ({e:?}) — no VA-API display?");
+            return;
+        }
+    };
+
+    let nv12_len = 64 * 64 + (64 * 64) / 2;
+    let frame = VideoFrame {
+        pts: 0,
+        duration: 1,
+        width: 64,
+        height: 64,
+        format: mediaway_common::PixelFormat::Nv12,
+        storage: mediaway_common::VideoFrameStorage::Cpu {
+            data: Bytes::from(vec![0u8; nv12_len]),
+        },
+    };
+
+    if let Err(e) = enc.push_frame(&frame) {
+        eprintln!("skip: push_frame failed ({e:?})");
+        return;
+    }
+    let _ = enc.flush();
+
+    let mut packets = 0usize;
+    while let Ok(Some(p)) = enc.poll_packet() {
+        assert!(!p.payload.is_empty());
+        packets += 1;
+    }
+    eprintln!("LinuxVideoEncoder hevc packets={packets}");
+}

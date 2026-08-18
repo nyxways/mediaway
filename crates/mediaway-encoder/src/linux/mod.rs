@@ -30,10 +30,11 @@ use mediaway_common::{Bytes, Packet, StreamInfo};
 #[cfg(target_os = "linux")]
 mod vaapi;
 
-/// Linux video encode session (VA-API H.264 when opened on Linux).
+/// Linux video encode session (VA-API H.264/HEVC when opened on Linux — ADR-0003 unifies both
+/// codecs behind `vaapi::VaapiVideoSession`).
 pub struct LinuxVideoEncoder {
     #[cfg(target_os = "linux")]
-    inner: Option<vaapi::VaapiVideoEncoder>,
+    inner: Option<vaapi::VaapiVideoSession>,
     #[cfg(not(target_os = "linux"))]
     _priv: (),
 }
@@ -44,14 +45,14 @@ impl LinuxVideoEncoder {
     /// # Errors
     ///
     /// Returns [`EncodeError::Unsupported`] when the codec/input path is not wired
-    /// (currently: anything but H.264 + [`VideoInputPreference::CpuUploadOk`]), or
+    /// (currently: anything but H.264/HEVC + [`VideoInputPreference::CpuUploadOk`]), or
     /// [`EncodeError::Backend`] when no VA-API display/driver is available (expected in
     /// any environment without a real `/dev/dri/renderD*` VA-API device — see ADR-0001).
     ///
     /// [`VideoInputPreference::CpuUploadOk`]: crate::VideoInputPreference::CpuUploadOk
     #[cfg(target_os = "linux")]
     pub fn open(config: &VideoEncoderConfig) -> Result<Self, EncodeError> {
-        let inner = vaapi::VaapiVideoEncoder::open(config)?;
+        let inner = vaapi::VaapiVideoSession::open(config)?;
         Ok(Self { inner: Some(inner) })
     }
 

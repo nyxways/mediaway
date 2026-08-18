@@ -287,7 +287,7 @@ async fn webgpu_canvas_frame(width: u32, height: u32) -> Result<VideoFrame, JsVa
         &view,
     );
     attachment.set_clear_value_gpu_color_dict(&GpuColorDict::new(1.0, 0.0, 0.0, 1.0));
-    let pass_desc = GpuRenderPassDescriptor::new(&[js_sys::JsOption::wrap(attachment)]);
+    let pass_desc = GpuRenderPassDescriptor::new(&[js_sys::JsNullable::wrap(attachment)]);
     let encoder = device.create_command_encoder();
     let pass = encoder.begin_render_pass(&pass_desc)?;
     pass.end();

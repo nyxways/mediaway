@@ -16,8 +16,8 @@ use mediaway_common::{
 };
 
 use objc2_core_foundation::{
-    CFBoolean, CFNumber, CFNumberType, CFRetained, CFString, CFType, kCFBooleanFalse,
-    kCFBooleanTrue,
+    CFArray, CFBoolean, CFDictionary, CFNumber, CFNumberType, CFRetained, CFString, CFType,
+    kCFBooleanFalse, kCFBooleanTrue,
 };
 use objc2_core_media::{
     CMFormatDescription, CMSampleBuffer, CMTime,
@@ -278,14 +278,14 @@ unsafe extern "C-unwind" fn compression_output_callback(
 fn handle_output(shared: &SharedState, sample_buffer: &CMSampleBuffer) {
     if shared.finalized_info.get().is_none() {
         // SAFETY: `sample_buffer` is a valid, callback-scoped `CMSampleBuffer` reference.
-        if let Some(format_desc) = unsafe { sample_buffer.format_description() } {
-            if let Some(extra_data) = extract_avcc_extra_data(&format_desc) {
-                let mut info = shared.base_info.clone();
-                if let StreamInfo::Video { extra_data: ed, .. } = &mut info {
-                    *ed = extra_data;
-                }
-                let _ = shared.finalized_info.set(info);
+        if let Some(format_desc) = unsafe { sample_buffer.format_description() }
+            && let Some(extra_data) = extract_avcc_extra_data(&format_desc)
+        {
+            let mut info = shared.base_info.clone();
+            if let StreamInfo::Video { extra_data: ed, .. } = &mut info {
+                *ed = extra_data;
             }
+            let _ = shared.finalized_info.set(info);
         }
     }
 
@@ -333,7 +333,7 @@ fn handle_output(shared: &SharedState, sample_buffer: &CMSampleBuffer) {
 /// the earlier `packet_index == 0` heuristic this ADR originally shipped with (see ADR-0001
 /// addendum). Per Apple's own documented convention: the key's **absence** from the sample's
 /// attachments dictionary means the sample **is** a sync sample (keyframe); presence with a
-/// `true` value means it is not. A missing attachments array or dictionary — which VideoToolbox
+/// `true` value means it is not. A missing attachments array or dictionary — which `VideoToolbox`
 /// documents as legal when there is nothing to attach — is therefore treated the same as an
 /// absent key: a sync sample, not silently treated as "not a keyframe."
 fn is_sync_sample(sample_buffer: &CMSampleBuffer) -> bool {
@@ -343,6 +343,12 @@ fn is_sync_sample(sample_buffer: &CMSampleBuffer) -> bool {
     let Some(attachments) = (unsafe { sample_buffer.sample_attachments_array(false) }) else {
         return true;
     };
+    // SAFETY: `CMSampleBufferGetSampleAttachmentsArray` returns one `CFDictionary` per sample
+    // (Apple's documented contract); `objc2-core-media` 0.3.2's generated binding only types
+    // this as the untyped `CFArray<Opaque>` because bindgen cannot infer the element type —
+    // reinterpret it as the concrete element type the ABI actually provides.
+    let attachments: &CFArray<CFDictionary<CFString, CFType>> =
+        unsafe { attachments.cast_unchecked() };
     // This backend only ever submits one sample per `CMSampleBuffer` (never a batch — see
     // ADR-0001 § Session lifecycle), so the attachments array (one dictionary per sample) has
     // at most one entry.

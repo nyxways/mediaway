@@ -5,7 +5,7 @@
 | Item | Value |
 |------|-------|
 | Edition | **2024** |
-| MSRV (`rust-version`) | **1.91** |
+| MSRV (`rust-version`) | **1.96** |
 | Toolchain | `stable` (`rust-toolchain.toml`) |
 
 ## Workspace lints

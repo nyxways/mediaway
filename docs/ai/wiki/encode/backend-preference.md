@@ -84,11 +84,12 @@ shape was replaced (capability probe, `AutoHardwareOnly`, ceiling-not-bitflags).
   CPU-upload encode on an Intel UHD 770 (new `vpl-sys` binding). AV1
   encode confirmed genuinely unsupported on this iGPU generation (`MFX_ERR_UNSUPPORTED`
   from `MFXVideoENCODE_Query`, not a bindings gap). See adr/0001's 2026-07-29 addenda.
-- **AMF** → `mediaway-encoder::amf` adr/0001: **deferred**, not just
-  unverified — `amf-rs` on crates.io is a *different*, unrelated GPL-3.0
-  crate (real bindings are `shiguredo_amf`, Apache-2.0); `shiguredo_amf`
-  needs Rust 1.93, this workspace pins 1.91 (hard MSRV block); no AMD GPU
-  available either.
+- **AMF** → `mediaway-encoder::amf` adr/0001: previously **deferred** on a
+  hard MSRV block (`shiguredo_amf` needs Rust 1.93, workspace pinned 1.91) —
+  cleared by ADR-0023 (workspace MSRV now 1.96); `amf-rs` on crates.io is
+  still a *different*, unrelated GPL-3.0 crate (real bindings are
+  `shiguredo_amf`, Apache-2.0). No AMD GPU available on this machine either
+  way — implementation still ships without real-hardware verification.
 - **Vulkan Video** doesn't fit `GraphicsApi` or `VendorHw` cleanly — it's
   cross-vendor (unlike `VendorHw`) but packaged like a vendor crate
   (`mediaway-encoder::vulkan`, cross-OS unlike `GraphicsApi`'s current

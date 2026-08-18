@@ -51,7 +51,7 @@ members = [
 [workspace.package]
 version = "0.1.6"
 edition = "2024"
-rust-version = "1.91"
+rust-version = "1.96"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/nyxways/mediaway"
 authors = ["NyxWays"]
@@ -152,11 +152,11 @@ nvenc = "0.1"
 # with default-features = false. See crates/mediaway-sw/adr/0002-rav1e-av1-encode.md.
 rav1e = { version = "0.8", default-features = false }
 # GPU framework interop (mediaway-wgpu — Stage 1: Windows DX12 HAL bridge).
-# MIT OR Apache-2.0. Pinned to the 26.x minor, not latest (30.x requires rustc
-# >= 1.93, past this workspace's rust-version = "1.91" pin): wgpu 26.0's
-# rust-version (1.84) fits comfortably; bumping to a newer 26.x-or-later minor
-# that still fits 1.91 (e.g. 29.x, which needs 1.87) is a separate upgrade, not
-# done here. Base entry carries no backend feature (types compile everywhere);
+# MIT OR Apache-2.0. Pinned to the 26.x minor, not latest. 30.x's rustc floor
+# (1.93) now fits under this workspace's rust-version = "1.96" pin (see
+# ADR-0023), but upgrading past 26.x is a separate, deliberate dependency
+# decision (docs/conventions/deps-policy.md), not done here. Base entry
+# carries no backend feature (types compile everywhere);
 # platform crates add their own backend (`dx12`, later `vulkan`/`metal`) via
 # target-cfg'd deps.
 # See crates/mediaway-wgpu/adr/0001-dx12-hal-gpucopy-bridge.md.

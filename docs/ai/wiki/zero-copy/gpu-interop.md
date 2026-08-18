@@ -14,11 +14,14 @@ Canonical: [`docs/spec/gpu-interop.md`](../../../spec/gpu-interop.md) · ADR-000
   RTX 4090 (currently via the graceful-skip path —
   same pre-existing HW/driver limitation the underlying WMF bridge test
   already hits on its own). See `crates/mediaway/adr/wgpu/0001-dx12-hal-gpucopy-bridge.md`.
-- Real bug caught only by compiling: `wgpu-hal` 26.x pins its own `windows`
-  crate dependency to 0.58, incompatible as a Rust *type* with this
-  workspace's ordinary `windows = "0.62"` even though both wrap the same COM
-  interface — bridge only raw pointer bits (`NativeHandle`) across that
-  version boundary, never a typed COM object.
+- `wgpu` bumped 26.x → 30.x (2026-08-18), real-hardware re-verified on the same RTX 4090 —
+  6 breaking API changes fixed (`create_texture_from_hal`'s new `initial_state` param,
+  `PollType::Wait`'s new struct shape, `Instance`/`enumerate_adapters` signature changes). Also
+  resolves, as a side effect, the 26.x-era `windows`-crate 0.58/0.62 straddle bug (`wgpu-hal`
+  26.x pinned its own `windows` dependency to 0.58, incompatible as a Rust *type* with this
+  workspace's ordinary 0.62 even though both wrap the same COM interface) — `wgpu-hal` 30.x now
+  pins `windows = "0.62"`, matching this workspace. See
+  `crates/mediaway/adr/wgpu/0004-wgpu-30-upgrade.md`.
 - `mediaway-encoder::vulkan` (2026-07-29) — real, hardware-verified
   `VK_KHR_video_queue` capability probe (`ash`). Confirmed:
   NVIDIA RTX 4090 advertises H.264+H.265 encode on queue family 4; Intel UHD
@@ -59,7 +62,7 @@ Canonical: [`docs/spec/gpu-interop.md`](../../../spec/gpu-interop.md) · ADR-000
   Same `GpuCopy` cost class as the encode direction (D3D11→D3D11 copy +
   CPU↔GPU query-poll stall, no fence hand-off in v1).
   `wgpu::TextureFormat::NV12` confirmed to exist exactly as designed in the
-  pinned `wgpu-types 26.0.0` source this workspace resolves to, gated by
+  pinned `wgpu-types` source this workspace resolves to, gated by
   `Features::TEXTURE_FORMAT_NV12` (native-only, DX12 + Vulkan) — required for
   a caller's later `create_view` on the returned texture, not for
   `WgpuDx12DecodeBridge::new`'s own `create_texture_from_hal` wrap (which
@@ -74,19 +77,15 @@ Canonical: [`docs/spec/gpu-interop.md`](../../../spec/gpu-interop.md) · ADR-000
   D3D11 NV12 texture (real decoder output has the same shape the bridge cares
   about, not who produced it) written with a known pattern →
   `import_decoded_texture` → byte-exact readback, 6144/6144 bytes matching on
-  an RTX 4090. Real bug found: `wgpu-hal` 26.0.6's DX12 backend
-  (`calc_subresource_for_copy`) has no match arm for `FormatAspects::PLANE_0`/
-  `PLANE_1` — `unreachable!()` panics on **any** `copy_texture_to_buffer`/
-  `copy_texture_to_texture` (even `TextureAspect::All`) against a
-  multi-planar (NV12) texture on this backend/version, confirmed by source.
-  Worked around in the test via the reverse hop (`ID3D12Device::CreateSharedHandle`
-  → `ID3D11Device1::OpenSharedResource1` → D3D11 staging `Map`) instead of
-  `wgpu`'s own copy API — `create_view`/per-plane sampling remains genuinely
-  unverified (narrower gap now, not the whole round trip). Also found: both
-  `tests/wgpu/*.rs` files had **never actually compiled** — not wired into
-  `Cargo.toml` (`[[test]]` needed; subdirectory files aren't auto-discovered)
-  and referencing a stale `mediaway_wgpu` extern crate from before the
-  ADR-0021 crate merge (now `mediaway::wgpu`) — both fixed. See
+  an RTX 4090. Real bug found (26.0.6-era, not re-checked against 30.x): `wgpu-hal`'s DX12
+  backend (`calc_subresource_for_copy`) had no match arm for `FormatAspects::PLANE_0`/`PLANE_1`
+  — `unreachable!()` panics on **any** `copy_texture_to_buffer`/`copy_texture_to_texture` (even
+  `TextureAspect::All`) against a multi-planar (NV12) texture. Worked around in the test via the
+  reverse hop (`ID3D12Device::CreateSharedHandle` → `ID3D11Device1::OpenSharedResource1` → D3D11
+  staging `Map`) instead of `wgpu`'s own copy API — `create_view`/per-plane sampling remains
+  genuinely unverified. Also found: both `tests/wgpu/*.rs` files had **never actually
+  compiled** — not wired into `Cargo.toml` (`[[test]]` needed) and referencing a stale
+  `mediaway_wgpu` extern crate from before the ADR-0021 crate merge — both fixed. See
   `crates/mediaway/adr/wgpu/0002-decode-to-wgpu-texture-bridge.md`,
   `crates/mediaway-decoder/adr/windows/0003-d3d11-shared-decode-bridge.md`.
 - Browser: WebGPU; native C/C++: Dawn has **zero** video-encode code in its

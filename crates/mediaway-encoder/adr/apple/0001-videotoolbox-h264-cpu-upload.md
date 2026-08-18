@@ -360,6 +360,23 @@ Only once these jobs are green does "compile-verified" become true for this back
    (unlike Android's cross-compile-only CI), Stage 1 stays parity with how every other backend
    first landed; hardware `cargo test` is deferred to a later "hardware verified" milestone.
 
+## Addendum (2026-08-19): real per-packet `is_keyframe`
+
+Closes the scope cut recorded in the "Implementation notes" section below. Grounded this
+session against a direct read of the local `objc2` clone (not re-guessed): `CMSampleBuffer`'s
+`sample_attachments_array(create_if_necessary: bool) -> Option<CFRetained<CFArray<CFDictionary
+<CFString, CFType>>>>` (`generated/CoreMedia/CMSampleBuffer.rs`), `CFArray<T>::get`/
+`CFDictionary<K, V>::get` (both safe, non-`unsafe` methods — `objc2-core-foundation/src/
+{array,dictionary}.rs`), and `CFBoolean`'s real `unsafe impl ConcreteType` (confirmed via
+`CFBooleanGetTypeID`, `generated/CoreFoundation/CFNumber.rs`) — the raw-pointer
+`value_at_index`/`value` FFI this ADR originally worried about turned out unnecessary; the safe
+container accessors were sufficient. `is_sync_sample` (new, `videotoolbox/video.rs`) reads the
+`kCMSampleAttachmentKey_NotSync` attachment per Apple's documented convention (key absent ⇒
+sync/keyframe; present + `true` ⇒ not). `SharedState::gop_size`/`packet_count` (the fields the
+old heuristic needed) are removed as dead code, not left behind unused. Same
+zero-compile-verification caveat as the rest of this ADR — no macOS/Xcode anywhere in this
+workspace's sessions, this increment is unverified even at the compile level.
+
 ## Implementation notes (2026-08-12, written alongside the code)
 
 - **Per-packet `is_keyframe` detection is scoped down further than this ADR's research pass

@@ -517,10 +517,10 @@ fn start_in_app_capture(
         } else {
             Err(CaptureError::Backend)
         };
-        if let Ok(mut guard) = tx.lock() {
-            if let Some(tx) = guard.take() {
-                let _ = tx.send(result);
-            }
+        if let Ok(mut guard) = tx.lock()
+            && let Some(tx) = guard.take()
+        {
+            let _ = tx.send(result);
         }
     });
     // SAFETY: `recorder` is the valid shared singleton; `capture_handler`/`completion` are both
@@ -547,10 +547,10 @@ fn stop_in_app_capture(recorder: &RPScreenRecorder) -> Result<(), CaptureError> 
         } else {
             Err(CaptureError::Backend)
         };
-        if let Ok(mut guard) = tx.lock() {
-            if let Some(tx) = guard.take() {
-                let _ = tx.send(result);
-            }
+        if let Ok(mut guard) = tx.lock()
+            && let Some(tx) = guard.take()
+        {
+            let _ = tx.send(result);
         }
     });
     // SAFETY: `recorder` is the valid shared singleton; `handler` is valid for this call.

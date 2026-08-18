@@ -54,6 +54,7 @@ fn baseline_sps_rbsp(
     log2_max_frame_num_minus4: u32,
     pic_order_cnt_type: u32,
     log2_max_pic_order_cnt_lsb_minus4: u32,
+    max_num_ref_frames: u32,
     pic_width_in_mbs_minus1: u32,
     pic_height_in_map_units_minus1: u32,
     frame_mbs_only_flag: u8,
@@ -67,7 +68,7 @@ fn baseline_sps_rbsp(
     if pic_order_cnt_type == 0 {
         w.push_ue(log2_max_pic_order_cnt_lsb_minus4);
     }
-    w.push_ue(0); // max_num_ref_frames
+    w.push_ue(max_num_ref_frames);
     w.push_bit(0); // gaps_in_frame_num_value_allowed_flag
     w.push_ue(pic_width_in_mbs_minus1);
     w.push_ue(pic_height_in_map_units_minus1);
@@ -82,12 +83,13 @@ fn baseline_sps_rbsp(
 
 #[test]
 fn parses_baseline_sps_dimensions_and_fields() {
-    let rbsp = baseline_sps_rbsp(4, 0, 4, 9, 8, 1, 1);
+    let rbsp = baseline_sps_rbsp(4, 0, 4, 2, 9, 8, 1, 1);
     let sps = Sps::parse(&rbsp).expect("valid baseline SPS parses");
     assert_eq!(sps.profile_idc, 66);
     assert_eq!(sps.log2_max_frame_num_minus4, 4);
     assert_eq!(sps.pic_order_cnt_type, 0);
     assert_eq!(sps.log2_max_pic_order_cnt_lsb_minus4, 4);
+    assert_eq!(sps.max_num_ref_frames, 2);
     assert!(!sps.gaps_in_frame_num_value_allowed_flag);
     assert!(sps.direct_8x8_inference_flag);
     assert_eq!(sps.width(), 160); // (9 + 1) * 16
@@ -96,20 +98,20 @@ fn parses_baseline_sps_dimensions_and_fields() {
 
 #[test]
 fn rejects_high_profile_idc_as_unsupported() {
-    let mut rbsp = baseline_sps_rbsp(4, 0, 4, 9, 8, 1, 1);
+    let mut rbsp = baseline_sps_rbsp(4, 0, 4, 2, 9, 8, 1, 1);
     rbsp[0] = 100; // High profile — carries an extra SPS field block this parser does not read
     assert_eq!(Sps::parse(&rbsp), Err(DecodeError::Unsupported));
 }
 
 #[test]
 fn rejects_pic_order_cnt_type_other_than_zero() {
-    let rbsp = baseline_sps_rbsp(4, 2, 0, 9, 8, 1, 1);
+    let rbsp = baseline_sps_rbsp(4, 2, 0, 2, 9, 8, 1, 1);
     assert_eq!(Sps::parse(&rbsp), Err(DecodeError::Unsupported));
 }
 
 #[test]
 fn rejects_interlaced_frame_mbs_only_flag_zero() {
-    let rbsp = baseline_sps_rbsp(4, 0, 4, 9, 8, 0, 1);
+    let rbsp = baseline_sps_rbsp(4, 0, 4, 2, 9, 8, 0, 1);
     assert_eq!(Sps::parse(&rbsp), Err(DecodeError::Unsupported));
 }
 

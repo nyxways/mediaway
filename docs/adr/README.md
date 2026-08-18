@@ -29,5 +29,6 @@ See [`docs/conventions/docs-layout.md`](../conventions/docs-layout.md).
 | [0020](0020-browser-wasm-npm-package.md) | `@mediaway/browser` WASM + WebCodecs package — container in WASM, codecs from the host, capture from native Web APIs | Accepted |
 | [0021](0021-workspace-consolidation.md) | Merge the `mediaway-*` family — platform backends as `#[cfg]`-gated modules, single `mediaway-ffi`, umbrella `mediaway` (amends ADR-0003/0004) | Accepted |
 | [0022](0022-browser-decode-session-and-device-dx.md) | Browser decode session (video + audio) + device DX parity examples (amends ADR-0020) | Accepted |
+| [0023](0023-msrv-bump-1-96.md) | Bump workspace MSRV from 1.85 to 1.96 (unblocks AMD AMF `shiguredo_amf`) | Accepted |
 
 Template: [`template.md`](template.md)

@@ -5,9 +5,11 @@
   "linux")` dependency only — never pulled into non-Linux builds)
 - Codec: H.264 baseline/main only (`vaapi/codec.rs` → `VAProfileH264ConstrainedBaseline` /
   `VAProfileH264Main`, `VAEntrypointVLD`)
-- Scope: **IDR pictures only**, single slice per picture, `pic_order_cnt_type == 0`,
-  progressive — no DPB / reference picture management at all (an IDR I-slice references
-  nothing). Own H.264 SPS/PPS/slice-header parser (`vaapi/sps.rs`/`pps.rs`/`slice.rs`) reuses
+- Scope: I and single-forward-reference P slices (real GOP/IPPP... decode), single slice per
+  picture, `pic_order_cnt_type == 0`, progressive. Sliding-window DPB (`vaapi/dpb.rs`, ported
+  from `vulkan/dpb.rs`), `RefPicList0[0]`-only reference (no reordering, no long-term refs, no
+  weighted prediction, no CABAC P-slices, no B-slices, no multi-reference — all rejected
+  honestly). Own H.264 SPS/PPS/slice-header parser (`vaapi/sps.rs`/`pps.rs`/`slice.rs`) reuses
   [`mediaway_sw::h264`](../../../crates/mediaway-sw/docs/roadmap.md)'s `BitReader` + Annex-B
   NAL splitting — VA-API (unlike Windows Media Foundation) requires the *application* to
   parse SPS/PPS/slice headers itself.
@@ -22,6 +24,18 @@
   since `open()` cannot know profile/coded resolution before that
 - ADR: [0001](../../../../crates/mediaway-decoder/adr/linux/0001-vaapi-h264-cpu-out.md) —
   binding choice, decode scope, **zero real-hardware verification** caveat
+- ADR: [0002](../../../../crates/mediaway-decoder/adr/linux/0002-vaapi-h264-p-slice-dpb.md) —
+  **Implemented, WSL2 compile+test-verified**: extends decode to
+  single-forward-reference P-slices (+ free non-IDR I-slices) by porting the
+  sliding-window DPB / POC arithmetic from `vulkan/dpb.rs` /
+  `vulkan/h264_slice.rs` / `vulkan/h264_params.rs` into a new, sans-io
+  `vaapi/dpb.rs`; no B-slices, no reference-list reordering, no weighted
+  prediction, no CABAC P-slices, no multi-reference this round. Surface pool
+  is DPB-slot-indexed (round-robin removed), sized `sps.max_num_ref_frames +
+  1`. Found two real latent gaps in the Vulkan porting source itself
+  (`pred_weight_table()`, `cabac_init_idc` unhandled) — rejected honestly
+  here rather than inherited silently. Still zero real VA-API hardware
+  verification.
 
 ## ⚠️ Hardware verification status
 

@@ -130,7 +130,7 @@ pub(crate) fn frame_size_samples(
     }
     let numerator = u64::from(sample_rate) * time_base.num;
     let denominator = u64::from(time_base.den);
-    if numerator % denominator != 0 {
+    if !numerator.is_multiple_of(denominator) {
         return Err(invalid());
     }
     let samples = numerator / denominator;

@@ -38,7 +38,7 @@ impl McAlignedExtent {
     /// aligned, so an unaligned extent is a caller bug worth rejecting early
     /// rather than silently truncating.
     pub(crate) const fn from_pixels(width: u32, height: u32) -> Option<Self> {
-        if width == 0 || height == 0 || width % 16 != 0 || height % 16 != 0 {
+        if width == 0 || height == 0 || !width.is_multiple_of(16) || !height.is_multiple_of(16) {
             return None;
         }
         Some(Self {

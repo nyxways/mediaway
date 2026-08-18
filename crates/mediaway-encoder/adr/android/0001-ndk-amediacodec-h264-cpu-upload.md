@@ -284,6 +284,25 @@ after.
   Windows/Web/Linux/other builds, per the `cfg(target_os = "android")` gate), and unavoidable
   for *any* Android Rust target regardless of binding choice.
 
+## Addendum (2026-08-19): `csd-0`/`csd-1` extradata capture
+
+Closes the "extradata capture is deferred" gap this ADR originally left open. `AMediaCodec`
+delivers SPS/PPS as an Annex-B-framed `BUFFER_FLAG_CODEC_CONFIG` output buffer (the documented
+encode convention) before the first real frame; `drain_output` now captures that buffer once and
+converts it to `avcC` via `iso_bmff::bitstream::avc::to_avcc` — the same helper
+`src/windows/wmf/video.rs` and `src/apple/videotoolbox/video.rs` already reuse for the identical
+Annex-B→avcC step, not a new builder. Populates `StreamInfo::Video::extra_data` in place
+(`&mut self.info`), mirroring the mutation pattern `mediaway-decoder::apple`'s
+`adopt_output_format` already uses for its own post-open `StreamInfo` update.
+
+**Not closed by this increment:** a device that only exposes `csd-0`/`csd-1` via the
+`OutputFormatChanged` event's own output `MediaFormat` (rather than, or in addition to, a
+dedicated codec-config buffer) is a narrower, still-open gap — flagged in code, not silently
+assumed away. Same zero-compile/zero-runtime-verification caveat as the rest of this ADR: no
+Android NDK exists anywhere in this workspace's sessions (re-confirmed this session, including
+in the WSL2 Ubuntu instance otherwise used for Linux-target compile verification), so this
+change is unverified even at the compile level.
+
 ## References
 
 - [`docs/conventions/deps-policy.md`](../../../../docs/conventions/deps-policy.md)

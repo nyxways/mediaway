@@ -259,7 +259,7 @@ OS codec APIs (WMF, WebCodecs, VA-API, …) fed with CPU buffers (upload may app
 
 | Codec        | Windows  | Web      | Linux   | Apple   | Android |
 | ------------ | -------- | -------- | ------- | ------- | ------- |
-| H.264 / AVC  | ✅ / ✅  | ✅ / ✅ | 🆗 / 🆗 | 🆗 / 👻 | 🆗 / 👻 |
+| H.264 / AVC  | ✅ / ✅  | ✅ / ✅ | 🆗 / 🆗 | 🆗 / 🆗 | 🆗 / 🆗 |
 | HEVC / H.265 | ✅ / ✅ | ❌ / ✅ | 🛠️   | 👻    | 👻      |
 | AV1          | 🛠️ / 🛠️ | ✅      | 🛠️   | 👻    | 👻      |
 | VP9          | ✅ / ✅ | ✅      | 🛠️   | 👻    | 👻      |
@@ -308,11 +308,11 @@ Detail: [`mediaway`](crates/mediaway/README.md) `wgpu` module · `mediaway-encod
 
 - **NVIDIA** — `mediaway-encoder::nvenc` ([`mediaway-encoder`](crates/mediaway-encoder/README.md)), **hardware-verified** H.264/HEVC/AV1 CPU-upload encode.
 - **Intel** — `mediaway-encoder::quicksync` ([`mediaway-encoder`](crates/mediaway-encoder/README.md)), **hardware-verified** H.264/HEVC encode; AV1 is ❌ (no hardware support on this iGPU generation).
-- **AMD** — AMF backend 🛠️ deferred (binding/dependency blockers, not an AMD capability gap).
+- **AMD** — `mediaway-encoder::amf` ([`mediaway-encoder`](crates/mediaway-encoder/README.md)), `shiguredo_amf`-backed H.264 CPU-upload encode, Linux `x86_64` only — 🆗 compiles / compile-verified (WSL2 Linux `x86_64`), **zero real AMD GPU/driver hardware verification** (none available in this workspace).
 
 | Codec        | NVIDIA | AMD | Intel | Apple | Qualcomm |
 | ------------ | ------ | --- | ----- | ----- | -------- |
-| H.264 / AVC  | ✅     | 🛠️ | ✅   | 👻    | 👻       |
+| H.264 / AVC  | ✅     | 🆗 | ✅   | 👻    | 👻       |
 | HEVC / H.265 | ✅    | 🛠️ | ✅   | 👻    | 👻       |
 | AV1          | ✅    | 🛠️ | ❌   | 👻    | 👻       |
 | VP9          | 👻     | 👻  | 👻    | 👻    | 👻       |

@@ -159,8 +159,21 @@ impl AmediaCodecVideoEncoder {
                     let info = *output_buffer.info();
                     let flags = info.flags();
                     if flags & BUFFER_FLAG_CODEC_CONFIG != 0 {
-                        // SPS/PPS codec-config buffer, not frame data — extradata capture
-                        // (`csd-0`/`csd-1`) is deferred this stage, see ADR-0001 § Scope.
+                        // SPS/PPS codec-config buffer, not frame data — `AMediaCodec` delivers
+                        // csd-0/csd-1 concatenated here as Annex-B (documented convention this
+                        // stage assumes; not verified against real hardware, same caveat as
+                        // every other byte-layout claim in this module). Captured once into
+                        // `self.info`'s `extra_data` — see `extract_avcc_extra_data`.
+                        let start = usize::try_from(info.offset()).unwrap_or(0);
+                        let len = usize::try_from(info.size()).unwrap_or(0);
+                        let full = output_buffer.buffer();
+                        let end = start.saturating_add(len).min(full.len());
+                        if let Some(avcc) =
+                            extract_avcc_extra_data(full.get(start..end).unwrap_or(&[]))
+                            && let StreamInfo::Video { extra_data, .. } = &mut self.info
+                        {
+                            *extra_data = avcc;
+                        }
                         self.codec
                             .release_output_buffer(output_buffer, false)
                             .map_err(|_| EncodeError::Backend)?;
@@ -192,9 +205,11 @@ impl AmediaCodecVideoEncoder {
                     }
                 }
                 DequeuedOutputBufferInfoResult::TryAgainLater => return Ok(()),
-                // Format/buffer-set change events carry no packet payload this stage — skip
-                // and keep draining (extradata capture from the changed format is deferred,
-                // same as the codec-config-buffer branch above).
+                // Format/buffer-set change events carry no packet payload — skip and keep
+                // draining. `extra_data` is captured from the `BUFFER_FLAG_CODEC_CONFIG` buffer
+                // above (the documented `AMediaCodec` encode convention); a device that instead
+                // (or only) exposes csd-0/csd-1 via this event's own output `MediaFormat` is a
+                // known, narrower gap this increment does not close — see ADR-0001 addendum.
                 DequeuedOutputBufferInfoResult::OutputFormatChanged
                 | DequeuedOutputBufferInfoResult::OutputBuffersChanged => {}
             }
@@ -272,6 +287,14 @@ fn frame_rate_hint(time_base: mediaway_common::Rational) -> i32 {
     i32::try_from(u64::from(time_base.den) / time_base.num)
         .unwrap_or(30)
         .max(1)
+}
+
+/// Annex-B `csd-0`/`csd-1` bytes (as delivered in a `BUFFER_FLAG_CODEC_CONFIG` output buffer)
+/// → `avcC`, reusing the existing [`iso_bmff::bitstream::avc::to_avcc`] helper (already used by
+/// `src/windows/wmf/video.rs` and `src/apple/videotoolbox/video.rs`) rather than writing a new
+/// avcC builder — see ADR-0001 addendum.
+fn extract_avcc_extra_data(annex_b: &[u8]) -> Option<Bytes> {
+    iso_bmff::bitstream::avc::to_avcc(annex_b).avcc
 }
 
 fn validate(config: &VideoEncoderConfig) -> Result<(), EncodeError> {

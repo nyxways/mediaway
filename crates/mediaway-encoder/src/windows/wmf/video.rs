@@ -340,7 +340,11 @@ fn validate_common(config: &VideoEncoderConfig) -> Result<(), EncodeError> {
     if !is_supported_video_codec(config.codec) {
         return Err(EncodeError::Unsupported);
     }
-    if config.width == 0 || config.height == 0 || config.width % 2 != 0 || config.height % 2 != 0 {
+    if config.width == 0
+        || config.height == 0
+        || !config.width.is_multiple_of(2)
+        || !config.height.is_multiple_of(2)
+    {
         return Err(EncodeError::InvalidInput);
     }
     if config.pixel_format != PixelFormat::Nv12 && config.pixel_format != PixelFormat::Bgra8 {

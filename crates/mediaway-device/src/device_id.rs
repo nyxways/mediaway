@@ -58,6 +58,17 @@ enum DeviceIdRepr {
     /// variants; a stronger EDID/`SetupAPI`-backed monitor identity is
     /// deferred (see ADR-0005 § Deferred).
     DxgiOutput(String),
+    /// A `PipeWire` node name (`node.name`), passed verbatim as the
+    /// `PW_KEY_TARGET_OBJECT` stream property — Linux microphone targeting
+    /// (`mediaway-device-linux` `mic.rs`, ADR-0004 addendum). `PipeWire`
+    /// resolves the match server-side; this crate does not verify the name
+    /// against a live enumeration before opening (no `PipeWire` node
+    /// enumeration exists in this crate yet — a caller passes a name it
+    /// already knows, e.g. from `pw-cli ls Node` or its own external
+    /// tooling). Not a durable hardware identity claim the way `Wasapi` is —
+    /// a `node.name` can change across daemon restarts for some device
+    /// classes, same honesty class as `DxgiOutput`.
+    PipeWire(String),
 }
 
 impl DeviceId {
@@ -81,13 +92,21 @@ impl DeviceId {
         Self(DeviceIdRepr::DxgiOutput(name.into()))
     }
 
+    /// Build a [`DeviceId`] from a `PipeWire` node name (`node.name`).
+    #[must_use]
+    pub fn from_pipewire_node_name(name: impl Into<String>) -> Self {
+        Self(DeviceIdRepr::PipeWire(name.into()))
+    }
+
     /// The wrapped `WASAPI` endpoint ID, or `None` if this [`DeviceId`] wraps
     /// a different kind.
     #[must_use]
     pub fn as_wasapi_endpoint_id(&self) -> Option<&str> {
         match &self.0 {
             DeviceIdRepr::Wasapi(id) => Some(id),
-            DeviceIdRepr::MediaFoundation(_) | DeviceIdRepr::DxgiOutput(_) => None,
+            DeviceIdRepr::MediaFoundation(_)
+            | DeviceIdRepr::DxgiOutput(_)
+            | DeviceIdRepr::PipeWire(_) => None,
         }
     }
 
@@ -97,7 +116,9 @@ impl DeviceId {
     pub fn as_media_foundation_symbolic_link(&self) -> Option<&str> {
         match &self.0 {
             DeviceIdRepr::MediaFoundation(link) => Some(link),
-            DeviceIdRepr::Wasapi(_) | DeviceIdRepr::DxgiOutput(_) => None,
+            DeviceIdRepr::Wasapi(_) | DeviceIdRepr::DxgiOutput(_) | DeviceIdRepr::PipeWire(_) => {
+                None
+            }
         }
     }
 
@@ -107,7 +128,21 @@ impl DeviceId {
     pub fn as_dxgi_output_device_name(&self) -> Option<&str> {
         match &self.0 {
             DeviceIdRepr::DxgiOutput(name) => Some(name),
-            DeviceIdRepr::Wasapi(_) | DeviceIdRepr::MediaFoundation(_) => None,
+            DeviceIdRepr::Wasapi(_)
+            | DeviceIdRepr::MediaFoundation(_)
+            | DeviceIdRepr::PipeWire(_) => None,
+        }
+    }
+
+    /// The wrapped `PipeWire` node name (`node.name`), or `None` if this
+    /// [`DeviceId`] wraps a different kind.
+    #[must_use]
+    pub fn as_pipewire_node_name(&self) -> Option<&str> {
+        match &self.0 {
+            DeviceIdRepr::PipeWire(name) => Some(name),
+            DeviceIdRepr::Wasapi(_)
+            | DeviceIdRepr::MediaFoundation(_)
+            | DeviceIdRepr::DxgiOutput(_) => None,
         }
     }
 }
@@ -118,12 +153,13 @@ impl std::fmt::Display for DeviceId {
             DeviceIdRepr::Wasapi(id) => write!(f, "wasapi:{id}"),
             DeviceIdRepr::MediaFoundation(link) => write!(f, "mf-symlink:{link}"),
             DeviceIdRepr::DxgiOutput(name) => write!(f, "dxgi-output:{name}"),
+            DeviceIdRepr::PipeWire(name) => write!(f, "pipewire:{name}"),
         }
     }
 }
 
 /// [`DeviceId`]'s [`FromStr`](std::str::FromStr) input did not start with a
-/// recognized `wasapi:` / `mf-symlink:` / `dxgi-output:` tag prefix.
+/// recognized `wasapi:` / `mf-symlink:` / `dxgi-output:` / `pipewire:` tag prefix.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("unrecognized device id tag prefix: {0:?}")]
 pub struct ParseDeviceIdError(String);
@@ -133,7 +169,7 @@ impl std::str::FromStr for DeviceId {
 
     #[allow(
         clippy::option_if_let_else,
-        reason = "a chained if-let over 3 mutually exclusive tag prefixes reads clearer than nested map_or_else closures"
+        reason = "a chained if-let over 4 mutually exclusive tag prefixes reads clearer than nested map_or_else closures"
     )]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if let Some(rest) = s.strip_prefix("wasapi:") {
@@ -142,6 +178,8 @@ impl std::str::FromStr for DeviceId {
             Ok(Self::from_media_foundation_symbolic_link(rest))
         } else if let Some(rest) = s.strip_prefix("dxgi-output:") {
             Ok(Self::from_dxgi_output_device_name(rest))
+        } else if let Some(rest) = s.strip_prefix("pipewire:") {
+            Ok(Self::from_pipewire_node_name(rest))
         } else {
             Err(ParseDeviceIdError(s.to_owned()))
         }

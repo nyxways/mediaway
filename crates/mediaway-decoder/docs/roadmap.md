@@ -30,13 +30,27 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 
 ### 3 — Linux
 
-- [ ] Add `mediaway-decoder-linux`
-- [ ] VA-API / Vulkan Video decode
-- [ ] `mediaway-decoder-vulkan` (portable, not OS-suffixed — see its own
-      [ADR-0001](../../mediaway-decoder-vulkan/adr/0001-vulkan-video-decode.md)):
-      ADR + scaffold only so far, H.264/HEVC/AV1 + general P/B-frame GOP
-      scope, nothing implemented or hardware-verified yet
+- [x] `linux::vaapi` module: VA-API H.264 CPU-output decode, IDR-only —
+      see [adr/linux/0001](../adr/linux/0001-vaapi-h264-cpu-out.md)
+- [x] `linux::vaapi` P-slice decode: single-forward-reference P-slices,
+      sliding-window DPB ported from `vulkan/dpb.rs` — implemented,
+      compile+test-verified on real WSL2 Linux (`libva-dev`); **zero
+      real-hardware verification** (no VA-API device available this
+      session); see [adr/linux/0002](../adr/linux/0002-vaapi-h264-p-slice-dpb.md)
+- [x] `vulkan` module (portable, not OS-suffixed — see
+      [adr/vulkan/0001](../adr/vulkan/0001-vulkan-video-decode.md)): H.264
+      general-GOP decode **hardware-verified** (RTX 4090); HEVC IDR decode
+      **hardware-verified**; HEVC P/B and AV1 still deferred
 
 ### 4 — Other
 
-- [ ] `mediaway-decoder-apple` / `mediaway-decoder-android` as scheduled
+- [x] `android` module: NDK `AMediaCodec` H.264 CPU NV12 decode, general GOP —
+      zero compile/runtime verification (no NDK/device in dev env); see
+      [adr/android/0001](../adr/android/0001-ndk-amediacodec-h264-cpu-out.md)
+- [x] `apple` module: `VTDecompressionSession` H.264 general-GOP CPU-output decode
+      (`src/apple/`, one SPS + one PPS, 4-byte AVCC length size only) — compiles/lints on this
+      Windows host (the real `objc2-*`-calling code is `cfg`-gated to Apple targets; pure
+      `codec.rs` tick/NV12 helpers are host-testable and covered by real unit tests), **zero
+      compile verification of the Apple-only code path itself** (no Apple SDK in this dev
+      environment) — not wired into `auto`/`capability` yet; see
+      [adr/apple/0001](../adr/apple/0001-videotoolbox-h264-cpu-out.md)

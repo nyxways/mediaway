@@ -98,6 +98,33 @@ session was **compile-only**. The hardware/session-gated tests
 (`mic_tests.rs`) are written to run the real path and are expected to
 **skip** here for exactly this reason.
 
+## Addendum (2026-08-19): `Select::Id` node targeting
+
+Closes the "target a specific non-default `PipeWire` node (`PW_KEY_TARGET_OBJECT`)" row in §
+Alternatives Considered above. `DeviceId` gained a fourth, Linux-specific `PipeWire(String)`
+variant (`from_pipewire_node_name`/`as_pipewire_node_name`, `mediaway-device` `device_id.rs`,
+tag prefix `pipewire:`) wrapping a `node.name`. `LinuxMicrophoneCapture::open` accepts
+`Select::Id(DeviceId::from_pipewire_node_name(name))` and sets `name` as the stream's
+`PW_KEY_TARGET_OBJECT` property (real, confirmed constant — `pipewire` crate's own `keys.rs`,
+gated behind the crate's `v0_3_44` Cargo feature, now enabled in `mediaway-device`'s
+`Cargo.toml`; PipeWire 0.3.44 released 2021, well below any mainstream distro's shipped
+version). PipeWire resolves the name match server-side; this crate does not verify it against a
+live enumeration first — no `PipeWire` node enumeration exists in this crate (a caller passes a
+name it already has, e.g. from `pw-cli ls Node` or its own tooling).
+
+**Still not closed:** `Select::NameContains` stays `Unsupported` — resolving a substring match
+would need a real enumeration step this crate does not have, and guessing would be a behavior
+difference from every other backend's `NameContains` semantics, not a shortcut worth taking.
+`STREAM_CAPTURE_SINK` loopback (this ADR's other deferred row) is untouched by this addendum.
+
+Real compile **and** unit-test verification this time (unlike the rest of this ADR): WSL2's
+working `libpipewire-0.3` link let `cargo check`/`clippy`/`test` all run for real against the
+actual `pipewire` crate and its `v0_3_44`-gated `TARGET_OBJECT` constant — a real, caught
+compile error (wrong feature not enabled) was fixed before this addendum was written, not
+guessed past. `open_microphone_capture_or_skip`'s own daemon-reachability gap (§ above) is
+unchanged; the new `Select::Id`/`Select::NameContains` validation paths run and pass as real
+unit tests (`mic_tests.rs`) since they return before ever touching PipeWire.
+
 ## References
 
 - [ADR-0001](0001-portal-pipewire-screen-capture.md) — the `pipewire`

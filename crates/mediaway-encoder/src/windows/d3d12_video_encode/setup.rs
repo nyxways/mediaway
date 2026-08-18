@@ -144,9 +144,13 @@ pub(super) fn check_output_resolution(
         && resolution.Height >= res.MinResolutionSupported.Height
         && resolution.Height <= res.MaxResolutionSupported.Height;
     let width_mul_ok = res.ResolutionWidthMultipleRequirement == 0
-        || resolution.Width % res.ResolutionWidthMultipleRequirement == 0;
+        || resolution
+            .Width
+            .is_multiple_of(res.ResolutionWidthMultipleRequirement);
     let height_mul_ok = res.ResolutionHeightMultipleRequirement == 0
-        || resolution.Height % res.ResolutionHeightMultipleRequirement == 0;
+        || resolution
+            .Height
+            .is_multiple_of(res.ResolutionHeightMultipleRequirement);
     if !in_range || !width_mul_ok || !height_mul_ok {
         return Err(EncodeError::Unsupported);
     }

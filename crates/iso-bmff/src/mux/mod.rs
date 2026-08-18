@@ -157,10 +157,10 @@ impl Muxer<Live> {
                 (sample.payload.clone(), None)
             }
         };
-        if let Some(e) = extra {
-            if self.tracks[idx].extra_data.is_empty() {
-                self.tracks[idx].extra_data = e;
-            }
+        if let Some(e) = extra
+            && self.tracks[idx].extra_data.is_empty()
+        {
+            self.tracks[idx].extra_data = e;
         }
 
         if !self.header_written {

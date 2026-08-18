@@ -410,15 +410,15 @@ impl D3d12VideoDecoder {
             for &(slot, _) in &refs_before {
                 session.dpb.table_mut().evict(slot)?;
             }
-        } else if nal.ref_idc != 0 {
-            if let Some(evict_slot) = h264_refs::sliding_window_evict(
+        } else if nal.ref_idc != 0
+            && let Some(evict_slot) = h264_refs::sliding_window_evict(
                 &refs_before,
                 sh.frame_num,
                 max_frame_num,
                 sps.max_num_ref_frames,
-            ) {
-                session.dpb.table_mut().evict(evict_slot)?;
-            }
+            )
+        {
+            session.dpb.table_mut().evict(evict_slot)?;
         }
         let refs_before = session.dpb.table().references();
 

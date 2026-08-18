@@ -53,12 +53,12 @@ pub(crate) fn parse_sample_entry(
             if let Some(tenc) = find_tenc(body) {
                 *encryption = Some(tenc);
             }
-            if let Some(frma) = find_nested_payload(body, *b"frma") {
-                if frma.len() >= 4 {
-                    match &frma[..4] {
-                        b"avc1" | b"avc3" => *codec = Codec::H264,
-                        _ => {}
-                    }
+            if let Some(frma) = find_nested_payload(body, *b"frma")
+                && frma.len() >= 4
+            {
+                match &frma[..4] {
+                    b"avc1" | b"avc3" => *codec = Codec::H264,
+                    _ => {}
                 }
             }
         }
@@ -84,10 +84,10 @@ fn parse_visual_avc(
         *width = u32::from(u16::from_be_bytes([body[24], body[25]]));
         *height = u32::from(u16::from_be_bytes([body[26], body[27]]));
     }
-    if body.len() > 78 {
-        if let Some(avcc) = find_child_payload(&body[78..], *b"avcC") {
-            *extra = Bytes::copy_from_slice(avcc);
-        }
+    if body.len() > 78
+        && let Some(avcc) = find_child_payload(&body[78..], *b"avcC")
+    {
+        *extra = Bytes::copy_from_slice(avcc);
     }
 }
 
@@ -103,10 +103,10 @@ fn parse_visual_vp9(
         *width = u32::from(u16::from_be_bytes([body[24], body[25]]));
         *height = u32::from(u16::from_be_bytes([body[26], body[27]]));
     }
-    if body.len() > 78 {
-        if let Some(vpcc) = find_child_payload(&body[78..], *b"vpcC") {
-            *extra = Bytes::copy_from_slice(vpcc);
-        }
+    if body.len() > 78
+        && let Some(vpcc) = find_child_payload(&body[78..], *b"vpcC")
+    {
+        *extra = Bytes::copy_from_slice(vpcc);
     }
 }
 
@@ -122,10 +122,10 @@ fn parse_visual_hevc(
         *width = u32::from(u16::from_be_bytes([body[24], body[25]]));
         *height = u32::from(u16::from_be_bytes([body[26], body[27]]));
     }
-    if body.len() > 78 {
-        if let Some(hvcc) = find_child_payload(&body[78..], *b"hvcC") {
-            *extra = Bytes::copy_from_slice(hvcc);
-        }
+    if body.len() > 78
+        && let Some(hvcc) = find_child_payload(&body[78..], *b"hvcC")
+    {
+        *extra = Bytes::copy_from_slice(hvcc);
     }
 }
 
@@ -141,21 +141,20 @@ fn parse_visual_av1(
         *width = u32::from(u16::from_be_bytes([body[24], body[25]]));
         *height = u32::from(u16::from_be_bytes([body[26], body[27]]));
     }
-    if body.len() > 78 {
-        if let Some(av1c) = find_child_payload(&body[78..], *b"av1C") {
-            *extra = Bytes::copy_from_slice(av1c);
-        }
+    if body.len() > 78
+        && let Some(av1c) = find_child_payload(&body[78..], *b"av1C")
+    {
+        *extra = Bytes::copy_from_slice(av1c);
     }
 }
 
 fn parse_audio_mp4a(body: &[u8], codec: &mut Codec, extra: &mut Bytes) {
     *codec = Codec::Aac;
-    if body.len() > 28 {
-        if let Some(esds) = find_child_payload(&body[28..], *b"esds") {
-            if let Some(asc) = find_asc(esds) {
-                *extra = asc;
-            }
-        }
+    if body.len() > 28
+        && let Some(esds) = find_child_payload(&body[28..], *b"esds")
+        && let Some(asc) = find_asc(esds)
+    {
+        *extra = asc;
     }
 }
 

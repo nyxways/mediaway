@@ -33,18 +33,15 @@ windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Graphics_Direct3D12",
 ] }
-# `wgpu-hal` 26.x pins its OWN `windows`/`windows-core` dependency to the 0.58
-# line (incompatible with this workspace's 0.62, per Cargo semver — a COM
-# wrapper type from one `windows`-crate version is NOT the same Rust type as
-# the "same" wrapper from another version, even though both model the same
-# COM interface). This second, explicitly same-versioned `windows` dependency
-# (renamed to avoid colliding with the 0.62 one above) exists ONLY to talk to
-# `wgpu_hal::dx12`'s API at its exact expected type — never used for anything
-# that talks to `mediaway-encoder-windows` (which stays on 0.62). See
-# `adr/0001-dx12-hal-gpucopy-bridge.md` § "windows-rs version straddle".
-windows-hal-interop = { package = "windows", version = "=0.58.0", default-features = false, features = [
-    "Win32_Graphics_Direct3D12",
-] }
+# `wgpu-hal` 30.x pins the same `windows`/`windows-core` 0.62 line this
+# workspace already uses (unlike 26.x, which pinned 0.58 — a COM wrapper type
+# from one `windows`-crate version is NOT the same Rust type as the "same"
+# wrapper from another version, even though both model the same COM
+# interface). The separately-versioned `windows-hal-interop = "=0.58.0"`
+# straddle dependency this crate previously needed to talk to
+# `wgpu_hal::dx12`'s API is therefore no longer required — see
+# `adr/0001-dx12-hal-gpucopy-bridge.md` § "windows-rs version straddle" and
+# `adr/wgpu/0004-wgpu-30-upgrade.md`.
 wgpu = { workspace = true, features = ["dx12", "std"] }
 
 

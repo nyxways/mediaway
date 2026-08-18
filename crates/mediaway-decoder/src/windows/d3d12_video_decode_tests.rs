@@ -79,11 +79,11 @@ fn create_d3d12_device() -> Option<windows::Win32::Graphics::Direct3D12::ID3D12D
     use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIAdapter1, IDXGIFactory1};
 
     let mut debug: Option<ID3D12Debug> = None;
-    if unsafe { D3D12GetDebugInterface(&raw mut debug) }.is_ok() {
-        if let Some(debug) = debug {
-            // SAFETY: standard debug-layer enable, no arguments, before any device is created.
-            unsafe { debug.EnableDebugLayer() };
-        }
+    if unsafe { D3D12GetDebugInterface(&raw mut debug) }.is_ok()
+        && let Some(debug) = debug
+    {
+        // SAFETY: standard debug-layer enable, no arguments, before any device is created.
+        unsafe { debug.EnableDebugLayer() };
     }
 
     let factory: IDXGIFactory1 = match unsafe { CreateDXGIFactory1() } {

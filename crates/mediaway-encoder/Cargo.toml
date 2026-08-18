@@ -69,6 +69,13 @@ vpl-sys = { workspace = true }
 [target.'cfg(target_os = "linux")'.dependencies]
 cros-libva = { version = "0.0.13" }
 
+# AMD AMF (`shiguredo_amf` — NOT `amf-rs`, an unrelated GPL-3.0-or-later crate; see
+# adr/amf/0001 and adr/amf/0002). `x86_64`-only per the crate's own platform limit, hence
+# the stricter `target_arch` gate below rather than the plain `target_os = "linux"` one
+# `cros-libva` uses.
+[target.'cfg(all(target_os = "linux", target_arch = "x86_64"))'.dependencies]
+shiguredo_amf = { version = "2026.3.0" }
+
 
 [target.'cfg(target_os = "android")'.dependencies]
 ndk = { version = "0.9", features = ["media"] }

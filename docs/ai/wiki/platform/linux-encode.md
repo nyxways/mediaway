@@ -9,13 +9,23 @@
   `vaPutImage` on drop
 - Zero-Copy: **not implemented** — `VideoInputPreference::ZeroCopyGpu` returns `Unsupported`
   (deferred: DMA-BUF surface import, `VASurfaceAttribExternalBuffers`)
-- Rate control: `VA_RC_CQP` fixed QP only; **every pushed frame is an independent IDR** (no
-  GOP / P-frame reference management this stage)
+- Rate control: `VA_RC_CQP` fixed QP only; **every pushed frame is an independent IDR by
+  default** (`gop_size <= 1`) — real single-forward-reference P-frame GOP (ADR-0002) is
+  **implemented**, capability-gated on `VAConfigAttribEncMaxRefFrames`
 - Session shape: `Display`/`Config`/`Context`/`Surface` (safe `cros-libva` wrappers) +
   `Picture<S, T>` **typestate** enforcing `vaBeginPicture → vaRenderPicture → vaEndPicture →
   vaSyncSurface` ordering at compile time
 - ADR: [0001](../../../../crates/mediaway-encoder/adr/linux/0001-vaapi-cros-libva-h264-cpu-upload.md)
   — binding choice, scope, **zero real-hardware verification** caveat
+- ADR: [0002](../../../../crates/mediaway-encoder/adr/linux/0002-vaapi-h264-p-frame-gop.md) —
+  **Implemented**: single-forward-reference P-frame GOP, ported `mediaway-encoder::vulkan::
+  h264_gop::GopState` (already GPU-API-agnostic, needed no adaptation) into a new sans-io
+  `vaapi/gop.rs`; wires `VideoEncoderConfig::gop_size` into this backend for the first time,
+  capability-gated on `VAConfigAttribEncMaxRefFrames`. See
+  [linux-h264-gop](../encode/linux-h264-gop.md) for detail, including a real cross-check finding:
+  this backend's `pic_order_cnt_type = 2` output is not decodable by this workspace's own
+  `mediaway-decoder::linux::vaapi` (which only accepts `pic_order_cnt_type == 0`) — a real,
+  pre-existing, deliberately-unresolved cross-crate interop gap.
 
 ## ⚠️ Hardware verification status
 

@@ -8,11 +8,32 @@
 
 ### Added
 
+- `mediaway-decoder::android`: first Android decode backend (NDK `AMediaCodec` via the `ndk`
+  crate), H.264 CPU NV12 output only, `COLOR_FormatYUV420SemiPlanar` only (reject-not-guess on
+  any other reported output color format), general GOP (not IDR-only — the device manages its
+  own DPB). Zero compile verification and zero runtime verification as authored (no Android NDK
+  or device/emulator in the dev environment); not wired into `auto`/`capability` yet. See
+  `crates/mediaway-decoder/adr/android/0001-ndk-amediacodec-h264-cpu-out.md`.
+- `mediaway-encoder::amf`: AMD AMF video encode backend (`shiguredo_amf`), H.264 CPU-upload
+  encode only, Linux `x86_64` only (the crate's own platform limit). Compile-verified on real
+  Linux `x86_64` via WSL2 (including the `AMF_PLANE_TYPE`/`amf_pts`/`amf_size` types confirmed
+  against real crate source) — **zero real AMD GPU/driver hardware verification** (none
+  available in this workspace). Not wired into `auto`/`capability` yet. See
+  `crates/mediaway-encoder/adr/amf/0002-amf-linux-shiguredo-amf-h264-cpu-upload.md`.
 - `mediaway-encoder::android`: first Android backend (NDK `AMediaCodec` via the `ndk` crate),
   H.264 CPU-upload encode only. Zero compile verification as authored (no Android NDK in the
   dev environment) — a new CI job compiles/lints it against a real NDK before it is trusted;
   not wired into `auto`/`capability` yet. See
   `crates/mediaway-encoder/adr/android/0001-ndk-amediacodec-h264-cpu-upload.md`.
+- `mediaway-decoder::apple`: first Apple decode backend (`VideoToolbox`
+  `VTDecompressionSession` via `objc2-*`), H.264 CPU NV12 (`VideoRange`) readback decode only,
+  one module for both macOS and iOS. General GOP (P/B frames) — VideoToolbox owns the DPB and
+  P/B-frame reordering internally via `kVTDecodeFrame_EnableTemporalProcessing`; this crate
+  builds no reference-picture list itself. Scope this stage: exactly one SPS + one PPS, 4-byte
+  AVCC length-prefix size only. Zero compile verification as authored (this dev environment
+  cannot cross-compile Apple code at all outside macOS/Xcode) — new Apple CI jobs compile/lint
+  it against real Apple SDKs before it is trusted; not wired into `auto`/`capability` yet. See
+  `crates/mediaway-decoder/adr/apple/0001-videotoolbox-h264-cpu-out.md`.
 - `mediaway-encoder::apple`: last "Other" platform encoder backend (`VideoToolbox`
   `VTCompressionSession` via `objc2-*`), H.264 CPU-upload encode only, one module for both
   macOS and iOS. Zero compile verification as authored (this dev environment cannot
@@ -47,6 +68,34 @@
 
 ### Changed
 
+- `mediaway-decoder::linux` (`linux::vaapi`) H.264 decode: extended from IDR-only to real GOP
+  (IPPP...) decode — single-forward-reference P-slices and non-IDR I-slices now route through a
+  shared per-picture pipeline with a sliding-window DPB ported from `mediaway-decoder::vulkan`'s
+  hardware-verified DPB/POC arithmetic. No B-slices, reference-list reordering, long-term
+  references, weighted prediction, CABAC P-slices, or multi-reference decode this round (all
+  rejected honestly, not misparsed). Compile- and test-verified on real Linux (WSL2 Ubuntu, real
+  `libva-dev` headers/bindgen output) — **zero real VA-API hardware verification** (no working
+  VA-API device available in this workspace). See
+  `crates/mediaway-decoder/adr/linux/0002-vaapi-h264-p-slice-dpb.md`.
+- `mediaway-encoder::linux` (`linux::vaapi`) H.264 encode: extended from all-IDR to real
+  single-forward-reference P-frame GOP (IPPP...) encode — `VideoEncoderConfig::gop_size` finally
+  read by this backend, real `frame_num`/reference-picture-list wiring ported from
+  `mediaway-encoder::vulkan::h264_gop::GopState`'s hardware-verified decision state machine.
+  Capability-gated on `VAConfigAttribEncMaxRefFrames` (queried via `Display::get_config_attributes`
+  at session-open time); `gop_size <= 1` or an unsupporting driver both fall back to all-IDR
+  encode, byte-identical to the previous output. No B-frames, multi-reference, reference-list
+  reordering, long-term references, or rate control this round (all deliberately deferred, not
+  silently dropped). Compile- and test-verified on real Linux (WSL2 Ubuntu, real `libva-dev`
+  headers/bindgen output) — **zero real VA-API hardware verification** (no working VA-API device
+  available in this workspace). See `crates/mediaway-encoder/adr/linux/0002-vaapi-h264-p-frame-gop.md`.
+- `mediaway`'s `wgpu` dependency bumped from 26.x to 30.x (workspace MSRV now 1.96 clears
+  30.x's rustc floor). Fixed six real breaking-API changes in the DX12 HAL escape-hatch bridges
+  (`create_texture_from_hal`'s new `initial_state` parameter, `PollType::Wait`'s new struct
+  shape, `Instance::new`/`InstanceDescriptor`/`enumerate_adapters` signature changes) and
+  removed the `windows-hal-interop` 0.58 straddle dependency entirely, since `wgpu-hal` 30.x now
+  pins the same `windows` 0.62 line this workspace already uses. Real-hardware re-verified
+  (RTX 4090): the DX12→D3D11 decode-import bridge tests actually ran (not skipped), including a
+  byte-exact NV12 pixel round trip. See `crates/mediaway/adr/wgpu/0004-wgpu-30-upgrade.md`.
 - Windows `WindowsScreenCapture`: shared (multi-consumer) sessions now fan out each frame via a
   fixed-depth ring of GPU textures any number of caught-up consumers share through cheap `Arc`
   clones, replacing the previous one-`CopyResource`-per-attached-consumer design — a straggling
@@ -60,6 +109,18 @@
 - Android `mediaway-encoder::android` backend: `AMediaFormat`'s `i-frame-interval` (seconds
   between key frames) was hardcoded to `0` instead of being computed from
   `VideoEncoderConfig::gop_size`.
+- Android `mediaway-encoder::android` backend: `StreamInfo::extra_data` (SPS/PPS `avcC`) was
+  never populated — always empty, even though `AMediaCodec` delivers `csd-0`/`csd-1` via a
+  `BUFFER_FLAG_CODEC_CONFIG` output buffer before the first frame. Now captured and converted
+  to `avcC`.
+- Apple `mediaway-encoder::apple` backend: `Packet::is_keyframe` was a `gop_size <= 1 ||
+  packet_index == 0` approximation, not real per-sample sync-frame detection. Now reads the
+  real `kCMSampleAttachmentKey_NotSync` attachment VideoToolbox sets on each encoded sample.
+- Linux `mediaway-device::linux` microphone capture: `Select` only ever accepted `Default` —
+  a non-default `PipeWire` source could not be targeted at all. `DeviceId` gained a
+  `PipeWire(String)` (`node.name`) variant; `Select::Id(DeviceId::from_pipewire_node_name(..))`
+  now sets `PW_KEY_TARGET_OBJECT` on the capture stream. Real-hardware (real `libpipewire` link)
+  compile and unit-test verified via WSL2.
 
 ### Removed
 

@@ -46,22 +46,35 @@ pub struct LinuxMicrophoneCapture {
 }
 
 impl LinuxMicrophoneCapture {
-    /// Open microphone capture for `config` (default source only —
-    /// `select` must be `Select::Default`; `PipeWire` node targeting for a
-    /// specific non-default source is deferred, same restriction
-    /// `mediaway-device-windows` applies to its endpoint selection).
+    /// Open microphone capture for `config`.
+    ///
+    /// `select` accepts `Select::Default` (the graph's default source) or
+    /// `Select::Id(DeviceId::from_pipewire_node_name(..))` (a specific
+    /// `PipeWire` node, targeted via `PW_KEY_TARGET_OBJECT` — see ADR-0004
+    /// addendum). `Select::NameContains` stays `Unsupported`: this crate has
+    /// no `PipeWire` node enumeration to resolve a substring match against
+    /// (unlike `Select::Id`, which a caller can already have obtained a
+    /// concrete `node.name` for from external tooling); guessing a name
+    /// match server-side without one would be a real behavior difference
+    /// from every other backend's `NameContains`, not a shortcut.
     ///
     /// # Errors
     ///
-    /// Returns [`CaptureError::Unsupported`] for a non-`Select::Default`
-    /// selection or a non-`F32` `sample_format`.
-    /// Returns [`CaptureError::InvalidInput`] for a zero-denominator time
-    /// base. Returns [`CaptureError::Backend`] when the `PipeWire`
-    /// connection or stream negotiation fails.
+    /// Returns [`CaptureError::Unsupported`] for `Select::NameContains`, a
+    /// `Select::Id` wrapping a non-`PipeWire` [`DeviceId`](crate::DeviceId),
+    /// or a non-`F32` `sample_format`. Returns [`CaptureError::InvalidInput`] for a
+    /// zero-denominator time base. Returns [`CaptureError::Backend`] when
+    /// the `PipeWire` connection or stream negotiation fails.
     pub fn open(config: &AudioCaptureConfig) -> Result<Self, CaptureError> {
-        if config.select != Select::Default {
-            return Err(CaptureError::Unsupported);
-        }
+        let target_object = match &config.select {
+            Select::Default => None,
+            Select::Id(id) => Some(
+                id.as_pipewire_node_name()
+                    .ok_or(CaptureError::Unsupported)?
+                    .to_owned(),
+            ),
+            Select::NameContains(_) => return Err(CaptureError::Unsupported),
+        };
         if config.sample_format != mediaway_common::SampleFormat::F32 {
             return Err(CaptureError::Unsupported);
         }
@@ -82,7 +95,7 @@ impl LinuxMicrophoneCapture {
         let worker = thread::Builder::new()
             .name("mediaway-pw-mic".into())
             .spawn(move || {
-                run_pipewire_mic_worker(queue_worker, time_base, tx_info, quit_rx);
+                run_pipewire_mic_worker(queue_worker, time_base, target_object, tx_info, quit_rx);
             })
             .map_err(|_| CaptureError::Backend)?;
 
@@ -172,13 +185,14 @@ struct StreamUserData {
 fn run_pipewire_mic_worker(
     queue: Arc<SharedQueue>,
     time_base: Rational,
+    target_object: Option<String>,
     tx_info: SyncSender<Result<StreamInfo, CaptureError>>,
     quit_rx: pw::channel::Receiver<()>,
 ) {
     // clone: fallback sender for setup failures before `on_param_changed`
     // takes ownership of the original (see that function).
     let tx_info_fallback = tx_info.clone();
-    if let Err(e) = try_run_pipewire_mic(queue, time_base, tx_info, quit_rx) {
+    if let Err(e) = try_run_pipewire_mic(queue, time_base, target_object, tx_info, quit_rx) {
         let _ = tx_info_fallback.send(Err(e));
     }
 }
@@ -186,6 +200,7 @@ fn run_pipewire_mic_worker(
 fn try_run_pipewire_mic(
     queue: Arc<SharedQueue>,
     time_base: Rational,
+    target_object: Option<String>,
     tx_info: SyncSender<Result<StreamInfo, CaptureError>>,
     quit_rx: pw::channel::Receiver<()>,
 ) -> Result<(), CaptureError> {
@@ -213,16 +228,19 @@ fn try_run_pipewire_mic(
         next_pts: 0,
     };
 
-    let stream = pw::stream::StreamBox::new(
-        &core,
-        "mediaway-microphone",
-        properties! {
-            *pw::keys::MEDIA_TYPE => "Audio",
-            *pw::keys::MEDIA_CATEGORY => "Capture",
-            *pw::keys::MEDIA_ROLE => "Communication",
-        },
-    )
-    .map_err(|_| CaptureError::Backend)?;
+    let mut props = properties! {
+        *pw::keys::MEDIA_TYPE => "Audio",
+        *pw::keys::MEDIA_CATEGORY => "Capture",
+        *pw::keys::MEDIA_ROLE => "Communication",
+    };
+    // `Select::Id(DeviceId::from_pipewire_node_name(..))` targeting — PipeWire resolves this
+    // node-name match server-side against the graph; see `LinuxMicrophoneCapture::open`'s doc
+    // comment and ADR-0004 addendum.
+    if let Some(node_name) = target_object {
+        props.insert(*pw::keys::TARGET_OBJECT, node_name);
+    }
+    let stream = pw::stream::StreamBox::new(&core, "mediaway-microphone", props)
+        .map_err(|_| CaptureError::Backend)?;
 
     let _listener = stream
         .add_local_listener_with_user_data(user_data)

@@ -30,7 +30,7 @@ Work through these. Record the answer in the PR (and an ADR when the dep is heav
 ### Quality & maintenance
 
 7. **Maintenance:** recent releases, responsive issues, not abandoned for years.
-8. **API stability:** MSRV / edition fit (`rust-version` 1.91, edition 2024); semver track record.
+8. **API stability:** MSRV / edition fit (`rust-version` 1.96, edition 2024); semver track record.
 9. **Popularity ≠ sufficient** — still check code quality and fit; avoid trendy crates with poor ownership stories.
 10. Prefer **well-scoped** crates over kitchen-sink frameworks.
 

@@ -111,11 +111,11 @@ fn ffprobe_counts(path: &Path) -> Option<(usize, usize)> {
             frames += f;
             any_frames = true;
         }
-        if cols.len() >= 2 {
-            if let Ok(p) = cols[1].trim().parse::<usize>() {
-                packets += p;
-                any_packets = true;
-            }
+        if cols.len() >= 2
+            && let Ok(p) = cols[1].trim().parse::<usize>()
+        {
+            packets += p;
+            any_packets = true;
         }
     }
     if streams == 0 {

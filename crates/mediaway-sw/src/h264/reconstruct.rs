@@ -134,7 +134,7 @@ fn luma_nc(ctx: &McbContext, mb_addr: usize, blk: usize) -> i32 {
     let (x, y) = BLK_XY[blk];
     let left = if x > 0 {
         Some(luma_nz_at(ctx, mb_addr, xy_to_blk(x - 1, y)))
-    } else if mb_addr % ctx.mb_width != 0 {
+    } else if !mb_addr.is_multiple_of(ctx.mb_width) {
         Some(luma_nz_at(ctx, mb_addr - 1, xy_to_blk(3, y)))
     } else {
         None
@@ -161,7 +161,7 @@ fn chroma_nc(ctx: &McbContext, plane: usize, mb_addr: usize, blk: usize) -> i32 
             mb_addr,
             xy_to_blk_chroma(x - 1, y),
         ))
-    } else if mb_addr % ctx.mb_width != 0 {
+    } else if !mb_addr.is_multiple_of(ctx.mb_width) {
         Some(chroma_nz_at(
             ctx,
             plane,
@@ -241,7 +241,7 @@ fn add_residual_4x4(plane: &mut [u8], stride: usize, x0: usize, y0: usize, resid
 
 /// Byte-align `reader` (ITU-T H.264 `while( !byte_aligned() )`) for `I_PCM`'s raw samples.
 fn align_to_byte(reader: &mut BitReader<'_>) -> Result<(), H264Error> {
-    while reader.bits_read() % 8 != 0 {
+    while !reader.bits_read().is_multiple_of(8) {
         reader.read_bit()?;
     }
     Ok(())

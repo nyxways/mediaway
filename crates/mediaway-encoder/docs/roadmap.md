@@ -41,13 +41,31 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 - [x] Add `mediaway-encoder-linux`
 - [x] VA-API H.264 CPU-upload encode (`cros-libva`; Constrained Baseline, CQP, all-IDR) —
       **zero real-hardware verification**, see crate ADR-0001
+- [x] VA-API H.264 single-forward-reference P-frame GOP (`gop_size` finally read by this
+      backend, real `frame_num`/reference-picture-list wiring, ported from
+      `mediaway-encoder::vulkan::h264_gop::GopState`) — **ADR-0002 implemented**, capability-gated
+      on `VAConfigAttribEncMaxRefFrames`; still zero real-hardware verification (WSL2
+      check/clippy/test-verified only)
 - [ ] Vulkan Video encode (alternative/complement to VA-API)
 - [ ] GPU buffer Zero-Copy where supported (DMA-BUF surface import)
 
 ### 4 — Other
 
-- [ ] `mediaway-encoder::apple` / `mediaway-encoder::android` modules (ADR-0021 `#[cfg]`-gated,
-      not separate crates) as scheduled
+- [ ] `mediaway-encoder::apple` / `mediaway-encoder::android` / `mediaway-encoder::amf` modules
+      (ADR-0021 `#[cfg]`-gated, not separate crates) as scheduled
+  - [x] AMD AMF: `mediaway-encoder::amf` implemented (`shiguredo_amf`-backed H.264 CPU-upload
+        encode, `Encoder`/`EncodeHandler` callback→poll bridge via `Arc<Mutex<VecDeque<_>>>` —
+        `EncodeHandler` is `Send + 'static` and its callback runs on `shiguredo_amf`'s own
+        internal worker thread, confirmed against real source) per
+        `adr/amf/0002-amf-linux-shiguredo-amf-h264-cpu-upload.md` (**Accepted**), superseding the
+        earlier `adr/amf/0001` deferral now that the workspace MSRV bump (`docs/adr/0023`) cleared
+        the hard blocker. H.264 CPU-upload only, `x86_64`-Linux-only (`shiguredo_amf`'s own
+        platform limit). Compile-verified for real on Linux `x86_64` via WSL2 (`cargo check` +
+        `cargo clippy` + `cargo test`, including the `AMF_PLANE_TYPE`/`amf_pts`/`amf_size` types
+        this ADR had flagged unconfirmed — resolved against real crate source fetched during
+        implementation). **Zero real AMD hardware/driver available** — ships 🆗 (compiles,
+        compile-verified on Linux `x86_64`, zero hardware verification), never ✅, matching
+        VA-API/Android/Apple. Not wired into `auto`/`capability` yet.
   - [x] Android: `mediaway-encoder::android` implemented (NDK `AMediaCodec` via the `ndk`
         crate, H.264 CPU-upload only) per `adr/android/0001-ndk-amediacodec-h264-cpu-upload.md`
         (**Accepted**) — **zero compile verification as authored**, no Android NDK in this dev

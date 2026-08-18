@@ -22,6 +22,14 @@ pub(super) struct Pps {
     pub(super) entropy_coding_mode_flag: bool,
     /// `bottom_field_pic_order_in_frame_present_flag` (`pic_order_present_flag`).
     pub(super) pic_order_present_flag: bool,
+    /// `num_ref_idx_l0_default_active_minus1 + 1` — the default active `RefPicList0` size when
+    /// a P slice's `num_ref_idx_active_override_flag` is unset.
+    pub(super) num_ref_idx_l0_default_active: u32,
+    /// `weighted_pred_flag`. This crate does not parse `pred_weight_table()` (see
+    /// `adr/linux/0002-vaapi-h264-p-slice-dpb.md` § Bitstream-parser changes), so
+    /// `SliceHeader::parse` rejects any P slice referencing a PPS with this set, rather than
+    /// silently misparsing every bit downstream.
+    pub(super) weighted_pred_flag: bool,
     /// `pic_init_qp_minus26`.
     pub(super) pic_init_qp_minus26: i32,
     /// `pic_init_qs_minus26`.
@@ -65,10 +73,13 @@ impl Pps {
         if num_slice_groups_minus1 != 0 {
             return Err(DecodeError::Unsupported);
         }
-        let _num_ref_idx_l0_default_active_minus1 = r.read_ue().map_err(map_err)?;
+        let num_ref_idx_l0_default_active_minus1 = r.read_ue().map_err(map_err)?;
         let _num_ref_idx_l1_default_active_minus1 = r.read_ue().map_err(map_err)?;
-        let _weighted_pred_flag = r.read_bit().map_err(map_err)?;
+        let weighted_pred_flag = r.read_bit().map_err(map_err)? != 0;
         let _weighted_bipred_idc = r.read_bits(2).map_err(map_err)?;
+        let num_ref_idx_l0_default_active = num_ref_idx_l0_default_active_minus1
+            .checked_add(1)
+            .ok_or(DecodeError::InvalidInput)?;
         let pic_init_qp_minus26 = r.read_se().map_err(map_err)?;
         let pic_init_qs_minus26 = r.read_se().map_err(map_err)?;
         let chroma_qp_index_offset = r.read_se().map_err(map_err)?;
@@ -93,6 +104,8 @@ impl Pps {
             pic_parameter_set_id,
             entropy_coding_mode_flag,
             pic_order_present_flag,
+            num_ref_idx_l0_default_active,
+            weighted_pred_flag,
             pic_init_qp_minus26,
             pic_init_qs_minus26,
             chroma_qp_index_offset,

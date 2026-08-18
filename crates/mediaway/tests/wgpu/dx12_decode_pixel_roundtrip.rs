@@ -236,12 +236,14 @@ fn read_nv12_via_staging(
 
 #[test]
 fn wgpu_dx12_decode_bridge_pixel_roundtrip_or_skip() {
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::Backends::DX12,
-        ..Default::default()
+        ..wgpu::InstanceDescriptor::new_without_display_handle()
     });
 
-    let adapters = instance.enumerate_adapters(wgpu::Backends::DX12);
+    // `enumerate_adapters` became async in wgpu 30 (previously synchronous) — blocked on here,
+    // same `pollster` pairing this test already uses for `request_adapter`/`request_device`.
+    let adapters = pollster::block_on(instance.enumerate_adapters(wgpu::Backends::DX12));
     let Some(adapter) = adapters.into_iter().next() else {
         eprintln!("skip: no DX12 wgpu adapter enumerated");
         return;
@@ -395,11 +397,10 @@ fn wgpu_dx12_decode_bridge_pixel_roundtrip_or_skip() {
     let native_texture = unsafe { imported.as_hal::<wgpu::hal::api::Dx12>() }
         .expect("imported texture must be backed by wgpu's DX12 HAL");
     // SAFETY: `raw_resource()` borrows a live COM object owned by `native_texture`'s guard,
-    // read only for its pointer bits via `Interface::as_raw` (windows-hal-interop's own 0.58
-    // `Interface` trait, matching that crate's version this reference is pinned at).
-    let resource_bits = unsafe {
-        windows_hal_interop::core::Interface::as_raw(native_texture.raw_resource()) as usize
-    };
+    // read only for its pointer bits via `Interface::as_raw` — `wgpu-hal` 30.x pins the same
+    // `windows` 0.62 line this file already imports (see `dx12.rs`'s now-resolved straddle
+    // note), so no separately-versioned `windows-hal-interop` crate is needed here anymore.
+    let resource_bits = unsafe { Interface::as_raw(native_texture.raw_resource()) as usize };
     drop(native_texture);
     let resource_ptr = resource_bits as *mut core::ffi::c_void;
     // SAFETY: `resource_bits` is the exact pointer bits of the live ID3D12Resource wgpu's DX12

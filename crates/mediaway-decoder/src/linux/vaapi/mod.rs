@@ -7,6 +7,7 @@
 )]
 
 mod codec;
+mod dpb;
 mod h264;
 mod nv12;
 mod pps;

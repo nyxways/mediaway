@@ -12,6 +12,7 @@
 )]
 
 mod codec;
+mod gop;
 mod video;
 
 pub(crate) use video::VaapiVideoEncoder;

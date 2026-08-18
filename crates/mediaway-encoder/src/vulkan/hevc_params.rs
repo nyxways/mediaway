@@ -54,7 +54,7 @@ pub(crate) struct CtuAlignedExtent {
 
 impl CtuAlignedExtent {
     pub(crate) const fn from_pixels(width: u32, height: u32) -> Option<Self> {
-        if width == 0 || height == 0 || width % 8 != 0 || height % 8 != 0 {
+        if width == 0 || height == 0 || !width.is_multiple_of(8) || !height.is_multiple_of(8) {
             return None;
         }
         Some(Self { width, height })

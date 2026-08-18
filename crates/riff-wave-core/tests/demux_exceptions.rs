@@ -91,11 +91,10 @@ fn ffprobe_audio_info(path: &Path) -> Option<(u16, u32)> {
             continue;
         }
         let cols: Vec<&str> = line.split(',').collect();
-        if cols.len() >= 2 {
-            if let (Ok(sr), Ok(ch)) = (cols[0].trim().parse::<u32>(), cols[1].trim().parse::<u16>())
-            {
-                return Some((ch, sr));
-            }
+        if cols.len() >= 2
+            && let (Ok(sr), Ok(ch)) = (cols[0].trim().parse::<u32>(), cols[1].trim().parse::<u16>())
+        {
+            return Some((ch, sr));
         }
     }
     None

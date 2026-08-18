@@ -47,7 +47,9 @@ use mediaway_sw::h264::{BitReader, NalUnit, NalUnitType, split_annex_b};
 use vulkanalia::vk;
 use vulkanalia::vk::{DeviceV1_0, InstanceV1_0};
 
+use crate::vulkan::av1_params::Av1SequenceHeader;
 use crate::vulkan::cpu_readback;
+use crate::vulkan::decoder_av1::Av1Session;
 use crate::vulkan::decoder_hevc::HevcSession;
 use crate::vulkan::dpb::{Dpb, DpbSlot};
 use crate::vulkan::h264_params::{H264Pps, H264Sps, derive_pic_order_cnt_msb};
@@ -58,7 +60,8 @@ use crate::vulkan::hevc_params::{HevcPps, HevcSps};
 use crate::vulkan::session::{
     DecodeDevice, DecodeProfile, DeviceGuard, InstanceGuard, VulkanDecodeError, create_instance,
     create_logical_device, create_session_parameters_h264, create_video_session,
-    find_h264_decode_device, find_hevc_decode_device, query_capabilities, query_video_format,
+    find_av1_decode_device, find_h264_decode_device, find_hevc_decode_device, query_capabilities,
+    query_video_format,
 };
 use crate::vulkan::session_command::{
     SessionResources, allocate_command_buffer, create_command_pool, create_dpb_image, create_fence,
@@ -113,6 +116,7 @@ pub(crate) struct H264Session {
 pub(crate) enum DecodedSession {
     H264(H264Session),
     Hevc(HevcSession),
+    Av1(Av1Session),
 }
 
 /// A real, reusable, hardware-backed `VK_KHR_video_decode_queue` H.264/HEVC
@@ -183,18 +187,24 @@ impl VulkanVideoDecoder {
                   one deferred-session-open state pair — matching, not confusable, names"
     )]
     pub fn open(config: &VideoDecoderConfig) -> Result<Self, DecodeError> {
-        if !matches!(config.codec, CodecKind::H264 | CodecKind::Hevc) {
+        if !matches!(
+            config.codec,
+            CodecKind::H264 | CodecKind::Hevc | CodecKind::Av1
+        ) {
             return Err(DecodeError::Unsupported);
         }
         if config.pixel_format != PixelFormat::Nv12 {
             return Err(DecodeError::Unsupported);
         }
         let is_hevc = config.codec == CodecKind::Hevc;
+        let is_av1 = config.codec == CodecKind::Av1;
 
         let (entry, instance_guard) = create_instance().map_err(map_err)?;
         let (physical_device, queue_family_index) = {
             let InstanceGuard { instance } = &instance_guard;
-            if is_hevc {
+            if is_av1 {
+                find_av1_decode_device(instance).map_err(map_err)?
+            } else if is_hevc {
                 find_hevc_decode_device(instance).map_err(map_err)?
             } else {
                 find_h264_decode_device(instance).map_err(map_err)?
@@ -235,7 +245,18 @@ impl VulkanVideoDecoder {
             flushed: false,
         };
 
-        if is_hevc {
+        if is_av1 {
+            let mut pending_seq: Option<Av1SequenceHeader> = None;
+            crate::vulkan::decoder_av1::scan_parameter_sets(&config.extra_data, &mut pending_seq);
+            if let Some(seq) = pending_seq {
+                decoder.session = Some(DecodedSession::Av1(
+                    decoder.build_session_av1(seq).map_err(map_err)?,
+                ));
+            }
+            // No pending state to carry otherwise — AV1 needs only one
+            // parameter set (see `decoder_av1.rs`'s module doc), unlike
+            // H.264/HEVC's two-part SPS+PPS wait.
+        } else if is_hevc {
             let mut pending_sps = None;
             let mut pending_pps = None;
             crate::vulkan::decoder_hevc::scan_parameter_sets(
@@ -596,6 +617,9 @@ impl VideoDecoder for VulkanVideoDecoder {
         if self.flushed {
             return Err(DecodeError::Closed);
         }
+        if self.codec == CodecKind::Av1 {
+            return crate::vulkan::decoder_av1::push_packet_av1(self, packet);
+        }
         if self.codec == CodecKind::Hevc {
             return crate::vulkan::decoder_hevc::push_packet_hevc(self, packet);
         }
@@ -650,14 +674,18 @@ impl VideoDecoder for VulkanVideoDecoder {
 
 impl Drop for VulkanVideoDecoder {
     fn drop(&mut self) {
-        // SAFETY: `decode_slice_h264`/`decode_slice_hevc`/`build_session_h264`/
-        // `build_session_hevc` always wait on `resources.fence` synchronously
-        // before returning, so no GPU work is outstanding here.
+        // SAFETY: `decode_slice_h264`/`decode_slice_hevc`/`decode_frame_av1`/
+        // `build_session_h264`/`build_session_hevc`/`build_session_av1`
+        // always wait on `resources.fence` synchronously before returning, so
+        // no GPU work is outstanding here.
         match &self.session {
             Some(DecodedSession::H264(session)) => {
                 session.resources.destroy(&self.device_guard.device);
             }
             Some(DecodedSession::Hevc(session)) => {
+                session.resources.destroy(&self.device_guard.device);
+            }
+            Some(DecodedSession::Av1(session)) => {
                 session.resources.destroy(&self.device_guard.device);
             }
             None => {}
@@ -703,10 +731,11 @@ pub(crate) fn map_err(err: VulkanDecodeError) -> DecodeError {
         VulkanDecodeError::UnsupportedResolution { .. }
         | VulkanDecodeError::Bitstream(_)
         | VulkanDecodeError::HevcBitstream(_)
+        | VulkanDecodeError::Av1Bitstream(_)
         | VulkanDecodeError::MissingParameterSet { .. } => DecodeError::InvalidInput,
         VulkanDecodeError::VkCall { .. } | VulkanDecodeError::NoMemoryType { .. } => {
             DecodeError::Backend
         }
-        VulkanDecodeError::Dpb(_) => DecodeError::Backend,
+        VulkanDecodeError::Dpb(_) | VulkanDecodeError::Av1Dpb(_) => DecodeError::Backend,
     }
 }

@@ -4,34 +4,26 @@ Module: `mediaway-decoder::vulkan` (portable — not OS-suffixed, sibling of
 `mediaway-encoder::vulkan`). ADR:
 [`0001-vulkan-video-decode.md`](../../../../crates/mediaway-decoder/adr/vulkan/0001-vulkan-video-decode.md).
 
-**Status (2026-08-05): H.264 general-GOP decode and HEVC IDR decode are both
-real and hardware-verified.** H.264 was the first general-GOP (P/B + DPB)
-decode backend in this workspace to pass a real hardware round trip; HEVC's
-IDR-only GPU path is now hardware-verified too (root cause found — see
-below). AV1 is a follow-up addendum (files not written yet).
+**Status (2026-08-19): H.264 general-GOP, HEVC IDR-only, and AV1
+`KEY_FRAME`-only decode are all real and hardware-verified.** H.264 was the
+first general-GOP (P/B + DPB) decode backend in this workspace; HEVC's
+IDR-only GPU path is hardware-verified (root cause found — see below). AV1
+`KEY_FRAME`-only/single-tile decode ([ADR-0002](../../../../crates/mediaway-decoder/adr/vulkan/0002-av1-decode-keyframe-first.md))
+is implemented and hardware-verified on the **first** attempt (no
+driver-maturity wall, unlike this workspace's AV1 Vulkan encode) — see
+[vulkan-decode-av1.md](vulkan-decode-av1.md) for details.
 
-## Scope — broader than the encoder-vulkan precedent, by project-owner decision
+## Scope, bindings, probe
 
-This ADR's design covers all three codecs (H.264/HEVC/AV1) and general
-P/B-frame GOP support (DPB + reference-picture-list management, not
-IDR-only/all-intra) from the start.
-
-## Binding survey: `vulkanalia` decode structs
-
-`vulkanalia` 0.35.0 (already workspace-pinned) has every per-codec decode
-picture-info + DPB-slot struct — **zero new dependency**, unlike encode's
-AV1 story (`ash` lacked bindings, forced a migration). `GpuBufferHandle::Vulkan`
-already existed in `mediaway-common` — no common-crate change needed for
-Zero-Copy output. HEVC/AV1 `ProfileInfoKHR` structs are inferred present
-from the consistent naming pattern, not yet individually confirmed.
-
-## Stage 0 probe: real, hardware-verified, positive
-
-Both the reference RTX 4090 **and** the Intel UHD 770 advertise
-`VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR`/`_H265_BIT_KHR`/`_AV1_BIT_KHR`
-decode queue families — the ADR's #1 open risk, now answered for real. A
-genuine positive result, unlike the equivalent encode probe finding no
-Intel encode queue at all.
+ADR-0001's design covers all three codecs (H.264/HEVC/AV1) and general
+P/B-frame GOP support (DPB + reference-picture-list management) from the
+start, broader than `vulkan-encode`'s original scope. `vulkanalia` 0.35.0
+(workspace-pinned) has every per-codec decode picture-info + DPB-slot
+struct — zero new dependency, unlike encode's AV1 story (`ash` lacked
+bindings, forced a migration). Both the reference RTX 4090 **and** the
+Intel UHD 770 advertise H.264/H.265/AV1 decode queue families (Stage 0
+probe, real and hardware-verified — a genuine positive, unlike the
+equivalent encode probe finding no Intel encode queue at all).
 
 ## H.264: implemented, unit-tested, hardware-verified
 
@@ -55,9 +47,9 @@ motion-compensated DPB reference read, real new P-frame content.
 
 Real gaps found only by implementing: `StdVideoDecodeH264PictureInfo` has no
 ref-list field (hardware parses ref lists from raw bits itself); the DPB
-image is one shared `2D_ARRAY` view, not per-slot views; slice-header
-parsing was missing `num_ref_idx_active_override_flag` and deblocking-
-filter-control fields until cross-checked against `ffmpeg`.
+image is one shared `2D_ARRAY` view, not per-slot views; slice-header parsing
+was missing `num_ref_idx_active_override_flag` and deblocking-filter-control
+fields until cross-checked against `ffmpeg`.
 
 ## HEVC (Stage 2): IDR decode hardware-verified; P/B still deferred
 
@@ -81,17 +73,20 @@ now passes with **hard** pixel-value assertions.
 
 ## Bitstream-parser reuse
 
-H.264/HEVC both reuse `mediaway_sw::h264::split_annex_b` (codec-agnostic
-framing) + `BitReader`, but each writes its own NAL-header/high-level-syntax
-parser (1-byte vs. 2-byte header, different layout) — no shared `Sps`/`Pps`.
-AV1 has zero reusable parsing code in this workspace (`mediaway_sw::av1` is
-a `rav1e` **encoder**, not a parser) — needs a from-scratch OBU scanner.
-HEVC/AV1 parsers stay local to this crate (no second consumer yet to justify
-extracting into `mediaway-sw`). AV1 film-grain synthesis is explicitly
-deferred past base decode (see ADR-0001).
+H.264/HEVC reuse `mediaway_sw::h264::split_annex_b` (codec-agnostic framing) +
+`BitReader`, but each writes its own NAL-header/high-level-syntax parser
+(1-byte vs. 2-byte header) — no shared `Sps`/`Pps`. AV1 had zero reusable
+parsing code in this workspace (`mediaway_sw::av1` is a `rav1e`
+**encoder**, not a parser) — `av1_params.rs` is a from-scratch OBU scanner;
+see [vulkan-decode-av1.md](vulkan-decode-av1.md). HEVC/AV1 parsers stay
+local to this crate. AV1 film grain is architecturally excluded (forces
+`DISTINCT` DPB/output mode, incompatible with this crate's `COINCIDE`-only
+image design), not just deferred.
 
 ## Related
 
+- [vulkan-decode-av1.md](vulkan-decode-av1.md) — AV1 `KEY_FRAME`-only decode
+  detail page
 - [vulkan-encode](vulkan-encode.md) — sibling encode crate, structural
   precedent this ADR mirrors throughout
 - [linux-decode](linux-decode.md) — IDR-only VA-API decode precedent,

@@ -77,6 +77,17 @@
   `libva-dev` headers/bindgen output) — **zero real VA-API hardware verification** (no working
   VA-API device available in this workspace). See
   `crates/mediaway-decoder/adr/linux/0002-vaapi-h264-p-slice-dpb.md`.
+- `mediaway-encoder::linux` (`linux::vaapi`) H.264 encode: extended from all-IDR to real
+  single-forward-reference P-frame GOP (IPPP...) encode — `VideoEncoderConfig::gop_size` finally
+  read by this backend, real `frame_num`/reference-picture-list wiring ported from
+  `mediaway-encoder::vulkan::h264_gop::GopState`'s hardware-verified decision state machine.
+  Capability-gated on `VAConfigAttribEncMaxRefFrames` (queried via `Display::get_config_attributes`
+  at session-open time); `gop_size <= 1` or an unsupporting driver both fall back to all-IDR
+  encode, byte-identical to the previous output. No B-frames, multi-reference, reference-list
+  reordering, long-term references, or rate control this round (all deliberately deferred, not
+  silently dropped). Compile- and test-verified on real Linux (WSL2 Ubuntu, real `libva-dev`
+  headers/bindgen output) — **zero real VA-API hardware verification** (no working VA-API device
+  available in this workspace). See `crates/mediaway-encoder/adr/linux/0002-vaapi-h264-p-frame-gop.md`.
 - `mediaway`'s `wgpu` dependency bumped from 26.x to 30.x (workspace MSRV now 1.96 clears
   30.x's rustc floor). Fixed six real breaking-API changes in the DX12 HAL escape-hatch bridges
   (`create_texture_from_hal`'s new `initial_state` parameter, `PollType::Wait`'s new struct

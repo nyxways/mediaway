@@ -41,6 +41,11 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 - [x] Add `mediaway-encoder-linux`
 - [x] VA-API H.264 CPU-upload encode (`cros-libva`; Constrained Baseline, CQP, all-IDR) —
       **zero real-hardware verification**, see crate ADR-0001
+- [x] VA-API H.264 single-forward-reference P-frame GOP (`gop_size` finally read by this
+      backend, real `frame_num`/reference-picture-list wiring, ported from
+      `mediaway-encoder::vulkan::h264_gop::GopState`) — **ADR-0002 implemented**, capability-gated
+      on `VAConfigAttribEncMaxRefFrames`; still zero real-hardware verification (WSL2
+      check/clippy/test-verified only)
 - [ ] Vulkan Video encode (alternative/complement to VA-API)
 - [ ] GPU buffer Zero-Copy where supported (DMA-BUF surface import)
 

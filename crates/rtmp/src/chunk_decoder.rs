@@ -246,14 +246,14 @@ impl ChunkDecoder {
         let message_type_id = cache.message_type_id;
         let timestamp_ms = cache.timestamp_ms;
 
-        if message_type_id == MSG_SET_CHUNK_SIZE {
-            if let [b0, b1, b2, b3] = payload[..] {
-                let value = u32::from_be_bytes([b0 & 0x7F, b1, b2, b3]); // top bit reserved
-                if value == 0 {
-                    return Err(Error::InvalidChunkSize(value));
-                }
-                self.chunk_size = usize::try_from(value).unwrap_or(usize::MAX);
+        if message_type_id == MSG_SET_CHUNK_SIZE
+            && let [b0, b1, b2, b3] = payload[..]
+        {
+            let value = u32::from_be_bytes([b0 & 0x7F, b1, b2, b3]); // top bit reserved
+            if value == 0 {
+                return Err(Error::InvalidChunkSize(value));
             }
+            self.chunk_size = usize::try_from(value).unwrap_or(usize::MAX);
         }
 
         Ok(Step::Message(message_type_id, timestamp_ms, payload))

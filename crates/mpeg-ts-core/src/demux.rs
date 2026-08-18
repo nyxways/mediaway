@@ -125,11 +125,11 @@ impl Demuxer {
         payload: &[u8],
     ) -> Result<(), Error> {
         if pusi {
-            if let Some(prev) = self.accumulators.get(&pid) {
-                if !prev.data.is_empty() {
-                    let unit = finish_pes(pid, prev)?;
-                    self.pending.push_back(unit);
-                }
+            if let Some(prev) = self.accumulators.get(&pid)
+                && !prev.data.is_empty()
+            {
+                let unit = finish_pes(pid, prev)?;
+                self.pending.push_back(unit);
             }
             self.accumulators.insert(
                 pid,

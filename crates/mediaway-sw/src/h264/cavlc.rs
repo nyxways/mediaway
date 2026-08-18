@@ -68,10 +68,10 @@ fn decode_vlc(
         acc = (acc << 1) | reader.read_bit()?;
         len += 1;
         for &(first, second, code_str) in table {
-            if let Some(want) = filter_second {
-                if second != want {
-                    continue;
-                }
+            if let Some(want) = filter_second
+                && second != want
+            {
+                continue;
             }
             let (code, code_len) = parse_bits(code_str);
             if code_len == len && code == acc {

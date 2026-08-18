@@ -121,17 +121,17 @@ fn parse_ffprobe_output(stdout: &[u8]) -> Option<usize> {
             continue;
         }
         // csv: nb_read_packets,nb_frames (prefer nb_read_packets)
-        if !cols.is_empty() {
-            if let Ok(p) = cols[0].trim().parse::<usize>() {
-                total_frames += p;
-                continue;
-            }
+        if !cols.is_empty()
+            && let Ok(p) = cols[0].trim().parse::<usize>()
+        {
+            total_frames += p;
+            continue;
         }
         // Fallback to nb_frames if nb_read_packets is not available
-        if cols.len() >= 2 {
-            if let Ok(f) = cols[1].trim().parse::<usize>() {
-                total_frames += f;
-            }
+        if cols.len() >= 2
+            && let Ok(f) = cols[1].trim().parse::<usize>()
+        {
+            total_frames += f;
         }
     }
     if total_frames > 0 {

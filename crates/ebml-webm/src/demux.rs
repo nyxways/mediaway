@@ -293,33 +293,32 @@ impl Demuxer {
     fn on_close(&mut self, id: u32) {
         match id {
             ids::TRACK_ENTRY => {
-                if let Some(scratch) = self.building_track.take() {
-                    if let Some(track) = scratch.finish() {
-                        self.tracks.push(track);
-                    }
+                if let Some(scratch) = self.building_track.take()
+                    && let Some(track) = scratch.finish()
+                {
+                    self.tracks.push(track);
                 }
             }
             ids::BLOCK_GROUP => self.finish_block_group(),
             ids::CUE_POINT => {
-                if let Some(scratch) = self.building_cue_point.take() {
-                    if let (Some(time_ticks), Some(cluster_position)) =
+                if let Some(scratch) = self.building_cue_point.take()
+                    && let (Some(time_ticks), Some(cluster_position)) =
                         (scratch.time_ticks, scratch.cluster_position)
-                    {
-                        self.cues.push(CuePoint {
-                            time_ticks,
-                            cluster_position,
-                        });
-                    }
+                {
+                    self.cues.push(CuePoint {
+                        time_ticks,
+                        cluster_position,
+                    });
                 }
             }
             ids::SEEK => {
-                if let Some(scratch) = self.building_seek.take() {
-                    if let (Some(seek_id), Some(position)) = (scratch.id, scratch.position) {
-                        self.seek_head.push(SeekEntry {
-                            id: seek_id,
-                            position,
-                        });
-                    }
+                if let Some(scratch) = self.building_seek.take()
+                    && let (Some(seek_id), Some(position)) = (scratch.id, scratch.position)
+                {
+                    self.seek_head.push(SeekEntry {
+                        id: seek_id,
+                        position,
+                    });
                 }
             }
             _ => {}

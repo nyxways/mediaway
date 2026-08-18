@@ -64,6 +64,17 @@ to exactly `1.93`. The installed local toolchain (`rustc 1.97.1`) already exceed
 - Workspace floor moves closer to the actually-installed toolchain (`1.97.1`), reducing the gap
   between "what CI/local machines run" and "what the crate metadata claims to require."
 
+### Discovered while verifying
+
+Correcting `clippy.toml`'s stale `msrv = "1.85"` to match (part of this same fix, since it was
+drifted independently of the `Cargo.toml` field) unlocked several clippy lints that had been
+silently suppressed under the wrong floor: `collapsible_if` (nested `if let` collapsible via
+2024-edition let-chains), `manual_is_multiple_of` (`x % n == 0` → `x.is_multiple_of(n)`,
+stabilized after `1.85`), `missing_const_for_fn`, and one `useless_let_if_seq`. Fixed ~30 sites
+across `iso-bmff`, `ebml-webm`, `mpeg-ts-core`, `rtmp`, `mediaway-sw`, `mediaway-decoder`, and
+`mediaway-encoder` (mechanical rewrites only, no behavior change; full workspace test suite
+re-verified green after). This is why this ADR's diff touches more than `Cargo.toml`/CI files.
+
 ### Negative / Trade-offs
 
 - Any downstream consumer building against an older toolchain between `1.91` and `1.96` loses

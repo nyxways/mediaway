@@ -335,7 +335,11 @@ fn validate(config: &VideoEncoderConfig) -> Result<(), EncodeError> {
         // ZeroCopyGpu (caller-supplied D3D11/D3D12 texture) is deferred — see module docs.
         return Err(EncodeError::Unsupported);
     }
-    if config.width == 0 || config.height == 0 || config.width % 2 != 0 || config.height % 2 != 0 {
+    if config.width == 0
+        || config.height == 0
+        || !config.width.is_multiple_of(2)
+        || !config.height.is_multiple_of(2)
+    {
         return Err(EncodeError::InvalidInput);
     }
     if config.pixel_format != PixelFormat::Nv12 {

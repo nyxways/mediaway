@@ -126,10 +126,10 @@ fn nv12_frame_sized(pts: i64, width: u32, height: u32) -> VideoFrame {
 /// adapter — never panics.
 fn open_real_d3d12_device() -> Option<ID3D12Device> {
     let mut debug: Option<ID3D12Debug> = None;
-    if unsafe { D3D12GetDebugInterface(&raw mut debug) }.is_ok() {
-        if let Some(debug) = debug {
-            unsafe { debug.EnableDebugLayer() };
-        }
+    if unsafe { D3D12GetDebugInterface(&raw mut debug) }.is_ok()
+        && let Some(debug) = debug
+    {
+        unsafe { debug.EnableDebugLayer() };
     }
 
     let factory: IDXGIFactory1 = match unsafe { CreateDXGIFactory1() } {

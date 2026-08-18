@@ -390,8 +390,8 @@ impl D3d12VideoEncoder {
                 hevc::check_codec_support(&video_device)?;
                 hevc::check_output_resolution(&video_device, resolution)?;
                 let req = hevc::check_resource_requirements(&video_device, resolution)?;
-                if config.width % hevc::MIN_CB_SIZE_PIXELS != 0
-                    || config.height % hevc::MIN_CB_SIZE_PIXELS != 0
+                if !config.width.is_multiple_of(hevc::MIN_CB_SIZE_PIXELS)
+                    || !config.height.is_multiple_of(hevc::MIN_CB_SIZE_PIXELS)
                 {
                     return Err(EncodeError::InvalidInput);
                 }
@@ -808,7 +808,10 @@ fn validate_common(config: &VideoEncoderConfig) -> Result<(), EncodeError> {
     if !matches!(config.input, VideoInputPreference::CpuUploadOk) {
         return Err(EncodeError::Unsupported);
     }
-    if config.width == 0 || config.height == 0 || config.width % 16 != 0 || config.height % 16 != 0
+    if config.width == 0
+        || config.height == 0
+        || !config.width.is_multiple_of(16)
+        || !config.height.is_multiple_of(16)
     {
         return Err(EncodeError::InvalidInput);
     }

@@ -62,7 +62,7 @@ pub(super) fn qpc_from_qp(qp: i32, chroma_qp_index_offset: i32) -> i32 {
 
 /// Position class (`v(i,j)` in § 8.5.9) for [`NORM_ADJUST`]'s second index.
 const fn position_class(row: usize, col: usize) -> usize {
-    if row % 2 == 0 && col % 2 == 0 {
+    if row.is_multiple_of(2) && col.is_multiple_of(2) {
         0
     } else if row % 2 == 1 && col % 2 == 1 {
         1

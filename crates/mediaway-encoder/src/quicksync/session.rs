@@ -391,8 +391,8 @@ fn validate(config: &VideoEncoderConfig) -> Result<(), EncodeError> {
     }
     if config.width == 0
         || config.height == 0
-        || config.width % 2 != 0
-        || config.height % 2 != 0
+        || !config.width.is_multiple_of(2)
+        || !config.height.is_multiple_of(2)
         || config.width > u32::from(u16::MAX)
         || config.height > u32::from(u16::MAX)
     {

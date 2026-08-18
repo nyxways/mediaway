@@ -51,7 +51,7 @@ impl BitWriter {
 
     fn finish(mut self) -> Vec<u8> {
         self.bits.push(true);
-        while self.bits.len() % 8 != 0 {
+        while !self.bits.len().is_multiple_of(8) {
             self.bits.push(false);
         }
         let mut out = vec![0u8; self.bits.len() / 8];

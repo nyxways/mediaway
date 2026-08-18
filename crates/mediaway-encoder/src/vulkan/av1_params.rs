@@ -612,10 +612,10 @@ pub(crate) fn build_inter_frame_picture_info(
     let mut ref_frame_idx = [-1i8; 7];
     ref_frame_idx[0] = prediction.ref_slot;
     let mut ref_order_hint = [0u8; 8];
-    if let Ok(slot) = usize::try_from(prediction.ref_slot) {
-        if let Some(entry) = ref_order_hint.get_mut(slot) {
-            *entry = prediction.ref_order_hint;
-        }
+    if let Ok(slot) = usize::try_from(prediction.ref_slot)
+        && let Some(entry) = ref_order_hint.get_mut(slot)
+    {
+        *entry = prediction.ref_order_hint;
     }
 
     native::StdVideoEncodeAV1PictureInfo {

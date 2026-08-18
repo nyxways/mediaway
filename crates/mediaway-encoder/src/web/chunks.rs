@@ -52,6 +52,10 @@ impl EncodedVideoChunks {
         clippy::cast_possible_truncation,
         reason = "test/smoke chunk counts are tiny"
     )]
+    #[allow(
+        clippy::missing_const_for_fn,
+        reason = "#[wasm_bindgen] does not support const fn"
+    )]
     pub fn chunk_count(&self) -> u32 {
         self.payloads.len() as u32
     }

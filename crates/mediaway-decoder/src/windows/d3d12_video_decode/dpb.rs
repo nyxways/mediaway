@@ -121,10 +121,11 @@ impl<M: Copy> SlotTable<M> {
     /// (not currently a reference and no outstanding handle) — frees it immediately
     /// instead of waiting for the sliding-window process to evict it later.
     pub(super) fn release_if_unused(&mut self, index: u32) {
-        if let Some(slot) = self.slots.get_mut(index as usize) {
-            if !slot.is_reference && !slot.handle_outstanding {
-                slot.state = SlotState::Free;
-            }
+        if let Some(slot) = self.slots.get_mut(index as usize)
+            && !slot.is_reference
+            && !slot.handle_outstanding
+        {
+            slot.state = SlotState::Free;
         }
     }
 

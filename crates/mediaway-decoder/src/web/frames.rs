@@ -37,6 +37,10 @@ impl DecodedVideoFrames {
         clippy::cast_possible_truncation,
         reason = "test/smoke frame counts are tiny"
     )]
+    #[allow(
+        clippy::missing_const_for_fn,
+        reason = "#[wasm_bindgen] does not support const fn"
+    )]
     pub fn frame_count(&self) -> u32 {
         self.timestamps_us.len() as u32
     }

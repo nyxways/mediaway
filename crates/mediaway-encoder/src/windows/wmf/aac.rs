@@ -102,10 +102,10 @@ impl WmfAacEncoder {
             && written > 0
         {
             buf.truncate(written as usize);
-            if let Some(asc) = asc_from_waveformatex(&buf) {
-                if let StreamInfo::Audio { extra_data, .. } = &mut self.info {
-                    *extra_data = Bytes::from(asc);
-                }
+            if let Some(asc) = asc_from_waveformatex(&buf)
+                && let StreamInfo::Audio { extra_data, .. } = &mut self.info
+            {
+                *extra_data = Bytes::from(asc);
             }
         }
     }
@@ -310,7 +310,7 @@ fn pcm_bytes(frame: &AudioFrame, bytes_per_sample: u16) -> Result<Vec<u8>, Encod
         SampleFormat::S16 if bytes_per_sample == 2 => Ok(frame.data.to_vec()),
         SampleFormat::S32 if bytes_per_sample == 4 => Ok(frame.data.to_vec()),
         SampleFormat::F32 => {
-            if frame.data.len() % 4 != 0 {
+            if !frame.data.len().is_multiple_of(4) {
                 return Err(EncodeError::InvalidInput);
             }
             let mut out = Vec::with_capacity(frame.data.len() / 2);

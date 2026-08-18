@@ -483,8 +483,8 @@ impl Capabilities {
             && height <= self.max_coded_extent.height;
         let aligned = self.picture_access_granularity.width != 0
             && self.picture_access_granularity.height != 0
-            && width % self.picture_access_granularity.width == 0
-            && height % self.picture_access_granularity.height == 0;
+            && width.is_multiple_of(self.picture_access_granularity.width)
+            && height.is_multiple_of(self.picture_access_granularity.height);
         if in_range && aligned {
             return Ok(());
         }

@@ -162,7 +162,7 @@ impl Dpb {
 
     /// Total slot count.
     #[must_use]
-    pub fn capacity(&self) -> usize {
+    pub const fn capacity(&self) -> usize {
         self.slots.len()
     }
 
@@ -192,7 +192,7 @@ impl Dpb {
             .filter_map(|(index, slot)| slot.as_ref().map(|slot| (index, slot)))
     }
 
-    fn check_index(&self, index: usize) -> Result<(), DpbError> {
+    const fn check_index(&self, index: usize) -> Result<(), DpbError> {
         if index >= self.slots.len() {
             Err(DpbError::InvalidSlotIndex {
                 index,

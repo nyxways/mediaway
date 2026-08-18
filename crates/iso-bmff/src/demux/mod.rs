@@ -166,13 +166,14 @@ impl Demuxer {
             }
             let pts = pts_from_dts(dts as i64, s.cto);
             let mut payload = self.buffer[off..e].to_vec();
-            let mut decrypt_ok = true;
-            if let (Some(key), Some(tenc)) = (self.decryption_key, enc.as_ref()) {
-                if tenc.is_protected {
-                    let senc_s = senc.get(i);
-                    decrypt_ok = decrypt_sample(&mut payload, key, tenc, senc_s).is_ok();
-                }
-            }
+            let decrypt_ok = if let (Some(key), Some(tenc)) = (self.decryption_key, enc.as_ref())
+                && tenc.is_protected
+            {
+                let senc_s = senc.get(i);
+                decrypt_sample(&mut payload, key, tenc, senc_s).is_ok()
+            } else {
+                true
+            };
             self.packets.push_back(Sample {
                 stream_id: tid,
                 pts,
@@ -203,15 +204,15 @@ impl Demuxer {
             };
             let pts = pts_from_dts(sample.dts, sample.cto);
             let mut payload = bytes.to_vec();
-            let mut decrypt_ok = true;
-            if let (Some(key), Some(Some(tenc))) = (
+            let decrypt_ok = if let (Some(key), Some(Some(tenc))) = (
                 self.decryption_key,
                 self.track_encryption.get(stream_id as usize),
-            ) {
-                if tenc.is_protected {
-                    decrypt_ok = decrypt_sample(&mut payload, key, tenc, None).is_ok();
-                }
-            }
+            ) && tenc.is_protected
+            {
+                decrypt_sample(&mut payload, key, tenc, None).is_ok()
+            } else {
+                true
+            };
             self.packets.push_back(Sample {
                 stream_id,
                 pts,

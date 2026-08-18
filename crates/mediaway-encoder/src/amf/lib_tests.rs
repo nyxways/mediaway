@@ -29,10 +29,12 @@ const fn tiny_h264_cfg() -> VideoEncoderConfig {
 
 /// `validate()` runs before any AMF library is touched, so an unsupported codec is
 /// rejected deterministically on every machine — no hardware needed for this assertion.
+/// `Vp9` (not `Av1`) is the genuinely unsupported codec here: `shiguredo_amf`'s own
+/// `CodecConfig` has no VP9 variant, while AV1 became supported per ADR-0003.
 #[test]
 fn open_unsupported_codec_returns_unsupported_without_hardware() {
     let mut cfg = tiny_h264_cfg();
-    cfg.codec = mediaway_common::CodecKind::Av1;
+    cfg.codec = mediaway_common::CodecKind::Vp9;
     assert!(matches!(
         AmfVideoEncoder::open(&cfg),
         Err(EncodeError::Unsupported)
@@ -59,11 +61,37 @@ fn open_zero_copy_gpu_returns_unsupported_without_hardware() {
 /// equivalent.
 #[test]
 fn open_h264_cpu_upload_or_skip_without_hw() {
-    let cfg = tiny_h264_cfg();
-    let mut enc = match AmfVideoEncoder::open(&cfg) {
+    open_encode_or_skip(&tiny_h264_cfg(), "h264");
+}
+
+/// HEVC counterpart of [`open_h264_cpu_upload_or_skip_without_hw`] — same "expected to skip,
+/// no AMD hardware in this workspace" honesty posture, exercising the ADR-0003 HEVC dispatch
+/// through the public [`AmfVideoEncoder`] wrapper.
+#[test]
+fn open_hevc_cpu_upload_or_skip_without_hw() {
+    let mut cfg = tiny_h264_cfg();
+    cfg.codec = mediaway_common::CodecKind::Hevc;
+    open_encode_or_skip(&cfg, "hevc");
+}
+
+/// AV1 counterpart of [`open_h264_cpu_upload_or_skip_without_hw`] — same "expected to skip, no
+/// AMD hardware in this workspace" honesty posture, exercising the ADR-0003 AV1 dispatch
+/// through the public [`AmfVideoEncoder`] wrapper.
+#[test]
+fn open_av1_cpu_upload_or_skip_without_hw() {
+    let mut cfg = tiny_h264_cfg();
+    cfg.codec = mediaway_common::CodecKind::Av1;
+    open_encode_or_skip(&cfg, "av1");
+}
+
+/// Shared body for the hardware-gated smoke tests above: open a real
+/// [`AmfVideoEncoder`] for `cfg` and, if a driver is available, encode one black NV12 frame
+/// end to end. `label` only tags the diagnostic `eprintln!`.
+fn open_encode_or_skip(cfg: &VideoEncoderConfig, label: &str) {
+    let mut enc = match AmfVideoEncoder::open(cfg) {
         Ok(e) => e,
         Err(e) => {
-            eprintln!("skip: AmfVideoEncoder::open failed ({e:?}) — no AMD AMF driver?");
+            eprintln!("skip: AmfVideoEncoder::open failed ({e:?}) — no AMD AMF driver? ({label})");
             return;
         }
     };
@@ -81,7 +109,7 @@ fn open_h264_cpu_upload_or_skip_without_hw() {
     };
 
     if let Err(e) = enc.push_frame(&frame) {
-        eprintln!("skip: push_frame failed ({e:?})");
+        eprintln!("skip: push_frame failed ({e:?}) ({label})");
         return;
     }
     let _ = enc.flush();
@@ -91,5 +119,5 @@ fn open_h264_cpu_upload_or_skip_without_hw() {
         assert!(!p.payload.is_empty());
         packets += 1;
     }
-    eprintln!("AmfVideoEncoder packets={packets}");
+    eprintln!("AmfVideoEncoder {label} packets={packets}");
 }

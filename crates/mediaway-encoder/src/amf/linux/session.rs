@@ -1,8 +1,10 @@
-//! AMD AMF H.264 CPU-upload encode session (`shiguredo_amf`).
+//! AMD AMF H.264 / HEVC / AV1 CPU-upload encode session (`shiguredo_amf`).
 //!
 //! See [ADR-0002](../../adr/amf/0002-amf-linux-shiguredo-amf-h264-cpu-upload.md): binding
-//! choice, the callback→poll bridge design, scope (H.264 / CPU upload only), and the
-//! zero-hardware-verification caveat for this backend as authored.
+//! choice, the callback→poll bridge design, scope (CPU upload only), and the
+//! zero-hardware-verification caveat for this backend as authored. See
+//! [ADR-0003](../../adr/amf/0003-amf-linux-hevc-av1-codec-dispatch.md) for the HEVC/AV1 codec
+//! dispatch (VP9 stays unsupported — `shiguredo_amf` has no `CodecConfig` variant for it).
 //!
 //! GOP: `gop_size` is passed straight through to `EncoderConfig::gop_pic_size` —
 //! `shiguredo_amf` exposes it as a plain config field with no manual reference-list
@@ -23,8 +25,9 @@ use mediaway_common::{
 use shiguredo_amf::amf::{Plane, Surface};
 use shiguredo_amf::ffi::AMF_PLANE_TYPE;
 use shiguredo_amf::{
-    CodecConfig, EncodeHandler, EncodeOptions, EncodedFrame, Encoder, EncoderConfig, FrameFormat,
-    H264EncoderConfig, PictureType, RateControlMode, ReconfigureParams,
+    Av1EncoderConfig, CodecConfig, EncodeHandler, EncodeOptions, EncodedFrame, Encoder,
+    EncoderConfig, FrameFormat, H264EncoderConfig, HevcEncoderConfig, PictureType, RateControlMode,
+    ReconfigureParams,
 };
 
 use super::codec;
@@ -119,7 +122,7 @@ fn packet_from_encoded_frame(frame: &EncodedFrame<FrameMeta>) -> Packet {
     }
 }
 
-/// AMD AMF H.264 encode session (CPU NV12 upload, `shiguredo_amf`-backed).
+/// AMD AMF H.264/HEVC/AV1 encode session (CPU NV12 upload, `shiguredo_amf`-backed).
 pub(crate) struct AmfSession {
     encoder: Encoder<PacketSink>,
     queue: Arc<Mutex<VecDeque<Result<Packet, EncodeError>>>>,
@@ -147,7 +150,7 @@ impl AmfSession {
 
     fn open_cpu(config: &VideoEncoderConfig) -> Result<Self, EncodeError> {
         let (framerate_num, framerate_den) = codec::framerate_from_time_base(config.time_base);
-        let codec_config = CodecConfig::H264(H264EncoderConfig { profile: None });
+        let codec_config = codec_config_for(config.codec)?;
         let is_cbr = config.rate_control.is_some();
         let rate_control_mode = if is_cbr {
             RateControlMode::Cbr
@@ -363,6 +366,27 @@ fn write_plane_rows(
     Ok(())
 }
 
+/// `VideoEncoderConfig::codec` → the matching `shiguredo_amf::CodecConfig` variant — see
+/// [ADR-0003](../../adr/amf/0003-amf-linux-hevc-av1-codec-dispatch.md) § Decision. `profile:
+/// None` for both HEVC and AV1 mirrors the already-shipped H.264 convention (encoder
+/// auto-picks); flagged as an open, deliberately-revisitable choice in ADR-0003 § Open
+/// questions, not silently locked in.
+///
+/// # Errors
+///
+/// Returns [`EncodeError::Unsupported`] for any codec `validate()` did not already reject —
+/// unreachable in practice since `open_cpu` only runs after `validate()` calls
+/// [`codec::is_supported_video_codec`] first, but an honest `Result` fallback rather than an
+/// unwinding macro call, per this workspace's no-new-panic rule.
+const fn codec_config_for(codec: CodecKind) -> Result<CodecConfig, EncodeError> {
+    match codec {
+        CodecKind::H264 => Ok(CodecConfig::H264(H264EncoderConfig { profile: None })),
+        CodecKind::Hevc => Ok(CodecConfig::Hevc(HevcEncoderConfig { profile: None })),
+        CodecKind::Av1 => Ok(CodecConfig::Av1(Av1EncoderConfig { profile: None })),
+        _ => Err(EncodeError::Unsupported),
+    }
+}
+
 fn validate(config: &VideoEncoderConfig) -> Result<(), EncodeError> {
     if !codec::is_supported_video_codec(config.codec) {
         return Err(EncodeError::Unsupported);
@@ -388,7 +412,7 @@ fn validate(config: &VideoEncoderConfig) -> Result<(), EncodeError> {
 fn stream_info_from(config: &VideoEncoderConfig) -> StreamInfo {
     StreamInfo::Video {
         id: 0,
-        codec: CodecKind::H264,
+        codec: config.codec,
         time_base: config.time_base,
         geometry: VideoGeometry {
             width: config.width,

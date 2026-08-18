@@ -59,13 +59,22 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
         internal worker thread, confirmed against real source) per
         `adr/amf/0002-amf-linux-shiguredo-amf-h264-cpu-upload.md` (**Accepted**), superseding the
         earlier `adr/amf/0001` deferral now that the workspace MSRV bump (`docs/adr/0023`) cleared
-        the hard blocker. H.264 CPU-upload only, `x86_64`-Linux-only (`shiguredo_amf`'s own
-        platform limit). Compile-verified for real on Linux `x86_64` via WSL2 (`cargo check` +
-        `cargo clippy` + `cargo test`, including the `AMF_PLANE_TYPE`/`amf_pts`/`amf_size` types
-        this ADR had flagged unconfirmed — resolved against real crate source fetched during
-        implementation). **Zero real AMD hardware/driver available** — ships 🆗 (compiles,
-        compile-verified on Linux `x86_64`, zero hardware verification), never ✅, matching
-        VA-API/Android/Apple. Not wired into `auto`/`capability` yet.
+        the hard blocker. `x86_64`-Linux-only (`shiguredo_amf`'s own platform limit).
+        Compile-verified for real on Linux `x86_64` via WSL2 (`cargo check` + `cargo clippy` +
+        `cargo test`, including the `AMF_PLANE_TYPE`/`amf_pts`/`amf_size` types this ADR had
+        flagged unconfirmed — resolved against real crate source fetched during implementation).
+        **Zero real AMD hardware/driver available** — ships 🆗 (compiles, compile-verified on
+        Linux `x86_64`, zero hardware verification), never ✅, matching VA-API/Android/Apple. Not
+        wired into `auto`/`capability` yet.
+    - [x] HEVC + AV1 codec dispatch added per
+          `adr/amf/0003-amf-linux-hevc-av1-codec-dispatch.md` (**Accepted, implemented**) —
+          `shiguredo_amf`'s own `CodecConfig` already had first-class `Hevc`/`Av1` variants, so
+          this was a dispatch widening (`is_supported_video_codec` + a small `codec_config_for`
+          match in `session.rs`), not new plumbing; also fixed a real (if previously latent)
+          `stream_info_from` codec-hardcode bug along the way. VP9 stays unsupported —
+          `shiguredo_amf` has no `CodecConfig` variant for it, a real ceiling of the dependency,
+          not a Mediaway restriction. Same compile-only, zero-real-AMD-hardware verification
+          posture as H.264 above — still 🆗, never ✅.
   - [x] Android: `mediaway-encoder::android` implemented (NDK `AMediaCodec` via the `ndk`
         crate, H.264 CPU-upload only) per `adr/android/0001-ndk-amediacodec-h264-cpu-upload.md`
         (**Accepted**) — **zero compile verification as authored**, no Android NDK in this dev

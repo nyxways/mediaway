@@ -313,8 +313,8 @@ Detail: [`mediaway`](crates/mediaway/README.md) `wgpu` module · `mediaway-encod
 | Codec        | NVIDIA | AMD | Intel | Apple | Qualcomm |
 | ------------ | ------ | --- | ----- | ----- | -------- |
 | H.264 / AVC  | ✅     | 🆗 | ✅   | 👻    | 👻       |
-| HEVC / H.265 | ✅    | 🛠️ | ✅   | 👻    | 👻       |
-| AV1          | ✅    | 🛠️ | ❌   | 👻    | 👻       |
+| HEVC / H.265 | ✅    | 🆗 | ✅   | 👻    | 👻       |
+| AV1          | ✅    | 🆗 | ❌   | 👻    | 👻       |
 | VP9          | 👻     | 👻  | 👻    | 👻    | 👻       |
 
 

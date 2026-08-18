@@ -93,6 +93,9 @@
   never populated — always empty, even though `AMediaCodec` delivers `csd-0`/`csd-1` via a
   `BUFFER_FLAG_CODEC_CONFIG` output buffer before the first frame. Now captured and converted
   to `avcC`.
+- Apple `mediaway-encoder::apple` backend: `Packet::is_keyframe` was a `gop_size <= 1 ||
+  packet_index == 0` approximation, not real per-sample sync-frame detection. Now reads the
+  real `kCMSampleAttachmentKey_NotSync` attachment VideoToolbox sets on each encoded sample.
 
 ### Removed
 

@@ -7,7 +7,6 @@
 use std::collections::VecDeque;
 use std::ffi::c_void;
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::{EncodeError, VideoEncoder, VideoEncoderConfig, VideoInputPreference};
@@ -22,7 +21,8 @@ use objc2_core_foundation::{
 };
 use objc2_core_media::{
     CMFormatDescription, CMSampleBuffer, CMTime,
-    CMVideoFormatDescriptionGetH264ParameterSetAtIndex, kCMTimeIndefinite,
+    CMVideoFormatDescriptionGetH264ParameterSetAtIndex, kCMSampleAttachmentKey_NotSync,
+    kCMTimeIndefinite,
 };
 use objc2_core_video::{
     CVPixelBuffer, CVPixelBufferCreateWithPlanarBytes,
@@ -51,13 +51,6 @@ struct SharedState {
     /// [`VideoToolboxVideoEncoder::stream_info`] prefers this over `base_info` once present.
     finalized_info: OnceLock<StreamInfo>,
     base_info: StreamInfo,
-    /// `<= 1` means every emitted packet is treated as a keyframe (matches
-    /// `kVTCompressionPropertyKey_MaxKeyFrameInterval` requesting the same). For `> 1`, only
-    /// the session's first packet is — real per-packet sync-frame detection (reading the
-    /// `kCMSampleAttachmentKey_NotSync` attachment) is **deferred**, an explicit scope cut, not
-    /// a silent approximation — see ADR-0001 addendum in this module's doc comment.
-    gop_size: u32,
-    packet_count: AtomicU64,
     time_base_den: u32,
 }
 
@@ -78,7 +71,7 @@ pub(crate) struct VideoToolboxVideoEncoder {
 // SAFETY: `VTCompressionSession`/`CFRetained` are Core Foundation objects, which Apple documents
 // as safe to use from any thread as long as access is externally synchronized (this type's
 // `&mut self` API surface already enforces that for the Rust side); the only shared mutable
-// state reachable from another thread is `SharedState`, which uses `Mutex`/`OnceLock`/`AtomicU64`
+// state reachable from another thread is `SharedState`, which uses `Mutex`/`OnceLock`
 // internally.
 #[allow(
     clippy::non_send_fields_in_send_ty,
@@ -106,8 +99,6 @@ impl VideoToolboxVideoEncoder {
             pending: Mutex::new(VecDeque::new()),
             finalized_info: OnceLock::new(),
             base_info: stream_info_from(config),
-            gop_size: config.gop_size,
-            packet_count: AtomicU64::new(0),
             time_base_den: config.time_base.den,
         });
         // Extra strong count handed to VideoToolbox as the callback's `refCon` — reclaimed once
@@ -321,9 +312,7 @@ fn handle_output(shared: &SharedState, sample_buffer: &CMSampleBuffer) {
     let pts_cmtime = unsafe { sample_buffer.presentation_time_stamp() };
     let pts = cmtime_to_pts(pts_cmtime, shared.time_base_den);
 
-    let packet_index = shared.packet_count.fetch_add(1, Ordering::Relaxed);
-    // See `SharedState::gop_size`'s doc comment — deferred real sync-frame detection.
-    let is_keyframe = shared.gop_size <= 1 || packet_index == 0;
+    let is_keyframe = is_sync_sample(sample_buffer);
 
     let mut pending = shared
         .pending
@@ -338,6 +327,37 @@ fn handle_output(shared: &SharedState, sample_buffer: &CMSampleBuffer) {
         is_discard: false,
         payload: Bytes::from(payload),
     });
+}
+
+/// Real per-sample sync-frame (IDR) detection via `kCMSampleAttachmentKey_NotSync` — replaces
+/// the earlier `packet_index == 0` heuristic this ADR originally shipped with (see ADR-0001
+/// addendum). Per Apple's own documented convention: the key's **absence** from the sample's
+/// attachments dictionary means the sample **is** a sync sample (keyframe); presence with a
+/// `true` value means it is not. A missing attachments array or dictionary — which VideoToolbox
+/// documents as legal when there is nothing to attach — is therefore treated the same as an
+/// absent key: a sync sample, not silently treated as "not a keyframe."
+fn is_sync_sample(sample_buffer: &CMSampleBuffer) -> bool {
+    // SAFETY: `sample_buffer` is a valid, callback-scoped `CMSampleBuffer` reference;
+    // `create_if_necessary: false` never allocates or mutates, only reads an already-existing
+    // attachments array if VideoToolbox populated one for this sample.
+    let Some(attachments) = (unsafe { sample_buffer.sample_attachments_array(false) }) else {
+        return true;
+    };
+    // This backend only ever submits one sample per `CMSampleBuffer` (never a batch — see
+    // ADR-0001 § Session lifecycle), so the attachments array (one dictionary per sample) has
+    // at most one entry.
+    let Some(dict) = attachments.get(0) else {
+        return true;
+    };
+    // SAFETY: reading a real `extern "C"` static `CFString` singleton, valid for the process's
+    // lifetime — the same pattern this module already uses for `kCFBooleanTrue`/`False` above.
+    let key = unsafe { kCMSampleAttachmentKey_NotSync };
+    let Some(not_sync) = dict.get(key) else {
+        return true;
+    };
+    !not_sync
+        .downcast_ref::<CFBoolean>()
+        .is_some_and(CFBoolean::as_bool)
 }
 
 /// SPS/PPS → `avcC`, reusing the existing `iso_bmff::bitstream::avc::to_avcc` helper (already

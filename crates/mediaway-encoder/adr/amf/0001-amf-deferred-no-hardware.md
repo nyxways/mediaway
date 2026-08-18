@@ -1,6 +1,11 @@
 # ADR-0001: AMD AMF (`shiguredo_amf`) vendor encode — deferred, no implementation this stage
 
-- **Status**: Accepted (decision: **defer implementation**, research + placement recorded)
+- **Status**: Accepted (decision: **defer implementation**, research + placement recorded) —
+  **superseded/amended by [ADR-0002](0002-amf-linux-shiguredo-amf-h264-cpu-upload.md)**
+  (2026-08-18): the MSRV blocker is cleared (`docs/adr/0023-msrv-bump-1-96.md`) and the user has
+  directed proceeding despite prerequisite 3 (VA-API real-hardware-first) being consciously
+  waived. This ADR remains the historical record of the deferral decision and its research; it is
+  not deleted or rewritten. Read ADR-0002 for the current, accepted plan.
 - **Date**: 2026-07-29
 - **Deciders**: @dev-nyxie (+ agent)
 - **Crate**: `mediaway-encoder-amf` (proposed, **not yet a workspace member** — this `adr/`

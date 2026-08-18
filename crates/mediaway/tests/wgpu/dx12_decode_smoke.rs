@@ -39,16 +39,18 @@ use windows::core::Interface;
 
 #[test]
 fn wgpu_dx12_decode_bridge_constructs_on_same_adapter_or_skip() {
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::Backends::DX12,
-        ..Default::default()
+        ..wgpu::InstanceDescriptor::new_without_display_handle()
     });
 
     // Index 0 of wgpu's own DX12 adapter enumeration, matched below against DXGI's
     // `EnumAdapters1(0)` for the D3D11 side — mirrors
     // `d3d11_shared_decode_bridge_tests.rs::open_same_adapter_or_skip`'s "same explicit
     // adapter on both sides" approach, adapted since both bridge sides are caller-owned here.
-    let adapters = instance.enumerate_adapters(wgpu::Backends::DX12);
+    // `enumerate_adapters` became async in wgpu 30 (previously synchronous) — blocked on here,
+    // same `pollster` pairing this test already uses for `request_adapter`/`request_device`.
+    let adapters = pollster::block_on(instance.enumerate_adapters(wgpu::Backends::DX12));
     let Some(adapter) = adapters.into_iter().next() else {
         eprintln!("skip: no DX12 wgpu adapter enumerated");
         return;

@@ -25,13 +25,13 @@
 
 use mediaway_common::{GpuBufferHandle, GpuDeviceHandle, NativeHandle};
 use mediaway_encoder::EncodeError;
-// `windows_hal_interop` is the SAME `windows`-crate version (0.58.0) that
-// `wgpu_hal::dx12` itself depends on internally — required to name the exact
-// type `wgpu_hal::dx12::Device::raw_device`/`texture_from_raw` expect. This
-// crate's other windows-typed code (talking to `mediaway-encoder-windows`)
-// uses the ordinary (0.62) `windows` dependency instead — see Cargo.toml.
-use windows_hal_interop::Win32::Graphics::Direct3D12::{ID3D12Device, ID3D12Resource};
-use windows_hal_interop::core::Interface;
+// `wgpu-hal` 30.x pins the same `windows`/`windows-core` 0.62 line this
+// workspace already uses (unlike 26.x, which pinned 0.58 — see ADR-0001's
+// now-resolved "windows-rs version straddle" section), so no second,
+// separately-versioned `windows` dependency is needed to name
+// `wgpu_hal::dx12::Device::raw_device`/`texture_from_raw`'s types.
+use windows::Win32::Graphics::Direct3D12::{ID3D12Device, ID3D12Resource};
+use windows::core::Interface;
 
 use crate::wgpu::error::WgpuInteropError;
 
@@ -174,7 +174,10 @@ impl WgpuDx12Bridge {
         let submission_index = queue.submit(std::iter::once(encoder.finish()));
 
         device
-            .poll(wgpu::PollType::WaitForSubmissionIndex(submission_index))
+            .poll(wgpu::PollType::Wait {
+                submission_index: Some(submission_index),
+                timeout: None,
+            })
             .map_err(|_| WgpuInteropError::Bridge(EncodeError::Backend))?;
 
         Ok(self.bridge.as_dx11_handle()?)
@@ -214,7 +217,7 @@ fn wrap_bridge_resource(
     // `texture_from_raw` is an associated function on `dx12::Device` (not
     // `Texture` — it has no `&self` receiver either; it's a free constructor
     // namespaced under `Device`), confirmed against the vendored `wgpu-hal`
-    // 26.0.6 source (`src/dx12/device.rs`), not guessed from an older/newer
+    // 30.0.0 source (`src/dx12/device.rs`), not guessed from an older/newer
     // `wgpu` version's docs.
     let hal_texture = unsafe {
         wgpu::hal::dx12::Device::texture_from_raw(
@@ -241,9 +244,16 @@ fn wrap_bridge_resource(
     // whose owning `ID3D12Device` is the same one `device.as_hal::<Dx12>()`
     // returned in `WgpuDx12Bridge::new` (the bridge opened on that extracted
     // handle) — satisfying `create_texture_from_hal`'s "created from this
-    // device's internal handle" contract.
+    // device's internal handle" contract. `initial_state: UNINITIALIZED` per
+    // wgpu 30's own doc guidance for a not-yet-initialized resource — this
+    // texture's contents are set by `copy_frame`'s `copy_texture_to_texture`
+    // after wrapping, never read before that first copy.
     let wgpu_texture = unsafe {
-        device.create_texture_from_hal::<wgpu::hal::api::Dx12>(hal_texture, &texture_desc)
+        device.create_texture_from_hal::<wgpu::hal::api::Dx12>(
+            hal_texture,
+            &texture_desc,
+            wgpu::TextureUses::UNINITIALIZED,
+        )
     };
     Ok(wgpu_texture)
 }

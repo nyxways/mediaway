@@ -20,24 +20,19 @@ use mediaway_common::{
     GpuBufferHandle, GpuDeviceHandle, NativeHandle, PixelFormat, VideoFrame, VideoFrameStorage,
 };
 use mediaway_decoder::windows::D3d11SharedDecodeBridge;
-// Same `windows`-crate 0.58 straddle `dx12.rs` already documents: `wgpu_hal::dx12` pins its
-// own `windows`/`windows-core` dependency to 0.58, incompatible as a Rust *type* with this
-// workspace's ordinary `windows = "0.62"` even though both model the same COM interface.
-// `windows-hal-interop` exists only to name types at the exact version `wgpu_hal::dx12`
-// expects; never used to talk to `mediaway-decoder-windows` (which stays on 0.62 — see its
-// own `D3d11SharedDecodeBridge::d3d12_resource_handle`, whose returned `NativeHandle` is
-// opaque raw pointer bits, ABI-compatible across `windows`-crate versions for the same COM
-// interface, exactly like `dx12.rs`'s own `wrap_bridge_resource` already relies on).
-use windows_hal_interop::Win32::Graphics::Direct3D12::{ID3D12Device, ID3D12Resource};
-use windows_hal_interop::core::Interface;
+// `wgpu-hal` 30.x pins the same `windows`/`windows-core` 0.62 line this workspace already
+// uses (unlike 26.x, which pinned 0.58 — see `dx12.rs`'s now-resolved straddle note and
+// ADR-0001), so no second, separately-versioned `windows` dependency is needed here either.
+use windows::Win32::Graphics::Direct3D12::{ID3D12Device, ID3D12Resource};
+use windows::core::Interface;
 
 use crate::wgpu::error::WgpuInteropError;
 
 /// NV12, matching Windows decode output's `PixelFormat::Nv12` (WMF DX11 Zero-Copy, see
 /// `mediaway-decoder-windows` ADR-0001).
 ///
-/// Confirmed against the pinned `wgpu-types` 26.0.0 source this workspace's `Cargo.lock`
-/// resolves `wgpu = "26.0"` to (`wgpu::TextureFormat::NV12` exists exactly as named, two
+/// Confirmed against the pinned `wgpu-types` 30.0.0 source this workspace's `Cargo.lock`
+/// resolves `wgpu = "30.0"` to (`wgpu::TextureFormat::NV12` exists exactly as named, two
 /// planes: `R8Unorm` luminance + `Rg8Unorm` chrominance at half width/height) — this ADR's
 /// own residual risk #1 is resolved, not left as an assumption.
 ///
@@ -210,7 +205,7 @@ fn wrap_bridge_resource(
     // (matching `DECODE_BRIDGE_FORMAT`), `width`x`height` texture `D3d11SharedDecodeBridge::open`
     // allocates on D3D11 and opens on D3D12 — the size/format arguments below describe that
     // same shape, not an assumption. `texture_from_raw` is an associated function on
-    // `dx12::Device` (confirmed against the vendored `wgpu-hal` 26.0.6 source,
+    // `dx12::Device` (confirmed against the vendored `wgpu-hal` 30.0.0 source,
     // `src/dx12/device.rs`), the same call `WgpuDx12Bridge::wrap_bridge_resource` already uses
     // and this workspace hardware-verified for the encode direction.
     let hal_texture = unsafe {
@@ -244,9 +239,14 @@ fn wrap_bridge_resource(
     // same one `device.as_hal::<Dx12>()` returned in `WgpuDx12DecodeBridge::new` (the
     // companion `D3d11SharedDecodeBridge` opened its shared handle on that extracted handle)
     // — satisfying `create_texture_from_hal`'s "created from this device's internal handle"
-    // contract.
+    // contract. `initial_state: UNINITIALIZED` per wgpu 30's own doc guidance — this texture's
+    // contents are set by the first `import_decoded_texture` copy, never read before that.
     let wgpu_texture = unsafe {
-        device.create_texture_from_hal::<wgpu::hal::api::Dx12>(hal_texture, &texture_desc)
+        device.create_texture_from_hal::<wgpu::hal::api::Dx12>(
+            hal_texture,
+            &texture_desc,
+            wgpu::TextureUses::UNINITIALIZED,
+        )
     };
     Ok(wgpu_texture)
 }

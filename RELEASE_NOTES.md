@@ -62,6 +62,14 @@
 
 ### Changed
 
+- `mediaway`'s `wgpu` dependency bumped from 26.x to 30.x (workspace MSRV now 1.96 clears
+  30.x's rustc floor). Fixed six real breaking-API changes in the DX12 HAL escape-hatch bridges
+  (`create_texture_from_hal`'s new `initial_state` parameter, `PollType::Wait`'s new struct
+  shape, `Instance::new`/`InstanceDescriptor`/`enumerate_adapters` signature changes) and
+  removed the `windows-hal-interop` 0.58 straddle dependency entirely, since `wgpu-hal` 30.x now
+  pins the same `windows` 0.62 line this workspace already uses. Real-hardware re-verified
+  (RTX 4090): the DX12→D3D11 decode-import bridge tests actually ran (not skipped), including a
+  byte-exact NV12 pixel round trip. See `crates/mediaway/adr/wgpu/0004-wgpu-30-upgrade.md`.
 - Windows `WindowsScreenCapture`: shared (multi-consumer) sessions now fan out each frame via a
   fixed-depth ring of GPU textures any number of caught-up consumers share through cheap `Arc`
   clones, replacing the previous one-`CopyResource`-per-attached-consumer design — a straggling

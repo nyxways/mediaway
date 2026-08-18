@@ -46,6 +46,16 @@
 //! `auto_open_gpu_copy_via_d3d12_bridge_or_skip` test (same skip reason, same
 //! machine), not a bug introduced by this bridge.
 //!
+//! ## `wgpu` 26.x → 30.x upgrade, re-verified (2026-08-18)
+//!
+//! Bumped from `wgpu` 26.x to 30.x ([ADR-0004](https://github.com/nyxways/mediaway/blob/main/crates/mediaway/adr/wgpu/0004-wgpu-30-upgrade.md)) —
+//! six real breaking-API changes fixed (the `windows`-crate straddle from § Hardware-verified
+//! above is now resolved as a side effect: `wgpu-hal` 30.x pins the same `windows` 0.62 line
+//! this workspace already uses). Re-verified on the same reference machine: both DX12→D3D11
+//! decode-bridge tests actually ran against real hardware (not skipped) — a real byte-exact
+//! NV12 pixel round trip, and a real same-adapter device pairing. The encode bridge test skips
+//! for the exact same pre-existing reason as under 26.x.
+//!
 //! ## Stage 5 — Windows decode output → `wgpu::Texture` import ([`WgpuDx12DecodeBridge`])
 //!
 //! The reverse direction of Stage 1: WMF DX11 Zero-Copy decode output

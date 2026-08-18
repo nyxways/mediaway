@@ -89,6 +89,10 @@
 - Android `mediaway-encoder::android` backend: `AMediaFormat`'s `i-frame-interval` (seconds
   between key frames) was hardcoded to `0` instead of being computed from
   `VideoEncoderConfig::gop_size`.
+- Android `mediaway-encoder::android` backend: `StreamInfo::extra_data` (SPS/PPS `avcC`) was
+  never populated — always empty, even though `AMediaCodec` delivers `csd-0`/`csd-1` via a
+  `BUFFER_FLAG_CODEC_CONFIG` output buffer before the first frame. Now captured and converted
+  to `avcC`.
 
 ### Removed
 

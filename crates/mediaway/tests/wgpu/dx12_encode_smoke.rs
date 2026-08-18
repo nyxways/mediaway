@@ -59,9 +59,9 @@ fn has_annex_b_nal(payload: &[u8], nal_type: u8) -> bool {
 
 #[test]
 fn wgpu_dx12_bridge_encodes_h264_or_skip() {
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::Backends::DX12,
-        ..Default::default()
+        ..wgpu::InstanceDescriptor::new_without_display_handle()
     });
     let adapter =
         match pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))

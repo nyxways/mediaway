@@ -152,15 +152,13 @@ nvenc = "0.1"
 # with default-features = false. See crates/mediaway-sw/adr/0002-rav1e-av1-encode.md.
 rav1e = { version = "0.8", default-features = false }
 # GPU framework interop (mediaway-wgpu — Stage 1: Windows DX12 HAL bridge).
-# MIT OR Apache-2.0. Pinned to the 26.x minor, not latest. 30.x's rustc floor
-# (1.93) now fits under this workspace's rust-version = "1.96" pin (see
-# ADR-0023), but upgrading past 26.x is a separate, deliberate dependency
-# decision (docs/conventions/deps-policy.md), not done here. Base entry
-# carries no backend feature (types compile everywhere);
-# platform crates add their own backend (`dx12`, later `vulkan`/`metal`) via
-# target-cfg'd deps.
-# See crates/mediaway-wgpu/adr/0001-dx12-hal-gpucopy-bridge.md.
-wgpu = { version = "26.0", default-features = false, features = ["std"] }
+# MIT OR Apache-2.0. Bumped from 26.x to 30.x now that workspace rust-version
+# = "1.96" (ADR-0023) clears 30.x's rustc floor (1.93). Base entry carries no
+# backend feature (types compile everywhere); platform crates add their own
+# backend (`dx12`, later `vulkan`/`metal`) via target-cfg'd deps.
+# See crates/mediaway/adr/wgpu/0001-dx12-hal-gpucopy-bridge.md and
+# crates/mediaway/adr/wgpu/0004-wgpu-30-upgrade.md.
+wgpu = { version = "30.0", default-features = false, features = ["std"] }
 # Blocks on wgpu's async adapter/device requests inside sync `#[test]` fns —
 # standard wgpu-ecosystem pairing (mediaway-wgpu tests only). MIT OR Apache-2.0.
 pollster = "0.4"

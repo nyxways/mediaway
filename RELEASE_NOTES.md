@@ -65,6 +65,15 @@
   `crates/mediaway-device/adr/apple/0001-avfoundation-camera-capture.md`,
   `0002-avaudioengine-microphone-capture.md`, `0003-screencapturekit-macos-screen-capture.md`,
   `0004-replaykit-ios-inapp-screen-capture.md`.
+- `mediaway-encoder::web`: generalized the WebGPU-canvas GPU-surface encode path from
+  hardcoded H.264 to HEVC/AV1/VP9 (`is_webgpu_video_codec_supported`,
+  `encode_video_frame_from_webgpu_canvas`, `webcodecs_gpu_video_fmp4_smoke_with_codec`), plus a
+  new WebCodecs-codec-string → `iso_bmff::Codec` mapper for fMP4 muxing. Existing zero-arg
+  H.264 entry points (`is_webgpu_video_frame_supported`, `webcodecs_gpu_video_fmp4_smoke`) are
+  kept as thin wrappers. `wasm32` compile-verified only — no real browser runtime available in
+  this environment; HEVC's Annex-B-vs-length-prefixed NAL framing for `iso-bmff`'s `hvc1`
+  sample entry is explicitly unverified. See
+  `crates/mediaway-encoder/adr/web/0001-webgpu-multi-codec-video-encode.md`.
 
 ### Changed
 

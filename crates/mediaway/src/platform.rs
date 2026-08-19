@@ -123,12 +123,13 @@ pub fn encoder_support(codec: CodecKind) -> Vec<EncoderCapability> {
     #[cfg(any(target_os = "macos", target_os = "ios"))]
     {
         if codec == CodecKind::Opus {
-            // No inbox VideoToolbox/AudioToolbox Opus encoder exists — same Software fallback
-            // Windows uses for the identical reason. Probe it live.
+            // Native AudioConverter Opus encoder (ADR-0005) — probe it live, same cost
+            // trade-off as every other probe here.
             use mediaway_common::{Rational, SampleFormat};
+            use mediaway_encoder::apple::AppleAudioEncoder;
             use mediaway_encoder::auto::{Backend, EncodePathClass};
             use mediaway_encoder::capability::{EncodeSupport, EncodeUnavailable};
-            use mediaway_encoder::{AudioEncoderConfig, EncodeError, SwOpusAudioEncoder};
+            use mediaway_encoder::{AudioEncoderConfig, EncodeError};
             let cfg = AudioEncoderConfig {
                 codec,
                 sample_rate: 48_000,
@@ -137,14 +138,17 @@ pub fn encoder_support(codec: CodecKind) -> Vec<EncoderCapability> {
                 time_base: Rational::new(1, 50),
                 bitrate_bps: 0,
             };
-            let support = match SwOpusAudioEncoder::open(&cfg) {
-                Ok(_) => EncodeSupport::Supported(EncodePathClass::Software),
+            let support = match AppleAudioEncoder::open(&cfg) {
+                // Native `AudioConverter` session, no GPU handle involved — closest fit among
+                // `EncodePathClass`'s video-shaped variants is `CpuUpload` (CPU-resident data
+                // fed to an OS encoder), same category the Windows WMF AAC path would report.
+                Ok(_) => EncodeSupport::Supported(EncodePathClass::CpuUpload),
                 Err(EncodeError::Backend) => {
                     EncodeSupport::Unavailable(EncodeUnavailable::NoDevice)
                 }
                 Err(_) => EncodeSupport::Unavailable(EncodeUnavailable::NotImplemented),
             };
-            return vec![EncoderCapability::new(Backend::Software, support)];
+            return vec![EncoderCapability::new(Backend::Os, support)];
         }
         let _ = codec;
         Vec::new()
@@ -259,12 +263,11 @@ pub fn decoder_support(codec: CodecKind) -> DecodeSupport {
     {
         use mediaway_decoder::apple::AppleVideoDecoder;
         if codec == CodecKind::Opus {
-            // No inbox VideoToolbox/AudioToolbox Opus decoder exists — same Software fallback
-            // Windows' WMF Opus branch reaches for. Probe it live.
-            use mediaway_decoder::SwOpusAudioDecoder;
-            use mediaway_sw::opus::config::OpusDecoderConfig;
+            // Native AudioConverter Opus decoder (ADR-0005) — probe it live, same cost
+            // trade-off as every other probe here.
+            use mediaway_decoder::apple::{OpusDecoder, OpusDecoderConfig};
             let cfg = OpusDecoderConfig::new(48_000, 2, mediaway_common::Rational::new(1, 50));
-            return match SwOpusAudioDecoder::open(&cfg) {
+            return match OpusDecoder::open(&cfg) {
                 Ok(_) => DecodeSupport::Supported,
                 Err(_) => DecodeSupport::Unavailable(DecodeUnavailable::NoDevice),
             };

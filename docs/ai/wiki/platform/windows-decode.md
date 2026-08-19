@@ -76,7 +76,8 @@ two real bugs, both fixed — both tests un-`#[ignore]`d:
   directly; callers must release promptly or get a backpressure error (FFmpeg hwaccel
   surface-pool model), never a silent overwrite.
 - ADR: [0002](../../../../crates/mediaway-decoder/adr/windows/0002-d3d12-native-video-decode.md)
-  (2026-07-30 addendum has the full hang-debugging trail).
+  (2026-07-30 addendum has the full hang-debugging trail). HEVC: parallel `hevc*.rs` files,
+  sans-io-verified only, zero hardware run — [details](windows-decode-d3d12-hevc.md) (ADR-0004).
 
 ## wgpu decode interop bridge (implemented — ADR-0003)
 

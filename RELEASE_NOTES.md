@@ -65,6 +65,13 @@
   `crates/mediaway-device/adr/apple/0001-avfoundation-camera-capture.md`,
   `0002-avaudioengine-microphone-capture.md`, `0003-screencapturekit-macos-screen-capture.md`,
   `0004-replaykit-ios-inapp-screen-capture.md`.
+- `mediaway-decoder::windows`: D3D12 native HEVC decode (`d3d12_video_decode` module, still
+  unregistered), single-forward-reference P-slice + I/IDR, Main profile, 8-bit 4:2:0, parallel
+  to the existing H.264 path (new `hevc*.rs` files only, no edits to H.264's own still-unresolved
+  GPU-hang baseline). Sans-io-verified only — 42 new unit tests plus `cargo check`/`clippy`
+  clean; **zero real GPU hardware verification, deliberately**, given a confirmed, repeatedly
+  reproduced D3D12 decode TDR on this workspace's own H.264 path. See
+  `crates/mediaway-decoder/adr/windows/0004-d3d12-hevc-single-forward-ref-p-slice-decode.md`.
 
 ### Changed
 

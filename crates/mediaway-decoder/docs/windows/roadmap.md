@@ -192,7 +192,35 @@ honestly (`DecodeError::Unsupported` from `open_sw_decoder`, no fabricated fallb
       parsing should become a shared sans-io crate (overlaps with
       `mediaway-decoder-linux`'s VA-API needs); no POC-based display-order reorder
       ("bumping") buffer yet — output is in decode order.
-- [ ] HEVC, AV1 — not started; separate follow-up tasks per ADR-0002.
+- [x] **HEVC implemented, sans-io-verified only** ([ADR-0004](../adr/windows/0004-d3d12-hevc-single-forward-ref-p-slice-decode.md)):
+      single-forward-reference P-slice + I/IDR, Main profile, 8-bit 4:2:0, single-tile/
+      no-WPP. New files only under `src/windows/d3d12_video_decode/`: `hevc.rs` (open-time
+      support query), `hevc_vps_sps_pps.rs` (SPS/PPS + 2-byte NAL header parse — no VPS
+      parsing needed, `DXVA_PicParams_HEVC` has no profile/tier/level field at all, so
+      `profile_tier_level()`'s bits are skipped, not decoded, and there is no `hevc_ptl.rs`
+      submodule), `hevc_slice.rs` (slice-segment-header + short-term RPS, ported from
+      `crate::vulkan::hevc_slice`, extended with `num_ref_idx_l0_active == 1` +
+      `NumPicTotalCurr == 1` scope checks the Vulkan source never needed), `hevc_poc.rs`
+      (POC, genuinely new — no HEVC MSB-cycle tracking existed anywhere in this workspace),
+      `hevc_refs.rs` (RPS-application DPB eviction + `RefPicList`/`RefPicSetStCurrBefore`/
+      `After` construction, also new), `hevc_pic_params.rs` (hand-defined DXVA structs,
+      ground-truthed against the Wine `dxva.h` mirror, same absent-from-`windows`-crate
+      situation H.264 hit), `hevc_ops.rs`/`hevc_decoder.rs` (parallel to `ops.rs`/the
+      top-level `Session`/`D3d12VideoDecoder` — real, acknowledged duplication, deliberate
+      per ADR-0004 to avoid touching H.264's still-unresolved-hang baseline files).
+      `dpb.rs`/`setup.rs`/`util.rs` reused unchanged, confirming ADR-0004's own claim they
+      were already codec-generic. 42 new sans-io unit tests pass (SPS/PPS parsing, slice/RPS
+      parsing incl. the single-forward-reference rejections, POC MSB-wrap, DPB eviction,
+      DXVA struct packing); `cargo check`/`clippy --all-targets -- -D warnings` clean.
+      **Zero real hardware verification, deliberately** — the new hardware-gated
+      integration test (`d3d12_video_decode_hevc_tests.rs`, same `..._or_skip` soft-skip
+      convention as the H.264 one) is written and compiles but was never run: real GPU-hang
+      risk on completely unverified code, compounding the still-unresolved H.264 D3D12
+      decode TDR (see above). `RefPicSetStCurrBefore`/`After` index semantics
+      (byte-indices into `RefPicList[15]`, ADR-0004's own believed-not-confirmed
+      assumption) and the exact `DXVA_PicParams_HEVC` union layout past the first
+      coding-flags union remain unconfirmed against a primary source (`libavcodec/
+      dxva2_hevc.c`) — first tasks before any real hardware attempt. AV1 — still not started.
 - [ ] Integration pass: make the module `pub`, wire into `WindowsVideoDecoder`'s
       `Backend` dispatch, decide the `GpuBufferHandle`/`DecodeError` cross-crate
       questions above.

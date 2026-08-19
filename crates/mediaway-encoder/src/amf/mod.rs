@@ -1,9 +1,10 @@
 //! AMD AMF encode backend (`shiguredo_amf`, Linux `x86_64` only).
 //!
-//! - [`VideoInputPreference::CpuUploadOk`](crate::VideoInputPreference): H.264
+//! - [`VideoInputPreference::CpuUploadOk`](crate::VideoInputPreference): H.264 / HEVC / AV1
 //!   CPU NV12 upload (`Surface::get_plane` raw-pointer write) — a genuine
 //!   CPU→driver copy, matching every other Stage-1 backend's `upload_cpu_nv12`
-//!   cost-disclosure convention.
+//!   cost-disclosure convention. VP9 is unsupported — `shiguredo_amf` has no `CodecConfig`
+//!   variant for it (see `adr/amf/0003`).
 //! - [`VideoInputPreference::ZeroCopyGpu`](crate::VideoInputPreference::ZeroCopyGpu):
 //!   not implemented — returns [`EncodeError::Unsupported`]. No GPU-surface-import
 //!   type is confirmed to exist in `shiguredo_amf` at all (see this crate's
@@ -17,7 +18,8 @@
 //!
 //! Policy: [ADR-0001](../adr/amf/0001-amf-deferred-no-hardware.md) (research, deferred),
 //! [ADR-0002](../adr/amf/0002-amf-linux-shiguredo-amf-h264-cpu-upload.md) (accepted design +
-//! this implementation) — binding choice (`shiguredo_amf`, never `amf-rs`), scope, the
+//! H.264 implementation), [ADR-0003](../adr/amf/0003-amf-linux-hevc-av1-codec-dispatch.md)
+//! (HEVC/AV1 codec dispatch) — binding choice (`shiguredo_amf`, never `amf-rs`), scope, the
 //! callback→poll bridge design, and the **zero real-hardware verification** caveat for this
 //! backend as authored (compile-verified on Linux `x86_64` only via WSL2 — no AMD GPU/driver
 //! exists anywhere in this workspace's sessions). Read that caveat before relying on this
@@ -34,8 +36,8 @@ use mediaway_common::{Bytes, Packet, StreamInfo};
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod linux;
 
-/// AMD AMF video encode session (`shiguredo_amf` H.264 CPU-upload when opened on Linux
-/// `x86_64`).
+/// AMD AMF video encode session (`shiguredo_amf` H.264/HEVC/AV1 CPU-upload when opened on
+/// Linux `x86_64`).
 pub struct AmfVideoEncoder {
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     inner: Option<linux::AmfSession>,
@@ -49,9 +51,10 @@ impl AmfVideoEncoder {
     /// # Errors
     ///
     /// Returns [`EncodeError::Unsupported`] when the codec/input path is not wired
-    /// (currently: anything but H.264 + [`VideoInputPreference::CpuUploadOk`]), or
-    /// [`EncodeError::Backend`] when no AMD AMF runtime/driver is available (expected in
-    /// any environment without a real AMD GPU + driver — see `adr/amf/0002`).
+    /// (currently: anything but H.264/HEVC/AV1 + [`VideoInputPreference::CpuUploadOk`] — VP9
+    /// stays unsupported, see `adr/amf/0003`), or [`EncodeError::Backend`] when no AMD AMF
+    /// runtime/driver is available (expected in any environment without a real AMD GPU +
+    /// driver — see `adr/amf/0002`).
     ///
     /// [`VideoInputPreference::CpuUploadOk`]: crate::VideoInputPreference::CpuUploadOk
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]

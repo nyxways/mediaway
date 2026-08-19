@@ -29,6 +29,14 @@
   against real crate source) — **zero real AMD GPU/driver hardware verification** (none
   available in this workspace). Not wired into `auto`/`capability` yet. See
   `crates/mediaway-encoder/adr/amf/0002-amf-linux-shiguredo-amf-h264-cpu-upload.md`.
+- `mediaway-encoder::amf`: extended the H.264-only backend above to also accept HEVC and AV1 —
+  `shiguredo_amf`'s own `CodecConfig` already has first-class `Hevc`/`Av1` variants, so this is
+  a codec-dispatch widening, not new plumbing. VP9 stays unsupported (`shiguredo_amf` has no
+  VP9 `CodecConfig` variant — the dependency's real ceiling, not a Mediaway restriction). Also
+  fixes a latent `stream_info_from` bug that would have mislabeled HEVC/AV1 streams as H.264.
+  Same WSL2 compile/clippy/test verification, **zero real AMD GPU/driver hardware
+  verification** as the H.264 path above. See
+  `crates/mediaway-encoder/adr/amf/0003-amf-linux-hevc-av1-codec-dispatch.md`.
 - `mediaway-encoder::android`: first Android backend (NDK `AMediaCodec` via the `ndk` crate),
   H.264 CPU-upload encode only. Zero compile verification as authored (no Android NDK in the
   dev environment) — a new CI job compiles/lints it against a real NDK before it is trusted;

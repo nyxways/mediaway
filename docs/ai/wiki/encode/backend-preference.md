@@ -84,13 +84,13 @@ shape was replaced (capability probe, `AutoHardwareOnly`, ceiling-not-bitflags).
   CPU-upload encode on an Intel UHD 770 (new `vpl-sys` binding). AV1
   encode confirmed genuinely unsupported on this iGPU generation (`MFX_ERR_UNSUPPORTED`
   from `MFXVideoENCODE_Query`, not a bindings gap). See adr/0001's 2026-07-29 addenda.
-- **AMF** → `mediaway-encoder::amf` adr/0002 (**Accepted, implemented** — supersedes
-  adr/0001's deferral now MSRV is 1.96): H.264 CPU-upload, `Encoder`/`EncodeHandler`
-  callback→poll bridge (`Arc<Mutex<VecDeque<_>>>` — `EncodeHandler: Send + 'static`,
-  callback runs on `shiguredo_amf`'s own worker thread), `alloc_surface`-then-
-  `encode`, not `IMFTransform`-like as adr/0001 guessed. `x86_64`-Linux-only;
-  `amf-rs` is still the unrelated GPL-3.0 decoy, not depended on. Compile-verified
-  for real on Linux `x86_64` via WSL2; not wired into `auto`. No AMD GPU — 🆗, not ✅.
+- **AMF** → `mediaway-encoder::amf` adr/0002 + adr/0003 (both **Accepted, implemented**,
+  MSRV 1.96): H.264/HEVC/AV1 CPU-upload — HEVC/AV1 (adr/0003) just `match`-widen onto
+  `shiguredo_amf`'s own `Hevc`/`Av1` `CodecConfig` variants; VP9 stays unsupported (no such
+  variant exists). `Encoder`/`EncodeHandler` callback→poll bridge (`Arc<Mutex<VecDeque<_>>>` —
+  `Send + 'static`, callback on `shiguredo_amf`'s own worker thread), `alloc_surface`-then-
+  `encode`. `x86_64`-Linux-only; `amf-rs` is the unrelated GPL-3.0 decoy. Compile-verified via
+  WSL2; not wired into `auto`. No AMD GPU — 🆗, not ✅.
 - **Vulkan Video** doesn't fit `GraphicsApi` or `VendorHw` cleanly — it's
   cross-vendor (unlike `VendorHw`) but packaged like a vendor crate
   (`mediaway-encoder::vulkan`, cross-OS unlike `GraphicsApi`'s current

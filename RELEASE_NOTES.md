@@ -8,6 +8,15 @@
 
 ### Added
 
+- `mediaway-encoder::apple`: AAC-LC encode via `AudioToolbox`'s `AudioConverter`
+  (`AppleAudioEncoder`, `Aac`/`Opus` dispatch, mirrors `WindowsAudioEncoder`'s shape). Float32
+  PCM input only, no conversion needed (unlike the Windows WMF backend, which downconverts to
+  S16). `mediaway-decoder::apple`: AAC-LC decode via the same `AudioConverter` API — **the first
+  AAC decoder in this workspace at all**, requires a container-supplied `AudioSpecificConfig` at
+  `open()`. Neither wired into `mediaway::platform` (matches existing Windows audio-backend
+  scope). **Zero compile verification as authored**. See
+  `crates/mediaway-encoder/adr/apple/0004-audiotoolbox-aac-encode.md` and
+  `crates/mediaway-decoder/adr/apple/0004-audiotoolbox-aac-decode.md`.
 - `mediaway-encoder::apple`/`mediaway-decoder::apple`: real Zero-Copy `GpuBufferHandle::Metal`
   support. Encode input (`VideoInputPreference::ZeroCopyGpu`) borrows the caller's `CVPixelBuffer`
   directly for one `encode_frame` call — no retain/release. Decode output

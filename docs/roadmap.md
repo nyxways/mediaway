@@ -199,6 +199,20 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
       video). **Zero compile verification as authored**; see
       `mediaway-encoder/adr/apple/0003-videotoolbox-metal-zero-copy-encode.md` and
       `mediaway-decoder/adr/apple/0003-videotoolbox-metal-zero-copy-decode.md`.
+- [x] **Apple AAC (`AudioToolbox` `AudioConverter`)**: `mediaway-encoder::apple` gains
+      `AacEncoder` (Float32 PCM in, no conversion needed — a real quality win over Windows' own
+      F32→S16 downconvert) and `AppleAudioEncoder` (`Aac`/`Opus` dispatch, mirrors
+      `WindowsAudioEncoder`'s `AudioBackend` shape). `mediaway-decoder::apple` gains `AacDecoder` —
+      **the first AAC decoder in this whole workspace**, ahead of Windows (which only ever had an
+      encoder). `AudioConverterFillComplexBuffer` is pull-based and fully synchronous (confirmed
+      from its own doc comment) — unlike every `VideoToolbox` backend, no cross-thread
+      synchronization is needed anywhere in either backend. Both require raw (non-ADTS)
+      `AudioSpecificConfig`-bearing streams; decode requires the ASC supplied at `open()` (no
+      in-band discovery, mirroring the VP9/AV1 video-decode precedent). Neither wired into
+      `mediaway::platform` (matches `WindowsAudioEncoder`/`WmfOpusDecoder`'s own existing scope,
+      not a new gap). **Zero compile verification as authored**; see
+      `mediaway-encoder/adr/apple/0004-audiotoolbox-aac-encode.md` and
+      `mediaway-decoder/adr/apple/0004-audiotoolbox-aac-decode.md`.
 
 ### 3. Media Containers, Protocols & Image Formats
 - [ ] **Static Image Containers & Codecs**: Expand facade traits and container cores to support image formats (**AVIF**, **HEIC**, **WebP**, **PNG**, **JPEG**, **GIF**).

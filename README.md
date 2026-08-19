@@ -264,7 +264,7 @@ OS codec APIs (WMF, WebCodecs, VA-API, …) fed with CPU buffers (upload may app
 | AV1          | 🛠️ / ✅ | ✅      | ❌ / 🆗 | ❌ / 🆗 | 👻      |
 | VP9          | ✅ / ✅ | ✅      | 🆗 / 🆗 | ❌ / 🆗 | 👻      |
 | ProRes       | 👻       | 👻       | 👻    | 👻    | 👻      |
-| AAC          | 🆗       | 🆗       | 🛠️   | 👻    | 👻      |
+| AAC          | 🆗 / 👻 | 🆗       | 🛠️   | 🆗 / 🆗 | 👻      |
 | Opus         | ✅ / ✅ | 🆗      | 🛠️   | 👻    | 👻      |
 
 Detail: backends live as `#[cfg]`-gated modules — `mediaway-decoder::{windows, web, linux}`, `mediaway-encoder::{windows, web, linux}`.

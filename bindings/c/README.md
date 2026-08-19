@@ -46,8 +46,7 @@ A streaming-first media stack. The C surface currently covers three capabilities
    `mediaway_gpu_device_handle_t` into `mediaway_desktop_capture_config_screen()`.
    `mediaway_gpu_adapter_list()` enumerates every adapter DXGI reports for a caller
    that wants to pick explicitly. A Window-kind config still returns
-   `MEDIAWAY_DEVICE_STATUS_UNSUPPORTED` (real, documented behavior — the
-   device ABI is domain-split, `adr/0004-domain-feature-split.md`).
+   `MEDIAWAY_DEVICE_STATUS_UNSUPPORTED` (not yet implemented).
 
 ## The real ABI (what examples must call)
 
@@ -103,18 +102,14 @@ file must state what is real vs. aspirational.
 |---|---|---|
 | `container/mux_roundtrip.c` | container mux + demux roundtrip (90 video + 90 audio fake packets → fMP4 → demux back) | ✅ link+run verified |
 | `pipeline/encode_to_mp4.c` | auto H.264 encode of 90 synthetic NV12 frames → `out.mp4` bytes | ✅ link+run verified |
-| `pipeline/encode_audio.c` | auto AAC encode of 96 synthetic F32 stereo frames → audio-only fMP4 (ABI v2) | ✅ link+run verified (96 packets → 27385 bytes fMP4) |
-| `device/camera_record.c` | camera + mic capture → H.264 + AAC → ONE two-track MP4 (remuxed; audio track registered with the encoder's AudioSpecificConfig) | ✅ link+run verified on real hardware (90 frames + 263 AAC packets → ~630 KB two-track fMP4); video-only fallback without mic/audio backend |
+| `pipeline/encode_audio.c` | auto AAC encode of 96 synthetic F32 stereo frames → audio-only fMP4 (ABI v2) | ✅ link+run verified |
+| `device/camera_record.c` | camera + mic capture → H.264 + AAC → ONE two-track MP4 (remuxed; audio track registered with the encoder's AudioSpecificConfig) | ✅ link+run verified on real hardware; video-only fallback without mic/audio backend |
 | `device/capture_microphone.c` | microphone capture, raw PCM (no encode) | ✅ link+run verified (real mic) |
-| `pipeline/screen_record.c` | GPU device factory → screen + mic capture → encode (bridge) → MP4 | ✅ link+run verified on real hardware (GPU device create + real 1920x1080 screen capture + real mic; GPU-input H.264 encode gracefully skips on this dev machine's current encoder/driver — same known gap as `gpu_write_frame_smoke.rs`) |
-| `device/capture_screen.c` | GPU device factory → screen capture only | ✅ link+run verified on real hardware (5 real 1920x1080 frames polled) |
+| `pipeline/screen_record.c` | GPU device factory → screen + mic capture → encode (bridge) → MP4 | ✅ link+run verified on real hardware (GPU-input H.264 encode gracefully skips on this dev machine's current encoder/driver — a known limitation, not a bug) |
+| `device/capture_screen.c` | GPU device factory → screen capture only | ✅ link+run verified on real hardware |
 
 No C example exercises Ogg/ADTS/FLV/MPEG-TS/MP3/WAV/WebM yet — `mux_roundtrip.c` covers
-MP4 only. The other 7 formats are exercised by `crates/mediaway-ffi/tests/*.rs`
-(`ogg_adts_container_smoke.rs`, `flv_container_smoke.rs`, `wav_container_smoke.rs`, ...)
-and by the C++/C#/Python/Node bindings' own `all_formats_smoke.*` examples/tests, which
-reuse the same byte patterns against this same header. Adding a C-native smoke example is
-open follow-up work.
+MP4 only. Those formats are covered by the C++/C#/Python/Node bindings' examples instead.
 
 ## Rules
 
@@ -137,31 +132,3 @@ gcc -Icrates/mediaway-ffi/include bindings/c/examples/container/mux_roundtrip.c 
 ```
 
 The DLLs must sit next to the `.exe` when running (MinGW cannot link MSVC output).
-
-## Testing
-
-The RC-stage binding check compiles the real round-trip example and links it
-against the release-built native DLL, then runs it end to end. One command:
-
-```
-bash bindings/c/tests/run-roundtrip.sh
-```
-
-What the script does (see `tests/run-roundtrip.sh`):
-
-1. Resolves `MEDIAWAY_NATIVE_DIR` — the directory holding `mediaway_ffi.dll`
-   and its MinGW import lib `libmediaway_ffi.dll.a`. Defaults to
-   `bindings/native/runtime/win-x64` (the `native-dlls` release artifact);
-   override with `MEDIAWAY_NATIVE_DIR=/path/to/dir` to point at a locally
-   built `target/x86_64-pc-windows-gnu/{debug,release}` dir instead.
-2. Compiles `examples/container/mux_roundtrip.c` against
-   `crates/mediaway-ffi/include` and links it to the DLL:
-   `gcc -Icrates/mediaway-ffi/include bindings/c/examples/container/mux_roundtrip.c -L"$MEDIAWAY_NATIVE_DIR" -lmediaway_ffi -o roundtrip.exe`.
-3. Runs the exe with `PATH="$MEDIAWAY_NATIVE_DIR:$PATH"` so Windows resolves
-   `mediaway_ffi.dll` at load time. The example muxes 90 synthetic H.264 + 90
-   synthetic AAC packets into fragmented MP4, demuxes the bytes back, and
-   asserts a 1:1 recovery — any mismatch exits nonzero.
-
-Any failure — missing DLL, compile/link error, load error, or round-trip
-mismatch — exits nonzero. Pure CPU, no hardware required; needs MinGW `gcc`
-and `bash` (both present on windows-latest runners).

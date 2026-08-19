@@ -15,12 +15,8 @@ dependencies, memory-safe by construction on the native side. This package is
 a thin `ctypes` wrapper, not a reimplementation.
 
 **Platforms**: Windows x64 is the fully hardware-verified platform (device/pipeline
-capture and encode). Linux x64 is container-verified — `tests/test_mux_roundtrip.py`
-and `tests/test_all_formats_smoke.py` (pure CPU, no hardware) both pass against a
-real `libmediaway_ffi.so` build; device/pipeline capability on Linux is untested here
-(see [`../../docs/ai/wiki/platform/linux-encode.md`](../../docs/ai/wiki/platform/linux-encode.md)
-/ [`linux-decode.md`](../../docs/ai/wiki/platform/linux-decode.md) for the Rust-level
-Linux encode/decode status).
+capture and encode). Linux x64 is container-verified (mux/demux); device/pipeline
+capability on Linux is untested here.
 
 ## What Mediaway is (the capabilities)
 
@@ -110,39 +106,12 @@ aspirational):
 |---|---|---|
 | `container/mux_roundtrip.py` | mux 90 fake video + audio packets → fMP4 → demux back, count packets | ✅ run verified |
 | `pipeline/encode_to_mp4.py` | auto H.264 encode of 90 synthetic NV12 frames → `out.mp4` | ✅ run verified |
-| `pipeline/encode_audio.py` | auto AAC encode of 96 synthetic F32 stereo frames → audio-only fMP4 (ABI v2) | ✅ run verified (96 packets → 27372 bytes fMP4) |
-| `pipeline/decode_roundtrip.py` | auto H.264 decode (encode→mux→demux→decode) + Opus audio decode round trip | ✅ run verified (10 video frames, 50 Opus frames) |
-| `device/camera_record.py` | camera + mic → H.264 + AAC → ONE two-track MP4 (remuxed; audio track registered with the encoder's AudioSpecificConfig) | ✅ run verified on real hardware (47 frames + 80 AAC packets → ~251 KB two-track MP4); video-only fallback without mic/audio backend |
+| `pipeline/encode_audio.py` | auto AAC encode of 96 synthetic F32 stereo frames → audio-only fMP4 (ABI v2) | ✅ run verified |
+| `pipeline/decode_roundtrip.py` | auto H.264 decode (encode→mux→demux→decode) + Opus audio decode round trip | ✅ run verified |
+| `device/camera_record.py` | camera + mic → H.264 + AAC → ONE two-track MP4 (remuxed; audio track registered with the encoder's AudioSpecificConfig) | ✅ run verified on real hardware; video-only fallback without mic/audio backend |
 | `device/capture_microphone.py` | microphone capture, raw PCM | ✅ run verified (real mic) |
-| `pipeline/screen_record.py` | screen + mic → encode → MP4, via `GpuDevice` + the capture-to-encode bridge | ✅ run verified on real hardware (real 2560x1440 GPU-backed frames bridged; GPU-input encode itself gracefully skips as `UNSUPPORTED` on this dev machine's current encoder/driver — same pre-existing limitation the Rust/C/Node.js/C# siblings hit, not introduced here); mic PCM drained, not muxed (see `camera_record.py` for two-track remux) |
-| `device/capture_screen.py` | screen capture only, via `GpuDevice` | ✅ run verified on real hardware (5 real 2560x1440 GPU-backed frames polled) |
-
-## Testing
-
-The release pipeline stages the built native library at `mediaway/_native/`
-(`mediaway_ffi.dll` on Windows, `libmediaway_ffi.so` on Linux — the wheel's
-native directory; `_ffi.py` picks the filename via `platform.system()`). The
-round-trip binding check validates that library against the documented ABI
-contract:
-
-```
-python tests/test_mux_roundtrip.py
-```
-
-Run from `bindings/python/`. Pure std-lib (no pytest), assert-based: it muxes
-90 synthetic H.264 video + 90 synthetic AAC audio packets into a fragmented
-MP4, demuxes the bytes back, and asserts the 1:1 packet round-trip plus the
-recovered stream metadata (video codec/dimensions/frame rate, audio codec). A
-failed assertion exits nonzero, which is the CI job's failure signal. Pure CPU
-— no hardware required.
-
-`tests/test_all_formats_smoke.py` covers the other 7 `mediaway-container`
-formats (WebM/Ogg/ADTS/FLV/MPEG-TS/MP3/WAV) the same way, reusing the
-C++/C# bindings' own verified byte patterns:
-
-```
-python tests/test_all_formats_smoke.py
-```
+| `pipeline/screen_record.py` | screen + mic → encode → MP4, via `GpuDevice` + the capture-to-encode bridge | ✅ run verified on real hardware (GPU-input encode gracefully skips as a known driver/encoder limitation, not a bug); mic PCM drained, not muxed — see `camera_record.py` for two-track remux |
+| `device/capture_screen.py` | screen capture only, via `GpuDevice` | ✅ run verified on real hardware |
 
 ## Rules
 

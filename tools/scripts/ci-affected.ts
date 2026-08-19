@@ -43,6 +43,7 @@ interface Dep {
 }
 
 interface Package {
+  id: string;
   name: string;
   manifestDir: string; // normalized forward-slash dir of manifest_path
   deps: Dep[];
@@ -50,6 +51,7 @@ interface Package {
 
 interface Metadata {
   packages: Package[];
+  workspaceMemberIds: Set<string>;
 }
 
 // Cargo.lock is deliberately NOT here — it gets a real diff (lockfileChangedNames)
@@ -106,19 +108,27 @@ function loadMetadata(): Metadata {
   const raw = run("cargo", ["metadata", "--format-version=1"]);
   const meta = JSON.parse(raw) as {
     packages: Array<{
+      id: string;
       name: string;
       manifest_path: string;
       dependencies: Array<{ name: string; kind: string | null; source: string | null; target: string | null }>;
     }>;
+    // Package IDs of the true workspace crates — `packages` also lists every
+    // resolved external (registry/git) dependency, so this is the only
+    // reliable way to tell "our crate" from "a dep that happens to live at a
+    // path-like manifestDir" apart.
+    workspace_members: string[];
   };
   return {
     packages: meta.packages.map((p) => ({
+      id: p.id,
       name: p.name,
       // Manifest dir made relative to the repo root (git paths are relative) —
       // CI runs the tool from the workspace root.
       manifestDir: toSlash(relative(process.cwd(), dirname(toSlash(p.manifest_path)))),
       deps: p.dependencies.map((d) => ({ name: d.name, kind: d.kind, source: d.source, target: d.target })),
     })),
+    workspaceMemberIds: new Set(meta.workspace_members),
   };
 }
 
@@ -290,7 +300,12 @@ function main(): void {
       }
     }
   }
-  const workspaceNames = new Set(byDir.values());
+  // Workspace membership comes from cargo metadata's `workspace_members`, not
+  // from "has a manifestDir" — `byDir` also maps every external registry/git
+  // dependency to a (repo-external) manifestDir, which previously leaked
+  // non-workspace crate names (e.g. objc2-audio-toolbox) into the affected
+  // set passed to `cargo clippy -p <name>`.
+  const workspaceNames = new Set(meta.packages.filter((p) => meta.workspaceMemberIds.has(p.id)).map((p) => p.name));
   const workspaceAffected = new Set([...affected].filter((n) => workspaceNames.has(n)));
 
   // --- output ---------------------------------------------------------------

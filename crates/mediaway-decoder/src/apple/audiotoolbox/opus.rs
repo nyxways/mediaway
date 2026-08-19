@@ -203,7 +203,7 @@ impl OpusDecoder {
                     std::ptr::from_mut(&mut ctx).cast::<c_void>(),
                     NonNull::from(&mut io_output_packet_size),
                     NonNull::from(&mut output_list),
-                    &mut packet_desc,
+                    &raw mut packet_desc,
                 )
             };
 

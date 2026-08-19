@@ -27,6 +27,11 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 
 - [x] Add `mediaway-decoder-web`
 - [x] WebCodecs decode + `VideoFrame` / WebGPU interop
+- [x] First audio decode surface (`is_webcodecs_audio_decode_supported`,
+      `decode_audio_chunks -> DecodedAudioData`), codec-parameterized from the start,
+      exercised via Opus — adr/web/0001; wasm32 compile-verified only, no real-browser
+      verification in this environment; `AudioData` planar/interleaved readback shape
+      unverified against real Chrome
 
 ### 3 — Linux
 

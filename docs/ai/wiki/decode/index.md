@@ -11,6 +11,7 @@
 | [../platform/apple-decode](../platform/apple-decode.md) | `mediaway-decoder::apple`: `VTDecompressionSession` H.264 general-GOP CPU-output decode — **implemented, zero compile verification**; VideoToolbox owns the DPB + display-order reorder internally |
 | [../license/sw-opus](../license/sw-opus.md) | `mediaway-sw::opus` — real Opus decode via `unsafe-libopus`, platform-independent SW path; wrapped as `mediaway_decoder::SwOpusAudioDecoder` |
 | [../platform/windows-opus](../platform/windows-opus.md) | Windows: inbox WMF Opus decoder MFT (`CMSOpusDecMFT`) — **public** as `mediaway_decoder::windows::WmfOpusDecoder`; verified end-to-end (ffmpeg Opus → exact PCM) |
+| [web-opus-design](web-opus-design.md) | Web: first audio decode surface in `mediaway-decoder::web` (`is_webcodecs_audio_decode_supported`, `decode_audio_chunks`), codec-generalized, exercised via Opus — wasm32 compile-verified only |
 
 `AudioDecoder` trait ([`crates/mediaway-decoder/adr/0003-audio-decoder-trait.md`](../../../crates/mediaway-decoder/adr/0003-audio-decoder-trait.md)):
 mirrors `VideoDecoder`, implemented by both Opus backends above; no shared

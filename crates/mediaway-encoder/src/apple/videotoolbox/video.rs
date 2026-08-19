@@ -13,8 +13,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::{EncodeError, VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 use mediaway_common::{
-    Bytes, CodecKind, ColorRange, Packet, PixelFormat, StreamInfo, VideoFrame, VideoFrameStorage,
-    VideoGeometry,
+    Bytes, CodecKind, ColorRange, GpuBufferHandle, Packet, PixelFormat, StreamInfo, VideoFrame,
+    VideoFrameStorage, VideoGeometry,
 };
 
 use objc2_core_foundation::{
@@ -55,14 +55,16 @@ struct SharedState {
     codec: CodecKind,
 }
 
-/// `VTCompressionSession` encode session (CPU NV12 upload, best-effort sync-frame cadence) —
-/// H.264 or HEVC depending on [`SharedState::codec`].
+/// `VTCompressionSession` encode session (best-effort sync-frame cadence) — H.264 or HEVC
+/// depending on [`SharedState::codec`]; CPU NV12 upload or Zero-Copy `CVPixelBuffer` input
+/// depending on [`Self::input`] (see [ADR-0003](../../adr/apple/0003-videotoolbox-metal-zero-copy-encode.md)).
 pub(crate) struct VideoToolboxVideoEncoder {
     session: CFRetained<VTCompressionSession>,
     shared: Arc<SharedState>,
     /// The extra `Arc::into_raw` strong count passed as `output_callback_ref_con` — reclaimed
     /// exactly once in `Drop`, after `invalidate()`.
     refcon_ptr: *const SharedState,
+    input: VideoInputPreference,
     width: u32,
     height: u32,
     yuv420_bytes: usize,
@@ -86,13 +88,16 @@ impl VideoToolboxVideoEncoder {
     pub(crate) fn open(config: &VideoEncoderConfig) -> Result<Self, EncodeError> {
         validate(config)?;
         match config.input {
-            VideoInputPreference::CpuUploadOk => Self::open_cpu(config),
-            // `CVPixelBuffer`/`IOSurface` Zero-Copy input is deferred — see ADR-0001 § Scope.
+            VideoInputPreference::CpuUploadOk | VideoInputPreference::ZeroCopyGpu => {
+                Self::open_session(config)
+            }
+            // `VideoInputPreference` is `#[non_exhaustive]` — an unmatched future variant is a
+            // real "we don't know this input path" case, not reachable today.
             _ => Err(EncodeError::Unsupported),
         }
     }
 
-    fn open_cpu(config: &VideoEncoderConfig) -> Result<Self, EncodeError> {
+    fn open_session(config: &VideoEncoderConfig) -> Result<Self, EncodeError> {
         let codec = codec_type(config.codec)?;
         let width = i32::try_from(config.width).map_err(|_| EncodeError::InvalidInput)?;
         let height = i32::try_from(config.height).map_err(|_| EncodeError::InvalidInput)?;
@@ -157,12 +162,31 @@ impl VideoToolboxVideoEncoder {
             session,
             shared,
             refcon_ptr,
+            input: config.input,
             width: config.width,
             height: config.height,
             yuv420_bytes,
             color_range: config.color_range,
             flushed: false,
         })
+    }
+}
+
+/// One `CVPixelBuffer` reference for `encode_frame`, from either input path — owned (CPU
+/// upload, freed when this value drops) or borrowed (Zero-Copy, the caller's own buffer, never
+/// touched beyond this reference's lifetime). Avoids duplicating the `encode_frame` call site
+/// per branch in [`VideoToolboxVideoEncoder::push_frame`].
+enum PixelBufferRef<'a> {
+    Owned(CFRetained<CVPixelBuffer>),
+    Borrowed(&'a CVPixelBuffer),
+}
+
+impl AsRef<CVPixelBuffer> for PixelBufferRef<'_> {
+    fn as_ref(&self) -> &CVPixelBuffer {
+        match self {
+            Self::Owned(buffer) => buffer,
+            Self::Borrowed(buffer) => buffer,
+        }
     }
 }
 
@@ -178,26 +202,58 @@ impl VideoEncoder for VideoToolboxVideoEncoder {
         if self.flushed {
             return Err(EncodeError::Closed);
         }
-        let VideoFrameStorage::Cpu { data } = &frame.storage else {
-            return Err(EncodeError::Unsupported);
-        };
         if frame.width != self.width || frame.height != self.height {
             return Err(EncodeError::InvalidInput);
         }
-        if data.len() < self.yuv420_bytes {
-            return Err(EncodeError::InvalidInput);
-        }
 
-        let pixel_buffer = upload_cpu_nv12(data, self.width, self.height, self.color_range)?;
+        let pixel_buffer = match &frame.storage {
+            VideoFrameStorage::Cpu { data } => {
+                if self.input != VideoInputPreference::CpuUploadOk {
+                    return Err(EncodeError::InvalidInput);
+                }
+                if data.len() < self.yuv420_bytes {
+                    return Err(EncodeError::InvalidInput);
+                }
+                PixelBufferRef::Owned(upload_cpu_nv12(
+                    data,
+                    self.width,
+                    self.height,
+                    self.color_range,
+                )?)
+            }
+            VideoFrameStorage::Gpu(GpuBufferHandle::Metal { buffer }) => {
+                if self.input != VideoInputPreference::ZeroCopyGpu {
+                    return Err(EncodeError::InvalidInput);
+                }
+                let ptr = NonNull::new(buffer.get() as *mut CVPixelBuffer)
+                    .ok_or(EncodeError::InvalidInput)?;
+                // SAFETY: `buffer` carries a caller-supplied `CVPixelBufferRef`'s raw bits — per
+                // `GpuBufferHandle::Metal`'s documented convention (see ADR-0003), the caller
+                // guarantees this pointer is a valid, live `CVPixelBuffer` for at least the
+                // duration of this call. This backend never retains, releases, or mutates it — a
+                // pure borrow, the same "opaque bits, caller owns the lifetime" contract every
+                // other `GpuBufferHandle` variant already documents.
+                let pixel_buffer = unsafe { ptr.as_ref() };
+                if pixel_buffer.width() != self.width as usize
+                    || pixel_buffer.height() != self.height as usize
+                {
+                    return Err(EncodeError::InvalidInput);
+                }
+                PixelBufferRef::Borrowed(pixel_buffer)
+            }
+            VideoFrameStorage::Gpu(_) => return Err(EncodeError::Unsupported),
+        };
+
         let pts = cmtime_from_pts(frame.pts, self.shared.time_base_den);
 
-        // SAFETY: `pixel_buffer` is a freshly created, valid `CVPixelBuffer`; `source_frame_
-        // refcon`/`info_flags_out` are intentionally unused (both `null_mut`) — this backend
-        // recovers timing from the output `CMSampleBuffer` itself (see `handle_output`), not a
-        // threaded-through refcon.
+        // SAFETY: `pixel_buffer.as_ref()` is a valid `CVPixelBuffer` for the duration of this
+        // call — either freshly created (CPU-upload path) or the caller's own, borrowed per its
+        // documented contract (Zero-Copy path, see above). `source_frame_refcon`/`info_flags_out`
+        // are intentionally unused (both `null_mut`) — this backend recovers timing from the
+        // output `CMSampleBuffer` itself (see `handle_output`), not a threaded-through refcon.
         let status = unsafe {
             self.session.encode_frame(
-                &pixel_buffer,
+                pixel_buffer.as_ref(),
                 pts,
                 kCMTimeIndefinite,
                 None,

@@ -1,10 +1,13 @@
-//! `VTCompressionSession` CPU-upload encode session — H.264/HEVC.
+//! `VTCompressionSession` CPU-upload encode session — H.264/HEVC/`ProRes`.
 //!
 //! See [ADR-0001](../../adr/apple/0001-videotoolbox-h264-cpu-upload.md) for the original H.264
-//! scope (Constrained-Baseline-class / CPU NV12 upload only / best-effort key-frame-interval) and
+//! scope (Constrained-Baseline-class / CPU NV12 upload only / best-effort key-frame-interval),
 //! [ADR-0002](../../adr/apple/0002-videotoolbox-hevc-encode.md) for the HEVC addition (Main-
 //! class profile) and VP9/AV1's permanent non-support (no `VideoToolbox` compression API exists
-//! for either). Both carry the zero-compile-verification caveat for this crate as authored.
+//! for either), and [ADR-0006](../../adr/apple/0006-videotoolbox-prores-encode.md) for the six
+//! `ProRes` profiles (all-intra, no `ProfileLevel`/GOP/bitrate properties apply) and `ProRes` RAW's
+//! own permanent non-support. All three carry the zero-compile-verification caveat for this crate
+//! as authored.
 
 use std::collections::VecDeque;
 use std::ffi::c_void;
@@ -336,19 +339,33 @@ unsafe extern "C-unwind" fn compression_output_callback(
 
 fn handle_output(shared: &SharedState, sample_buffer: &CMSampleBuffer) {
     if shared.finalized_info.get().is_none() {
-        // SAFETY: `sample_buffer` is a valid, callback-scoped `CMSampleBuffer` reference.
-        let extracted = unsafe { sample_buffer.format_description() }.and_then(|format_desc| {
-            match shared.codec {
-                CodecKind::Hevc => extradata::extract_hevc(&format_desc),
-                _ => extradata::extract_h264(&format_desc),
+        // ProRes has no VPS/SPS/PPS-style parameter sets to extract — every ProRes sample is a
+        // fully self-contained frame (see `adr/apple/0006-videotoolbox-prores-encode.md`), so
+        // `base_info`'s already-empty `extra_data` is immediately final; skip straight to
+        // marking it finalized rather than calling `extract_h264` against a format description
+        // that has nothing H.264-shaped in it (a real bug this ProRes work also fixed: the prior
+        // `_ => extract_h264(..)` catch-all here would have silently misapplied H.264 extraction
+        // to any future non-H.264/HEVC codec, not just ProRes).
+        if super::codec::is_prores(shared.codec) {
+            let _ = shared.finalized_info.set(shared.base_info.clone());
+        } else {
+            // SAFETY: `sample_buffer` is a valid, callback-scoped `CMSampleBuffer` reference.
+            let extracted = unsafe { sample_buffer.format_description() }.and_then(|format_desc| {
+                match shared.codec {
+                    CodecKind::Hevc => extradata::extract_hevc(&format_desc),
+                    CodecKind::H264 => extradata::extract_h264(&format_desc),
+                    // `is_supported_video_codec` already restricts `open()` to H.264/HEVC/
+                    // ProRes (ProRes takes the branch above); nothing else reaches here.
+                    _ => None,
+                }
+            });
+            if let Some(extra_data) = extracted {
+                let mut info = shared.base_info.clone();
+                if let StreamInfo::Video { extra_data: ed, .. } = &mut info {
+                    *ed = extra_data;
+                }
+                let _ = shared.finalized_info.set(info);
             }
-        });
-        if let Some(extra_data) = extracted {
-            let mut info = shared.base_info.clone();
-            if let StreamInfo::Video { extra_data: ed, .. } = &mut info {
-                *ed = extra_data;
-            }
-            let _ = shared.finalized_info.set(info);
         }
     }
 
@@ -544,45 +561,57 @@ fn configure_properties(
     session: &VTCompressionSession,
     config: &VideoEncoderConfig,
 ) -> Result<(), EncodeError> {
-    // `CodecKind` is `#[non_exhaustive]` (declared in a different crate) — an unmatched future
-    // variant is a real "we don't know this profile" case, not reachable today (`codec_type`,
-    // called before this function in `open_cpu`, already rejects anything but H.264/HEVC).
-    let profile_level = match config.codec {
-        CodecKind::Hevc => kVTProfileLevel_HEVC_Main_AutoLevel,
-        _ => kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel,
-    };
-
     // SAFETY (all `set_*_property` calls below): `session` is a freshly created, not-yet-started
     // `VTCompressionSession`; every property key passed is a confirmed-real `&'static CFString`
     // from `objc2_video_toolbox`'s generated `VTCompressionProperties` bindings.
     unsafe {
-        set_string_property(
-            session,
-            kVTCompressionPropertyKey_ProfileLevel,
-            profile_level,
-        )?;
         set_bool_property(session, kVTCompressionPropertyKey_RealTime, true)?;
         set_bool_property(
             session,
             kVTCompressionPropertyKey_AllowFrameReordering,
             false,
         )?;
-        let max_key_frame_interval = i32::try_from(config.gop_size.max(1)).unwrap_or(1);
-        set_i32_property(
-            session,
-            kVTCompressionPropertyKey_MaxKeyFrameInterval,
-            max_key_frame_interval,
-        )?;
-        if config.bitrate_bps > 0 {
-            let bitrate = i32::try_from(config.bitrate_bps).unwrap_or(i32::MAX);
-            set_i32_property(session, kVTCompressionPropertyKey_AverageBitRate, bitrate)?;
-        }
         let frame_rate = frame_rate_hint(config.time_base);
         set_i32_property(
             session,
             kVTCompressionPropertyKey_ExpectedFrameRate,
             frame_rate,
         )?;
+
+        // ProRes: no `ProfileLevel` (zero `kVTProfileLevel_ProRes*` constants exist anywhere in
+        // the generated bindings — the profile is fully encoded in `codec_type`'s six distinct
+        // `kCMVideoCodecType_AppleProRes*` values, unlike H.264/HEVC's separate profile-level
+        // property under one shared codec type), no `MaxKeyFrameInterval` (unconditionally
+        // all-intra — `config.gop_size` is silently not honored, documented on
+        // `VideoEncoderConfig::gop_size`'s own rustdoc contract for backends that can't apply it),
+        // no `AverageBitRate` (profile determines quality/bitrate, not a settable property —
+        // `config.bitrate_bps` is silently not honored, same documented-fallback contract). See
+        // `adr/apple/0006-videotoolbox-prores-encode.md`.
+        if !super::codec::is_prores(config.codec) {
+            // `CodecKind` is `#[non_exhaustive]` (declared in a different crate) — an unmatched
+            // future variant is a real "we don't know this profile" case, not reachable today
+            // (`codec_type`, called before this function in `open_session`, already rejects
+            // anything but H.264/HEVC/ProRes).
+            let profile_level = match config.codec {
+                CodecKind::Hevc => kVTProfileLevel_HEVC_Main_AutoLevel,
+                _ => kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel,
+            };
+            set_string_property(
+                session,
+                kVTCompressionPropertyKey_ProfileLevel,
+                profile_level,
+            )?;
+            let max_key_frame_interval = i32::try_from(config.gop_size.max(1)).unwrap_or(1);
+            set_i32_property(
+                session,
+                kVTCompressionPropertyKey_MaxKeyFrameInterval,
+                max_key_frame_interval,
+            )?;
+            if config.bitrate_bps > 0 {
+                let bitrate = i32::try_from(config.bitrate_bps).unwrap_or(i32::MAX);
+                set_i32_property(session, kVTCompressionPropertyKey_AverageBitRate, bitrate)?;
+            }
+        }
     }
     Ok(())
 }

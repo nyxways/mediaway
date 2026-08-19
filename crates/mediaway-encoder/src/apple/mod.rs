@@ -1,11 +1,13 @@
 //! Apple (macOS + iOS) encode backend (`VideoToolbox` `VTCompressionSession`, via `objc2`).
 //!
-//! - [`VideoInputPreference::CpuUploadOk`](crate::VideoInputPreference): H.264/HEVC session via
-//!   `VTCompressionSession` + `upload_cpu_nv12` (`CVPixelBufferCreateWithPlanarBytes`, one
-//!   copy) — `kVTCompressionPropertyKey_MaxKeyFrameInterval` requests
-//!   [`VideoEncoderConfig::gop_size`] sync frames, device-dependent, not a byte-exact
-//!   guarantee like Linux's raw bitstream approach. VP9/AV1 are **not** supported — `VideoToolbox`
-//!   exposes no compression API for either codec at all (see ADR-0002).
+//! - [`VideoInputPreference::CpuUploadOk`](crate::VideoInputPreference): H.264/HEVC/`ProRes`
+//!   session via `VTCompressionSession` + `upload_cpu_nv12` (`CVPixelBufferCreateWithPlanarBytes`,
+//!   one copy) — `kVTCompressionPropertyKey_MaxKeyFrameInterval` requests
+//!   [`VideoEncoderConfig::gop_size`] sync frames for H.264/HEVC, device-dependent, not a
+//!   byte-exact guarantee like Linux's raw bitstream approach; `ProRes` ignores `gop_size`/
+//!   `bitrate_bps` entirely (unconditionally all-intra, profile-fixed quality — see ADR-0006).
+//!   VP9/AV1 and `ProRes` RAW are **not** supported — `VideoToolbox` exposes no compression API
+//!   for any of them at all (see ADR-0002, ADR-0006).
 //! - [`VideoInputPreference::ZeroCopyGpu`]: real Zero-Copy — the caller's
 //!   [`GpuBufferHandle::Metal`](mediaway_common::GpuBufferHandle::Metal) `CVPixelBuffer` is
 //!   borrowed directly for `VTCompressionSession::encode_frame`, never copied or retained by
@@ -15,9 +17,11 @@
 //! choice (`objc2-video-toolbox`/`objc2-core-video`/`objc2-core-media`/`objc2-core-foundation`)
 //! and H.264 scope. [ADR-0002](../adr/apple/0002-videotoolbox-hevc-encode.md) — HEVC addition and
 //! VP9/AV1's permanent non-support. [ADR-0003](../adr/apple/0003-videotoolbox-metal-zero-copy-encode.md)
-//! — Zero-Copy input. All three carry the **zero compile verification as authored** caveat (this
-//! crate's dev environment cannot cross-compile Apple code at all — no Xcode/Apple SDK reachable
-//! outside macOS). Read that caveat before relying on this backend.
+//! — Zero-Copy input. [ADR-0006](../adr/apple/0006-videotoolbox-prores-encode.md) — `ProRes`
+//! addition and `ProRes` RAW's permanent non-support. All four carry the **zero compile
+//! verification as authored** caveat (this crate's dev environment cannot cross-compile Apple
+//! code at all — no Xcode/Apple SDK reachable outside macOS). Read that caveat before relying on
+//! this backend.
 
 // Unlike Android/Linux, VideoToolbox/CoreMedia/CoreVideo's `objc2-*` bindings are plain C-API
 // `unsafe fn` wrappers with no safe layer (see ADR-0001 § Unsafe surface) — this module carries

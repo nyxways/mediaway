@@ -1,11 +1,13 @@
 //! Apple (macOS + iOS) decode backend (`VideoToolbox` `VTDecompressionSession`, via `objc2`).
 //!
-//! - [`VideoOutputPreference::CpuFramesOk`](crate::VideoOutputPreference): H.264/HEVC/VP9/AV1
-//!   decode through `VTDecompressionSession` (general GOP — `VideoToolbox` owns the DPB and
-//!   P/B-frame reorder via `kVTDecodeFrame_EnableTemporalProcessing`) with CPU NV12
-//!   (`VideoRange`) readback inside the decompression output callback
-//!   (`CVPixelBufferLockBaseAddress` + a stride-aware plane copy) — no `CVPixelBuffer`/
-//!   `IOSurface` export, so this is honest CPU decode, not a disguised Zero-Copy path.
+//! - [`VideoOutputPreference::CpuFramesOk`](crate::VideoOutputPreference): H.264/HEVC/VP9/AV1/
+//!   `ProRes` decode through `VTDecompressionSession` (general GOP — `VideoToolbox` owns the DPB
+//!   and P/B-frame reorder via `kVTDecodeFrame_EnableTemporalProcessing`, trivial for `ProRes`
+//!   since every frame is independently decodable) with CPU NV12 (`VideoRange`) readback inside
+//!   the decompression output callback (`CVPixelBufferLockBaseAddress` + a stride-aware plane
+//!   copy) — no `CVPixelBuffer`/`IOSurface` export, so this is honest CPU decode, not a disguised
+//!   Zero-Copy path. `ProRes`'s native bit depth/chroma sampling is downsampled to 8-bit 4:2:0 by
+//!   this readback — see ADR-0006 for the disclosed quality trade-off.
 //! - [`VideoOutputPreference::ZeroCopyGpu`]: real Zero-Copy — a **new**, independent
 //!   `CFRetain` on the decoded `CVPixelBuffer` (`CFRetained::retain`, never a lock/plane-byte
 //!   read) is handed out as
@@ -18,9 +20,11 @@
 //! scope (one SPS + one PPS, 4-byte AVCC length size only), byte framing (reuses
 //! `iso_bmff::bitstream::avc` both directions). [ADR-0002](../adr/apple/0002-videotoolbox-hevc-vp9-av1-decode.md)
 //! — HEVC/VP9/AV1 multicodec expansion. [ADR-0003](../adr/apple/0003-videotoolbox-metal-zero-copy-decode.md)
-//! — Zero-Copy output. All three carry the **zero compile verification as authored** caveat
-//! (this crate's dev environment cannot cross-compile Apple code at all — no Xcode/Apple SDK
-//! reachable outside macOS). Read that caveat before relying on this backend.
+//! — Zero-Copy output. [ADR-0006](../adr/apple/0006-videotoolbox-prores-decode.md) — `ProRes`
+//! addition (no config record needed) and `ProRes` RAW's permanent non-support. All four carry the
+//! **zero compile verification as authored** caveat (this crate's dev environment cannot
+//! cross-compile Apple code at all — no Xcode/Apple SDK reachable outside macOS). Read that
+//! caveat before relying on this backend.
 
 // Unlike `linux::vaapi` (which forbids unsafe entirely — see that module's own doc comment),
 // VideoToolbox/CoreMedia/CoreVideo's `objc2-*` bindings are plain C-API `unsafe fn` wrappers

@@ -1,11 +1,14 @@
-//! `VTDecompressionSession` CPU NV12 (`VideoRange`) readback decode session — H.264/HEVC/VP9/AV1.
+//! `VTDecompressionSession` CPU NV12 (`VideoRange`) readback decode session —
+//! H.264/HEVC/VP9/AV1/`ProRes`.
 //!
 //! See [ADR-0001](../../../adr/apple/0001-videotoolbox-h264-cpu-out.md) for the original H.264
 //! scope (general GOP via VideoToolbox-managed DPB + reorder, CPU NV12 `VideoRange` readback, one
-//! SPS + one PPS + 4-byte AVCC length size only) and
+//! SPS + one PPS + 4-byte AVCC length size only),
 //! [ADR-0002](../../../adr/apple/0002-videotoolbox-hevc-vp9-av1-decode.md) for the HEVC/VP9/AV1
 //! multicodec expansion (HEVC mirrors H.264's in-band VPS/SPS/PPS shape; VP9/AV1 require a
-//! container-supplied `vpcC`/`av1C` config record up front instead). The
+//! container-supplied `vpcC`/`av1C` config record up front instead), and
+//! [ADR-0006](../../../adr/apple/0006-videotoolbox-prores-decode.md) for the six `ProRes` profiles
+//! (needs no config record at all — session built eagerly from geometry alone). The
 //! zero-compile-verification caveat for this crate as authored carries over unchanged.
 #![allow(unsafe_code)] // real `objc2-*` FFI calls — see this crate's `apple/mod.rs` doc comment
 
@@ -39,7 +42,7 @@ use objc2_video_toolbox::{
 };
 
 use super::codec::{
-    cmtime_value_from_ticks, copy_nv12_planes, duration_ticks_from_cmtime_value,
+    cmtime_value_from_ticks, copy_nv12_planes, duration_ticks_from_cmtime_value, is_prores,
     is_supported_video_codec, raw_atom_key, requires_extra_data_at_open, ticks_from_cmtime_value,
     validate_hevc_parameter_sets, validate_parameter_sets,
 };
@@ -149,6 +152,19 @@ impl VideoToolboxVideoDecoder {
             let fd =
                 format_desc::create_raw(codec_type, width, height, atom_key, &config.extra_data)?;
             decoder.ensure_session(fd)?;
+        } else if is_prores(config.codec) {
+            // ProRes needs no config record at all (unlike VP9/AV1 above) — just geometry, so
+            // the session is always built eagerly here regardless of `config.extra_data` (see
+            // `adr/apple/0006-videotoolbox-prores-decode.md` § Scope).
+            if config.width == 0 || config.height == 0 {
+                return Err(DecodeError::InvalidInput);
+            }
+            let codec_type =
+                format_desc::raw_codec_type(config.codec).ok_or(DecodeError::Unsupported)?;
+            let width = i32::try_from(config.width).map_err(|_| DecodeError::InvalidInput)?;
+            let height = i32::try_from(config.height).map_err(|_| DecodeError::InvalidInput)?;
+            let fd = format_desc::create_raw_no_extension(codec_type, width, height)?;
+            decoder.ensure_session(fd)?;
         } else if !config.extra_data.is_empty() {
             // `extra_data` non-empty at `open()` ⇒ build immediately (ADR-0001 § Session
             // lifecycle) — a malformed/unsupported record is a real error here, not a silent
@@ -174,8 +190,9 @@ impl VideoToolboxVideoDecoder {
                     decoder.ensure_session(fd)?;
                 }
                 // `validate()` (via `is_supported_video_codec`) already restricts `open()` to
-                // H.264/HEVC/VP9/AV1, and VP9/AV1 took the `requires_extra_data_at_open` branch
-                // above — nothing else reaches here.
+                // H.264/HEVC/VP9/AV1/ProRes*; VP9/AV1 took the `requires_extra_data_at_open`
+                // branch above and ProRes took the `is_prores` branch above — nothing else
+                // reaches here.
                 _ => return Err(DecodeError::Unsupported),
             }
         }
@@ -298,8 +315,25 @@ impl VideoDecoder for VideoToolboxVideoDecoder {
                 }
                 Bytes::copy_from_slice(&packet.payload)
             }
+            CodecKind::ProRes422Proxy
+            | CodecKind::ProRes422Lt
+            | CodecKind::ProRes422
+            | CodecKind::ProRes422Hq
+            | CodecKind::ProRes4444
+            | CodecKind::ProRes4444Xq => {
+                if self.session.is_none() {
+                    // `open()` always builds the session eagerly for ProRes (see `is_prores` in
+                    // `open()` above) — reaching here without one means `open()` never actually
+                    // created it, which shouldn't happen; same treatment as the VP9/AV1 arm.
+                    return Err(DecodeError::Backend);
+                }
+                // Every ProRes sample is a fully self-contained frame — no NAL/parameter-set
+                // framing to convert, same raw byte-for-byte pass-through as VP9/AV1 above (see
+                // `adr/apple/0006-videotoolbox-prores-decode.md` § Byte framing).
+                Bytes::copy_from_slice(&packet.payload)
+            }
             // `self.codec` was validated at `open()` (via `is_supported_video_codec`) to be one
-            // of the four arms above — nothing else reaches here.
+            // of the arms above — nothing else reaches here.
             _ => return Err(DecodeError::Unsupported),
         };
 

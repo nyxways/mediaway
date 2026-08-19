@@ -15,12 +15,36 @@ use mediaway_common::{Bytes, CodecKind, Rational};
 use crate::DecodeError;
 
 /// Whether this crate's Apple decode path accepts `codec` — H.264/HEVC (NAL-based, in-band
-/// parameter sets) and VP9/AV1 (raw, container-supplied config record) — see ADR-0002 § Scope.
+/// parameter sets), VP9/AV1 (raw, container-supplied config record, ADR-0002 § Scope), and the
+/// six `ProRes` profiles (raw, **no** config record needed at all — ADR-0006 § Scope).
 #[must_use]
 pub(super) const fn is_supported_video_codec(codec: CodecKind) -> bool {
     matches!(
         codec,
-        CodecKind::H264 | CodecKind::Hevc | CodecKind::Vp9 | CodecKind::Av1
+        CodecKind::H264
+            | CodecKind::Hevc
+            | CodecKind::Vp9
+            | CodecKind::Av1
+            | CodecKind::ProRes422Proxy
+            | CodecKind::ProRes422Lt
+            | CodecKind::ProRes422
+            | CodecKind::ProRes422Hq
+            | CodecKind::ProRes4444
+            | CodecKind::ProRes4444Xq
+    )
+}
+
+/// Whether `codec` is one of the six supported `ProRes` profiles — see ADR-0006 § Scope.
+#[must_use]
+pub(super) const fn is_prores(codec: CodecKind) -> bool {
+    matches!(
+        codec,
+        CodecKind::ProRes422Proxy
+            | CodecKind::ProRes422Lt
+            | CodecKind::ProRes422
+            | CodecKind::ProRes422Hq
+            | CodecKind::ProRes4444
+            | CodecKind::ProRes4444Xq
     )
 }
 

@@ -8,6 +8,12 @@
 
 ### Added
 
+- `mediaway::platform`: wired Apple into `encoder_support`/`decoder_support` (Opus, via the
+  existing cross-platform `SwOpusAudioEncoder`/`SwOpusAudioDecoder` — mirrors Windows' own
+  Software-fallback special case) and into `ScreenCapture::open`/`Microphone::open`/
+  `device_support`/`request_device_permission` (`mediaway-device::apple`'s Camera/Microphone/
+  Screen backends were already implemented but unreachable through this cross-platform facade).
+
 - `mediaway-encoder::apple`: HEVC encode (`kVTProfileLevel_HEVC_Main_AutoLevel`, CPU NV12
   upload, `hvcC` extradata via a new `iso_bmff::bitstream::hevc` module mirroring the existing
   H.264 `avc.rs` shape). VP9/AV1 encode confirmed to be a **permanent** `VideoToolbox` API gap —

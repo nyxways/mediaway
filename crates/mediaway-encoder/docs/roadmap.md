@@ -68,6 +68,13 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
       `encode_audio_buffer`), exercised via Opus alongside AAC — adr/web/0001; wasm32
       compile-verified only, no real-browser verification in this environment; no
       `OpusEncoderConfig` knobs (no `web-sys` binding); no Opus fMP4 mux (`iso-bmff` gap)
+- [x] GPU-surface encode generalized to HEVC/AV1/VP9 (`is_webgpu_video_codec_supported`,
+      `encode_video_frame_from_webgpu_canvas`, `webcodecs_gpu_video_fmp4_smoke_with_codec`;
+      H.264 zero-arg entry points kept as thin wrappers) per crate ADR
+      `adr/web/0001-webgpu-multi-codec-video-encode.md` — **wasm32 compile-verified only**, no
+      real browser runtime available in this environment; HEVC's Annex-B-vs-length-prefixed
+      NAL framing for `iso-bmff`'s `hvc1` fMP4 sample entry is explicitly **unverified** (see
+      ADR §2 and `docs/ai/wiki/encode/web-gpu-frame.md`)
 
 ### 3 — Linux
 

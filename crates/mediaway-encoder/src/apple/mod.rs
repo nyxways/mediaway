@@ -128,8 +128,8 @@ impl VideoEncoder for AppleVideoEncoder {
 /// Apple audio encode session.
 ///
 /// AAC via `AudioConverter` ([ADR-0004](../adr/apple/0004-audiotoolbox-aac-encode.md)) or Opus
-/// via `mediaway-sw` (cross-platform, no Apple-specific code), dispatched by
-/// [`AudioEncoderConfig::codec`] — mirrors
+/// via `AudioConverter` ([ADR-0005](../adr/apple/0005-audiotoolbox-opus-encode.md)), dispatched
+/// by [`AudioEncoderConfig::codec`] — mirrors
 /// `mediaway-encoder::windows::WindowsAudioEncoder`'s identical `AudioBackend` shape.
 #[cfg(feature = "audio")]
 pub struct AppleAudioEncoder {
@@ -144,9 +144,10 @@ pub struct AppleAudioEncoder {
 enum AudioBackend {
     /// `AudioConverter` AAC-LC encoder.
     Aac(audiotoolbox::AacEncoder),
-    /// Software Opus encoder (`unsafe-libopus` via `mediaway-sw`) — no `VideoToolbox`/
-    /// `AudioToolbox` Opus encoder exists.
-    Opus(crate::SwOpusAudioEncoder),
+    /// `AudioConverter` Opus encoder (native, see ADR-0005) — `SwOpusAudioEncoder` remains
+    /// available directly for callers needing caller-selectable frame duration or Opus-specific
+    /// tuning (ADR-0005 § Scope), but is no longer this backend's default.
+    Opus(audiotoolbox::OpusEncoder),
 }
 
 #[cfg(feature = "audio")]
@@ -164,7 +165,7 @@ impl AppleAudioEncoder {
                 AudioBackend::Aac(audiotoolbox::AacEncoder::open(config)?)
             }
             mediaway_common::CodecKind::Opus => {
-                AudioBackend::Opus(crate::SwOpusAudioEncoder::open(config)?)
+                AudioBackend::Opus(audiotoolbox::OpusEncoder::open(config)?)
             }
             _ => return Err(EncodeError::Unsupported),
         };

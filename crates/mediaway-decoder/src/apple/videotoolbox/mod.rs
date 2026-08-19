@@ -12,6 +12,8 @@
 // Real `objc2-*` calls — Apple targets only (the `objc2-video-toolbox`/`objc2-core-media`/
 // `objc2-core-video` crates are not dependencies on other targets, see Cargo.toml).
 #[cfg(any(target_os = "macos", target_os = "ios"))]
+mod format_desc;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 mod video;
 
 // `codec`'s helpers are pure (no `objc2-*` import) so they build and unit-test on any host —

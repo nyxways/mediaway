@@ -9,18 +9,45 @@
 //! Callback / output-collection design, and § Byte framing for the math this module implements.
 
 use iso_bmff::bitstream::avc::AvcDecoderConfig;
+use iso_bmff::bitstream::hevc::HevcDecoderConfig;
 use mediaway_common::{Bytes, CodecKind, Rational};
 
 use crate::DecodeError;
 
-/// Whether this crate's Apple decode path accepts `codec` — H.264 only this stage (see
-/// ADR-0001 § Scope).
+/// Whether this crate's Apple decode path accepts `codec` — H.264/HEVC (NAL-based, in-band
+/// parameter sets) and VP9/AV1 (raw, container-supplied config record) — see ADR-0002 § Scope.
 #[must_use]
 pub(super) const fn is_supported_video_codec(codec: CodecKind) -> bool {
-    matches!(codec, CodecKind::H264)
+    matches!(
+        codec,
+        CodecKind::H264 | CodecKind::Hevc | CodecKind::Vp9 | CodecKind::Av1
+    )
 }
 
-/// Validate `config` against this backend's Stage-1 scope: exactly one SPS + one PPS, 4-byte
+/// Whether `codec` needs a container-supplied config record (`vpcC`/`av1C`) in
+/// [`crate::VideoDecoderConfig::extra_data`] **at `open()`** — VP9/AV1 have no per-frame
+/// parameter-set NAL this backend can discover from the bitstream itself (`VideoToolbox`'s only
+/// construction path for either is the generic `CMVideoFormatDescriptionCreate` plus an
+/// extension atom — see `format_desc::create_raw`'s doc comment), unlike H.264/HEVC's in-band
+/// VPS/SPS/PPS.
+#[must_use]
+pub(super) const fn requires_extra_data_at_open(codec: CodecKind) -> bool {
+    matches!(codec, CodecKind::Vp9 | CodecKind::Av1)
+}
+
+/// Container-config atom key `VideoToolbox`'s `SampleDescriptionExtensionAtoms` extension expects
+/// for a raw (non-NAL) codec — `None` for anything else, which doesn't use this construction
+/// path (see [`requires_extra_data_at_open`]).
+#[must_use]
+pub(super) const fn raw_atom_key(codec: CodecKind) -> Option<&'static str> {
+    match codec {
+        CodecKind::Vp9 => Some("vpcC"),
+        CodecKind::Av1 => Some("av1C"),
+        _ => None,
+    }
+}
+
+/// Validate `config` against this backend's H.264 scope: exactly one SPS + one PPS, 4-byte
 /// AVCC length-prefix size only (ADR-0001 § Byte framing / § Session lifecycle). A stream that
 /// doesn't fit is `DecodeError::Unsupported`, never silently truncated to the first SPS/PPS.
 ///
@@ -33,6 +60,25 @@ pub(super) const fn validate_parameter_sets(config: &AvcDecoderConfig) -> Result
         return Err(DecodeError::Unsupported);
     }
     if config.sps.len() != 1 || config.pps.len() != 1 {
+        return Err(DecodeError::Unsupported);
+    }
+    Ok(())
+}
+
+/// Validate `config` against this backend's HEVC scope: exactly one VPS + one SPS + one PPS,
+/// 4-byte `hvcC` length-prefix size only — the HEVC analog of [`validate_parameter_sets`].
+///
+/// # Errors
+///
+/// Returns [`DecodeError::Unsupported`] when `config` has more than one VPS/SPS/PPS or a NAL
+/// length size other than 4 bytes.
+pub(super) const fn validate_hevc_parameter_sets(
+    config: &HevcDecoderConfig,
+) -> Result<(), DecodeError> {
+    if config.nal_length_size != 4 {
+        return Err(DecodeError::Unsupported);
+    }
+    if config.vps.len() != 1 || config.sps.len() != 1 || config.pps.len() != 1 {
         return Err(DecodeError::Unsupported);
     }
     Ok(())

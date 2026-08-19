@@ -1,9 +1,12 @@
-//! `VTDecompressionSession` H.264 CPU NV12 (`VideoRange`) readback decode session.
+//! `VTDecompressionSession` CPU NV12 (`VideoRange`) readback decode session — H.264/HEVC/VP9/AV1.
 //!
-//! See [ADR-0001](../../../adr/apple/0001-videotoolbox-h264-cpu-out.md): binding choice, scope
-//! (H.264 only, general GOP via VideoToolbox-managed DPB + reorder, CPU NV12 `VideoRange`
-//! readback, one SPS + one PPS + 4-byte AVCC length size only), and the
-//! zero-compile-verification caveat for this crate as authored.
+//! See [ADR-0001](../../../adr/apple/0001-videotoolbox-h264-cpu-out.md) for the original H.264
+//! scope (general GOP via VideoToolbox-managed DPB + reorder, CPU NV12 `VideoRange` readback, one
+//! SPS + one PPS + 4-byte AVCC length size only) and
+//! [ADR-0002](../../../adr/apple/0002-videotoolbox-hevc-vp9-av1-decode.md) for the HEVC/VP9/AV1
+//! multicodec expansion (HEVC mirrors H.264's in-band VPS/SPS/PPS shape; VP9/AV1 require a
+//! container-supplied `vpcC`/`av1C` config record up front instead). The
+//! zero-compile-verification caveat for this crate as authored carries over unchanged.
 #![allow(unsafe_code)] // real `objc2-*` FFI calls — see this crate's `apple/mod.rs` doc comment
 
 use std::collections::VecDeque;
@@ -13,16 +16,18 @@ use std::sync::{Arc, Mutex};
 
 use crate::{DecodeError, VideoDecoder, VideoDecoderConfig, VideoOutputPreference};
 use mediaway_common::{
-    Bytes, Packet, PixelFormat, Rational, StreamInfo, VideoFrame, VideoFrameStorage, VideoGeometry,
+    Bytes, CodecKind, Packet, PixelFormat, Rational, StreamInfo, VideoFrame, VideoFrameStorage,
+    VideoGeometry,
 };
 
-use iso_bmff::bitstream::avc::{AvcDecoderConfig, parse_avc_decoder_config, to_avcc};
+use iso_bmff::bitstream::avc::parse_avc_decoder_config;
+use iso_bmff::bitstream::avc::to_avcc;
+use iso_bmff::bitstream::hevc::{parse_hevc_decoder_config, to_hvcc};
 
 use objc2_core_foundation::{CFDictionary, CFNumber, CFRetained, CFString, CFType};
 use objc2_core_media::{
-    CMBlockBuffer, CMBlockBufferCustomBlockSource, CMFormatDescription, CMSampleBuffer,
-    CMSampleTimingInfo, CMTime, CMTimeFlags, CMVideoFormatDescription,
-    kCMBlockBufferCustomBlockSourceVersion,
+    CMBlockBuffer, CMBlockBufferCustomBlockSource, CMSampleBuffer, CMSampleTimingInfo, CMTime,
+    CMTimeFlags, CMVideoFormatDescription, kCMBlockBufferCustomBlockSourceVersion,
 };
 use objc2_core_video::{
     CVImageBuffer, CVPixelBuffer, CVPixelBufferLockFlags, kCVPixelBufferPixelFormatTypeKey,
@@ -35,8 +40,10 @@ use objc2_video_toolbox::{
 
 use super::codec::{
     cmtime_value_from_ticks, copy_nv12_planes, duration_ticks_from_cmtime_value,
-    is_supported_video_codec, ticks_from_cmtime_value, validate_parameter_sets,
+    is_supported_video_codec, raw_atom_key, requires_extra_data_at_open, ticks_from_cmtime_value,
+    validate_hevc_parameter_sets, validate_parameter_sets,
 };
+use super::format_desc;
 
 /// `OSStatus`/`CVReturn` "no error" value (both use the plain C convention `0 == success`) —
 /// same reuse-for-both convention `mediaway-encoder::apple` already established.
@@ -52,11 +59,14 @@ struct SharedState {
     time_base: Rational,
 }
 
-/// `VTDecompressionSession` H.264 decode session (CPU NV12 `VideoRange` readback, general GOP).
+/// `VTDecompressionSession` decode session (CPU NV12 `VideoRange` readback, general GOP) —
+/// H.264/HEVC (NAL-based, in-band parameter sets) or VP9/AV1 (raw, container-supplied config
+/// record) depending on [`Self::codec`]. See ADR-0002 § Scope.
 pub(crate) struct VideoToolboxVideoDecoder {
-    /// `None` until the first SPS+PPS-bearing packet (or non-empty `extra_data` at `open()`) —
-    /// lazy session creation, mirroring `linux::vaapi`'s identical "pipeline creation is lazy"
-    /// decision (ADR-0001 § Session lifecycle).
+    /// `None` until the first parameter-set-bearing packet (or non-empty `extra_data` at
+    /// `open()`) — lazy session creation, mirroring `linux::vaapi`'s identical "pipeline
+    /// creation is lazy" decision (ADR-0001 § Session lifecycle). Always `Some` by the time
+    /// `open()` returns for VP9/AV1 (see [`requires_extra_data_at_open`]).
     session: Option<CFRetained<VTDecompressionSession>>,
     /// The format description backing `session` — also `CMSampleBuffer::new`'s per-packet
     /// `format_description` argument (via `Deref` to `&CMFormatDescription`).
@@ -66,6 +76,7 @@ pub(crate) struct VideoToolboxVideoDecoder {
     /// until a session exists (no callback can fire before then), reclaimed exactly once in
     /// `Drop`.
     refcon_ptr: Option<*const SharedState>,
+    codec: CodecKind,
     info: StreamInfo,
     flushed: bool,
 }
@@ -95,43 +106,74 @@ impl VideoToolboxVideoDecoder {
             video_format_desc: None,
             shared,
             refcon_ptr: None,
+            codec: config.codec,
             info: stream_info_from(config),
             flushed: false,
         };
 
-        if !config.extra_data.is_empty() {
+        if requires_extra_data_at_open(config.codec) {
+            // VP9/AV1 have no in-band parameter-set NAL this backend can discover from the
+            // first packet — the container-supplied config record must be here now (see
+            // `codec::requires_extra_data_at_open`'s doc comment).
+            if config.extra_data.is_empty() {
+                return Err(DecodeError::Unsupported);
+            }
+            if config.width == 0 || config.height == 0 {
+                return Err(DecodeError::InvalidInput);
+            }
+            let atom_key = raw_atom_key(config.codec).ok_or(DecodeError::Unsupported)?;
+            let codec_type =
+                format_desc::raw_codec_type(config.codec).ok_or(DecodeError::Unsupported)?;
+            let width = i32::try_from(config.width).map_err(|_| DecodeError::InvalidInput)?;
+            let height = i32::try_from(config.height).map_err(|_| DecodeError::InvalidInput)?;
+            let fd =
+                format_desc::create_raw(codec_type, width, height, atom_key, &config.extra_data)?;
+            decoder.ensure_session(fd)?;
+        } else if !config.extra_data.is_empty() {
             // `extra_data` non-empty at `open()` ⇒ build immediately (ADR-0001 § Session
             // lifecycle) — a malformed/unsupported record is a real error here, not a silent
             // fallback to in-band detection (unlike `linux::vaapi`'s best-effort `seed_params`,
             // which only ever softens genuine parse failures of otherwise-optional seed data).
-            let avcc_config =
-                parse_avc_decoder_config(&config.extra_data).ok_or(DecodeError::InvalidInput)?;
-            decoder.ensure_session(&avcc_config)?;
+            match config.codec {
+                CodecKind::H264 => {
+                    let avcc_config = parse_avc_decoder_config(&config.extra_data)
+                        .ok_or(DecodeError::InvalidInput)?;
+                    validate_parameter_sets(&avcc_config)?;
+                    let fd = format_desc::create_h264(&avcc_config.sps[0], &avcc_config.pps[0])?;
+                    decoder.ensure_session(fd)?;
+                }
+                CodecKind::Hevc => {
+                    let hvcc_config = parse_hevc_decoder_config(&config.extra_data)
+                        .ok_or(DecodeError::InvalidInput)?;
+                    validate_hevc_parameter_sets(&hvcc_config)?;
+                    let fd = format_desc::create_hevc(
+                        &hvcc_config.vps[0],
+                        &hvcc_config.sps[0],
+                        &hvcc_config.pps[0],
+                    )?;
+                    decoder.ensure_session(fd)?;
+                }
+                // `validate()` (via `is_supported_video_codec`) already restricts `open()` to
+                // H.264/HEVC/VP9/AV1, and VP9/AV1 took the `requires_extra_data_at_open` branch
+                // above — nothing else reaches here.
+                _ => return Err(DecodeError::Unsupported),
+            }
         }
         Ok(decoder)
     }
 
-    /// Create the format description + session on first use. A no-op once created — dynamic
-    /// format renegotiation mid-session is unsupported this stage (ADR-0001 § Scope).
-    fn ensure_session(&mut self, avcc_config: &AvcDecoderConfig) -> Result<(), DecodeError> {
+    /// Create `VTDecompressionSession` from an already-built `format_desc` — codec-agnostic
+    /// (H.264/HEVC/VP9/AV1 callers build `format_desc` differently, via `format_desc::
+    /// create_{h264,hevc,raw}`, but session creation and the output callback wiring are
+    /// identical for all of them). A no-op once a session exists — dynamic format
+    /// renegotiation mid-session is unsupported this stage (ADR-0001 § Scope).
+    fn ensure_session(
+        &mut self,
+        video_format_desc: CFRetained<CMVideoFormatDescription>,
+    ) -> Result<(), DecodeError> {
         if self.session.is_some() {
             return Ok(());
         }
-        validate_parameter_sets(avcc_config)?;
-        let sps = &avcc_config.sps[0];
-        let pps = &avcc_config.pps[0];
-
-        let format_desc = create_format_description(sps, pps)?;
-        // SAFETY: `format_desc` was just created by
-        // `CMVideoFormatDescriptionCreateFromH264ParameterSets` (via
-        // `create_format_description`), which per its own doc comment only ever produces a
-        // format description describing H.264 video — casting to the "synonym" video-specific
-        // view type is exactly this API's documented purpose (`CMVideoFormatDescription` shares
-        // `CMFormatDescription`'s `CFTypeID`; it is not a distinct concrete type with its own
-        // `ConcreteType::type_id`).
-        let video_format_desc =
-            unsafe { CFRetained::cast_unchecked::<CMVideoFormatDescription>(format_desc) };
-
         let dest_attrs = destination_pixel_buffer_attributes();
 
         let refcon_ptr = Arc::into_raw(Arc::clone(&self.shared));
@@ -189,17 +231,54 @@ impl VideoDecoder for VideoToolboxVideoDecoder {
             return Ok(());
         }
 
-        // Reused unchanged in both directions (ADR-0001 § Byte framing): Annex-B input becomes
-        // 4-byte-length-prefixed AVCC (and yields a fresh `avcc` on the first SPS+PPS-bearing
-        // packet, feeding lazy session creation below); already-AVCC input passes through.
-        let avcc_out = to_avcc(&packet.payload);
-
-        if self.session.is_none() {
-            let avcc_bytes = avcc_out.avcc.as_ref().ok_or(DecodeError::InvalidInput)?;
-            let avcc_config =
-                parse_avc_decoder_config(avcc_bytes).ok_or(DecodeError::InvalidInput)?;
-            self.ensure_session(&avcc_config)?;
-        }
+        // Per-codec framing (ADR-0002 § Byte framing): H.264/HEVC Annex-B input becomes
+        // 4-byte-length-prefixed (and yields a fresh avcC/hvcC on the first parameter-set-
+        // bearing packet, feeding lazy session creation below); already-framed input passes
+        // through. VP9/AV1 are not NAL-based — the payload is fed to VideoToolbox byte-for-byte,
+        // and the session already exists from `open()` (see `requires_extra_data_at_open`).
+        let payload = match self.codec {
+            CodecKind::H264 => {
+                let avcc_out = to_avcc(&packet.payload);
+                if self.session.is_none() {
+                    let avcc_bytes = avcc_out.avcc.as_ref().ok_or(DecodeError::InvalidInput)?;
+                    let avcc_config =
+                        parse_avc_decoder_config(avcc_bytes).ok_or(DecodeError::InvalidInput)?;
+                    validate_parameter_sets(&avcc_config)?;
+                    let fd = format_desc::create_h264(&avcc_config.sps[0], &avcc_config.pps[0])?;
+                    self.ensure_session(fd)?;
+                }
+                avcc_out.payload
+            }
+            CodecKind::Hevc => {
+                let hvcc_out = to_hvcc(&packet.payload);
+                if self.session.is_none() {
+                    let hvcc_bytes = hvcc_out.hvcc.as_ref().ok_or(DecodeError::InvalidInput)?;
+                    let hvcc_config =
+                        parse_hevc_decoder_config(hvcc_bytes).ok_or(DecodeError::InvalidInput)?;
+                    validate_hevc_parameter_sets(&hvcc_config)?;
+                    let fd = format_desc::create_hevc(
+                        &hvcc_config.vps[0],
+                        &hvcc_config.sps[0],
+                        &hvcc_config.pps[0],
+                    )?;
+                    self.ensure_session(fd)?;
+                }
+                hvcc_out.payload
+            }
+            CodecKind::Vp9 | CodecKind::Av1 => {
+                if self.session.is_none() {
+                    // `open()` requires `extra_data` up front for these codecs — reaching here
+                    // without a session means `open()` never actually created one, which
+                    // shouldn't happen (see `requires_extra_data_at_open`); treat it as a
+                    // backend-state error rather than silently guessing a format description.
+                    return Err(DecodeError::Backend);
+                }
+                Bytes::copy_from_slice(&packet.payload)
+            }
+            // `self.codec` was validated at `open()` (via `is_supported_video_codec`) to be one
+            // of the four arms above — nothing else reaches here.
+            _ => return Err(DecodeError::Unsupported),
+        };
 
         let session = self.session.as_ref().ok_or(DecodeError::Backend)?;
         let format_desc = self
@@ -207,7 +286,7 @@ impl VideoDecoder for VideoToolboxVideoDecoder {
             .as_ref()
             .ok_or(DecodeError::Backend)?;
 
-        let block_buffer = create_block_buffer(&avcc_out.payload)?;
+        let block_buffer = create_block_buffer(&payload)?;
         let timing = build_timing_info(packet, self.shared.time_base);
         let sample_buffer = create_sample_buffer(&block_buffer, format_desc, &timing)?;
 
@@ -409,56 +488,6 @@ fn build_frame(
         format: PixelFormat::Nv12,
         storage: VideoFrameStorage::Cpu { data },
     })
-}
-
-/// SPS/PPS → `CMFormatDescription`, via `CMVideoFormatDescriptionCreateFromH264ParameterSets`
-/// (ADR-0001 § Session lifecycle). `sps`/`pps` must be raw NAL payload with any emulation
-/// prevention bytes needed and no start code / length prefix — exactly what
-/// `iso_bmff::bitstream::avc::parse_avc_decoder_config`'s `AvcDecoderConfig::{sps, pps}` already
-/// returns.
-fn create_format_description(
-    sps: &Bytes,
-    pps: &Bytes,
-) -> Result<CFRetained<CMFormatDescription>, DecodeError> {
-    if sps.is_empty() || pps.is_empty() {
-        return Err(DecodeError::InvalidInput);
-    }
-    let Some(sps_ptr) = NonNull::new(sps.as_ptr().cast_mut()) else {
-        return Err(DecodeError::InvalidInput);
-    };
-    let Some(pps_ptr) = NonNull::new(pps.as_ptr().cast_mut()) else {
-        return Err(DecodeError::InvalidInput);
-    };
-    let mut pointers = [sps_ptr, pps_ptr];
-    let mut sizes = [sps.len(), pps.len()];
-    let Some(pointers_ptr) = NonNull::new(pointers.as_mut_ptr()) else {
-        return Err(DecodeError::Backend);
-    };
-    let Some(sizes_ptr) = NonNull::new(sizes.as_mut_ptr()) else {
-        return Err(DecodeError::Backend);
-    };
-
-    let mut format_desc_out: Option<CFRetained<CMFormatDescription>> = None;
-    // SAFETY: `pointers_ptr`/`sizes_ptr` point at 2-element stack arrays matching
-    // `parameter_set_count = 2`; each pointer in `pointers` is valid for the corresponding
-    // `sizes` entry's byte length for the duration of this call (borrowed from `sps`/`pps`,
-    // both live for this whole function); `4` (`nal_unit_header_length`) matches this backend's
-    // Stage-1-only 4-byte AVCC length-prefix scope (ADR-0001 § Byte framing); `format_desc_out`
-    // starts `None`.
-    let status = unsafe {
-        CMVideoFormatDescription::from_h264_parameter_sets(
-            None,
-            2,
-            pointers_ptr,
-            sizes_ptr,
-            4,
-            &mut format_desc_out,
-        )
-    };
-    if status != NO_ERROR {
-        return Err(DecodeError::Backend);
-    }
-    format_desc_out.ok_or(DecodeError::Backend)
 }
 
 /// `destinationImageBufferAttributes` for `VTDecompressionSession::new` — forces NV12

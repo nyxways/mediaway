@@ -23,6 +23,7 @@ use vulkanalia::vk::{
     KhrVideoQueueExtensionInstanceCommands,
 };
 
+use crate::vulkan::av1_refs::Av1RefSlotsError;
 use crate::vulkan::dpb::DpbError;
 use crate::vulkan::h264_params::H264ParamError;
 
@@ -38,6 +39,8 @@ pub enum DecodeProfile {
     H264(vk::VideoDecodeH264ProfileInfoKHR),
     /// HEVC decode profile.
     Hevc(vk::VideoDecodeH265ProfileInfoKHR),
+    /// AV1 decode profile.
+    Av1(vk::VideoDecodeAV1ProfileInfoKHR),
 }
 
 impl DecodeProfile {
@@ -69,6 +72,23 @@ impl DecodeProfile {
         )
     }
 
+    /// AV1 Main-profile decode profile, film grain disabled
+    /// (`filmGrainSupport = VK_FALSE`) — `adr/vulkan/0002`'s § Scope decision
+    /// reason 3: enabling film grain forces `DPB_AND_OUTPUT_DISTINCT`,
+    /// incompatible with this crate's `DPB_AND_OUTPUT_COINCIDE`-only image
+    /// design (`query_capabilities`'s own `SeparateReferenceImagesRequired`
+    /// rejection below applies identically to AV1 once this 3-way match
+    /// lands).
+    #[must_use]
+    pub fn new_av1() -> Self {
+        Self::Av1(
+            vk::VideoDecodeAV1ProfileInfoKHR::builder()
+                .std_profile(vulkanalia::vk::video::STD_VIDEO_AV1_PROFILE_MAIN)
+                .film_grain_support(false)
+                .build(),
+        )
+    }
+
     /// The `VkVideoProfileInfoKHR` this profile chains its codec-specific
     /// struct onto — borrows `self`, so `self` must outlive every use of the
     /// returned value (mirrors `EncodeProfile::info`'s identical contract).
@@ -85,6 +105,10 @@ impl DecodeProfile {
             Self::Hevc(hevc) => base
                 .video_codec_operation(vk::VideoCodecOperationFlagsKHR::DECODE_H265)
                 .push_next(hevc)
+                .build(),
+            Self::Av1(av1) => base
+                .video_codec_operation(vk::VideoCodecOperationFlagsKHR::DECODE_AV1)
+                .push_next(av1)
                 .build(),
         }
     }
@@ -184,9 +208,19 @@ pub enum VulkanDecodeError {
     /// `hevc_slice.rs`), or the input bytes were truncated/malformed.
     #[error(transparent)]
     HevcBitstream(#[from] crate::vulkan::hevc_params::HevcParamError),
+    /// A parsed AV1 OBU/sequence-header/frame-header used a syntax element
+    /// this crate's `KEY_FRAME`-only scope does not support (see
+    /// `av1_params.rs`/`av1_frame_header.rs`), or the input bytes were
+    /// truncated/malformed.
+    #[error(transparent)]
+    Av1Bitstream(#[from] crate::vulkan::av1_params::Av1ParamError),
     /// A DPB slot-bookkeeping operation failed (see `dpb.rs`).
     #[error(transparent)]
     Dpb(#[from] DpbError),
+    /// An AV1 reference-slot bookkeeping operation failed (see
+    /// `av1_refs.rs`).
+    #[error(transparent)]
+    Av1Dpb(#[from] Av1RefSlotsError),
     /// A packet was pushed before an SPS/PPS had been seen, or referenced an
     /// unknown parameter-set id.
     #[error("no active SPS/PPS for this packet (id {id})")]
@@ -319,6 +353,12 @@ pub(crate) fn find_hevc_decode_device(
     find_decode_device(instance, vk::VideoCodecOperationFlagsKHR::DECODE_H265)
 }
 
+pub(crate) fn find_av1_decode_device(
+    instance: &vulkanalia::Instance,
+) -> Result<(vk::PhysicalDevice, u32), VulkanDecodeError> {
+    find_decode_device(instance, vk::VideoCodecOperationFlagsKHR::DECODE_AV1)
+}
+
 /// Real capability numbers this crate needs from
 /// `vkGetPhysicalDeviceVideoCapabilitiesKHR`.
 pub(crate) struct Capabilities {
@@ -387,17 +427,36 @@ pub(crate) fn query_capabilities(
     // outright on `mediaway-encoder-vulkan`'s own reference RTX 4090 (see
     // that crate's `session.rs::query_capabilities`) — determined before
     // `profile.info()` mutably borrows `profile` for the rest of this
-    // function.
-    let is_hevc = matches!(profile, DecodeProfile::Hevc(_));
+    // function. 3-way (not H.264/HEVC's original boolean) since
+    // `DecodeProfile::Av1` was added — see `adr/vulkan/0002`'s
+    // "`DecodeProfile`/`query_capabilities`/`query_video_format`: from 2-way
+    // to 3-way dispatch" section.
+    enum ProfileKind {
+        H264,
+        Hevc,
+        Av1,
+    }
+    let kind = match profile {
+        DecodeProfile::H264(_) => ProfileKind::H264,
+        DecodeProfile::Hevc(_) => ProfileKind::Hevc,
+        DecodeProfile::Av1(_) => ProfileKind::Av1,
+    };
     let profile_info = profile.info();
     let mut h264_caps = vk::VideoDecodeH264CapabilitiesKHR::default();
     let mut hevc_caps = vk::VideoDecodeH265CapabilitiesKHR::default();
+    // AV1: `filmGrainSupport` is always requested `VK_FALSE` (see
+    // `DecodeProfile::new_av1`'s doc) — a driver could in principle report
+    // `DPB_AND_OUTPUT_DISTINCT`-only for an AV1 profile even so (unrelated to
+    // film grain, just per-profile capability variance); the
+    // `SeparateReferenceImagesRequired` check below already handles this
+    // defensively, not a new gap (`adr/vulkan/0002`'s open question #7).
+    let mut av1_caps = vk::VideoDecodeAV1CapabilitiesKHR::default();
     let mut decode_caps = vk::VideoDecodeCapabilitiesKHR::default();
     let mut caps_builder = vk::VideoCapabilitiesKHR::builder().push_next(&mut decode_caps);
-    caps_builder = if is_hevc {
-        caps_builder.push_next(&mut hevc_caps)
-    } else {
-        caps_builder.push_next(&mut h264_caps)
+    caps_builder = match kind {
+        ProfileKind::Hevc => caps_builder.push_next(&mut hevc_caps),
+        ProfileKind::Av1 => caps_builder.push_next(&mut av1_caps),
+        ProfileKind::H264 => caps_builder.push_next(&mut h264_caps),
     };
     let mut caps = caps_builder.build();
     // SAFETY: `profile_info`/`caps` (and their chained extension structs)
@@ -481,11 +540,12 @@ pub(crate) fn create_logical_device(
     // creation just to pick between extension lists (matches
     // `mediaway-encoder-vulkan::session::create_logical_device`'s identical
     // choice).
-    let extension_names: [*const std::ffi::c_char; 4] = [
+    let extension_names: [*const std::ffi::c_char; 5] = [
         vk::KHR_VIDEO_QUEUE_EXTENSION.name.as_ptr(),
         vk::KHR_VIDEO_DECODE_QUEUE_EXTENSION.name.as_ptr(),
         vk::KHR_VIDEO_DECODE_H264_EXTENSION.name.as_ptr(),
         vk::KHR_VIDEO_DECODE_H265_EXTENSION.name.as_ptr(),
+        vk::KHR_VIDEO_DECODE_AV1_EXTENSION.name.as_ptr(),
     ];
     let create_info = vk::DeviceCreateInfo::builder()
         .queue_create_infos(&queue_create_infos)
@@ -671,6 +731,38 @@ pub(crate) fn create_session_parameters_hevc(
         .video_session(session)
         .push_next(&mut hevc_create_info);
     // SAFETY: `create_info` and its chained `add_info`/`vps`/`sps`/`pps` stay
+    // alive for this single synchronous call; no allocator callbacks supplied.
+    unsafe { device.create_video_session_parameters_khr(&create_info, None) }.map_err(|result| {
+        VulkanDecodeError::VkCall {
+            call: "vkCreateVideoSessionParametersKHR",
+            result,
+        }
+    })
+}
+
+/// AV1 sibling of [`create_session_parameters_h264`]/
+/// [`create_session_parameters_hevc`] — a **single** `pStdSequenceHeader`
+/// pointer, no add-info/`max_std_*_count` list shape at all, because AV1
+/// "lacks sequence identifiers" the way H.264/HEVC's own
+/// `seq_parameter_set_id`/`sps_seq_parameter_set_id` provide (see
+/// `adr/vulkan/0002`'s "Session-parameters lifecycle" section — this crate's
+/// own "one sequence header per session" scope cut happens to make this a
+/// non-issue in practice, but the function *shape* is genuinely simpler than
+/// its H.264/HEVC siblings as a direct consequence of AV1's own design, not a
+/// scope choice this crate is making).
+pub(crate) fn create_session_parameters_av1(
+    decode_device: &DecodeDevice<'_>,
+    session: vk::VideoSessionKHR,
+    seq: &vulkanalia::vk::video::StdVideoAV1SequenceHeader,
+) -> Result<vk::VideoSessionParametersKHR, VulkanDecodeError> {
+    let device = decode_device.device;
+    let mut av1_create_info = vk::VideoDecodeAV1SessionParametersCreateInfoKHR::builder()
+        .std_sequence_header(seq)
+        .build();
+    let create_info = vk::VideoSessionParametersCreateInfoKHR::builder()
+        .video_session(session)
+        .push_next(&mut av1_create_info);
+    // SAFETY: `create_info` and its chained `av1_create_info`/`seq` stay
     // alive for this single synchronous call; no allocator callbacks supplied.
     unsafe { device.create_video_session_parameters_khr(&create_info, None) }.map_err(|result| {
         VulkanDecodeError::VkCall {

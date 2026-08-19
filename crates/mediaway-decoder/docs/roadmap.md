@@ -48,7 +48,12 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 - [x] `vulkan` module (portable, not OS-suffixed — see
       [adr/vulkan/0001](../adr/vulkan/0001-vulkan-video-decode.md)): H.264
       general-GOP decode **hardware-verified** (RTX 4090); HEVC IDR decode
-      **hardware-verified**; HEVC P/B and AV1 still deferred
+      **hardware-verified**; HEVC P/B still deferred; AV1 `KEY_FRAME`-only,
+      single-tile decode **hardware-verified** (RTX 4090, first attempt, no
+      driver-maturity wall — unlike this workspace's AV1 Vulkan *encode*
+      path) per
+      [adr/vulkan/0002](../adr/vulkan/0002-av1-decode-keyframe-first.md);
+      general-GOP AV1 (`INTER_FRAME`, multi-tile, film grain) still deferred
 
 ### 4 — Other
 

@@ -62,6 +62,10 @@ path = "tests/vulkan/hardware_h264_decode.rs"
 name = "hardware_hevc_decode"
 path = "tests/vulkan/hardware_hevc_decode.rs"
 
+[[test]]
+name = "hardware_av1_decode"
+path = "tests/vulkan/hardware_av1_decode.rs"
+
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = [
     "Win32_Foundation",

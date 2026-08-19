@@ -8,6 +8,15 @@
 
 ### Added
 
+- `mediaway-decoder::vulkan`: AV1 decode via `VK_KHR_video_decode_av1`, scoped to
+  `frame_type == KEY_FRAME`/`show_frame == 1`/single-tile pictures (general-GOP AV1 decode
+  remains a follow-up). Real sans-io OBU/sequence-header/`KEY_FRAME`-frame-header parsing
+  (segmentation, quantization, loop filter, CDEF, loop restoration, tile info all real, not
+  stubs) plus a real Vulkan Video session/decode path — **hardware-verified on the RTX 4090
+  reference machine on the first attempt**, decoding a real `mediaway-sw::av1::Av1Encoder`
+  (`rav1e`-backed) `KEY_FRAME` with hard content assertions; does not share this workspace's
+  confirmed AV1 Vulkan *encode* driver-maturity limitation. See
+  `crates/mediaway-decoder/adr/vulkan/0002-av1-decode-keyframe-first.md`.
 - `mediaway-decoder::android`: first Android decode backend (NDK `AMediaCodec` via the `ndk`
   crate), H.264 CPU NV12 output only, `COLOR_FormatYUV420SemiPlanar` only (reject-not-guess on
   any other reported output color format), general GOP (not IDR-only — the device manages its

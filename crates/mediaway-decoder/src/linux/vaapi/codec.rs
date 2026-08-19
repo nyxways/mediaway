@@ -40,10 +40,19 @@ pub(super) fn av1_profile_candidates() -> Vec<cros_libva::VAProfile::Type> {
     vec![cros_libva::VAProfile::VAProfileAV1Profile0]
 }
 
+/// VA-API profile candidates for VP9 decode — this crate's VP9 `Header::parse` already rejects
+/// any `Profile` other than `0` (8-bit 4:2:0 — see
+/// `adr/linux/0004-vaapi-vp9-key-frame-and-inter-decode.md` § Scope), so this always returns the
+/// single Profile-0 candidate.
+#[must_use]
+pub(super) fn vp9_profile_candidates() -> Vec<cros_libva::VAProfile::Type> {
+    vec![cros_libva::VAProfile::VAProfileVP9Profile0]
+}
+
 /// Whether this crate's video decode path accepts `codec`.
 #[must_use]
 pub(super) const fn is_supported_video_codec(codec: CodecKind) -> bool {
-    matches!(codec, CodecKind::H264 | CodecKind::Av1)
+    matches!(codec, CodecKind::H264 | CodecKind::Av1 | CodecKind::Vp9)
 }
 
 #[cfg(test)]

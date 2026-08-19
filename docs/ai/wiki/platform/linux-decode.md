@@ -4,9 +4,11 @@
 - Bindings: [`cros-libva`](https://crates.io/crates/cros-libva) (BSD-3-Clause, `cfg(target_os =
   "linux")` dependency only — never pulled into non-Linux builds)
 - Codec: H.264 baseline/main (`vaapi/codec.rs` → `VAProfileH264ConstrainedBaseline` /
-  `VAProfileH264Main`, `VAEntrypointVLD`) and AV1 Main profile `KEY_FRAME`-only
-  (`VAProfileAV1Profile0`, `VAEntrypointVLD`) — dispatched via `vaapi::VaapiVideoDecoder`, an
-  enum over the two per-codec decoders (no `Box<dyn VideoDecoder>`)
+  `VAProfileH264Main`, `VAEntrypointVLD`), AV1 Main profile `KEY_FRAME`-only
+  (`VAProfileAV1Profile0`, `VAEntrypointVLD`), and VP9 Profile 0 `KEY_FRAME` + general
+  `INTER_FRAME` (`VAProfileVP9Profile0`, `VAEntrypointVLD`) — dispatched via
+  `vaapi::VaapiVideoDecoder`, an enum over the three per-codec decoders (no
+  `Box<dyn VideoDecoder>`)
 - Scope: I and single-forward-reference P slices (real GOP/IPPP... decode), single slice per
   picture, `pic_order_cnt_type == 0`, progressive. Sliding-window DPB (`vaapi/dpb.rs`, ported
   from `vulkan/dpb.rs`), `RefPicList0[0]`-only reference (no reordering, no long-term refs, no
@@ -55,6 +57,25 @@
   decode explicitly deferred: harder here than H.264's same-pass DPB extension (no porting
   precedent, AV1's CDF-forward-adaptation + 9-way reference-slot model). **Zero real VA-API
   hardware verification**, same caveat as ADR-0001/0002.
+- ADR: [0004](../../../../crates/mediaway-decoder/adr/linux/0004-vaapi-vp9-key-frame-and-inter-decode.md) —
+  **Implemented, WSL2 compile+clippy+test-verified**: VP9 `KEY_FRAME` + **general**
+  `INTER_FRAME` decode (no artificial reference-count restriction, unlike H.264's
+  `RefPicList0[0]`-only scope — `reference_frames[8]` is always fully populated regardless of
+  active-reference count, confirmed against `FFmpeg`'s `vaapi_vp9.c`). Broader scope than the
+  AV1 sibling's `KEY_FRAME`-only cut: VP9 entropy adaptation is driver-internal (four
+  passthrough scalars, no app-side CDF math), and its reference model is a flat, spec-fixed
+  8-slot array (2 fields/slot: width/height, `vaapi/vp9/ref_table.rs`) vs. AV1's
+  12-field-per-slot state. New `vaapi/vp9/{bits,color_config,frame_size,header,loop_filter,
+  quantization,ref_table,segmentation,tile_info}.rs` tree, `#![forbid(unsafe_code)]`, 100+
+  hand-constructed bitstream fixture tests. **Real correction found this session**: an earlier
+  open question had assumed VP9's `su(n)` matches AV1's sign-embedded-in-top-bit shape; the
+  primary spec text (`pdftotext`-extracted this pass) confirms VP9 instead uses `s(n)` — a plain
+  `f(n)` magnitude read then a **separate** sign bit (`n + 1` bits, not `n`). `RefTable::
+  free_pool_index` uses a `POOL_SIZE = VP9_REF_SLOTS + 1 = 9` pigeonhole guarantee so multiple
+  logical slots can alias one physical picture (this workspace's own VP9 encoder sibling's
+  ping-pong output legitimately refreshes 7 of 8 logical slots per `INTER_FRAME`) without
+  needing 8 separate physical buffers. **Zero real-hardware verification**, same caveat as
+  every ADR in this folder.
 
 ## ⚠️ Hardware verification status
 

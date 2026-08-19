@@ -34,7 +34,7 @@ use mediaway_common::{Bytes, Packet, StreamInfo};
 #[cfg(target_os = "linux")]
 mod vaapi;
 
-/// Linux video decode session (VA-API H.264/AV1 when opened on Linux).
+/// Linux video decode session (VA-API H.264/AV1/VP9 when opened on Linux).
 #[cfg(feature = "video")]
 pub struct LinuxVideoDecoder {
     #[cfg(target_os = "linux")]
@@ -50,9 +50,10 @@ impl LinuxVideoDecoder {
     /// # Errors
     ///
     /// Returns [`DecodeError::Unsupported`] when the codec/output path is not wired
-    /// (currently: anything but H.264/AV1 `KEY_FRAME`-only + [`VideoOutputPreference::CpuFramesOk`]),
-    /// or [`DecodeError::Backend`] on VA-API failure. No `/dev/dri/renderD*` VA-API display is
-    /// expected in most CI/dev environments — see ADR-0001's hardware caveat.
+    /// (currently: anything but H.264/AV1 `KEY_FRAME`-only/VP9 +
+    /// [`VideoOutputPreference::CpuFramesOk`]), or [`DecodeError::Backend`] on VA-API failure.
+    /// No `/dev/dri/renderD*` VA-API display is expected in most CI/dev environments — see
+    /// ADR-0001's hardware caveat.
     ///
     /// [`VideoOutputPreference::CpuFramesOk`]: crate::VideoOutputPreference::CpuFramesOk
     #[cfg(target_os = "linux")]

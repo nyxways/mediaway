@@ -14,12 +14,14 @@ mod nv12;
 mod pps;
 mod slice;
 mod sps;
+mod vp9;
 
 use crate::{DecodeError, VideoDecoder, VideoDecoderConfig};
 use mediaway_common::{CodecKind, Packet, StreamInfo, VideoFrame};
 
 use av1::VaapiAv1Decoder;
 use h264::VaapiH264Decoder;
+use vp9::VaapiVp9Decoder;
 
 /// Dispatches to the right per-codec VA-API decode session based on
 /// [`VideoDecoderConfig::codec`] — a plain enum over this crate's concrete decoder types
@@ -27,6 +29,7 @@ use h264::VaapiH264Decoder;
 pub(crate) enum VaapiVideoDecoder {
     H264(VaapiH264Decoder),
     Av1(VaapiAv1Decoder),
+    Vp9(VaapiVp9Decoder),
 }
 
 impl VaapiVideoDecoder {
@@ -43,6 +46,7 @@ impl VaapiVideoDecoder {
         match config.codec {
             CodecKind::H264 => Ok(Self::H264(VaapiH264Decoder::open(config)?)),
             CodecKind::Av1 => Ok(Self::Av1(VaapiAv1Decoder::open(config)?)),
+            CodecKind::Vp9 => Ok(Self::Vp9(VaapiVp9Decoder::open(config)?)),
             _ => Err(DecodeError::Unsupported),
         }
     }
@@ -53,6 +57,7 @@ impl VideoDecoder for VaapiVideoDecoder {
         match self {
             Self::H264(d) => d.stream_info(),
             Self::Av1(d) => d.stream_info(),
+            Self::Vp9(d) => d.stream_info(),
         }
     }
 
@@ -60,6 +65,7 @@ impl VideoDecoder for VaapiVideoDecoder {
         match self {
             Self::H264(d) => d.push_packet(packet),
             Self::Av1(d) => d.push_packet(packet),
+            Self::Vp9(d) => d.push_packet(packet),
         }
     }
 
@@ -67,6 +73,7 @@ impl VideoDecoder for VaapiVideoDecoder {
         match self {
             Self::H264(d) => d.poll_frame(),
             Self::Av1(d) => d.poll_frame(),
+            Self::Vp9(d) => d.poll_frame(),
         }
     }
 
@@ -74,6 +81,7 @@ impl VideoDecoder for VaapiVideoDecoder {
         match self {
             Self::H264(d) => d.flush(),
             Self::Av1(d) => d.flush(),
+            Self::Vp9(d) => d.flush(),
         }
     }
 }

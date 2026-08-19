@@ -72,6 +72,13 @@
   clean; **zero real GPU hardware verification, deliberately**, given a confirmed, repeatedly
   reproduced D3D12 decode TDR on this workspace's own H.264 path. See
   `crates/mediaway-decoder/adr/windows/0004-d3d12-hevc-single-forward-ref-p-slice-decode.md`.
+- `mediaway-decoder::windows`: D3D12 native AV1 decode (`d3d12_video_decode` module, still
+  unregistered), `KEY_FRAME`-only, Main profile, 8-bit 4:2:0, single-tile, parallel to the
+  existing H.264/HEVC paths (new `av1*.rs` files only). Sans-io-verified only — 43 new unit
+  tests plus `cargo check`/`clippy`/`fmt` clean; **zero real GPU hardware verification,
+  deliberately**, same TDR-avoidance reasoning as HEVC, plus an open question of whether this
+  crate's own D3D12 AV1 encoder output is decodable at all. See
+  `crates/mediaway-decoder/adr/windows/0005-d3d12-av1-key-frame-decode.md`.
 
 ### Changed
 

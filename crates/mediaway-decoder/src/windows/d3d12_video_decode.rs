@@ -68,6 +68,13 @@ use windows::Win32::Media::MediaFoundation::{
 use windows::Win32::System::Threading::CreateEventW;
 use windows::core::Interface;
 
+mod av1;
+mod av1_decoder;
+mod av1_frame_header;
+mod av1_obu;
+mod av1_ops;
+mod av1_pic_params;
+mod av1_sequence_header;
 mod dpb;
 mod h264;
 mod h264_pic_params;
@@ -102,10 +109,19 @@ mod tests;
 #[path = "d3d12_video_decode_hevc_tests.rs"]
 mod hevc_hardware_tests;
 
+// See ADR-0005 § Test plan: same "written this pass, never executed" convention as
+// `hevc_hardware_tests` above, doubly cautioned by ADR-0005's own Open Question #1 (this
+// crate's own D3D12 AV1 encoder output is not confirmed decodable) — do not run.
+#[cfg(test)]
+#[path = "d3d12_video_decode_av1_tests.rs"]
+mod av1_hardware_tests;
+
 use dpb::DpbPool;
 use h264_poc::PocState;
 use h264_refs::H264RefMeta;
 use h264_sps_pps::{Pps, Sps};
+
+pub(crate) use av1_decoder::{D3d12VideoDecoderAv1, DecodedFrameAv1, DecodedOutputAv1};
 pub(crate) use hevc_decoder::{D3d12VideoDecoderHevc, DecodedFrameHevc, DecodedOutputHevc};
 
 /// Extra DPB slots above `max_num_ref_frames`, absorbing ordinary Zero-Copy-handle /

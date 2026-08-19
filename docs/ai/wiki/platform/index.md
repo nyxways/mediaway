@@ -8,6 +8,7 @@
 | [windows-encode-gpu-input](windows-encode-gpu-input.md) | D3D12 encoder GPU-input Zero-Copy design (wgpu + native capture callers) — Proposed, no code |
 | [windows-decode](windows-decode.md) | WMF + DX11 decoder Zero-Copy out; D3D12 native decode (H.264 implemented, **paused** on a real GPU-TDR hang) |
 | [windows-decode-d3d12-hevc](windows-decode-d3d12-hevc.md) | D3D12 native HEVC decode (ADR-0004) — **implemented, sans-io-verified only**; zero real GPU hardware run, deliberately |
+| [windows-decode-d3d12-av1](windows-decode-d3d12-av1.md) | D3D12 native AV1 decode (ADR-0005) — **implemented, sans-io-verified only**, `KEY_FRAME`-only; zero real GPU hardware run, deliberately; open bitstream-source question for any future hardware attempt |
 | [web-encode](web-encode.md) | WebCodecs + WASM mux (browser) |
 | [linux-encode](linux-encode.md) | VA-API H.264 CPU-upload encode backend; real P-frame GOP implemented (ADR-0002); zero HW verification caveat |
 | [linux-decode](linux-decode.md) | VA-API H.264 CPU-output decode backend — real GOP (IPPP...) decode via a sliding-window DPB, single-forward-reference P-slices (ADR-0002); zero HW verification caveat |

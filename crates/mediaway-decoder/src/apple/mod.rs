@@ -49,12 +49,13 @@ mod videotoolbox;
 
 #[cfg(all(any(target_os = "macos", target_os = "ios"), feature = "audio"))]
 mod audiotoolbox;
-/// Reachable as `mediaway_decoder::apple::AacDecoder` — see
-/// [ADR-0004](../adr/apple/0004-audiotoolbox-aac-decode.md). No `AppleAudioDecoder` wrapper
-/// exists (mirrors `mediaway-decoder::windows`'s own `WmfOpusDecoder` exposure — no
+/// Reachable as `mediaway_decoder::apple::{AacDecoder, OpusDecoder}` — see
+/// [ADR-0004](../adr/apple/0004-audiotoolbox-aac-decode.md) (AAC) and
+/// [ADR-0005](../adr/apple/0005-audiotoolbox-opus-decode.md) (Opus). No `AppleAudioDecoder`
+/// wrapper exists (mirrors `mediaway-decoder::windows`'s own `WmfOpusDecoder` exposure — no
 /// `WindowsAudioDecoder` wrapper exists there either).
 #[cfg(all(any(target_os = "macos", target_os = "ios"), feature = "audio"))]
-pub use audiotoolbox::{AacDecoder, AacDecoderConfig};
+pub use audiotoolbox::{AacDecoder, AacDecoderConfig, OpusDecoder, OpusDecoderConfig};
 
 /// Apple video decode session (`VideoToolbox` H.264 when opened on macOS/iOS).
 #[cfg(feature = "video")]

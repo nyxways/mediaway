@@ -157,6 +157,17 @@
   `PipeWire(String)` (`node.name`) variant; `Select::Id(DeviceId::from_pipewire_node_name(..))`
   now sets `PW_KEY_TARGET_OBJECT` on the capture stream. Real-hardware (real `libpipewire` link)
   compile and unit-test verified via WSL2.
+- Windows `mediaway-encoder-windows`: WMF AV1 encode's `refresh_extradata` was codec-blind and
+  ran every codec's `MF_MT_MPEG_SEQUENCE_HEADER` blob through the H.264-Annex-B-specific
+  `avc::to_avcc`, silently writing a non-conformant raw blob into the MP4 `av1C` box for AV1
+  output. New `iso_bmff::bitstream::av1::to_av1c` builds a real `AV1CodecConfigurationRecord`
+  from the Sequence Header OBU; `refresh_extradata` is now codec-aware. Also adds a real
+  `MFTEnumEx(MFT_CATEGORY_VIDEO_ENCODER, …)` diagnostic
+  (`wmf::video::tests::list_encoder_mfts_for_each_codec`) mirroring the decode-side probe —
+  real finding on the verification host: an AV1 encoder MFT (NVIDIA + Intel) is registered
+  under `MFT_ENUM_FLAG_HARDWARE`, but not reachable through either the CPU-upload or DX11
+  Zero-Copy path yet on that host (see `crates/mediaway-encoder/docs/roadmap.md`). See
+  `crates/mediaway-encoder/adr/windows/0010-wmf-av1-encode-config-record-and-mft-probe.md`.
 
 ### Removed
 

@@ -24,6 +24,35 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 - [ ] Readback / SW paths in `auto` (policy bits recognized; no backend yet — honest `NoBackend` error)
 - [x] WMF AAC encode
 - [x] Integration smoke with `mediaway-container` + `mediaway-test-media`
+- [x] WMF HEVC/AV1/VP9 encode dispatch (CPU `MFTEnumEx` + DX11 Zero-Copy, no hardcoded
+      CLSID) — ADR-0004; a later premise that AV1 dispatch still needed "wiring up" was
+      wrong, see ADR-0010
+- [x] WMF AV1 `av1C` config-record correctness — `refresh_extradata` is now codec-aware:
+      `iso_bmff::bitstream::av1::to_av1c` (new, sans-io, unit-tested incl. a real
+      `ffmpeg`/`libaom-av1` oracle test) builds a real `AV1CodecConfigurationRecord` from the
+      Sequence Header OBU; H.264 keeps `avc::to_avcc`, HEVC/VP9 keep the pre-existing
+      raw-bytes-verbatim fallback (known separate gap, not fixed here) — ADR-0010 implemented.
+      Profile/level/tier bitfields stay zero (deferred per ADR-0010, no confirmed real MFT
+      output to verify field population against yet).
+- [x] Real `MFTEnumEx(MFT_CATEGORY_VIDEO_ENCODER, …)` encoder probe
+      (`wmf::video::tests::list_encoder_mfts_for_each_codec`) — ADR-0010 implemented. **Real
+      finding on this session's verification host (RTX 4090 + Intel UHD 770, 2026-08-19)**:
+      an AV1 encoder MFT genuinely **is** registered — `MFT_ENUM_FLAG_HARDWARE`-filtered
+      enumeration finds `"NVIDIA AV1 Encoder MFT"` and (listed twice) `"Intel® Hardware
+      Accelerated AV1 Encoder MFT"`. Unfiltered (`MFT_ENUM_FLAG_SORTANDFILTER`-only, no
+      `HARDWARE` flag — the flag set `open_cpu`'s CPU-upload path uses) finds **zero** AV1
+      MFTs; HEVC/VP9 both have a software Store-extension encoder
+      (`HEVCVideoExtensionEncoder`/`VP9VideoExtensionEncoder`) in that same unfiltered set,
+      AV1 has none. Net effect: `open_hevc_av1_vp9_cpu_or_skip`'s AV1 branch still gets
+      `Unsupported` (no non-hardware-flagged MFT to enumerate), and
+      `open_hevc_av1_vp9_dx11_or_skip`'s AV1 branch finds the hardware MFT but still fails
+      with `EncodeError::Backend` further downstream (D3D11-aware/type-negotiation stage) —
+      same pre-existing failure class already observed there for HEVC/VP9 DX11 on this host,
+      not a new bug and out of this ADR's scope to fix. So the `av1C` fix above stays
+      sans-io-unit-tested-only on this host; the extended `open_hevc_av1_vp9_*_or_skip` av1C
+      assertions are live but never yet exercised end-to-end here. This refines (does not
+      contradict) the earlier H.264-only "no encode HW MFT on either GPU" wiki finding — that
+      finding was about H.264 specifically, not "no HW MFTs for any codec".
 
 ### 1b — Umbrella (optional)
 

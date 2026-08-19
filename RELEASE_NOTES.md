@@ -65,6 +65,23 @@
   `crates/mediaway-device/adr/apple/0001-avfoundation-camera-capture.md`,
   `0002-avaudioengine-microphone-capture.md`, `0003-screencapturekit-macos-screen-capture.md`,
   `0004-replaykit-ios-inapp-screen-capture.md`.
+- `mediaway-decoder::linux`: VA-API DMA-BUF Zero-Copy decode output
+  (`VideoOutputPreference::ZeroCopyGpu`, `vaExportSurfaceHandle` via `cros-libva`'s
+  `Surface::export_prime()`), new codec-agnostic `vaapi/dmabuf.rs` and a new
+  `mediaway_common::GpuBufferHandle::DmaBuf(Box<DmaBufDescriptor>)` variant (boxed — drops
+  `Copy` from the whole enum). DPB slot recycling now tracks outstanding Zero-Copy handles
+  (`Dpb::mark_outstanding`/`clear_outstanding`), refusing to recycle a slot a caller still holds
+  a handle into. WSL2 + Windows compile/clippy/test-verified; zero real VA-API hardware
+  verification (no device available). See
+  `crates/mediaway-decoder/adr/linux/0003-vaapi-dmabuf-zero-copy-output.md`.
+- `mediaway-encoder::linux`: VA-API DMA-BUF Zero-Copy encode input
+  (`VideoInputPreference::ZeroCopyGpu`, `vaCreateSurfaces` import via `cros-libva`'s
+  `ExternalBufferDescriptor`), new codec-agnostic `vaapi/dmabuf.rs`, reusing the decoder's
+  `GpuBufferHandle::DmaBuf`. A single-use imported surface flows through the existing
+  `Picture<S, T>` typestate chain alongside the pooled CPU-upload reference surfaces, with no
+  pool restructuring; forces all-IDR encode for `ZeroCopyGpu` sessions. WSL2 + Windows
+  compile/clippy/test-verified; zero real VA-API hardware verification. See
+  `crates/mediaway-encoder/adr/linux/0003-vaapi-dmabuf-zero-copy-input.md`.
 
 ### Changed
 

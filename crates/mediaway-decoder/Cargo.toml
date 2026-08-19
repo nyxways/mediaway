@@ -117,6 +117,8 @@ objc2-core-foundation = { version = "0.3", default-features = false, features = 
     "CFString",
     "CFDictionary",
     "CFNumber",
+    "CFData",
+    "CFPropertyList",
 ] }
 
 

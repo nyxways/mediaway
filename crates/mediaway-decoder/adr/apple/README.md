@@ -3,6 +3,7 @@
 | ID | Title | Status |
 |----|-------|--------|
 | [0001](0001-videotoolbox-h264-cpu-out.md) | `VideoToolbox` `VTDecompressionSession` via `objc2`, H.264 CPU-output decode | Accepted |
+| [0002](0002-videotoolbox-hevc-vp9-av1-decode.md) | `VideoToolbox` decode multicodec expansion — HEVC, VP9, AV1 | Accepted |
 
 Template: copy from [`mediaway-decoder/adr/template.md`](../template.md).
 

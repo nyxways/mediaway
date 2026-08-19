@@ -10,6 +10,7 @@
 )]
 
 mod codec;
+mod extradata;
 mod video;
 
 pub(crate) use video::VideoToolboxVideoEncoder;

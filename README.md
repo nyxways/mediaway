@@ -260,9 +260,9 @@ OS codec APIs (WMF, WebCodecs, VA-API, …) fed with CPU buffers (upload may app
 | Codec        | Windows  | Web      | Linux   | Apple   | Android |
 | ------------ | -------- | -------- | ------- | ------- | ------- |
 | H.264 / AVC  | ✅ / ✅  | ✅ / ✅ | 🆗 / 🆗 | 🆗 / 🆗 | 🆗 / 🆗 |
-| HEVC / H.265 | ✅ / ✅ | ❌ / ✅ | 🆗 / 🆗 | 👻    | 👻      |
-| AV1          | 🛠️ / ✅ | ✅      | ❌ / 🆗 | 👻    | 👻      |
-| VP9          | ✅ / ✅ | ✅      | 🆗 / 🆗 | 👻    | 👻      |
+| HEVC / H.265 | ✅ / ✅ | ❌ / ✅ | 🆗 / 🆗 | 🆗 / 🆗 | 👻      |
+| AV1          | 🛠️ / ✅ | ✅      | ❌ / 🆗 | ❌ / 🆗 | 👻      |
+| VP9          | ✅ / ✅ | ✅      | 🆗 / 🆗 | ❌ / 🆗 | 👻      |
 | ProRes       | 👻       | 👻       | 👻    | 👻    | 👻      |
 | AAC          | 🆗       | 🆗       | 🛠️   | 👻    | 👻      |
 | Opus         | ✅ / ✅ | 🆗      | 🛠️   | 👻    | 👻      |

@@ -1,21 +1,45 @@
 # Apple decode (`mediaway-decoder::apple`)
 
-ADR: [`crates/mediaway-decoder/adr/apple/0001-videotoolbox-h264-cpu-out.md`](../../../../crates/mediaway-decoder/adr/apple/0001-videotoolbox-h264-cpu-out.md)
-— **Accepted, zero compile verification** (no Apple SDK in this dev environment; same posture as
-`mediaway-encoder::apple`). Implemented at `src/apple/` per this ADR — `cargo check`/`clippy`
-pass on this Windows host (the real `objc2-*`-calling code in `videotoolbox/video.rs` is
-`cfg`-gated to Apple targets and cannot be type-checked here; the pure tick/NV12 helpers in
-`videotoolbox/codec.rs` have no `objc2-*` dependency and are covered by real, passing unit
-tests). Not wired into `auto`/`capability`.
+ADR: [0001](../../../../crates/mediaway-decoder/adr/apple/0001-videotoolbox-h264-cpu-out.md) —
+**Accepted, zero compile verification** (no Apple SDK in this dev environment; same posture as
+`mediaway-encoder::apple`) — H.264 only.
+[0002](../../../../crates/mediaway-decoder/adr/apple/0002-videotoolbox-hevc-vp9-av1-decode.md) —
+**Accepted** — HEVC/VP9/AV1 multicodec expansion, **wired into `mediaway::platform`'s
+`AutoDecoder`/`decoder_support`** (`crates/mediaway/src/platform.rs`). Implemented at `src/apple/`
+per these ADRs — `cargo check`/`clippy` pass on this Windows host (the real `objc2-*`-calling code
+in `videotoolbox/{video,format_desc}.rs` is `cfg`-gated to Apple targets and cannot be
+type-checked here; the pure helpers in `videotoolbox/codec.rs` have no `objc2-*` dependency and
+are covered by real, passing unit tests, 22 total).
+
+## HEVC — mirrors H.264 exactly
+
+`CMVideoFormatDescriptionCreateFromHEVCParameterSets` (VPS+SPS+PPS, dedicated entry point same
+shape as H.264's own) + a new `iso_bmff::bitstream::hevc` module (Annex-B ↔ `hvcC`, structurally
+identical to `iso_bmff::bitstream::avc` generalized from 2 parameter-set types to 3 — a genuine
+workspace-level addition, not backend-private code). Same lazy session creation, same NAL framing
+per packet (`to_hvcc`), same general-GOP black-box-DPB posture as H.264.
+
+## VP9/AV1 — no bitstream parsing, container-supplied config record required
+
+`VideoToolbox` has **no per-frame parameter-set entry point** for either codec (confirmed: grepped
+every generated `objc2-video-toolbox`/`objc2-core-media` file, only the plain
+`kCMVideoCodecType_{VP9,AV1}` type constants exist). The only construction path is generic
+`CMVideoFormatDescriptionCreate(codecType, width, height, extensions)` with the config record
+(`vpcC`/`av1C`) wrapped as a `SampleDescriptionExtensionAtoms` extension atom
+(`format_desc::create_raw`) — this backend does **not** parse the VP9/AV1 bitstream itself to
+synthesize one (unlike `linux::vaapi`'s from-scratch VP9/AV1 parsers, which exist because VA-API's
+session API genuinely needs full picture parameters this crate must derive). `extra_data` **must**
+already hold a valid `vpcC`/`av1C` at `open()` — `DecodeError::Unsupported` if empty, no in-band
+lazy discovery like H.264/HEVC get.
 
 **Corpus note:** no `mediaway-decoder::android` backend exists in this repo yet either, despite
 being referenced by a prior task briefing — this ADR is grounded in `linux::vaapi` (CPU-output
 structure) and `vulkan` (general-GOP precedent) instead. Do not assume an Android decode ADR
 exists until one is actually written.
 
-## Scope (Stage 1)
+## Scope (ADR-0001, H.264 — HEVC/VP9/AV1 scope is above)
 
-- H.264 only, CPU NV12 (`VideoRange`) readback via `CVPixelBufferLockBaseAddress` +
+- H.264 CPU NV12 (`VideoRange`) readback via `CVPixelBufferLockBaseAddress` +
   `width_of_plane`/`base_address_of_plane`. No Zero-Copy output yet
   (`GpuBufferHandle::Metal` already exists in `mediaway-common`, wiring deferred).
 - **General GOP (P/B frames), not IDR-only** — `VTDecompressionSession` is a black-box HW/SW
@@ -50,7 +74,8 @@ Same `objc2-*` family/version (`"0.3"`) `mediaway-encoder::apple` already pins, 
 `VTSession`, `objc2-core-media`, `objc2-core-video`), `objc2-core-media` (adds `CMBlockBuffer`
 to the encoder's own list), `objc2-core-video` (`CVReturn` instead of the encoder's
 `CVPixelBufferPool`), `objc2-core-foundation` (no `CFArray` this stage). See the ADR's Decision
-section for the exact reasoning per feature.
+section for the exact reasoning per feature. ADR-0002 added `CFData`/`CFPropertyList` to
+`objc2-core-foundation` (VP9/AV1's extension-atom dictionary construction).
 
 ## Open items (not settled from local `objc2` source)
 

@@ -147,8 +147,65 @@ fn validate_parameter_sets_rejects_zero_pps() {
 }
 
 #[test]
-fn is_supported_video_codec_h264_only() {
+fn is_supported_video_codec_h264_hevc_vp9_av1() {
     assert!(is_supported_video_codec(CodecKind::H264));
-    assert!(!is_supported_video_codec(CodecKind::Hevc));
-    assert!(!is_supported_video_codec(CodecKind::Av1));
+    assert!(is_supported_video_codec(CodecKind::Hevc));
+    assert!(is_supported_video_codec(CodecKind::Vp9));
+    assert!(is_supported_video_codec(CodecKind::Av1));
+    assert!(!is_supported_video_codec(CodecKind::Opus));
+}
+
+#[test]
+fn requires_extra_data_at_open_only_vp9_av1() {
+    assert!(!requires_extra_data_at_open(CodecKind::H264));
+    assert!(!requires_extra_data_at_open(CodecKind::Hevc));
+    assert!(requires_extra_data_at_open(CodecKind::Vp9));
+    assert!(requires_extra_data_at_open(CodecKind::Av1));
+}
+
+#[test]
+fn raw_atom_key_matches_codec() {
+    assert_eq!(raw_atom_key(CodecKind::Vp9), Some("vpcC"));
+    assert_eq!(raw_atom_key(CodecKind::Av1), Some("av1C"));
+    assert_eq!(raw_atom_key(CodecKind::H264), None);
+    assert_eq!(raw_atom_key(CodecKind::Hevc), None);
+}
+
+#[test]
+fn validate_hevc_parameter_sets_accepts_single_vps_sps_pps_4_byte_length() {
+    let config = HevcDecoderConfig {
+        nal_length_size: 4,
+        vps: vec![Bytes::from_static(&[0x40, 0x01])],
+        sps: vec![Bytes::from_static(&[0x42, 0x01])],
+        pps: vec![Bytes::from_static(&[0x44, 0x01])],
+    };
+    assert!(validate_hevc_parameter_sets(&config).is_ok());
+}
+
+#[test]
+fn validate_hevc_parameter_sets_rejects_non_4_byte_length() {
+    let config = HevcDecoderConfig {
+        nal_length_size: 2,
+        vps: vec![Bytes::from_static(&[0x40])],
+        sps: vec![Bytes::from_static(&[0x42])],
+        pps: vec![Bytes::from_static(&[0x44])],
+    };
+    assert_eq!(
+        validate_hevc_parameter_sets(&config),
+        Err(DecodeError::Unsupported)
+    );
+}
+
+#[test]
+fn validate_hevc_parameter_sets_rejects_zero_vps() {
+    let config = HevcDecoderConfig {
+        nal_length_size: 4,
+        vps: vec![],
+        sps: vec![Bytes::from_static(&[0x42])],
+        pps: vec![Bytes::from_static(&[0x44])],
+    };
+    assert_eq!(
+        validate_hevc_parameter_sets(&config),
+        Err(DecodeError::Unsupported)
+    );
 }

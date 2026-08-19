@@ -561,9 +561,12 @@ fn configure_properties(
     session: &VTCompressionSession,
     config: &VideoEncoderConfig,
 ) -> Result<(), EncodeError> {
-    // SAFETY (all `set_*_property` calls below): `session` is a freshly created, not-yet-started
-    // `VTCompressionSession`; every property key passed is a confirmed-real `&'static CFString`
-    // from `objc2_video_toolbox`'s generated `VTCompressionProperties` bindings.
+    // SAFETY (all `set_*_property` calls below, and the `profile_level` static reads for
+    // non-ProRes codecs further down): `session` is a freshly created, not-yet-started
+    // `VTCompressionSession`; every property key/value passed is a confirmed-real
+    // `&'static CFString` from `objc2_video_toolbox`'s generated `VTCompressionProperties`
+    // bindings — reading any of them (they are `extern "C" static`s, not functions) requires
+    // `unsafe` per E0133, which this block satisfies for all of them.
     unsafe {
         set_bool_property(session, kVTCompressionPropertyKey_RealTime, true)?;
         set_bool_property(

@@ -597,8 +597,8 @@ const fn ctu_count(width: u32, height: u32) -> u32 {
 }
 
 fn validate(config: &VideoEncoderConfig) -> Result<(), EncodeError> {
-    // `super::codec::is_supported_video_codec` stays H.264-only (see that function's own doc) —
-    // this encoder checks its own codec directly rather than a shared helper.
+    // `super::codec::is_supported_video_codec` is a routing-only predicate (see that function's
+    // own doc) — this encoder checks its own codec directly rather than delegating to it.
     if config.codec != CodecKind::Hevc {
         return Err(EncodeError::Unsupported);
     }

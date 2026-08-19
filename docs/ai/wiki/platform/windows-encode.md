@@ -26,3 +26,23 @@
   codec-configuration requirement (not the flat driver gap once believed).
   See [`windows-encode-d3d12.md`](windows-encode-d3d12.md) for full detail
   (split out to stay under this page's 100-line limit).
+- **WMF AV1 encode is already codec-generically dispatched** (ADR-0004: `MFTEnumEx`, no
+  hardcoded CLSID, same as HEVC/VP9) — a later premise that this needed "wiring up" was
+  wrong. **ADR-0010 implemented (2026-08-19)**: `refresh_extradata` is now codec-aware —
+  `iso_bmff::bitstream::av1::to_av1c` builds a real `av1C` from the Sequence Header OBU for
+  `CodecKind::Av1`; H.264 still uses `avc::to_avcc`; HEVC/VP9 keep the pre-existing
+  raw-bytes-verbatim fallback (their own config-record gap is separate, not fixed here).
+- **Real `MFTEnumEx(MFT_CATEGORY_VIDEO_ENCODER, …)` encoder probe finding, this host (RTX
+  4090 + Intel UHD 770, 2026-08-19)**: an AV1 encoder MFT genuinely **is** registered —
+  `MFT_ENUM_FLAG_HARDWARE`-filtered enumeration finds `"NVIDIA AV1 Encoder MFT"` and
+  `"Intel® Hardware Accelerated AV1 Encoder MFT"`. This refines, not contradicts, the H.264
+  finding above: it was H.264-specific, not "no HW MFT for any codec." But unfiltered
+  (`SORTANDFILTER`-only, the flag set `open_cpu`'s CPU-upload path uses) finds **zero** AV1
+  MFTs — unlike HEVC/VP9, which each have a software Store-extension encoder in that set —
+  so AV1 CPU-upload still gets `Unsupported`. AV1 DX11 Zero-Copy finds the hardware MFT but
+  still fails downstream with `EncodeError::Backend` (D3D11-aware/type-negotiation stage),
+  the same pre-existing failure class already seen there for HEVC/VP9 DX11 on this host —
+  not a new bug, out of ADR-0010's scope. Net: the `av1C` fix is sans-io-unit-verified only
+  on this host (no AV1 packet has ever been produced through WMF here to check end-to-end).
+  Probe: `wmf::video::tests::list_encoder_mfts_for_each_codec`. See
+  [ADR-0010](../../../../crates/mediaway-encoder/adr/windows/0010-wmf-av1-encode-config-record-and-mft-probe.md).

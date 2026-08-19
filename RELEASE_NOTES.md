@@ -84,7 +84,7 @@
   `0004-replaykit-ios-inapp-screen-capture.md`.
 - `mediaway-encoder::linux` (`linux::vaapi`) HEVC encode: HEVC Main profile
   single-forward-reference P-frame GOP alongside the existing H.264 path, dispatched behind a
-  new `VaapiVideoSession` enum (no `Box<dyn>`). `hevc_gop.rs`'s `GopState` is a verbatim port of
+  new `VaapiVideoEncoder` enum (no `Box<dyn>`). `hevc_gop.rs`'s `GopState` is a verbatim port of
   `mediaway-encoder::vulkan::hevc_gop::GopState`; `EncSequenceParameterBufferHEVC`/
   `EncPictureParameterBufferHEVC`/`EncSliceParameterBufferHEVC` construction is fresh (VA-API's
   own HEVC encode buffers carry no `StdVideoH265*`-equivalent field set — the driver synthesizes
@@ -96,7 +96,7 @@
   `crates/mediaway-encoder/adr/linux/0003-vaapi-hevc-p-frame-gop.md`.
 - `mediaway-decoder::linux` (`linux::vaapi`) HEVC decode: HEVC Main profile IDR I-slices and
   single-forward-reference P-slices alongside the existing H.264 path, dispatched behind a new
-  `VaapiVideoSession` enum (no `Box<dyn>`). No hardware-verified porting source existed for this
+  `VaapiVideoDecoder` enum (no `Box<dyn>`). No hardware-verified porting source existed for this
   path (Vulkan's own HEVC decode is IDR-only), so the single-slot `HevcDpb` (`hevc_dpb.rs`) and
   the slice-header parser (`hevc_slice.rs`, extended well past `vulkan::hevc_slice.rs`'s own
   stopping point — SAO, temporal-MVP, merge-cand count, QP deltas) are fresh designs grounded in
@@ -105,6 +105,42 @@
   permanent scope cut. Compile- and test-verified on real Linux (WSL2 Ubuntu, real `libva-dev`
   headers/bindgen output) — **zero real VA-API hardware verification**. See
   `crates/mediaway-decoder/adr/linux/0003-vaapi-hevc-p-slice-dpb.md`.
+- `mediaway-decoder::linux`: AV1 `KEY_FRAME`-only VA-API decode (`VAProfileAV1Profile0`,
+  `VAEntrypointVLD`), single tile, Main profile, every optional coding tool (segmentation, film
+  grain, CDEF, loop restoration, superres, warped motion) rejected as `Unsupported` if signaled.
+  A spec-derived OBU/sequence-header/frame-header parser — no AV1 decode existed anywhere in
+  this workspace to port from. Dispatched alongside the existing H.264 VA-API decoder via a new
+  `VaapiVideoDecoder` enum. Compile + clippy + test-verified on real WSL2 Linux — **zero
+  real-hardware verification** (no VA-API device available this session), same standing caveat
+  as this backend's H.264 path. See
+  `crates/mediaway-decoder/adr/linux/0003-vaapi-av1-key-frame-decode.md`.
+- `mediaway-encoder::linux`: VP9 `KEY_FRAME` baseline + single-forward-reference `INTER_FRAME`
+  GOP VA-API encode (`VAProfileVP9Profile0`, plain `cros-libva`
+  `EncSequenceParameterBufferVP9`/`EncPictureParameterBufferVP9` field bags — no packed-header
+  buffer needed, unlike this crate's still-blocked AV1 encode design). New `vp9_gop::GopState`
+  2-slot physical ping-pong state machine and this backend's first multi-codec **encoder**
+  dispatch enum (`VaapiVideoEncoder`, alongside the existing H.264 encoder). Entrypoint probe is
+  a real 3-step ladder (`VAEntrypointEncSlice` → `VAEntrypointEncPicture` →
+  `VAEntrypointEncSliceLP`) matching FFmpeg's own generic VA-API encode probe order. **Real
+  driver-support caveat**: FFmpeg's own source names only the older i965 driver as a working VP9
+  VA-API encode target — meaningfully narrower than VP9 *decode*'s broad support, so this is a
+  compile/test-verified-only addition. Compile + clippy + test-verified on real WSL2 Linux —
+  **zero real-hardware verification** (no VA-API device available this session). See
+  `crates/mediaway-encoder/adr/linux/0004-vaapi-vp9-key-frame-and-inter-gop.md`.
+- `mediaway-decoder::linux`: VP9 `KEY_FRAME` + general single-tile `INTER_FRAME` VA-API decode
+  (`VAProfileVP9Profile0`, `VAEntrypointVLD`), including compound prediction with no artificial
+  reference-count restriction (VA-API's `reference_frames[8]` array is always fully populated
+  regardless of active-reference count — a real structural finding, confirmed against FFmpeg's
+  `vaapi_vp9.c`) — a broader real-world-stream-compatible scope than this crate's own AV1
+  sibling reached. A spec-derived `uncompressed_header()` parser copied verbatim from the real
+  primary VP9 specification text (`pdftotext`-extracted this session) and a new persistent
+  8-logical-slot reference shadow table (`vp9::ref_table`, 2 fields/slot — width/height — versus
+  AV1's 12-field-per-slot state) backed by a 9-physical-surface pool with a pigeonhole-guaranteed
+  free-index allocator. Dispatched alongside the existing H.264/AV1 VA-API decoders via the
+  `VaapiVideoDecoder` enum. Compile + clippy + test-verified on real WSL2 Linux (100+ new
+  hand-constructed bitstream-fixture unit tests) — **zero real-hardware verification** (no
+  VA-API device available this session). See
+  `crates/mediaway-decoder/adr/linux/0004-vaapi-vp9-key-frame-and-inter-decode.md`.
 
 ### Changed
 
@@ -161,6 +197,17 @@
   `PipeWire(String)` (`node.name`) variant; `Select::Id(DeviceId::from_pipewire_node_name(..))`
   now sets `PW_KEY_TARGET_OBJECT` on the capture stream. Real-hardware (real `libpipewire` link)
   compile and unit-test verified via WSL2.
+- Windows `mediaway-encoder-windows`: WMF AV1 encode's `refresh_extradata` was codec-blind and
+  ran every codec's `MF_MT_MPEG_SEQUENCE_HEADER` blob through the H.264-Annex-B-specific
+  `avc::to_avcc`, silently writing a non-conformant raw blob into the MP4 `av1C` box for AV1
+  output. New `iso_bmff::bitstream::av1::to_av1c` builds a real `AV1CodecConfigurationRecord`
+  from the Sequence Header OBU; `refresh_extradata` is now codec-aware. Also adds a real
+  `MFTEnumEx(MFT_CATEGORY_VIDEO_ENCODER, …)` diagnostic
+  (`wmf::video::tests::list_encoder_mfts_for_each_codec`) mirroring the decode-side probe —
+  real finding on the verification host: an AV1 encoder MFT (NVIDIA + Intel) is registered
+  under `MFT_ENUM_FLAG_HARDWARE`, but not reachable through either the CPU-upload or DX11
+  Zero-Copy path yet on that host (see `crates/mediaway-encoder/docs/roadmap.md`). See
+  `crates/mediaway-encoder/adr/windows/0010-wmf-av1-encode-config-record-and-mft-probe.md`.
 
 ### Removed
 

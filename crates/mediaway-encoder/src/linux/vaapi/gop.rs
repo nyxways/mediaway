@@ -99,7 +99,7 @@ pub(super) struct FrameDecision {
 }
 
 /// Per-session forward-only prediction state (ADR-0002's `GopState` sketch).
-/// Owned by the caller (`VaapiVideoEncoder`), mutated in place per frame —
+/// Owned by the caller (`VaapiH264Encoder`), mutated in place per frame —
 /// no per-frame allocation.
 #[derive(Debug)]
 pub(super) struct GopState {

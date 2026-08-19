@@ -42,9 +42,26 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
       (no hardware-verified porting source existed — Vulkan's own HEVC
       decode is IDR-only) — implemented, compile+test-verified on real
       WSL2 Linux (`libva-dev`); **zero real-hardware verification**; CRA/
-      random-access pictures a permanent scope cut; `VaapiVideoSession`
-      enum unifies H.264/HEVC dispatch (no `Box<dyn>`); see
+      random-access pictures a permanent scope cut; `VaapiVideoDecoder`
+      enum unifies H.264/HEVC/AV1/VP9 dispatch (no `Box<dyn>`); see
       [adr/linux/0003](../adr/linux/0003-vaapi-hevc-p-slice-dpb.md)
+- [x] `linux::vaapi` AV1 `KEY_FRAME`-only decode: single tile, Main profile, spec-derived OBU/
+      sequence-header/frame-header parser (no AV1 decode precedent existed anywhere in this
+      workspace to port from) — implemented, compile+clippy+test-verified on real WSL2 Linux;
+      **zero real-hardware verification** (no VA-API device available this session); see
+      [adr/linux/0003](../adr/linux/0003-vaapi-av1-key-frame-decode.md)
+- [x] `linux::vaapi` VP9 `KEY_FRAME` + general single-tile `INTER_FRAME` decode (compound
+      prediction included, no artificial reference-count restriction — a real structural finding
+      that VP9's entropy adaptation is driver-internal and its reference model needs only a
+      two-field-per-slot shadow table, not AV1's twelve-field one — a genuinely broader
+      real-world-stream-compatible scope than this crate's own AV1 sibling reached): spec-derived
+      `uncompressed_header()` parser copied verbatim from the real primary VP9 spec text
+      (`pdftotext`-extracted this session), persistent 8-logical-slot reference shadow table
+      (`vp9::ref_table`, `POOL_SIZE = 9` physical surfaces, pigeonhole-guaranteed free-index
+      allocation) — implemented, compile+clippy+test-verified on real WSL2 Linux (100+ new
+      sans-io bitstream-parser unit tests); **zero real-hardware verification** (no VA-API device
+      available this session); see
+      [adr/linux/0004](../adr/linux/0004-vaapi-vp9-key-frame-and-inter-decode.md)
 - [x] `vulkan` module (portable, not OS-suffixed — see
       [adr/vulkan/0001](../adr/vulkan/0001-vulkan-video-decode.md)): H.264
       general-GOP decode **hardware-verified** (RTX 4090); HEVC IDR decode

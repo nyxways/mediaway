@@ -53,18 +53,37 @@ pub(super) fn hevc_profile_candidates(
     }
 }
 
-/// Whether this crate's H.264 video decode path ([`super::h264::VaapiH264Decoder`]) accepts
-/// `codec`.
-///
-/// Deliberately narrower than [`hevc_profile_candidates`]: HEVC (ADR-0003) is dispatched by
-/// `VaapiVideoSession::open` (`mod.rs`) to a wholly separate concrete type
-/// ([`super::hevc::VaapiHevcDecoder`]), which checks its own codec equality directly in its own
-/// `validate()` rather than sharing this predicate — mirrors `mediaway-encoder`'s identical
-/// `linux::vaapi::codec::is_supported_video_codec` disposition (see that function's own doc for
-/// why widening it would be a real bug, not a benign generalization).
+/// VA-API profile candidates for AV1 decode — this crate's AV1 `SequenceHeader::parse` already
+/// rejects any `seq_profile` other than `0` (Main — see
+/// `adr/linux/0003-vaapi-av1-key-frame-decode.md` § Scope), so this always returns the single
+/// Main-profile candidate.
+#[must_use]
+pub(super) fn av1_profile_candidates() -> Vec<cros_libva::VAProfile::Type> {
+    vec![cros_libva::VAProfile::VAProfileAV1Profile0]
+}
+
+/// VA-API profile candidates for VP9 decode — this crate's VP9 `Header::parse` already rejects
+/// any `Profile` other than `0` (8-bit 4:2:0 — see
+/// `adr/linux/0004-vaapi-vp9-key-frame-and-inter-decode.md` § Scope), so this always returns the
+/// single Profile-0 candidate.
+#[must_use]
+pub(super) fn vp9_profile_candidates() -> Vec<cros_libva::VAProfile::Type> {
+    vec![cros_libva::VAProfile::VAProfileVP9Profile0]
+}
+
+/// Whether this crate's `linux::vaapi` backend decodes `codec` at all — used by `mod.rs`'s
+/// dispatcher to route a config to one of its per-codec concrete decoder types
+/// ([`super::h264::VaapiH264Decoder`], [`super::hevc::VaapiHevcDecoder`],
+/// [`super::av1::VaapiAv1Decoder`], [`super::vp9::VaapiVp9Decoder`]). Each of those types checks
+/// its own codec equality directly in its own `validate()` rather than delegating to this
+/// predicate — widening this function is therefore safe (it only gates *routing*, never a
+/// per-codec accept/reject decision on its own).
 #[must_use]
 pub(super) const fn is_supported_video_codec(codec: CodecKind) -> bool {
-    matches!(codec, CodecKind::H264)
+    matches!(
+        codec,
+        CodecKind::H264 | CodecKind::Hevc | CodecKind::Av1 | CodecKind::Vp9
+    )
 }
 
 #[cfg(test)]

@@ -7,8 +7,8 @@ use mediaway_common::CodecKind;
 ///
 /// # Errors
 ///
-/// Returns [`EncodeError::Unsupported`] for anything but [`CodecKind::H264`]/[`CodecKind::Hevc`]
-/// — AV1 / VP9 are deferred (see `docs/roadmap.md`).
+/// Returns [`EncodeError::Unsupported`] for anything but [`CodecKind::H264`]/[`CodecKind::Hevc`]/
+/// [`CodecKind::Vp9`] — AV1 is designed but blocked (see `docs/roadmap.md`).
 pub(super) const fn video_profile(
     codec: CodecKind,
 ) -> Result<cros_libva::VAProfile::Type, EncodeError> {
@@ -20,20 +20,21 @@ pub(super) const fn video_profile(
         // against real WSL2 bindgen output (this ADR's own Addendum): same reference shape this
         // crate's existing H.264 profile constant already uses.
         CodecKind::Hevc => Ok(cros_libva::VAProfile::VAProfileHEVCMain),
+        // Profile 0 (8-bit 4:2:0) — this crate's only supported VP9 chroma/bit-depth convention
+        // (adr/linux/0004-vaapi-vp9-key-frame-and-inter-gop.md § Scope).
+        CodecKind::Vp9 => Ok(cros_libva::VAProfile::VAProfileVP9Profile0),
         _ => Err(EncodeError::Unsupported),
     }
 }
 
-/// Whether this crate's H.264 video encode path ([`super::video::VaapiVideoEncoder`]) accepts
-/// `codec`.
-///
-/// Deliberately narrower than [`video_profile`]: HEVC (ADR-0003) is dispatched by
-/// `VaapiVideoSession::open` (`mod.rs`) to a wholly separate concrete type
-/// ([`super::hevc::VaapiHevcVideoEncoder`]), which checks its own codec equality directly in its
-/// own `validate()` rather than sharing this predicate — widening this function to accept both
-/// codecs would make `video.rs::validate` (H.264-only) silently pass an HEVC-tagged config for
-/// no benefit, since nothing downstream needs the wider check.
+/// Whether this crate's `linux::vaapi` backend encodes `codec` at all — used by `mod.rs`'s
+/// dispatcher to route a config to one of its per-codec concrete encoder types
+/// ([`super::video::VaapiH264Encoder`], [`super::hevc::VaapiHevcVideoEncoder`],
+/// [`super::vp9::VaapiVp9Encoder`]). Each of those types checks its own codec equality directly
+/// in its own `validate()` rather than delegating to this predicate — widening this function is
+/// therefore safe (it only gates *routing*, never a per-codec accept/reject decision on its
+/// own). AV1 is not listed: encode is designed but blocked (no concrete type exists to route to).
 #[must_use]
 pub(super) const fn is_supported_video_codec(codec: CodecKind) -> bool {
-    matches!(codec, CodecKind::H264)
+    matches!(codec, CodecKind::H264 | CodecKind::Hevc | CodecKind::Vp9)
 }

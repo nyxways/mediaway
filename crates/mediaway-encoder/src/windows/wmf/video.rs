@@ -165,12 +165,24 @@ impl WmfVideoEncoder {
             && written > 0
         {
             buf.truncate(written as usize);
+            let codec = self.info.codec();
             if let StreamInfo::Video { extra_data, .. } = &mut self.info {
-                // WMF's MF_MT_MPEG_SEQUENCE_HEADER is an Annex-B SPS/PPS blob;
-                // the container contract wants a full AVCDecoderConfigurationRecord
-                // (avcC). Normalize here so the muxer can write it verbatim.
-                let avcc = iso_bmff::bitstream::avc::to_avcc(&buf).avcc;
-                *extra_data = avcc.unwrap_or_else(|| Bytes::from(buf));
+                // WMF's MF_MT_MPEG_SEQUENCE_HEADER shape depends on the codec: H.264 hands
+                // back an Annex-B SPS/PPS blob (container contract wants a full
+                // AVCDecoderConfigurationRecord/avcC); AV1 hands back a raw OBU stream
+                // (container contract wants a real AV1CodecConfigurationRecord/av1C, see
+                // ADR-0010). HEVC/VP9 keep the pre-existing raw-bytes-verbatim fallback —
+                // their own config-record correctness is a known, separately-tracked gap
+                // (ADR-0010's Decision), not fixed here.
+                *extra_data = match codec {
+                    CodecKind::H264 => iso_bmff::bitstream::avc::to_avcc(&buf)
+                        .avcc
+                        .unwrap_or_else(|| Bytes::from(buf)),
+                    CodecKind::Av1 => iso_bmff::bitstream::av1::to_av1c(&buf)
+                        .av1c
+                        .unwrap_or_else(|| Bytes::from(buf)),
+                    _ => Bytes::from(buf),
+                };
             }
         }
     }
@@ -379,3 +391,7 @@ fn stream_info_from(config: &VideoEncoderConfig) -> StreamInfo {
 fn ensure_mf_runtime() -> Result<(), EncodeError> {
     super::runtime::ensure_mf()
 }
+
+#[cfg(test)]
+#[path = "video_tests.rs"]
+mod tests;

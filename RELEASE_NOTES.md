@@ -172,6 +172,24 @@
   pool restructuring; forces all-IDR encode for `ZeroCopyGpu` sessions. WSL2 + Windows
   compile/clippy/test-verified; zero real VA-API hardware verification. See
   `crates/mediaway-encoder/adr/linux/0006-vaapi-dmabuf-zero-copy-input.md`.
+- `mediaway-encoder::web`: generalized the AAC-hardcoded audio smoke/probe functions into a
+  codec-parameterized surface — `is_webcodecs_audio_codec_supported(codec, channels,
+  sample_rate)` and `encode_audio_buffer(codec, channels, sample_rate, bitrate_bps,
+  frame_count) -> EncodedAudioChunks` (new type), mirroring the video side's existing
+  codec-parameterized shape. Opus is exercised as the second codec through this generalized
+  surface (no Opus-only functions, no `OpusEncoderConfig` knobs — no reachable `web-sys`
+  binding — no Opus fMP4 mux claim, `EncodedAudioChunk`-level validation only). `wasm32`
+  compile-verified only, no real browser runtime available in this environment. See
+  `crates/mediaway-encoder/adr/web/0001-webcodecs-opus-audio-encode.md`.
+- `mediaway-decoder::web`: first audio decode surface in this module (previously video-only) —
+  `is_webcodecs_audio_decode_supported(codec, channels, sample_rate)` and
+  `decode_audio_chunks(...) -> DecodedAudioData` (new type), codec-parameterized from the
+  start and exercised via Opus (AAC decode is reachable through the same function). Sample
+  readback trusts the browser's reported `AudioData` format (planar or interleaved) rather
+  than forcing a conversion. `wasm32` compile-verified only, no real browser runtime available
+  in this environment — the exact planar/interleaved readback byte layout is unverified
+  against real Chrome. See
+  `crates/mediaway-decoder/adr/web/0001-webcodecs-opus-audio-decode.md`.
 
 ### Changed
 

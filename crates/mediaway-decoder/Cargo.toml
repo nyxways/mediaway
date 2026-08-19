@@ -133,6 +133,16 @@ web-sys = { workspace = true, features = [
     "VideoDecoderInit",
     "VideoDecoderSupport",
     "VideoFrame",
+    "AudioData",
+    "AudioDataCopyToOptions",
+    "AudioDecoder",
+    "AudioDecoderConfig",
+    "AudioDecoderInit",
+    "AudioDecoderSupport",
+    "AudioSampleFormat",
+    "EncodedAudioChunk",
+    "EncodedAudioChunkInit",
+    "EncodedAudioChunkType",
 ] }
 
 

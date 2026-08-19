@@ -36,6 +36,22 @@
   (`pred_weight_table()`, `cabac_init_idc` unhandled) — rejected honestly
   here rather than inherited silently. Still zero real VA-API hardware
   verification.
+- ADR: [0003](../../../../crates/mediaway-decoder/adr/linux/0003-vaapi-dmabuf-zero-copy-output.md)
+  — **Implemented, WSL2 + Windows compile/clippy/test-verified**: DMA-BUF Zero-Copy output via
+  `Surface::export_prime()` (`cros-libva` already wraps `vaExportSurfaceHandle` safely, new
+  `vaapi/dmabuf.rs`). New `mediaway_common::GpuBufferHandle::DmaBuf(Box<DmaBufDescriptor>)`
+  (boxed — the payload is 4-5x bigger than any existing variant; drops `Copy` from the whole
+  enum). Re-introduces DPB `outstanding`/`mark_outstanding`/`clear_outstanding` tracking that
+  ADR-0002 deliberately dropped (conditional on "no Zero-Copy handle exists yet" — no longer
+  true), tied to a new `Pipeline::exported_fds: Vec<Option<OwnedFd>>` released at the top of the
+  next `push_packet`/`poll_frame`/`flush`. Corrects the roadmap's stale "`GpuBufferHandle::
+  Vulkan` interop" framing — DMA-BUF is a raw fd + plane layout, not a `VkImage`; no consumer
+  (`mediaway-wgpu` Linux bridge) exists anywhere in this workspace yet, so this is genuinely the
+  first DMA-BUF-aware code in the repo. `GpuBufferHandle: Copy`-removal blast radius across the
+  whole workspace (Windows/Apple/Android/Web included): **zero** real call sites needed a fix —
+  every existing construction site already builds a fresh value per call rather than
+  implicit-copying one, exactly as the ADR's own (then-unverified) read predicted. **Zero real
+  VA-API hardware verification** — same standing caveat as every VA-API path in this crate.
 
 ## ⚠️ Hardware verification status
 

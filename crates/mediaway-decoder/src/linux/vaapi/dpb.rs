@@ -8,12 +8,15 @@
 //! (`vulkan/h264_slice.rs`) — grouped into this one file per the ADR's own porting table, not
 //! split further.
 //!
-//! Deliberately drops the porting source's `outstanding`/`SlotOutstanding` Zero-Copy handle
-//! bookkeeping: this crate's decode path always copies pixels into an owned `Bytes` before
-//! `decode_one` returns (`h264.rs`'s `copy_nv12_from_planes`) and never exposes a Zero-Copy GPU
-//! handle (`VideoOutputPreference::ZeroCopyGpu` is unconditionally `DecodeError::Unsupported`),
-//! so there is no dangling-handle risk class to guard against — see the ADR's "Why `outstanding`
-//! is dropped" section for the full rationale.
+//! Re-adds the `outstanding`/`mark_outstanding`/`clear_outstanding` Zero-Copy handle bookkeeping
+//! that was deliberately dropped by `adr/linux/0002-vaapi-h264-p-slice-dpb.md` (back when this
+//! crate's decode path always copied pixels into an owned `Bytes` and never exposed a Zero-Copy
+//! GPU handle). `adr/linux/0003-vaapi-dmabuf-zero-copy-output.md` reintroduces it: once
+//! `VideoOutputPreference::ZeroCopyGpu` exports a real
+//! [`mediaway_common::GpuBufferHandle::DmaBuf`] (`dmabuf.rs`), a DPB slot whose surface a caller
+//! still holds a handle into must never be silently recycled — same "fail loudly, never silently
+//! overwrite" contract `vulkan/dpb.rs` already established for its own DPB (ported back
+//! verbatim; see that ADR's § Fd lifetime contract).
 //!
 //! No VA-API/`cros_libva` calls or types anywhere in this file — every function operates on
 //! plain data, so it is unit-testable without any device (see `dpb_tests.rs`), mirroring
@@ -97,6 +100,16 @@ pub(super) const fn compute_frame_num_wrap(
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub(super) enum DpbError {
+    /// The caller tried to insert into or evict a slot whose surface a caller still holds via
+    /// an outstanding Zero-Copy [`mediaway_common::GpuBufferHandle::DmaBuf`] handle — recycling
+    /// it now would silently invalidate that handle's contents underneath the caller. Never
+    /// overwritten silently; the caller must recycle the handle (drop the frame / poll further)
+    /// before this slot can be reused.
+    #[error("DPB slot {index} still has an outstanding Zero-Copy handle")]
+    SlotOutstanding {
+        /// The slot index that could not be recycled.
+        index: usize,
+    },
     /// No free slot exists and no occupied reference slot is available to evict.
     #[error("no free DPB slot available (capacity {capacity})")]
     NoFreeSlot {
@@ -117,6 +130,11 @@ pub(super) enum DpbError {
 /// [`Dpb::new`]) — a `Vec` allocated once at session-open time, not per-frame.
 pub(super) struct Dpb {
     slots: Vec<Option<DpbSlot>>,
+    /// Parallel array: `true` while a caller holds an outstanding Zero-Copy handle into that
+    /// slot's surface. Kept separate from `DpbSlot` itself so an evicted-but-still-held slot can
+    /// still report `SlotOutstanding` (the reference bookkeeping is gone, but the handle
+    /// contract is not) — mirrors `vulkan/dpb.rs::Dpb`'s identical field.
+    outstanding: Vec<bool>,
 }
 
 impl Dpb {
@@ -128,7 +146,45 @@ impl Dpb {
         let capacity = capacity.clamp(1, H264_MAX_DPB_SLOTS);
         Self {
             slots: vec![None; capacity],
+            outstanding: vec![false; capacity],
         }
+    }
+
+    /// Whether `index` currently has an outstanding Zero-Copy handle.
+    #[must_use]
+    #[allow(
+        dead_code,
+        reason = "exercised by dpb_tests.rs (is_outstanding_defaults_false_and_out_of_range_is_false); \
+                  a plain `cargo check` without --tests never sees that call site — kept for API \
+                  parity with vulkan/dpb.rs's identical accessor, mirrors this file's own \
+                  Dpb::capacity precedent"
+    )]
+    pub(super) fn is_outstanding(&self, index: usize) -> bool {
+        self.outstanding.get(index).copied().unwrap_or(false)
+    }
+
+    /// Marks `index` as holding an outstanding Zero-Copy handle — call when handing a
+    /// [`mediaway_common::GpuBufferHandle::DmaBuf`] out to a caller (see `dmabuf.rs`).
+    ///
+    /// # Errors
+    /// Returns [`DpbError::InvalidSlotIndex`] if `index` is out of range.
+    pub(super) fn mark_outstanding(&mut self, index: usize) -> Result<(), DpbError> {
+        self.check_index(index)?;
+        self.outstanding[index] = true;
+        Ok(())
+    }
+
+    /// Clears `index`'s outstanding-handle mark — call once the caller has recycled the
+    /// corresponding `VideoFrame` (the next `push_packet`/`poll_frame`/`flush` call that would
+    /// otherwise want to reuse this slot, per `crate::VideoDecoder`'s documented handle-lifetime
+    /// contract).
+    ///
+    /// # Errors
+    /// Returns [`DpbError::InvalidSlotIndex`] if `index` is out of range.
+    pub(super) fn clear_outstanding(&mut self, index: usize) -> Result<(), DpbError> {
+        self.check_index(index)?;
+        self.outstanding[index] = false;
+        Ok(())
     }
 
     /// Total slot count.
@@ -149,10 +205,21 @@ impl Dpb {
         self.slots.get(index).and_then(Option::as_ref)
     }
 
-    /// First unoccupied slot index, if any.
+    /// First unoccupied, non-outstanding slot index, if any.
+    ///
+    /// A slot can be "unoccupied" in reference-management terms (`slots[i] == None`) while
+    /// still holding an outstanding Zero-Copy handle for a **non-reference** picture (only
+    /// [`Dpb::insert`]s a `DpbSlot` for `is_reference` pictures — a non-reference picture's slot
+    /// is never inserted, but can still be [`Dpb::mark_outstanding`]-ed). Skipped here so
+    /// [`Dpb::allocate_slot`]'s free-slot fast path never hands out a slot a caller still holds
+    /// a handle into — the same "fail loudly, never silently overwrite" contract already applied
+    /// to occupied (reference) slots via [`Dpb::insert`]/[`Dpb::evict`]'s own outstanding checks.
     #[must_use]
     pub(super) fn free_slot_index(&self) -> Option<usize> {
-        self.slots.iter().position(Option::is_none)
+        self.slots
+            .iter()
+            .zip(self.outstanding.iter())
+            .position(|(slot, outstanding)| slot.is_none() && !outstanding)
     }
 
     /// Every occupied slot, in slot-index order.
@@ -177,9 +244,14 @@ impl Dpb {
     /// Insert `slot` at `index`, marking it occupied.
     ///
     /// # Errors
-    /// Returns [`DpbError::InvalidSlotIndex`] if `index` is out of range.
+    /// Returns [`DpbError::InvalidSlotIndex`] if `index` is out of range, or
+    /// [`DpbError::SlotOutstanding`] if `index` still has an outstanding Zero-Copy handle —
+    /// never silently overwritten.
     pub(super) fn insert(&mut self, index: usize, slot: DpbSlot) -> Result<(), DpbError> {
         self.check_index(index)?;
+        if self.outstanding[index] {
+            return Err(DpbError::SlotOutstanding { index });
+        }
         self.slots[index] = Some(slot);
         Ok(())
     }
@@ -187,9 +259,13 @@ impl Dpb {
     /// Evict (clear) the slot at `index`.
     ///
     /// # Errors
-    /// Returns [`DpbError::InvalidSlotIndex`] if `index` is out of range.
+    /// Returns [`DpbError::InvalidSlotIndex`] if `index` is out of range, or
+    /// [`DpbError::SlotOutstanding`] if `index` still has an outstanding Zero-Copy handle.
     pub(super) fn evict(&mut self, index: usize) -> Result<(), DpbError> {
         self.check_index(index)?;
+        if self.outstanding[index] {
+            return Err(DpbError::SlotOutstanding { index });
+        }
         self.slots[index] = None;
         Ok(())
     }
@@ -223,22 +299,29 @@ impl Dpb {
     /// Evicts every occupied slot — an IDR picture empties the whole DPB (ITU-T H.264 § 8.2.5.1:
     /// an IDR access unit marks every prior reference picture "unused for reference").
     ///
-    /// Infallible — unlike the porting source, no `SlotOutstanding` failure path is possible
-    /// once `outstanding` is dropped (see the module doc).
-    pub(super) fn clear_all(&mut self) {
-        for slot in &mut self.slots {
-            *slot = None;
+    /// # Errors
+    /// Returns [`DpbError::SlotOutstanding`] for the first occupied slot that still has an
+    /// outstanding Zero-Copy handle — the caller must drain pending frames first; slots already
+    /// evicted before the failing one stay evicted (partial progress, not rolled back — matches
+    /// [`Dpb::evict`]'s own single-slot failure contract, mirrors `vulkan/dpb.rs::Dpb::clear_all`).
+    pub(super) fn clear_all(&mut self) -> Result<(), DpbError> {
+        let occupied: Vec<usize> = self.occupied_slots().map(|(index, _)| index).collect();
+        for index in occupied {
+            self.evict(index)?;
         }
+        Ok(())
     }
 
     /// Allocate a slot index for a new picture to decode into: reuses a free slot if one exists,
     /// otherwise forces sliding-window eviction of the oldest short-term reference.
     ///
     /// # Errors
-    /// Returns [`DpbError::NoFreeSlot`] if every slot is empty of references and still somehow
-    /// unavailable (unreachable in practice — a zero-capacity DPB is rejected by [`Dpb::new`]'s
-    /// clamp — kept as an explicit error rather than a `panic!`/`unwrap`, matching the porting
-    /// source's own reasoning).
+    /// Returns [`DpbError::SlotOutstanding`] if the eviction target still has an outstanding
+    /// Zero-Copy handle (the caller must drain pending frames before this DPB can accept another
+    /// picture), or [`DpbError::NoFreeSlot`] if every slot is empty of references and still
+    /// somehow unavailable (unreachable in practice — a zero-capacity DPB is rejected by
+    /// [`Dpb::new`]'s clamp — kept as an explicit error rather than a `panic!`/`unwrap`, matching
+    /// the porting source's own reasoning).
     pub(super) fn allocate_slot(&mut self) -> Result<usize, DpbError> {
         if let Some(index) = self.free_slot_index() {
             return Ok(index);

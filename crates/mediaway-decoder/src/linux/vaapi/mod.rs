@@ -7,6 +7,7 @@
 )]
 
 mod codec;
+mod dmabuf;
 mod dpb;
 mod h264;
 mod nv12;

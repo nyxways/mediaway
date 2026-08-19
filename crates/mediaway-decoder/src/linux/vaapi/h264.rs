@@ -1,10 +1,12 @@
 //! VA-API H.264 decode session — I and single-forward-reference P slices, single slice per
-//! picture, progressive, `pic_order_cnt_type == 0`, CPU NV12 output.
+//! picture, progressive, `pic_order_cnt_type == 0`, CPU NV12 output or Zero-Copy DMA-BUF export.
 //!
-//! See [ADR-0001](../../adr/0001-vaapi-h264-cpu-out.md) for the original IDR-only baseline and
+//! See [ADR-0001](../../adr/0001-vaapi-h264-cpu-out.md) for the original IDR-only baseline,
 //! [ADR-0002](../../adr/linux/0002-vaapi-h264-p-slice-dpb.md) for the sliding-window DPB /
-//! single-forward-reference P-slice extension this file implements — both name the
-//! zero-hardware-verification caveat for this crate as authored.
+//! single-forward-reference P-slice extension, and
+//! [ADR-0003](../../adr/linux/0003-vaapi-dmabuf-zero-copy-output.md) for the
+//! `VideoOutputPreference::ZeroCopyGpu` DMA-BUF export path this file also implements — all
+//! three name the zero-hardware-verification caveat for this crate as authored.
 
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -24,6 +26,7 @@ use cros_libva::{
 };
 
 use super::codec::h264_profile_candidates;
+use super::dmabuf::{self, DmaBufFds};
 use super::dpb::{
     Dpb, DpbSlot, H264_MAX_DPB_SLOTS, default_ref_pic_list0, derive_pic_order_cnt_msb,
 };
@@ -44,6 +47,11 @@ struct Pipeline {
     /// DPB-slot-indexed: `surfaces[i]` is the physical surface backing `dpb`'s slot `i`.
     surfaces: Vec<Option<Surface<()>>>,
     dpb: Dpb,
+    /// DPB-slot-indexed, parallel to `surfaces`/`dpb`: the `OwnedFd`(s) backing any slot
+    /// currently exported as a Zero-Copy [`mediaway_common::GpuBufferHandle::DmaBuf`] — only
+    /// ever populated when `VaapiH264Decoder::output` is `ZeroCopyGpu` (see ADR-0003 § Fd
+    /// lifetime contract). Dropping an entry closes the fd(s).
+    exported_fds: Vec<Option<DmaBufFds>>,
     coded_width: u32,
     coded_height: u32,
     nv12_format: VAImageFormat,
@@ -62,7 +70,17 @@ pub(crate) struct VaapiH264Decoder {
     info: StreamInfo,
     declared_width: u32,
     declared_height: u32,
-    pending: VecDeque<VideoFrame>,
+    /// Caller's requested output mode (`open()`-time, fixed for the session's lifetime — see
+    /// ADR-0003). Each pending frame's `Option<usize>` is `Some(dpb_slot_index)` when the frame
+    /// carries a Zero-Copy handle into that slot, `None` for CPU frames.
+    output: VideoOutputPreference,
+    pending: VecDeque<(VideoFrame, Option<usize>)>,
+    /// The DPB slot index of the most recent Zero-Copy frame handed to the caller via
+    /// [`VideoDecoder::poll_frame`], if any — released (outstanding mark cleared, fd closed) at
+    /// the top of the next `push_packet`/`poll_frame`/`flush` call, matching
+    /// [`VideoDecoder::poll_frame`]'s documented handle-lifetime contract (see ADR-0003 § Fd
+    /// lifetime contract).
+    last_delivered_gpu_slot: Option<usize>,
     flushed: bool,
     /// Carried across pictures for `derive_pic_order_cnt_msb` (ITU-T H.264 § 8.2.1.1); reset to
     /// `0` on every IDR. Mirrors `vulkan::decoder::H264Session`'s identical pair.
@@ -74,10 +92,9 @@ impl VaapiH264Decoder {
     /// Open per [`VideoDecoderConfig::output`].
     pub(crate) fn open(config: &VideoDecoderConfig) -> Result<Self, DecodeError> {
         validate(config)?;
-        if config.output != VideoOutputPreference::CpuFramesOk {
-            // Zero-Copy DMA-BUF export deferred — see ADR-0001 § Scope.
-            return Err(DecodeError::Unsupported);
-        }
+        // Both `CpuFramesOk` and `ZeroCopyGpu` are supported — see ADR-0003 for the DMA-BUF
+        // export path `ZeroCopyGpu` takes (ADR-0001's original unconditional rejection of
+        // anything but `CpuFramesOk` is narrowed here).
 
         // `Display::open()` tries `/dev/dri/renderD128..` in order (cros_libva's
         // `DrmDeviceIterator`), wrapping `vaGetDisplayDRM` + `vaInitialize`. In this session's
@@ -95,7 +112,9 @@ impl VaapiH264Decoder {
             info: stream_info_from(config),
             declared_width: config.width,
             declared_height: config.height,
+            output: config.output,
             pending: VecDeque::new(),
+            last_delivered_gpu_slot: None,
             flushed: false,
             prev_poc_msb: 0,
             prev_poc_lsb: 0,
@@ -191,6 +210,11 @@ impl VaapiH264Decoder {
             context,
             surfaces: surfaces.into_iter().map(Some).collect(),
             dpb: Dpb::new(pool_size),
+            // `DmaBufFds` (via its `OwnedFd` fields) is not `Clone`, so `vec![None; pool_size]`
+            // (which requires `Clone` to duplicate the initial element) does not typecheck here
+            // — build the `None`-filled vec by iteration instead, matching `surfaces`' own
+            // `Surface<()>: !Clone` handling just above.
+            exported_fds: (0..pool_size).map(|_| None).collect(),
             coded_width,
             coded_height,
             nv12_format,
@@ -213,6 +237,28 @@ impl VaapiH264Decoder {
         Ok((index, surface))
     }
 
+    /// Releases the Zero-Copy DMA-BUF export for the DPB slot most recently delivered to the
+    /// caller via [`VideoDecoder::poll_frame`] (if any): clears the DPB's outstanding mark and
+    /// drops (closes) the internally-held fd(s). Matches [`VideoDecoder::poll_frame`]'s
+    /// documented handle-lifetime contract ("the texture remains valid until the next
+    /// `push_packet`/`poll_frame`/`flush` that recycles the surface") — called at the top of all
+    /// three of those methods, so the *very next* one after a `ZeroCopyGpu` frame was delivered
+    /// always releases it, independent of whether that same slot happens to be picked for reuse
+    /// (see ADR-0003 § Fd lifetime contract). A no-op in `CpuFramesOk` mode, where
+    /// `last_delivered_gpu_slot` is always `None`.
+    fn release_previous_gpu_export(&mut self) {
+        let Some(index) = self.last_delivered_gpu_slot.take() else {
+            return;
+        };
+        let Some(pipeline) = self.pipeline.as_mut() else {
+            return;
+        };
+        // Best-effort: an out-of-range index cannot happen (it was produced by this same
+        // session's own DPB), but this cleanup path has nothing further to do even if it did.
+        let _ = pipeline.dpb.clear_outstanding(index);
+        pipeline.exported_fds[index] = None; // drop closes the fd(s)
+    }
+
     /// Decode one I or P picture, following the per-picture ordering ported from
     /// `vulkan/decoder.rs::decode_slice_h264` (see adr/linux/0002 § Per-picture decode
     /// ordering's 8 numbered steps — this function's block comments mark each step).
@@ -232,16 +278,21 @@ impl VaapiH264Decoder {
         sps: &Sps,
         pps: &Pps,
         header: &SliceHeader,
-    ) -> Result<VideoFrame, DecodeError> {
+    ) -> Result<(VideoFrame, Option<usize>), DecodeError> {
         let is_reference = unit.ref_idc != 0;
 
-        // Step 2: an IDR picture clears the whole DPB and resets cross-picture POC state.
+        // Step 2: an IDR picture clears the whole DPB and resets cross-picture POC state. May
+        // fail loudly (`DpbError::SlotOutstanding`) if a still-undelivered `ZeroCopyGpu` frame
+        // from an earlier `push_packet` call in this same drain cycle occupies a slot — the
+        // caller must drain pending frames via `poll_frame` before pushing more packets in that
+        // case (see ADR-0003 § Fd lifetime contract).
         if header.is_idr {
             self.pipeline
                 .as_mut()
                 .ok_or(DecodeError::Backend)?
                 .dpb
-                .clear_all();
+                .clear_all()
+                .map_err(|_| DecodeError::Backend)?;
             self.prev_poc_msb = 0;
             self.prev_poc_lsb = 0;
         }
@@ -334,9 +385,11 @@ impl VaapiH264Decoder {
         if let Some(pipeline) = self.pipeline.as_mut() {
             pipeline.surfaces[dst_slot_index] = Some(returned_surface);
         }
-        let frame = result?;
+        let output = result?;
 
-        // Step 8: on success, register this slot as a reference if applicable.
+        // Step 8: on success, register this slot as a reference if applicable. Must run before
+        // step 9's `mark_outstanding` below — `Dpb::insert` itself refuses an outstanding slot,
+        // and this slot cannot be outstanding yet (it was just freshly allocated).
         if is_reference {
             let frame_num_wrap = i32::try_from(header.frame_num).unwrap_or(0);
             self.pipeline
@@ -350,7 +403,22 @@ impl VaapiH264Decoder {
                 .map_err(|_| DecodeError::Backend)?;
         }
 
-        Ok(frame)
+        // Step 9 (ADR-0003): a `ZeroCopyGpu` frame exports this slot's surface — keep the fd(s)
+        // alive and mark the slot outstanding so it cannot be recycled (evicted or re-inserted
+        // into) until this decoder itself releases it (see `release_previous_gpu_export`).
+        let gpu_slot = if let Some(fds) = output.exported {
+            let pipeline = self.pipeline.as_mut().ok_or(DecodeError::Backend)?;
+            pipeline.exported_fds[dst_slot_index] = Some(fds);
+            pipeline
+                .dpb
+                .mark_outstanding(dst_slot_index)
+                .map_err(|_| DecodeError::Backend)?;
+            Some(dst_slot_index)
+        } else {
+            None
+        };
+
+        Ok((output.frame, gpu_slot))
     }
 
     /// Build parameter buffers and run the VA-API decode sequence for one already-allocated
@@ -371,7 +439,7 @@ impl VaapiH264Decoder {
         reference_frames: &[(cros_libva::VASurfaceID, DpbSlot)],
         ref_pic0: Option<(cros_libva::VASurfaceID, DpbSlot)>,
         max_num_ref_frames: u32,
-    ) -> (Surface<()>, Result<VideoFrame, DecodeError>) {
+    ) -> (Surface<()>, Result<DecodedPicture, DecodeError>) {
         let Some(pipeline) = self.pipeline.as_ref() else {
             return (surface, Err(DecodeError::Backend));
         };
@@ -380,87 +448,100 @@ impl VaapiH264Decoder {
         let coded_height = pipeline.coded_height;
         let nv12_format = pipeline.nv12_format;
         let surface_id = surface.id();
+        let output_pref = self.output;
 
-        let outcome = (|| -> Result<(Bytes, Surface<()>), DecodeError> {
-            let pic_param = build_pic_param(
-                sps,
-                pps,
-                unit,
-                header,
-                surface_id,
-                pic_order_cnt,
-                reference_frames,
-                max_num_ref_frames,
-            )?;
-            let iq_matrix = IQMatrixBufferH264::new([[16u8; 16]; 6], [[16u8; 64]; 2]);
-            let slice_param = build_slice_param(header, original_nal.len(), ref_pic0)?;
-            let slice_data_bytes = original_nal.to_vec();
+        let outcome =
+            (|| -> Result<(VideoFrameStorage, Option<DmaBufFds>, Surface<()>), DecodeError> {
+                let pic_param = build_pic_param(
+                    sps,
+                    pps,
+                    unit,
+                    header,
+                    surface_id,
+                    pic_order_cnt,
+                    reference_frames,
+                    max_num_ref_frames,
+                )?;
+                let iq_matrix = IQMatrixBufferH264::new([[16u8; 16]; 6], [[16u8; 64]; 2]);
+                let slice_param = build_slice_param(header, original_nal.len(), ref_pic0)?;
+                let slice_data_bytes = original_nal.to_vec();
 
-            let pic_param_buf = context
-                .create_buffer(BufferType::PictureParameter(PictureParameter::H264(
-                    pic_param,
-                )))
-                .map_err(|_| DecodeError::Backend)?;
-            let iq_buf = context
-                .create_buffer(BufferType::IQMatrix(IQMatrix::H264(iq_matrix)))
-                .map_err(|_| DecodeError::Backend)?;
-            let slice_param_buf = context
-                .create_buffer(BufferType::SliceParameter(SliceParameter::H264(
-                    slice_param,
-                )))
-                .map_err(|_| DecodeError::Backend)?;
-            let slice_data_buf = context
-                .create_buffer(BufferType::SliceData(slice_data_bytes))
-                .map_err(|_| DecodeError::Backend)?;
+                let pic_param_buf = context
+                    .create_buffer(BufferType::PictureParameter(PictureParameter::H264(
+                        pic_param,
+                    )))
+                    .map_err(|_| DecodeError::Backend)?;
+                let iq_buf = context
+                    .create_buffer(BufferType::IQMatrix(IQMatrix::H264(iq_matrix)))
+                    .map_err(|_| DecodeError::Backend)?;
+                let slice_param_buf = context
+                    .create_buffer(BufferType::SliceParameter(SliceParameter::H264(
+                        slice_param,
+                    )))
+                    .map_err(|_| DecodeError::Backend)?;
+                let slice_data_buf = context
+                    .create_buffer(BufferType::SliceData(slice_data_bytes))
+                    .map_err(|_| DecodeError::Backend)?;
 
-            let timestamp = u64::try_from(packet.pts).unwrap_or(0);
-            let mut picture = Picture::new(timestamp, Rc::clone(&context), surface);
-            picture.add_buffer(pic_param_buf);
-            picture.add_buffer(iq_buf);
-            picture.add_buffer(slice_param_buf);
-            picture.add_buffer(slice_data_buf);
+                let timestamp = u64::try_from(packet.pts).unwrap_or(0);
+                let mut picture = Picture::new(timestamp, Rc::clone(&context), surface);
+                picture.add_buffer(pic_param_buf);
+                picture.add_buffer(iq_buf);
+                picture.add_buffer(slice_param_buf);
+                picture.add_buffer(slice_data_buf);
 
-            let picture = picture.begin::<()>().map_err(|_| DecodeError::Backend)?;
-            let picture = picture.render().map_err(|_| DecodeError::Backend)?;
-            let picture = picture.end().map_err(|_| DecodeError::Backend)?;
-            let picture = picture
-                .sync::<()>()
-                .map_err(|(_e, _pic)| DecodeError::Backend)?;
+                let picture = picture.begin::<()>().map_err(|_| DecodeError::Backend)?;
+                let picture = picture.render().map_err(|_| DecodeError::Backend)?;
+                let picture = picture.end().map_err(|_| DecodeError::Backend)?;
+                let picture = picture
+                    .sync::<()>()
+                    .map_err(|(_e, _pic)| DecodeError::Backend)?;
 
-            let image = picture
-                .create_image::<()>(
-                    nv12_format,
-                    (coded_width, coded_height),
-                    (coded_width, coded_height),
-                )
-                .map_err(|_| DecodeError::Backend)?;
-            let va_image = *image.image();
-            let bytes = copy_nv12_from_planes(
-                image.as_ref(),
-                coded_width,
-                coded_height,
-                va_image.pitches[0],
-                va_image.offsets[0],
-                va_image.pitches[1],
-                va_image.offsets[1],
-            );
-            drop(image);
+                match output_pref {
+                    VideoOutputPreference::CpuFramesOk => {
+                        let image = picture
+                            .create_image::<()>(
+                                nv12_format,
+                                (coded_width, coded_height),
+                                (coded_width, coded_height),
+                            )
+                            .map_err(|_| DecodeError::Backend)?;
+                        let va_image = *image.image();
+                        let bytes = copy_nv12_from_planes(
+                            image.as_ref(),
+                            coded_width,
+                            coded_height,
+                            va_image.pitches[0],
+                            va_image.offsets[0],
+                            va_image.pitches[1],
+                            va_image.offsets[1],
+                        );
+                        drop(image);
 
-            let surface = picture.take_surface().map_err(|_| DecodeError::Backend)?;
-            Ok((bytes, surface))
-        })();
+                        let surface = picture.take_surface().map_err(|_| DecodeError::Backend)?;
+                        Ok((VideoFrameStorage::Cpu { data: bytes }, None, surface))
+                    }
+                    VideoOutputPreference::ZeroCopyGpu => {
+                        // No CPU readback on this path (ADR-0003) — `export_prime()` runs on the
+                        // surface directly; the driver's decoded pixels are never copied out.
+                        let surface = picture.take_surface().map_err(|_| DecodeError::Backend)?;
+                        let (handle, fds) = dmabuf::build_handle(&surface)?;
+                        Ok((VideoFrameStorage::Gpu(handle), Some(fds), surface))
+                    }
+                }
+            })();
 
         match outcome {
-            Ok((data, returned_surface)) => {
+            Ok((storage, exported, returned_surface)) => {
                 let frame = VideoFrame {
                     pts: packet.pts,
                     duration: packet.duration,
                     width: coded_width,
                     height: coded_height,
                     format: PixelFormat::Nv12,
-                    storage: VideoFrameStorage::Cpu { data },
+                    storage,
                 };
-                (returned_surface, Ok(frame))
+                (returned_surface, Ok(DecodedPicture { frame, exported }))
             }
             Err(e) => (
                 fresh_surface_or_placeholder(&context, coded_width, coded_height),
@@ -470,12 +551,22 @@ impl VaapiH264Decoder {
     }
 }
 
+/// One successfully decoded picture's output, before `decode_picture` decides whether to mark
+/// its DPB slot outstanding (see ADR-0003 § Fd lifetime contract).
+struct DecodedPicture {
+    frame: VideoFrame,
+    /// `Some` only for a [`VideoOutputPreference::ZeroCopyGpu`] frame — the fd(s) `decode_picture`
+    /// must keep alive in `Pipeline::exported_fds` for as long as the handle stays valid.
+    exported: Option<DmaBufFds>,
+}
+
 impl VideoDecoder for VaapiH264Decoder {
     fn stream_info(&self) -> &StreamInfo {
         &self.info
     }
 
     fn push_packet(&mut self, packet: &Packet) -> Result<(), DecodeError> {
+        self.release_previous_gpu_export();
         if self.flushed {
             return Err(DecodeError::Closed);
         }
@@ -513,10 +604,16 @@ impl VideoDecoder for VaapiH264Decoder {
     }
 
     fn poll_frame(&mut self) -> Result<Option<VideoFrame>, DecodeError> {
-        Ok(self.pending.pop_front())
+        self.release_previous_gpu_export();
+        let Some((frame, gpu_slot)) = self.pending.pop_front() else {
+            return Ok(None);
+        };
+        self.last_delivered_gpu_slot = gpu_slot;
+        Ok(Some(frame))
     }
 
     fn flush(&mut self) -> Result<(), DecodeError> {
+        self.release_previous_gpu_export();
         // Every push_packet already runs its decode synchronously (vaSyncSurface before
         // returning) — there is no pending driver pipeline to drain, unlike a hardware MFT's
         // async event pump. flush only needs to close the session against further pushes.

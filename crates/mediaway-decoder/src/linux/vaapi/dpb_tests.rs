@@ -69,6 +69,53 @@ fn allocate_slot_ignores_non_reference_slots_for_eviction() {
 }
 
 #[test]
+fn free_slot_index_skips_outstanding_unoccupied_slot() {
+    // A non-reference picture's slot is never `insert`-ed (no DpbSlot), but can still be
+    // marked outstanding by a Zero-Copy export — `free_slot_index` must not hand it back out.
+    let mut dpb = Dpb::new(2);
+    dpb.mark_outstanding(0).unwrap();
+    assert_eq!(dpb.free_slot_index(), Some(1));
+}
+
+#[test]
+fn insert_into_outstanding_slot_fails_loudly() {
+    let mut dpb = Dpb::new(2);
+    dpb.insert(0, DpbSlot::new_reference(0, 0, 0)).unwrap();
+    dpb.mark_outstanding(0).unwrap();
+    let err = dpb.insert(0, DpbSlot::new_reference(1, 1, 2)).unwrap_err();
+    assert_eq!(err, DpbError::SlotOutstanding { index: 0 });
+}
+
+#[test]
+fn evict_outstanding_slot_fails_loudly() {
+    let mut dpb = Dpb::new(2);
+    dpb.insert(0, DpbSlot::new_reference(0, 0, 0)).unwrap();
+    dpb.mark_outstanding(0).unwrap();
+    let err = dpb.evict(0).unwrap_err();
+    assert_eq!(err, DpbError::SlotOutstanding { index: 0 });
+    // Never silently overwritten: the slot must still be occupied afterward.
+    assert!(dpb.slot(0).is_some());
+}
+
+#[test]
+fn clear_outstanding_allows_eviction_again() {
+    let mut dpb = Dpb::new(2);
+    dpb.insert(0, DpbSlot::new_reference(0, 0, 0)).unwrap();
+    dpb.mark_outstanding(0).unwrap();
+    assert!(dpb.evict(0).is_err());
+    dpb.clear_outstanding(0).unwrap();
+    dpb.evict(0).unwrap();
+    assert!(dpb.slot(0).is_none());
+}
+
+#[test]
+fn is_outstanding_defaults_false_and_out_of_range_is_false() {
+    let dpb = Dpb::new(2);
+    assert!(!dpb.is_outstanding(0));
+    assert!(!dpb.is_outstanding(99));
+}
+
+#[test]
 fn out_of_range_index_reports_invalid_slot_index() {
     let mut dpb = Dpb::new(2);
     let err = dpb.insert(5, DpbSlot::new_reference(0, 0, 0)).unwrap_err();
@@ -86,6 +133,13 @@ fn out_of_range_index_reports_invalid_slot_index() {
             capacity: 2
         }
     );
+    assert_eq!(
+        dpb.mark_outstanding(9).unwrap_err(),
+        DpbError::InvalidSlotIndex {
+            index: 9,
+            capacity: 2
+        }
+    );
 }
 
 #[test]
@@ -93,9 +147,18 @@ fn clear_all_evicts_every_occupied_slot() {
     let mut dpb = Dpb::new(4);
     dpb.insert(0, DpbSlot::new_reference(0, 0, 0)).unwrap();
     dpb.insert(2, DpbSlot::new_reference(2, 2, 4)).unwrap();
-    dpb.clear_all();
+    dpb.clear_all().unwrap();
     assert!(dpb.slot(0).is_none());
     assert!(dpb.slot(2).is_none());
+}
+
+#[test]
+fn clear_all_fails_loudly_on_outstanding_slot() {
+    let mut dpb = Dpb::new(2);
+    dpb.insert(0, DpbSlot::new_reference(0, 0, 0)).unwrap();
+    dpb.mark_outstanding(0).unwrap();
+    let err = dpb.clear_all().unwrap_err();
+    assert_eq!(err, DpbError::SlotOutstanding { index: 0 });
 }
 
 #[test]

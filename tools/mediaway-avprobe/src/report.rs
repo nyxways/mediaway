@@ -53,6 +53,12 @@ const fn codec_name(codec: CodecKind) -> &'static str {
         CodecKind::RawAudio => "rawaudio",
         CodecKind::Mp3 => "mp3",
         CodecKind::Vorbis => "vorbis",
+        CodecKind::ProRes422Proxy => "prores422proxy",
+        CodecKind::ProRes422Lt => "prores422lt",
+        CodecKind::ProRes422 => "prores422",
+        CodecKind::ProRes422Hq => "prores422hq",
+        CodecKind::ProRes4444 => "prores4444",
+        CodecKind::ProRes4444Xq => "prores4444xq",
     }
 }
 

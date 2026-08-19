@@ -1,0 +1,18 @@
+//! `AudioConverter` AAC/Opus encode sessions (Apple only), built on `objc2-audio-toolbox` /
+//! `objc2-core-audio-types`.
+//!
+//! See [ADR-0004](../../adr/apple/0004-audiotoolbox-aac-encode.md) (AAC) and
+//! [ADR-0005](../../adr/apple/0005-audiotoolbox-opus-encode.md) (Opus) for the binding choice,
+//! the pull-based `AudioConverterFillComplexBuffer` callback contract, and the zero-compile-
+//! verification caveat.
+#![allow(
+    clippy::redundant_pub_crate,
+    unreachable_pub,
+    reason = "pub(crate) graph for AudioToolbox modules; not part of the public crate API — mirrors videotoolbox/mod.rs"
+)]
+
+mod aac;
+mod opus;
+
+pub(crate) use aac::AacEncoder;
+pub(crate) use opus::OpusEncoder;

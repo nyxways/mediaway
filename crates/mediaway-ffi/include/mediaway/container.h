@@ -132,6 +132,12 @@ typedef enum mediaway_codec_kind {
     MEDIAWAY_CODEC_RAW_VIDEO = 10,
     MEDIAWAY_CODEC_RAW_AUDIO = 11,
     MEDIAWAY_CODEC_VP8 = 12,
+    MEDIAWAY_CODEC_PRORES_422_PROXY = 13,
+    MEDIAWAY_CODEC_PRORES_422_LT = 14,
+    MEDIAWAY_CODEC_PRORES_422 = 15,
+    MEDIAWAY_CODEC_PRORES_422_HQ = 16,
+    MEDIAWAY_CODEC_PRORES_4444 = 17,
+    MEDIAWAY_CODEC_PRORES_4444_XQ = 18,
 } mediaway_codec_kind_t; /* pre-1.0 — values may be renumbered */
 
 /* Input to mediaway_muxer_add_video_track — borrowed extra_data, valid for the call only. */

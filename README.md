@@ -263,9 +263,9 @@ OS codec APIs (WMF, WebCodecs, VA-API, …) fed with CPU buffers (upload may app
 | HEVC / H.265 | ✅ / ✅ | ❌ / ✅ | 🆗 / 🆗 | 🆗 / 🆗 | 👻      |
 | AV1          | 🛠️ / ✅ | ✅      | ❌ / 🆗 | ❌ / 🆗 | 👻      |
 | VP9          | ✅ / ✅ | ✅      | 🆗 / 🆗 | ❌ / 🆗 | 👻      |
-| ProRes       | 👻       | 👻       | 👻    | 👻    | 👻      |
-| AAC          | 🆗       | 🆗       | 🛠️   | 👻    | 👻      |
-| Opus         | ✅ / ✅ | 🆗      | 🛠️   | 👻    | 👻      |
+| ProRes       | 👻       | 👻       | 👻    | 🆗 / 🆗 | 👻      |
+| AAC          | 🆗 / 👻 | 🆗       | 🛠️   | 🆗 / 🆗 | 👻      |
+| Opus         | ✅ / ✅ | 🆗      | 🛠️   | 🆗 / 🆗 | 👻      |
 
 Detail: backends live as `#[cfg]`-gated modules — `mediaway-decoder::{windows, web, linux}`, `mediaway-encoder::{windows, web, linux}`.
 
@@ -276,14 +276,14 @@ Same OS APIs with GPU surfaces (`GpuBufferHandle`, DXGI, …). Video only — au
 
 | Codec        | Windows | Web | Linux | Apple | Android |
 | ------------ | ------- | --- | ----- | ----- | ------- |
-| H.264 / AVC  | 🆗 / 🆗  | ✅ | 🆗 / 🆗 | 👻    | 👻      |
-| HEVC / H.265 | 🆗 / 🆗  | 🆗 / 🛠️ | 🛠️   | 👻    | 👻      |
-| AV1          | 🆗 / 🆗  | 🆗 / 🛠️ | 🛠️   | 👻    | 👻      |
-| VP9          | 🆗 / 🆗  | 🆗 / 🛠️ | 🛠️   | 👻    | 👻      |
-| ProRes       | 👻      | 👻  | 👻    | 👻    | 👻      |
+| H.264 / AVC  | 🆗 / 🆗  | ✅ | 🆗 / 🆗 | 🆗 / 🆗 | 👻      |
+| HEVC / H.265 | 🆗 / 🆗  | 🆗 / 🛠️ | 🛠️   | 🆗 / 🆗 | 👻      |
+| AV1          | 🆗 / 🆗  | 🆗 / 🛠️ | 🛠️   | ❌ / 🆗 | 👻      |
+| VP9          | 🆗 / 🆗  | 🆗 / 🛠️ | 🛠️   | ❌ / 🆗 | 👻      |
+| ProRes       | 👻      | 👻  | 👻    | 🆗 / 🆗 | 👻      |
 
 
-Detail: `mediaway-encoder::{windows, web}` (`windows` = WMF + DX11 Zero-Copy; `web` = WebCodecs + WebGPU).
+Detail: `mediaway-encoder::{windows, web, apple}` (`windows` = WMF + DX11 Zero-Copy; `web` = WebCodecs + WebGPU; `apple` = VideoToolbox + `CVPixelBuffer` Zero-Copy).
 
 ### GPU — by API
 
@@ -294,13 +294,14 @@ Adapters: [`mediaway`](crates/mediaway/README.md) `wgpu` module 🆗 (DX12 ↔ W
 
 | Codec        | D3D11  | D3D12 | Vulkan | Metal |
 | ------------ | ------ | ----- | ------ | ----- |
-| H.264 / AVC  | 🆗 / 🆗 | ✅ / 🛠️ | ✅ / ✅ | 👻    |
-| HEVC / H.265 | 🆗 / 🆗 | ✅ / 🆗 | ✅ / ✅ | 👻    |
-| AV1          | 🆗 / 🆗 | ✅ / 🆗 | ❌ / ✅ | 👻    |
-| VP9          | 🆗 / 🆗 | 👻    | 👻     | 👻    |
+| H.264 / AVC  | 🆗 / 🆗 | ✅ / 🛠️ | ✅ / ✅ | 🆗 / 🆗 |
+| HEVC / H.265 | 🆗 / 🆗 | ✅ / 🆗 | ✅ / ✅ | 🆗 / 🆗 |
+| AV1          | 🆗 / 🆗 | ✅ / 🆗 | ❌ / ✅ | ❌ / 🆗 |
+| VP9          | 🆗 / 🆗 | 👻    | 👻     | ❌ / 🆗 |
+| ProRes       | 👻     | 👻    | 👻     | 🆗 / 🆗 |
 
 
-Detail: [`mediaway`](crates/mediaway/README.md) `wgpu` module · `mediaway-encoder::{windows, vulkan}` · `mediaway-decoder::{windows, vulkan}`.
+Detail: [`mediaway`](crates/mediaway/README.md) `wgpu` module · `mediaway-encoder::{windows, vulkan, apple}` · `mediaway-decoder::{windows, vulkan, apple}`.
 
 ### GPU — by vendor
 
@@ -310,12 +311,12 @@ Detail: [`mediaway`](crates/mediaway/README.md) `wgpu` module · `mediaway-encod
 - **Intel** — `mediaway-encoder::quicksync` ([`mediaway-encoder`](crates/mediaway-encoder/README.md)), **hardware-verified** H.264/HEVC encode; AV1 is ❌ (no hardware support on this iGPU generation).
 - **AMD** — `mediaway-encoder::amf` ([`mediaway-encoder`](crates/mediaway-encoder/README.md)), `shiguredo_amf`-backed H.264 CPU-upload encode, Linux `x86_64` only — 🆗 compiles / compile-verified (WSL2 Linux `x86_64`), **zero real AMD GPU/driver hardware verification** (none available in this workspace).
 
-| Codec        | NVIDIA | AMD | Intel | Apple | Qualcomm |
-| ------------ | ------ | --- | ----- | ----- | -------- |
-| H.264 / AVC  | ✅     | 🆗 | ✅   | 👻    | 👻       |
-| HEVC / H.265 | ✅    | 🆗 | ✅   | 👻    | 👻       |
-| AV1          | ✅    | 🆗 | ❌   | 👻    | 👻       |
-| VP9          | 👻     | 👻  | 👻    | 👻    | 👻       |
+| Codec        | NVIDIA | AMD | Intel | Qualcomm |
+| ------------ | ------ | --- | ----- | -------- |
+| H.264 / AVC  | ✅     | 🆗 | ✅   | 👻       |
+| HEVC / H.265 | ✅    | 🆗 | ✅   | 👻       |
+| AV1          | ✅    | 🆗 | ❌   | 👻       |
+| VP9          | 👻     | 👻  | 👻    | 👻       |
 
 
 ### CPU / SW

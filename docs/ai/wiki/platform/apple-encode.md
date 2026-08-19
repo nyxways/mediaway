@@ -14,6 +14,10 @@
   constants exist anywhere in the generated `objc2-video-toolbox` bindings (confirmed by
   grepping the whole tree); `VideoToolbox` exposes no public compression API for either codec.
   See `adr/apple/0002-videotoolbox-hevc-encode.md`.
+- ProRes: 6 profiles (`CodecKind::ProRes422Proxy`…`ProRes4444Xq`, own `CMVideoCodecType` each, no
+  shared `kVTProfileLevel_ProRes*`), reuses this same session/CPU-upload/Zero-Copy machinery
+  unchanged — see [apple-prores](apple-prores.md) for the full writeup. ProRes RAW is a
+  **separate** permanent gap (camera-capture-only, no compression API at all).
 - HEVC extradata: `CMVideoFormatDescriptionGetHEVCParameterSetAtIndex` extracts VPS+SPS+PPS,
   built into an `hvcC` via the new `iso_bmff::bitstream::hevc::to_hvcc` (mirrors H.264's
   `to_avcc` reuse below, generalized from 2 parameter-set types to 3). Extraction dispatch lives
@@ -40,13 +44,17 @@
 - Extradata: **in scope**, unlike Android's `csd-0`/`csd-1` deferral — SPS/PPS(+VPS) reachable
   synchronously off the first `CMSampleBuffer` (see the HEVC extradata bullet above for H.264's
   precedent extended to 3 parameter sets).
-- Zero-Copy: **not implemented, deferred** — `GpuBufferHandle::Metal` (`CVPixelBuffer`/
-  `IOSurface` token) **already exists** in `mediaway-common::gpu` (predates any Apple backend,
-  same situation Android found for `AndroidSurface`).
+- Zero-Copy: **real**, `GpuBufferHandle::Metal { buffer }` — `push_frame` reconstructs
+  `&CVPixelBuffer` via a plain `NonNull::as_ref()` on the caller's raw bits, no `CFRetain`/
+  `CFRelease` at all (the caller keeps sole ownership; this backend only needs the buffer valid
+  for one `encode_frame` call). `PixelBufferRef<'a> { Owned(CFRetained<..>), Borrowed(&'a ..) }`
+  unifies the CPU-upload and Zero-Copy code paths into one `encode_frame` call site.
 - ADR: [0001 (`adr/apple/`)](../../../../crates/mediaway-encoder/adr/apple/0001-videotoolbox-h264-cpu-upload.md)
   — **Accepted**. Binding choice, scope, CI plan, and the **zero compile verification as
   authored** caveat. [0002](../../../../crates/mediaway-encoder/adr/apple/0002-videotoolbox-hevc-encode.md)
   — **Accepted**. HEVC addition, VP9/AV1 permanent non-support.
+  [0003](../../../../crates/mediaway-encoder/adr/apple/0003-videotoolbox-metal-zero-copy-encode.md)
+  — **Accepted**. Zero-Copy input.
 
 ## Status: implemented, zero compile verification until CI runs
 
@@ -67,4 +75,4 @@ native; `apple-ios` cross-compiled, compile-only) are the first real gate this c
 | Pull-based `dequeue_output_buffer` opportunistic drain | Push-based async callback into a shared queue | Genuinely different concurrency shape, not just naming |
 | `csd-0`/`csd-1` extradata **deferred** (separate output event) | SPS/PPS extradata **in scope** (cheap, same-sample-buffer) | Apple's API shape is cheaper here |
 | Real `BUFFER_FLAG_KEY_FRAME` per-packet flag read | `is_keyframe` **real**, via `kCMSampleAttachmentKey_NotSync` attachment reading (`CFArray`/`CFDictionary` FFI) | Both real, different mechanism — see ADR-0001 addendum |
-| `GpuBufferHandle::AndroidSurface` deferred | `GpuBufferHandle::Metal` deferred | Same "type exists, wiring deferred" shape |
+| `GpuBufferHandle::AndroidSurface` deferred | `GpuBufferHandle::Metal` **real** (`push_frame`, plain borrow) | Apple's Zero-Copy input landed; Android's own `AndroidSurface` wiring is still open |

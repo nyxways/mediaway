@@ -112,6 +112,13 @@ objc2-core-foundation = { version = "0.3", default-features = false, features = 
     "CFArray",
     "CFNumber",
 ] }
+objc2-audio-toolbox = { version = "0.3", default-features = false, features = [
+    "AudioConverter",
+    "objc2-core-audio-types",
+] }
+objc2-core-audio-types = { version = "0.3", default-features = false, features = [
+    "CoreAudioBaseTypes",
+] }
 
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

@@ -144,13 +144,17 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
         environment; `android` CI job (`.github/workflows/ci.yml`) added in the same PR as the
         first real gate, ahead of hardware verification
   - [x] Apple: `mediaway-encoder::apple` implemented (`VTCompressionSession` via `objc2-*`,
-        H.264+HEVC CPU-upload, single module for macOS+iOS) per
-        `adr/apple/0001-videotoolbox-h264-cpu-upload.md` and
-        `adr/apple/0002-videotoolbox-hevc-encode.md` (both **Accepted**) — **zero compile
-        verification as authored**, no Apple SDK/Xcode reachable in this dev environment
+        H.264+HEVC CPU-upload **and Zero-Copy** input, single module for macOS+iOS) per
+        `adr/apple/0001-videotoolbox-h264-cpu-upload.md`,
+        `adr/apple/0002-videotoolbox-hevc-encode.md`, and
+        `adr/apple/0003-videotoolbox-metal-zero-copy-encode.md` (all **Accepted**) — **zero
+        compile verification as authored**, no Apple SDK/Xcode reachable in this dev environment
         (harder than Android's NDK-only gap: cannot legally cross-compile Apple code outside
         macOS); `apple-macos`/`apple-ios` CI jobs (`.github/workflows/ci.yml`) added in the same
         PR as the first real gate, ahead of hardware verification. VP9/AV1 encode is a
         **permanent** `VideoToolbox` API gap (no compression-profile constants for either codec
         exist), not deferred. Per-packet `is_keyframe` is real, via
-        `kCMSampleAttachmentKey_NotSync` reading — see ADR-0001 addendum.
+        `kCMSampleAttachmentKey_NotSync` reading — see ADR-0001 addendum. Zero-Copy input
+        (`GpuBufferHandle::Metal`) is a plain borrow of the caller's `CVPixelBuffer` for one
+        `encode_frame` call — no retain/release at all, the simplest of this workspace's three
+        Apple Zero-Copy directions.

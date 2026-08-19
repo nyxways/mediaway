@@ -1,10 +1,13 @@
-//! `VTCompressionSession` CPU-upload encode session — H.264/HEVC.
+//! `VTCompressionSession` CPU-upload encode session — H.264/HEVC/`ProRes`.
 //!
 //! See [ADR-0001](../../adr/apple/0001-videotoolbox-h264-cpu-upload.md) for the original H.264
-//! scope (Constrained-Baseline-class / CPU NV12 upload only / best-effort key-frame-interval) and
+//! scope (Constrained-Baseline-class / CPU NV12 upload only / best-effort key-frame-interval),
 //! [ADR-0002](../../adr/apple/0002-videotoolbox-hevc-encode.md) for the HEVC addition (Main-
 //! class profile) and VP9/AV1's permanent non-support (no `VideoToolbox` compression API exists
-//! for either). Both carry the zero-compile-verification caveat for this crate as authored.
+//! for either), and [ADR-0006](../../adr/apple/0006-videotoolbox-prores-encode.md) for the six
+//! `ProRes` profiles (all-intra, no `ProfileLevel`/GOP/bitrate properties apply) and `ProRes` RAW's
+//! own permanent non-support. All three carry the zero-compile-verification caveat for this crate
+//! as authored.
 
 use std::collections::VecDeque;
 use std::ffi::c_void;
@@ -13,8 +16,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::{EncodeError, VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 use mediaway_common::{
-    Bytes, CodecKind, ColorRange, Packet, PixelFormat, StreamInfo, VideoFrame, VideoFrameStorage,
-    VideoGeometry,
+    Bytes, CodecKind, ColorRange, GpuBufferHandle, Packet, PixelFormat, StreamInfo, VideoFrame,
+    VideoFrameStorage, VideoGeometry,
 };
 
 use objc2_core_foundation::{
@@ -23,8 +26,8 @@ use objc2_core_foundation::{
 };
 use objc2_core_media::{CMSampleBuffer, CMTime, kCMSampleAttachmentKey_NotSync, kCMTimeIndefinite};
 use objc2_core_video::{
-    CVPixelBuffer, CVPixelBufferCreateWithPlanarBytes,
-    kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+    CVPixelBuffer, CVPixelBufferCreateWithPlanarBytes, CVPixelBufferGetHeight,
+    CVPixelBufferGetWidth, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
     kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
 };
 use objc2_video_toolbox::{
@@ -55,14 +58,16 @@ struct SharedState {
     codec: CodecKind,
 }
 
-/// `VTCompressionSession` encode session (CPU NV12 upload, best-effort sync-frame cadence) —
-/// H.264 or HEVC depending on [`SharedState::codec`].
+/// `VTCompressionSession` encode session (best-effort sync-frame cadence) — H.264 or HEVC
+/// depending on [`SharedState::codec`]; CPU NV12 upload or Zero-Copy `CVPixelBuffer` input
+/// depending on [`Self::input`] (see [ADR-0003](../../adr/apple/0003-videotoolbox-metal-zero-copy-encode.md)).
 pub(crate) struct VideoToolboxVideoEncoder {
     session: CFRetained<VTCompressionSession>,
     shared: Arc<SharedState>,
     /// The extra `Arc::into_raw` strong count passed as `output_callback_ref_con` — reclaimed
     /// exactly once in `Drop`, after `invalidate()`.
     refcon_ptr: *const SharedState,
+    input: VideoInputPreference,
     width: u32,
     height: u32,
     yuv420_bytes: usize,
@@ -85,14 +90,18 @@ impl VideoToolboxVideoEncoder {
     /// Open according to [`VideoEncoderConfig::input`].
     pub(crate) fn open(config: &VideoEncoderConfig) -> Result<Self, EncodeError> {
         validate(config)?;
+        // `VideoInputPreference` has exactly these two variants today — both handled the same
+        // way here (the actual CPU-upload-vs-Zero-Copy branching happens per-frame in
+        // `push_frame`, not at `open()`). A real future third variant would be a compile error
+        // at this match, not a silent fallthrough — deliberately no wildcard arm.
         match config.input {
-            VideoInputPreference::CpuUploadOk => Self::open_cpu(config),
-            // `CVPixelBuffer`/`IOSurface` Zero-Copy input is deferred — see ADR-0001 § Scope.
-            _ => Err(EncodeError::Unsupported),
+            VideoInputPreference::CpuUploadOk | VideoInputPreference::ZeroCopyGpu => {
+                Self::open_session(config)
+            }
         }
     }
 
-    fn open_cpu(config: &VideoEncoderConfig) -> Result<Self, EncodeError> {
+    fn open_session(config: &VideoEncoderConfig) -> Result<Self, EncodeError> {
         let codec = codec_type(config.codec)?;
         let width = i32::try_from(config.width).map_err(|_| EncodeError::InvalidInput)?;
         let height = i32::try_from(config.height).map_err(|_| EncodeError::InvalidInput)?;
@@ -157,12 +166,31 @@ impl VideoToolboxVideoEncoder {
             session,
             shared,
             refcon_ptr,
+            input: config.input,
             width: config.width,
             height: config.height,
             yuv420_bytes,
             color_range: config.color_range,
             flushed: false,
         })
+    }
+}
+
+/// One `CVPixelBuffer` reference for `encode_frame`, from either input path — owned (CPU
+/// upload, freed when this value drops) or borrowed (Zero-Copy, the caller's own buffer, never
+/// touched beyond this reference's lifetime). Avoids duplicating the `encode_frame` call site
+/// per branch in [`VideoToolboxVideoEncoder::push_frame`].
+enum PixelBufferRef<'a> {
+    Owned(CFRetained<CVPixelBuffer>),
+    Borrowed(&'a CVPixelBuffer),
+}
+
+impl AsRef<CVPixelBuffer> for PixelBufferRef<'_> {
+    fn as_ref(&self) -> &CVPixelBuffer {
+        match self {
+            Self::Owned(buffer) => buffer,
+            Self::Borrowed(buffer) => buffer,
+        }
     }
 }
 
@@ -178,26 +206,62 @@ impl VideoEncoder for VideoToolboxVideoEncoder {
         if self.flushed {
             return Err(EncodeError::Closed);
         }
-        let VideoFrameStorage::Cpu { data } = &frame.storage else {
-            return Err(EncodeError::Unsupported);
-        };
         if frame.width != self.width || frame.height != self.height {
             return Err(EncodeError::InvalidInput);
         }
-        if data.len() < self.yuv420_bytes {
-            return Err(EncodeError::InvalidInput);
-        }
 
-        let pixel_buffer = upload_cpu_nv12(data, self.width, self.height, self.color_range)?;
+        let pixel_buffer = match &frame.storage {
+            VideoFrameStorage::Cpu { data } => {
+                if self.input != VideoInputPreference::CpuUploadOk {
+                    return Err(EncodeError::InvalidInput);
+                }
+                if data.len() < self.yuv420_bytes {
+                    return Err(EncodeError::InvalidInput);
+                }
+                PixelBufferRef::Owned(upload_cpu_nv12(
+                    data,
+                    self.width,
+                    self.height,
+                    self.color_range,
+                )?)
+            }
+            VideoFrameStorage::Gpu(GpuBufferHandle::Metal { buffer }) => {
+                if self.input != VideoInputPreference::ZeroCopyGpu {
+                    return Err(EncodeError::InvalidInput);
+                }
+                let ptr = NonNull::new(buffer.get() as *mut CVPixelBuffer)
+                    .ok_or(EncodeError::InvalidInput)?;
+                // SAFETY: `buffer` carries a caller-supplied `CVPixelBufferRef`'s raw bits — per
+                // `GpuBufferHandle::Metal`'s documented convention (see ADR-0003), the caller
+                // guarantees this pointer is a valid, live `CVPixelBuffer` for at least the
+                // duration of this call. This backend never retains, releases, or mutates it — a
+                // pure borrow, the same "opaque bits, caller owns the lifetime" contract every
+                // other `GpuBufferHandle` variant already documents.
+                let pixel_buffer = unsafe { ptr.as_ref() };
+                if CVPixelBufferGetWidth(pixel_buffer) != self.width as usize
+                    || CVPixelBufferGetHeight(pixel_buffer) != self.height as usize
+                {
+                    return Err(EncodeError::InvalidInput);
+                }
+                PixelBufferRef::Borrowed(pixel_buffer)
+            }
+            // `VideoFrameStorage` is `#[non_exhaustive]` (declared in `mediaway-common`) — the
+            // trailing `&_` covers an unmatched future variant, a real "we don't know this
+            // storage kind" case, not reachable today; merged with the known `Gpu(_)` (any
+            // non-Metal GPU handle) arm since both return the identical error.
+            VideoFrameStorage::Gpu(_) | &_ => return Err(EncodeError::Unsupported),
+        };
+
         let pts = cmtime_from_pts(frame.pts, self.shared.time_base_den);
 
-        // SAFETY: `pixel_buffer` is a freshly created, valid `CVPixelBuffer`; `source_frame_
-        // refcon`/`info_flags_out` are intentionally unused (both `null_mut`) — this backend
-        // recovers timing from the output `CMSampleBuffer` itself (see `handle_output`), not a
-        // threaded-through refcon.
+        // SAFETY: `pixel_buffer.as_ref()` is a valid `CVPixelBuffer` for the duration of this
+        // call — either freshly created (CPU-upload path) or the caller's own, borrowed per its
+        // documented contract (Zero-Copy path, see above). `source_frame_refcon`/`info_flags_out`
+        // are intentionally unused (both `null_mut`) — this backend recovers timing from the
+        // output `CMSampleBuffer` itself (see `handle_output`), not a threaded-through refcon.
         let status = unsafe {
             self.session.encode_frame(
-                &pixel_buffer,
+                pixel_buffer.as_ref(),
                 pts,
                 kCMTimeIndefinite,
                 None,
@@ -280,19 +344,33 @@ unsafe extern "C-unwind" fn compression_output_callback(
 
 fn handle_output(shared: &SharedState, sample_buffer: &CMSampleBuffer) {
     if shared.finalized_info.get().is_none() {
-        // SAFETY: `sample_buffer` is a valid, callback-scoped `CMSampleBuffer` reference.
-        let extracted = unsafe { sample_buffer.format_description() }.and_then(|format_desc| {
-            match shared.codec {
-                CodecKind::Hevc => extradata::extract_hevc(&format_desc),
-                _ => extradata::extract_h264(&format_desc),
+        // ProRes has no VPS/SPS/PPS-style parameter sets to extract — every ProRes sample is a
+        // fully self-contained frame (see `adr/apple/0006-videotoolbox-prores-encode.md`), so
+        // `base_info`'s already-empty `extra_data` is immediately final; skip straight to
+        // marking it finalized rather than calling `extract_h264` against a format description
+        // that has nothing H.264-shaped in it (a real bug this ProRes work also fixed: the prior
+        // `_ => extract_h264(..)` catch-all here would have silently misapplied H.264 extraction
+        // to any future non-H.264/HEVC codec, not just ProRes).
+        if super::codec::is_prores(shared.codec) {
+            let _ = shared.finalized_info.set(shared.base_info.clone());
+        } else {
+            // SAFETY: `sample_buffer` is a valid, callback-scoped `CMSampleBuffer` reference.
+            let extracted = unsafe { sample_buffer.format_description() }.and_then(|format_desc| {
+                match shared.codec {
+                    CodecKind::Hevc => extradata::extract_hevc(&format_desc),
+                    CodecKind::H264 => extradata::extract_h264(&format_desc),
+                    // `is_supported_video_codec` already restricts `open()` to H.264/HEVC/
+                    // ProRes (ProRes takes the branch above); nothing else reaches here.
+                    _ => None,
+                }
+            });
+            if let Some(extra_data) = extracted {
+                let mut info = shared.base_info.clone();
+                if let StreamInfo::Video { extra_data: ed, .. } = &mut info {
+                    *ed = extra_data;
+                }
+                let _ = shared.finalized_info.set(info);
             }
-        });
-        if let Some(extra_data) = extracted {
-            let mut info = shared.base_info.clone();
-            if let StreamInfo::Video { extra_data: ed, .. } = &mut info {
-                *ed = extra_data;
-            }
-            let _ = shared.finalized_info.set(info);
         }
     }
 
@@ -488,47 +566,60 @@ fn configure_properties(
     session: &VTCompressionSession,
     config: &VideoEncoderConfig,
 ) -> Result<(), EncodeError> {
-    // SAFETY (all `set_*_property` calls below, and the `profile_level` static reads): `session`
-    // is a freshly created, not-yet-started `VTCompressionSession`; every property key/value
-    // passed is a confirmed-real `&'static CFString` from `objc2_video_toolbox`'s generated
-    // `VTCompressionProperties` bindings — reading any of them (they are `extern "C" static`s,
-    // not functions) requires `unsafe` per E0133, which this block satisfies for all of them.
+    // SAFETY (all `set_*_property` calls below, and the `profile_level` static reads for
+    // non-ProRes codecs further down): `session` is a freshly created, not-yet-started
+    // `VTCompressionSession`; every property key/value passed is a confirmed-real
+    // `&'static CFString` from `objc2_video_toolbox`'s generated `VTCompressionProperties`
+    // bindings — reading any of them (they are `extern "C" static`s, not functions) requires
+    // `unsafe` per E0133, which this block satisfies for all of them.
     unsafe {
-        // `CodecKind` is `#[non_exhaustive]` (declared in a different crate) — an unmatched
-        // future variant is a real "we don't know this profile" case, not reachable today
-        // (`codec_type`, called before this function in `open_cpu`, already rejects anything but
-        // H.264/HEVC).
-        let profile_level = match config.codec {
-            CodecKind::Hevc => kVTProfileLevel_HEVC_Main_AutoLevel,
-            _ => kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel,
-        };
-        set_string_property(
-            session,
-            kVTCompressionPropertyKey_ProfileLevel,
-            profile_level,
-        )?;
         set_bool_property(session, kVTCompressionPropertyKey_RealTime, true)?;
         set_bool_property(
             session,
             kVTCompressionPropertyKey_AllowFrameReordering,
             false,
         )?;
-        let max_key_frame_interval = i32::try_from(config.gop_size.max(1)).unwrap_or(1);
-        set_i32_property(
-            session,
-            kVTCompressionPropertyKey_MaxKeyFrameInterval,
-            max_key_frame_interval,
-        )?;
-        if config.bitrate_bps > 0 {
-            let bitrate = i32::try_from(config.bitrate_bps).unwrap_or(i32::MAX);
-            set_i32_property(session, kVTCompressionPropertyKey_AverageBitRate, bitrate)?;
-        }
         let frame_rate = frame_rate_hint(config.time_base);
         set_i32_property(
             session,
             kVTCompressionPropertyKey_ExpectedFrameRate,
             frame_rate,
         )?;
+
+        // ProRes: no `ProfileLevel` (zero `kVTProfileLevel_ProRes*` constants exist anywhere in
+        // the generated bindings — the profile is fully encoded in `codec_type`'s six distinct
+        // `kCMVideoCodecType_AppleProRes*` values, unlike H.264/HEVC's separate profile-level
+        // property under one shared codec type), no `MaxKeyFrameInterval` (unconditionally
+        // all-intra — `config.gop_size` is silently not honored, documented on
+        // `VideoEncoderConfig::gop_size`'s own rustdoc contract for backends that can't apply it),
+        // no `AverageBitRate` (profile determines quality/bitrate, not a settable property —
+        // `config.bitrate_bps` is silently not honored, same documented-fallback contract). See
+        // `adr/apple/0006-videotoolbox-prores-encode.md`.
+        if !super::codec::is_prores(config.codec) {
+            // `CodecKind` is `#[non_exhaustive]` (declared in a different crate) — an unmatched
+            // future variant is a real "we don't know this profile" case, not reachable today
+            // (`codec_type`, called before this function in `open_session`, already rejects
+            // anything but H.264/HEVC/ProRes).
+            let profile_level = match config.codec {
+                CodecKind::Hevc => kVTProfileLevel_HEVC_Main_AutoLevel,
+                _ => kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel,
+            };
+            set_string_property(
+                session,
+                kVTCompressionPropertyKey_ProfileLevel,
+                profile_level,
+            )?;
+            let max_key_frame_interval = i32::try_from(config.gop_size.max(1)).unwrap_or(1);
+            set_i32_property(
+                session,
+                kVTCompressionPropertyKey_MaxKeyFrameInterval,
+                max_key_frame_interval,
+            )?;
+            if config.bitrate_bps > 0 {
+                let bitrate = i32::try_from(config.bitrate_bps).unwrap_or(i32::MAX);
+                set_i32_property(session, kVTCompressionPropertyKey_AverageBitRate, bitrate)?;
+            }
+        }
     }
     Ok(())
 }

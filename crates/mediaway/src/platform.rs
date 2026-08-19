@@ -120,7 +120,41 @@ pub fn encoder_support(codec: CodecKind) -> Vec<EncoderCapability> {
         mediaway_encoder::windows::auto::support(codec)
     }
 
-    #[cfg(not(windows))]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        if codec == CodecKind::Opus {
+            // Native AudioConverter Opus encoder (ADR-0005) — probe it live, same cost
+            // trade-off as every other probe here.
+            use mediaway_common::{Rational, SampleFormat};
+            use mediaway_encoder::apple::AppleAudioEncoder;
+            use mediaway_encoder::auto::{Backend, EncodePathClass};
+            use mediaway_encoder::capability::{EncodeSupport, EncodeUnavailable};
+            use mediaway_encoder::{AudioEncoderConfig, EncodeError};
+            let cfg = AudioEncoderConfig {
+                codec,
+                sample_rate: 48_000,
+                channels: 2,
+                sample_format: SampleFormat::F32,
+                time_base: Rational::new(1, 50),
+                bitrate_bps: 0,
+            };
+            let support = match AppleAudioEncoder::open(&cfg) {
+                // Native `AudioConverter` session, no GPU handle involved — closest fit among
+                // `EncodePathClass`'s video-shaped variants is `CpuUpload` (CPU-resident data
+                // fed to an OS encoder), same category the Windows WMF AAC path would report.
+                Ok(_) => EncodeSupport::Supported(EncodePathClass::CpuUpload),
+                Err(EncodeError::Backend) => {
+                    EncodeSupport::Unavailable(EncodeUnavailable::NoDevice)
+                }
+                Err(_) => EncodeSupport::Unavailable(EncodeUnavailable::NotImplemented),
+            };
+            return vec![EncoderCapability::new(Backend::Os, support)];
+        }
+        let _ = codec;
+        Vec::new()
+    }
+
+    #[cfg(not(any(windows, target_os = "macos", target_os = "ios")))]
     {
         let _ = codec;
         Vec::new()
@@ -228,6 +262,16 @@ pub fn decoder_support(codec: CodecKind) -> DecodeSupport {
     #[cfg(any(target_os = "macos", target_os = "ios"))]
     {
         use mediaway_decoder::apple::AppleVideoDecoder;
+        if codec == CodecKind::Opus {
+            // Native AudioConverter Opus decoder (ADR-0005) — probe it live, same cost
+            // trade-off as every other probe here.
+            use mediaway_decoder::apple::{OpusDecoder, OpusDecoderConfig};
+            let cfg = OpusDecoderConfig::new(48_000, 2, mediaway_common::Rational::new(1, 50));
+            return match OpusDecoder::open(&cfg) {
+                Ok(_) => DecodeSupport::Supported,
+                Err(_) => DecodeSupport::Unavailable(DecodeUnavailable::NoDevice),
+            };
+        }
         // VP9/AV1 require a container-supplied `vpcC`/`av1C` config record at `open()` (see
         // `mediaway-decoder` apple/adr/0002) — a throwaway 64x64 probe with no `extra_data`
         // cannot exercise either, so this probe only ever reports H.264/HEVC support live; VP9/
@@ -294,7 +338,25 @@ impl ScreenCapture {
             Ok(Box::new(cap))
         }
 
-        #[cfg(not(any(windows, target_os = "linux")))]
+        #[cfg(target_os = "macos")]
+        {
+            use mediaway_device::apple::AppleScreenCapture;
+            let cap = AppleScreenCapture::open(config)?;
+            Ok(Box::new(cap))
+        }
+
+        #[cfg(target_os = "ios")]
+        {
+            // ReplayKit's in-app screen capture (`AppleScreenCapture`) takes no per-request
+            // config — it always captures the whole app (video + app audio + mic audio); see
+            // `mediaway-device` adr/apple/0004.
+            use mediaway_device::apple::AppleScreenCapture;
+            let _ = config;
+            let cap = AppleScreenCapture::open()?;
+            Ok(Box::new(cap))
+        }
+
+        #[cfg(not(any(windows, target_os = "linux", target_os = "macos", target_os = "ios")))]
         {
             let _ = config;
             Err(CaptureError::NoBackend)
@@ -326,7 +388,14 @@ impl Microphone {
             Ok(Box::new(cap))
         }
 
-        #[cfg(not(windows))]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        {
+            use mediaway_device::apple::AppleMicrophoneCapture;
+            let cap = AppleMicrophoneCapture::open(config)?;
+            Ok(Box::new(cap))
+        }
+
+        #[cfg(not(any(windows, target_os = "macos", target_os = "ios")))]
         {
             let _ = config;
             Err(CaptureError::NoBackend)
@@ -350,7 +419,12 @@ pub fn device_support(kind: DeviceKind) -> Support {
         mediaway_device::linux::support(kind)
     }
 
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        mediaway_device::apple::support(kind)
+    }
+
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos", target_os = "ios")))]
     {
         let _ = kind;
         Support::Unavailable(mediaway_device::Unavailable::NotImplemented)
@@ -376,7 +450,12 @@ pub fn request_device_permission(kind: DeviceKind) -> Result<PermissionState, Ca
         mediaway_device::linux::request_permission(kind)
     }
 
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        mediaway_device::apple::request_permission(kind)
+    }
+
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos", target_os = "ios")))]
     {
         let _ = kind;
         Ok(PermissionState::NotSupported)

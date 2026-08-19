@@ -26,19 +26,29 @@ use objc2_core_foundation::{CFData, CFDictionary, CFPropertyList, CFRetained, CF
 use objc2_core_media::{
     CMFormatDescription, CMVideoCodecType, CMVideoFormatDescription,
     kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms, kCMVideoCodecType_AV1,
-    kCMVideoCodecType_VP9,
+    kCMVideoCodecType_AppleProRes422, kCMVideoCodecType_AppleProRes422HQ,
+    kCMVideoCodecType_AppleProRes422LT, kCMVideoCodecType_AppleProRes422Proxy,
+    kCMVideoCodecType_AppleProRes4444, kCMVideoCodecType_AppleProRes4444XQ, kCMVideoCodecType_VP9,
 };
 
 const NO_ERROR: i32 = 0;
 
 /// `VideoToolbox` codec type for a raw (non-NAL) codec this backend supports —
-/// [`CodecKind::Vp9`]/[`CodecKind::Av1`] only; H.264/HEVC build their format description via
+/// [`CodecKind::Vp9`]/[`CodecKind::Av1`] (need a container-supplied config-record extension atom,
+/// see [`create_raw`]) or one of the six `CodecKind::ProRes*` profiles (need no extension atom at
+/// all, see [`create_raw_no_extension`]) — H.264/HEVC build their format description via
 /// dedicated parameter-set entry points instead (see [`create_h264`]/[`create_hevc`]).
 #[must_use]
 pub(super) const fn raw_codec_type(codec: CodecKind) -> Option<CMVideoCodecType> {
     match codec {
         CodecKind::Vp9 => Some(kCMVideoCodecType_VP9),
         CodecKind::Av1 => Some(kCMVideoCodecType_AV1),
+        CodecKind::ProRes422Proxy => Some(kCMVideoCodecType_AppleProRes422Proxy),
+        CodecKind::ProRes422Lt => Some(kCMVideoCodecType_AppleProRes422LT),
+        CodecKind::ProRes422 => Some(kCMVideoCodecType_AppleProRes422),
+        CodecKind::ProRes422Hq => Some(kCMVideoCodecType_AppleProRes422HQ),
+        CodecKind::ProRes4444 => Some(kCMVideoCodecType_AppleProRes4444),
+        CodecKind::ProRes4444Xq => Some(kCMVideoCodecType_AppleProRes4444XQ),
         _ => None,
     }
 }
@@ -204,6 +214,30 @@ pub(super) fn create_raw(
             Some(&outer),
             &mut format_desc_out,
         )
+    };
+    if status != NO_ERROR {
+        return Err(DecodeError::Backend);
+    }
+    format_desc_out.ok_or(DecodeError::Backend)
+}
+
+/// `width`/`height` → `CMFormatDescription` for a `ProRes` profile, via the generic
+/// `CMVideoFormatDescriptionCreate` with **no** extensions dictionary at all — unlike
+/// [`create_raw`]'s VP9/AV1 path, `ProRes` carries no container-supplied config record this
+/// backend needs to attach; the six `kCMVideoCodecType_AppleProRes*` codec types are
+/// self-sufficient given just geometry (see `adr/apple/0006-videotoolbox-prores-decode.md`).
+pub(super) fn create_raw_no_extension(
+    codec_type: CMVideoCodecType,
+    width: i32,
+    height: i32,
+) -> Result<CFRetained<CMVideoFormatDescription>, DecodeError> {
+    let mut format_desc_out: Option<CFRetained<CMVideoFormatDescription>> = None;
+    // SAFETY: `codec_type` is a real, VideoToolbox-recognized `CMVideoCodecType`; `width`/
+    // `height` are positive (checked by this backend's `validate` before this is called);
+    // `extensions: None` (nothing to attach — see this function's doc comment);
+    // `format_desc_out` starts `None`.
+    let status = unsafe {
+        CMVideoFormatDescription::new(None, codec_type, width, height, None, &mut format_desc_out)
     };
     if status != NO_ERROR {
         return Err(DecodeError::Backend);

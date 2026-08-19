@@ -1,35 +1,47 @@
 //! Apple (macOS + iOS) encode backend (`VideoToolbox` `VTCompressionSession`, via `objc2`).
 //!
-//! - [`VideoInputPreference::CpuUploadOk`](crate::VideoInputPreference): H.264/HEVC session via
-//!   `VTCompressionSession` + `upload_cpu_nv12` (`CVPixelBufferCreateWithPlanarBytes`, one
-//!   copy) — `kVTCompressionPropertyKey_MaxKeyFrameInterval` requests
-//!   [`VideoEncoderConfig::gop_size`] sync frames, device-dependent, not a byte-exact
-//!   guarantee like Linux's raw bitstream approach. VP9/AV1 are **not** supported — `VideoToolbox`
-//!   exposes no compression API for either codec at all (see ADR-0002).
-//! - [`VideoInputPreference::ZeroCopyGpu`]: not implemented — returns
-//!   [`EncodeError::Unsupported`]. Deferred to a Zero-Copy `CVPixelBuffer`/`IOSurface` stage;
-//!   see [`docs/roadmap.md`](../docs/roadmap.md).
+//! - [`VideoInputPreference::CpuUploadOk`](crate::VideoInputPreference): H.264/HEVC/`ProRes`
+//!   session via `VTCompressionSession` + `upload_cpu_nv12` (`CVPixelBufferCreateWithPlanarBytes`,
+//!   one copy) — `kVTCompressionPropertyKey_MaxKeyFrameInterval` requests
+//!   [`VideoEncoderConfig::gop_size`] sync frames for H.264/HEVC, device-dependent, not a
+//!   byte-exact guarantee like Linux's raw bitstream approach; `ProRes` ignores `gop_size`/
+//!   `bitrate_bps` entirely (unconditionally all-intra, profile-fixed quality — see ADR-0006).
+//!   VP9/AV1 and `ProRes` RAW are **not** supported — `VideoToolbox` exposes no compression API
+//!   for any of them at all (see ADR-0002, ADR-0006).
+//! - [`VideoInputPreference::ZeroCopyGpu`]: real Zero-Copy — the caller's
+//!   [`GpuBufferHandle::Metal`](mediaway_common::GpuBufferHandle::Metal) `CVPixelBuffer` is
+//!   borrowed directly for `VTCompressionSession::encode_frame`, never copied or retained by
+//!   this backend; see [ADR-0003](../adr/apple/0003-videotoolbox-metal-zero-copy-encode.md).
 //!
 //! Policy: [ADR-0001](../adr/apple/0001-videotoolbox-h264-cpu-upload.md) — original binding
 //! choice (`objc2-video-toolbox`/`objc2-core-video`/`objc2-core-media`/`objc2-core-foundation`)
 //! and H.264 scope. [ADR-0002](../adr/apple/0002-videotoolbox-hevc-encode.md) — HEVC addition and
-//! VP9/AV1's permanent non-support. Both carry the **zero compile verification as authored**
-//! caveat (this crate's dev environment cannot cross-compile Apple code at all — no Xcode/Apple
-//! SDK reachable outside macOS). Read that caveat before relying on this backend.
+//! VP9/AV1's permanent non-support. [ADR-0003](../adr/apple/0003-videotoolbox-metal-zero-copy-encode.md)
+//! — Zero-Copy input. [ADR-0006](../adr/apple/0006-videotoolbox-prores-encode.md) — `ProRes`
+//! addition and `ProRes` RAW's permanent non-support. All four carry the **zero compile
+//! verification as authored** caveat (this crate's dev environment cannot cross-compile Apple
+//! code at all — no Xcode/Apple SDK reachable outside macOS). Read that caveat before relying on
+//! this backend.
 
 // Unlike Android/Linux, VideoToolbox/CoreMedia/CoreVideo's `objc2-*` bindings are plain C-API
 // `unsafe fn` wrappers with no safe layer (see ADR-0001 § Unsafe surface) — this module carries
 // real `unsafe` blocks with `// SAFETY:` comments, matching `src/windows/`'s discipline. The
 // crate root's `#![allow(unsafe_code)]` (see `lib.rs`) applies here.
 
-#[cfg(not(feature = "video"))]
-compile_error!("enable the `video` feature on mediaway-encoder-apple");
+#[cfg(all(not(feature = "audio"), not(feature = "video")))]
+compile_error!("enable the `audio` and/or `video` feature on mediaway-encoder-apple");
 
 use crate::EncodeError;
+#[cfg(feature = "audio")]
+use crate::{AudioEncoder, AudioEncoderConfig};
 use crate::{VideoEncoder, VideoEncoderConfig};
+#[cfg(feature = "audio")]
+use mediaway_common::AudioFrame;
 use mediaway_common::VideoFrame;
 use mediaway_common::{Bytes, Packet, StreamInfo};
 
+#[cfg(all(any(target_os = "macos", target_os = "ios"), feature = "audio"))]
+mod audiotoolbox;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod videotoolbox;
 
@@ -46,13 +58,12 @@ impl AppleVideoEncoder {
     ///
     /// # Errors
     ///
-    /// Returns [`EncodeError::Unsupported`] when the codec/input path is not wired (currently:
-    /// anything but H.264/HEVC + [`VideoInputPreference::CpuUploadOk`] — VP9/AV1 have no
+    /// Returns [`EncodeError::Unsupported`] when the codec is not H.264/HEVC (VP9/AV1 have no
     /// `VideoToolbox` compression API at all, see ADR-0002), or [`EncodeError::Backend`]
     /// when `VTCompressionSessionCreate`/`VTSessionSetProperty` fails (a real, honest failure —
-    /// not every device has a given codec's HW encoder available — see ADR-0001).
-    ///
-    /// [`VideoInputPreference::CpuUploadOk`]: crate::VideoInputPreference::CpuUploadOk
+    /// not every device has a given codec's HW encoder available — see ADR-0001). Returns
+    /// [`EncodeError::InvalidInput`] at `push_frame` time when a frame's storage doesn't match
+    /// the `input` preference `open` was called with (see ADR-0003).
     #[cfg(any(target_os = "macos", target_os = "ios"))]
     pub fn open(config: &VideoEncoderConfig) -> Result<Self, EncodeError> {
         let inner = videotoolbox::VideoToolboxVideoEncoder::open(config)?;
@@ -116,6 +127,128 @@ impl VideoEncoder for AppleVideoEncoder {
     fn flush(&mut self) -> Result<(), EncodeError> {
         Err(EncodeError::Unsupported)
     }
+}
+
+/// Apple audio encode session.
+///
+/// AAC via `AudioConverter` ([ADR-0004](../adr/apple/0004-audiotoolbox-aac-encode.md)) or Opus
+/// via `AudioConverter` ([ADR-0005](../adr/apple/0005-audiotoolbox-opus-encode.md)), dispatched
+/// by [`AudioEncoderConfig::codec`] — mirrors
+/// `mediaway-encoder::windows::WindowsAudioEncoder`'s identical `AudioBackend` shape.
+#[cfg(feature = "audio")]
+pub struct AppleAudioEncoder {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    inner: Option<AudioBackend>,
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+    _priv: (),
+}
+
+/// Per-codec audio backend behind [`AppleAudioEncoder`].
+#[cfg(all(feature = "audio", any(target_os = "macos", target_os = "ios")))]
+enum AudioBackend {
+    /// `AudioConverter` AAC-LC encoder.
+    Aac(audiotoolbox::AacEncoder),
+    /// `AudioConverter` Opus encoder (native, see ADR-0005) — `SwOpusAudioEncoder` remains
+    /// available directly for callers needing caller-selectable frame duration or Opus-specific
+    /// tuning (ADR-0005 § Scope), but is no longer this backend's default.
+    Opus(audiotoolbox::OpusEncoder),
+}
+
+#[cfg(feature = "audio")]
+impl AppleAudioEncoder {
+    /// Open an Apple audio encoder for `config`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EncodeError::Unsupported`] for any codec but AAC/Opus, or
+    /// [`EncodeError::Backend`] on `AudioConverter`/`unsafe-libopus` failure.
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    pub fn open(config: &AudioEncoderConfig) -> Result<Self, EncodeError> {
+        let inner = match config.codec {
+            mediaway_common::CodecKind::Aac => {
+                AudioBackend::Aac(audiotoolbox::AacEncoder::open(config)?)
+            }
+            mediaway_common::CodecKind::Opus => {
+                AudioBackend::Opus(audiotoolbox::OpusEncoder::open(config)?)
+            }
+            _ => return Err(EncodeError::Unsupported),
+        };
+        Ok(Self { inner: Some(inner) })
+    }
+
+    /// Host / non-Apple build: encoder unavailable.
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+    pub const fn open(_config: &AudioEncoderConfig) -> Result<Self, EncodeError> {
+        Err(EncodeError::Unsupported)
+    }
+}
+
+#[cfg(all(feature = "audio", any(target_os = "macos", target_os = "ios")))]
+impl AudioEncoder for AppleAudioEncoder {
+    fn stream_info(&self) -> &StreamInfo {
+        match self.inner.as_ref() {
+            Some(AudioBackend::Aac(e)) => e.stream_info(),
+            Some(AudioBackend::Opus(e)) => e.stream_info(),
+            None => closed_audio_stream_info(),
+        }
+    }
+
+    fn push_frame(&mut self, frame: &AudioFrame) -> Result<(), EncodeError> {
+        match self.inner.as_mut() {
+            Some(AudioBackend::Aac(e)) => e.push_frame(frame),
+            Some(AudioBackend::Opus(e)) => e.push_frame(frame),
+            None => Err(EncodeError::Closed),
+        }
+    }
+
+    fn poll_packet(&mut self) -> Result<Option<Packet>, EncodeError> {
+        match self.inner.as_mut() {
+            Some(AudioBackend::Aac(e)) => e.poll_packet(),
+            Some(AudioBackend::Opus(e)) => e.poll_packet(),
+            None => Err(EncodeError::Closed),
+        }
+    }
+
+    fn flush(&mut self) -> Result<(), EncodeError> {
+        match self.inner.as_mut() {
+            Some(AudioBackend::Aac(e)) => e.flush(),
+            Some(AudioBackend::Opus(e)) => e.flush(),
+            None => Err(EncodeError::Closed),
+        }
+    }
+}
+
+#[cfg(all(feature = "audio", not(any(target_os = "macos", target_os = "ios"))))]
+impl AudioEncoder for AppleAudioEncoder {
+    fn stream_info(&self) -> &StreamInfo {
+        closed_audio_stream_info()
+    }
+
+    fn push_frame(&mut self, _frame: &AudioFrame) -> Result<(), EncodeError> {
+        Err(EncodeError::Unsupported)
+    }
+
+    fn poll_packet(&mut self) -> Result<Option<Packet>, EncodeError> {
+        Ok(None)
+    }
+
+    fn flush(&mut self) -> Result<(), EncodeError> {
+        Err(EncodeError::Unsupported)
+    }
+}
+
+#[cfg(feature = "audio")]
+fn closed_audio_stream_info() -> &'static StreamInfo {
+    use std::sync::OnceLock;
+    static INFO: OnceLock<StreamInfo> = OnceLock::new();
+    INFO.get_or_init(|| StreamInfo::Audio {
+        id: 0,
+        codec: mediaway_common::CodecKind::Aac,
+        time_base: mediaway_common::Rational::new(1, 48_000),
+        extra_data: Bytes::new(),
+        sample_rate: 0,
+        channels: 0,
+    })
 }
 
 fn closed_stream_info() -> &'static StreamInfo {

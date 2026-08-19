@@ -80,6 +80,18 @@ pub enum CodecKind {
     RawAudio = 11,
     /// VP8 video.
     Vp8 = 12,
+    /// Apple `ProRes` 422 Proxy video.
+    ProRes422Proxy = 13,
+    /// Apple `ProRes` 422 LT video.
+    ProRes422Lt = 14,
+    /// Apple `ProRes` 422 (standard) video.
+    ProRes422 = 15,
+    /// Apple `ProRes` 422 HQ video.
+    ProRes422Hq = 16,
+    /// Apple `ProRes` 4444 video.
+    ProRes4444 = 17,
+    /// Apple `ProRes` 4444 XQ video.
+    ProRes4444Xq = 18,
 }
 
 impl From<CodecKind> for CommonCodecKind {
@@ -98,6 +110,12 @@ impl From<CodecKind> for CommonCodecKind {
             CodecKind::RawVideo => Self::RawVideo,
             CodecKind::RawAudio => Self::RawAudio,
             CodecKind::Vp8 => Self::Vp8,
+            CodecKind::ProRes422Proxy => Self::ProRes422Proxy,
+            CodecKind::ProRes422Lt => Self::ProRes422Lt,
+            CodecKind::ProRes422 => Self::ProRes422,
+            CodecKind::ProRes422Hq => Self::ProRes422Hq,
+            CodecKind::ProRes4444 => Self::ProRes4444,
+            CodecKind::ProRes4444Xq => Self::ProRes4444Xq,
         }
     }
 }
@@ -118,6 +136,12 @@ impl From<CommonCodecKind> for CodecKind {
             CommonCodecKind::RawVideo => Self::RawVideo,
             CommonCodecKind::RawAudio => Self::RawAudio,
             CommonCodecKind::Vp8 => Self::Vp8,
+            CommonCodecKind::ProRes422Proxy => Self::ProRes422Proxy,
+            CommonCodecKind::ProRes422Lt => Self::ProRes422Lt,
+            CommonCodecKind::ProRes422 => Self::ProRes422,
+            CommonCodecKind::ProRes422Hq => Self::ProRes422Hq,
+            CommonCodecKind::ProRes4444 => Self::ProRes4444,
+            CommonCodecKind::ProRes4444Xq => Self::ProRes4444Xq,
         }
     }
 }

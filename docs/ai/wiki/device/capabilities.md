@@ -60,6 +60,19 @@ module-wide `HARDWARE_TEST_LOCK` mutex (`crates/mediaway-device/src/windows/mod.
 that every real-hardware test acquires for its duration; pure-logic tests
 (e.g. `Camera` → `NotImplemented`) don't need it.
 
+## Apple
+
+`mediaway::platform::{device_support, request_device_permission}` gained
+`target_os = macos/ios` branches (previously Apple fell through to the
+`NotImplemented`/`NotSupported` catch-all despite `mediaway-device::apple`
+having real Camera/Microphone/Screen backends since ADR-0001-0004) —
+straight passthrough to `mediaway_device::apple::{support, request_permission}`,
+which were already implemented and simply never reachable through this
+facade. `ScreenCapture::open`/`Microphone::open` gained matching branches;
+`ScreenCapture::open` splits `macos` (`ScreenCaptureKit`, takes a config) from
+`ios` (`ReplayKit`, whole-app capture, no per-request config) since their
+real `open()` signatures differ.
+
 ## Known gaps
 
 - Linux `support`/`request_permission` only handle `Screen` — Window/Camera/

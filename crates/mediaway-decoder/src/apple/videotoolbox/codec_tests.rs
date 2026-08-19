@@ -147,12 +147,32 @@ fn validate_parameter_sets_rejects_zero_pps() {
 }
 
 #[test]
-fn is_supported_video_codec_h264_hevc_vp9_av1() {
+fn is_supported_video_codec_h264_hevc_vp9_av1_prores() {
     assert!(is_supported_video_codec(CodecKind::H264));
     assert!(is_supported_video_codec(CodecKind::Hevc));
     assert!(is_supported_video_codec(CodecKind::Vp9));
     assert!(is_supported_video_codec(CodecKind::Av1));
+    assert!(is_supported_video_codec(CodecKind::ProRes422Proxy));
+    assert!(is_supported_video_codec(CodecKind::ProRes422Lt));
+    assert!(is_supported_video_codec(CodecKind::ProRes422));
+    assert!(is_supported_video_codec(CodecKind::ProRes422Hq));
+    assert!(is_supported_video_codec(CodecKind::ProRes4444));
+    assert!(is_supported_video_codec(CodecKind::ProRes4444Xq));
     assert!(!is_supported_video_codec(CodecKind::Opus));
+}
+
+#[test]
+fn is_prores_only_the_six_prores_variants() {
+    assert!(is_prores(CodecKind::ProRes422Proxy));
+    assert!(is_prores(CodecKind::ProRes422Lt));
+    assert!(is_prores(CodecKind::ProRes422));
+    assert!(is_prores(CodecKind::ProRes422Hq));
+    assert!(is_prores(CodecKind::ProRes4444));
+    assert!(is_prores(CodecKind::ProRes4444Xq));
+    assert!(!is_prores(CodecKind::H264));
+    assert!(!is_prores(CodecKind::Hevc));
+    assert!(!is_prores(CodecKind::Vp9));
+    assert!(!is_prores(CodecKind::Av1));
 }
 
 #[test]
@@ -161,6 +181,7 @@ fn requires_extra_data_at_open_only_vp9_av1() {
     assert!(!requires_extra_data_at_open(CodecKind::Hevc));
     assert!(requires_extra_data_at_open(CodecKind::Vp9));
     assert!(requires_extra_data_at_open(CodecKind::Av1));
+    assert!(!requires_extra_data_at_open(CodecKind::ProRes422));
 }
 
 #[test]
@@ -169,6 +190,7 @@ fn raw_atom_key_matches_codec() {
     assert_eq!(raw_atom_key(CodecKind::Av1), Some("av1C"));
     assert_eq!(raw_atom_key(CodecKind::H264), None);
     assert_eq!(raw_atom_key(CodecKind::Hevc), None);
+    assert_eq!(raw_atom_key(CodecKind::ProRes422), None);
 }
 
 #[test]

@@ -8,6 +8,60 @@
 
 ### Added
 
+- `mediaway-encoder::apple`: AAC-LC encode via `AudioToolbox`'s `AudioConverter`
+  (`AppleAudioEncoder`, `Aac`/`Opus` dispatch, mirrors `WindowsAudioEncoder`'s shape). Float32
+  PCM input only, no conversion needed (unlike the Windows WMF backend, which downconverts to
+  S16). `mediaway-decoder::apple`: AAC-LC decode via the same `AudioConverter` API — **the first
+  AAC decoder in this workspace at all**, requires a container-supplied `AudioSpecificConfig` at
+  `open()`. Neither wired into `mediaway::platform` (matches existing Windows audio-backend
+  scope). **Zero compile verification as authored**. See
+  `crates/mediaway-encoder/adr/apple/0004-audiotoolbox-aac-encode.md` and
+  `crates/mediaway-decoder/adr/apple/0004-audiotoolbox-aac-decode.md`.
+- `mediaway-encoder::apple`/`mediaway-decoder::apple`: real Zero-Copy `GpuBufferHandle::Metal`
+  support. Encode input (`VideoInputPreference::ZeroCopyGpu`) borrows the caller's `CVPixelBuffer`
+  directly for one `encode_frame` call — no retain/release. Decode output
+  (`VideoOutputPreference::ZeroCopyGpu`) takes a new, independent `CFRetained::retain` per decoded
+  frame; unlike this workspace's VA-API DMA-BUF Zero-Copy, `VTDecompressionSession`'s
+  `CVPixelBufferPool` grows on demand rather than reusing a fixed slot, so no DPB-style
+  `outstanding` tracking is needed — the decoder holds the last-`poll_frame`-returned handle and
+  releases it on the next `push_packet`/`poll_frame`/`flush` call, matching this crate's existing
+  "valid until next call" GPU-handle contract. **Zero compile verification as authored**. See
+  `crates/mediaway-encoder/adr/apple/0003-videotoolbox-metal-zero-copy-encode.md` and
+  `crates/mediaway-decoder/adr/apple/0003-videotoolbox-metal-zero-copy-decode.md`.
+- `mediaway::platform`: wired Apple into `encoder_support`/`decoder_support` (Opus — see the
+  native `AudioConverter` bullet below) and into `ScreenCapture::open`/`Microphone::open`/
+  `device_support`/`request_device_permission` (`mediaway-device::apple`'s Camera/Microphone/
+  Screen backends were already implemented but unreachable through this cross-platform facade).
+- `mediaway-encoder::apple`/`mediaway-decoder::apple`: native Opus encode/decode via the same
+  `AudioToolbox` `AudioConverter` API AAC uses (`audiotoolbox::{OpusEncoder, OpusDecoder}`) —
+  replaces the cross-platform `SwOpusAudioEncoder`/`SwOpusAudioDecoder` as `AppleAudioEncoder`'s
+  Apple-side default (both remain directly usable elsewhere). No new Cargo dependency —
+  `kAudioFormatOpus` is a plain format ID already reachable through the AAC work's existing
+  bindings. Frame duration is converter-chosen (queried via
+  `kAudioConverterCurrentOutputStreamDescription`/`CurrentInputStreamDescription`), not
+  caller-selectable like `SwOpusAudioEncoder`'s `time_base`-as-duration contract — a real,
+  disclosed gap. No magic cookie needed either direction (Opus is self-describing per-packet).
+  Wired live into `mediaway::platform`'s Apple `encoder_support`/`decoder_support` Opus probes.
+  **Zero compile verification as authored**. See
+  `crates/mediaway-encoder/adr/apple/0005-audiotoolbox-opus-encode.md` and
+  `crates/mediaway-decoder/adr/apple/0005-audiotoolbox-opus-decode.md`.
+- `mediaway-common::CodecKind`: six new ProRes variants (`ProRes422Proxy`/`ProRes422Lt`/
+  `ProRes422`/`ProRes422Hq`/`ProRes4444`/`ProRes4444Xq`). `mediaway-encoder::apple`/
+  `mediaway-decoder::apple`: ProRes encode/decode via `VideoToolbox` `VTCompressionSession`/
+  `VTDecompressionSession`, reusing the existing H.264/HEVC session/callback/Zero-Copy/CPU-upload
+  machinery entirely unchanged (ProRes is unconditionally all-intra with no in-band parameter
+  sets, architecturally simpler than H.264/HEVC here). `VideoEncoderConfig::gop_size`/
+  `bitrate_bps` are silently unused for ProRes (no corresponding `VideoToolbox` property exists).
+  Decode needs no config record at all (new `format_desc::create_raw_no_extension`, unlike
+  VP9/AV1's extension-atom path) — CPU readback still downsamples to NV12, a real quality loss
+  from ProRes's native higher bit depth/chroma (Zero-Copy output unaffected). **ProRes RAW/RAW HQ
+  are permanently unsupported** (encode: no compression API at all; decode: needs a separate
+  unimplemented `VTRAWProcessingSession`). Also fixed a real pre-existing bug: the encoder's
+  extradata-extraction dispatch had a silent H.264-fallback catch-all for any non-HEVC codec.
+  **Zero compile verification as authored**. See
+  `crates/mediaway-encoder/adr/apple/0006-videotoolbox-prores-encode.md` and
+  `crates/mediaway-decoder/adr/apple/0006-videotoolbox-prores-decode.md`.
+
 - `mediaway-encoder::apple`: HEVC encode (`kVTProfileLevel_HEVC_Main_AutoLevel`, CPU NV12
   upload, `hvcC` extradata via a new `iso_bmff::bitstream::hevc` module mirroring the existing
   H.264 `avc.rs` shape). VP9/AV1 encode confirmed to be a **permanent** `VideoToolbox` API gap —

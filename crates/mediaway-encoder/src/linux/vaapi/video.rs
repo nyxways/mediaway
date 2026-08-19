@@ -1,4 +1,4 @@
-//! VA-API H.264 CPU-upload encode session.
+//! VA-API H.264 CPU-upload / DMA-BUF-import encode session.
 //!
 //! See [ADR-0001](../../adr/0001-vaapi-cros-libva-h264-cpu-upload.md): binding choice, scope
 //! (Constrained Baseline / CQP / all-IDR / CPU upload only), and the zero-hardware-
@@ -6,24 +6,29 @@
 //! extends this to real single-forward-reference P-frame GOP structures, capability-gated on
 //! `VAConfigAttribEncMaxRefFrames` — see [`gop`](super::gop) for the ported `GopState` decision
 //! state machine driving `frame_num`/reference-list construction below.
+//! [ADR-0003](../../adr/linux/0003-vaapi-dmabuf-zero-copy-input.md) adds
+//! [`VideoInputPreference::ZeroCopyGpu`] DMA-BUF import (`super::dmabuf`) as a second input
+//! source alongside CPU upload — see [`VaapiVideoEncoder::push_frame`].
 
 use std::collections::VecDeque;
 use std::rc::Rc;
 
 use crate::{EncodeError, VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 use mediaway_common::{
-    Bytes, CodecKind, Packet, PixelFormat, StreamInfo, VideoFrame, VideoFrameStorage, VideoGeometry,
+    Bytes, CodecKind, GpuBufferHandle, Packet, PixelFormat, StreamInfo, VideoFrame,
+    VideoFrameStorage, VideoGeometry,
 };
 
 use cros_libva::{
     BufferType, Config, Context, Display, EncPictureParameter, EncSequenceParameter,
     EncSliceParameter, H264EncPicFields, H264EncSeqFields, Image, MappedCodedBuffer, Picture,
-    PictureH264, Surface, UsageHint, VA_ATTRIB_NOT_SUPPORTED, VA_FOURCC_NV12, VA_INVALID_ID,
-    VA_LSB_FIRST, VA_PICTURE_H264_SHORT_TERM_REFERENCE, VA_RC_CQP, VA_RT_FORMAT_YUV420,
-    VAConfigAttrib, VAConfigAttribType, VAEntrypoint, VAImageFormat,
+    PictureH264, Surface, SurfaceMemoryDescriptor, UsageHint, VA_ATTRIB_NOT_SUPPORTED,
+    VA_FOURCC_NV12, VA_INVALID_ID, VA_LSB_FIRST, VA_PICTURE_H264_SHORT_TERM_REFERENCE, VA_RC_CQP,
+    VA_RT_FORMAT_YUV420, VAConfigAttrib, VAConfigAttribType, VAEntrypoint, VAImageFormat,
 };
 
 use super::codec::video_profile;
+use super::dmabuf;
 use super::gop::{DpbSlot, FrameDecision, FrameRequest, GopState, LOG2_MAX_FRAME_NUM_MINUS4};
 
 /// Number of driver surfaces kept in rotation — aliases [`gop::WORKSPACE_DPB_CAP`](super::gop)
@@ -64,6 +69,9 @@ pub(crate) struct VaapiVideoEncoder {
     nv12_bytes: usize,
     bits_per_second: u32,
     surfaces: Vec<Option<Surface<()>>>,
+    /// Caller's requested input mode (`open()`-time, fixed for the session's lifetime — see
+    /// ADR-0003). `push_frame` rejects a frame whose `VideoFrameStorage` does not match this.
+    input: VideoInputPreference,
     /// GOP decision state (ADR-0002) — replaces the pre-ADR-0002 `next_surface: usize`
     /// round-robin cursor; `decision.setup_slot` is now the sole slot-selection strategy.
     gop: GopState,
@@ -97,9 +105,12 @@ impl VaapiVideoEncoder {
     pub(crate) fn open(config: &VideoEncoderConfig) -> Result<Self, EncodeError> {
         validate(config)?;
         match config.input {
-            VideoInputPreference::CpuUploadOk => Self::open_cpu(config),
-            // DMA-BUF Zero-Copy surface import is deferred — see ADR-0001 § Scope / roadmap.
-            _ => Err(EncodeError::Unsupported),
+            // Both preferences share the same session setup (profile/capability probe,
+            // context/reference-pool creation) — only the *source* surface for each
+            // `push_frame` call differs (ADR-0003 § Decision).
+            VideoInputPreference::CpuUploadOk | VideoInputPreference::ZeroCopyGpu => {
+                Self::open_cpu(config)
+            }
         }
     }
 
@@ -115,7 +126,15 @@ impl VaapiVideoEncoder {
         // ADR-0002 capability gate: probe before trusting `config.gop_size > 1` — this backend's
         // first "probe first, never assume" capability query.
         let supports_p_frames = probe_supports_p_frames(&display, profile);
-        let effective_gop_size = if config.gop_size > 1 && supports_p_frames {
+        // ZeroCopyGpu input never becomes a lasting P-frame reference — each imported surface
+        // is single-use and dropped after the call that encodes it (ADR-0003 § "Why no
+        // outstanding/lifetime bookkeeping is needed here"), so this mode always forces
+        // all-IDR, the same documented fallback contract `VideoEncoderConfig::gop_size` already
+        // uses when the driver itself lacks P-frame support.
+        let effective_gop_size = if config.gop_size > 1
+            && supports_p_frames
+            && config.input != VideoInputPreference::ZeroCopyGpu
+        {
             config.gop_size
         } else {
             1
@@ -166,6 +185,7 @@ impl VaapiVideoEncoder {
             nv12_bytes,
             bits_per_second: config.bitrate_bps,
             surfaces: surfaces.into_iter().map(Some).collect(),
+            input: config.input,
             gop: GopState::new(effective_gop_size),
             effective_gop_size,
             supports_p_frames,
@@ -186,13 +206,13 @@ impl VaapiVideoEncoder {
     /// see [`Self::push_frame`], which tolerates a pool slot staying empty. Under GOP mode
     /// (ADR-0002), a lost setup-slot surface here can later surface as a lost *reference*
     /// slot too — guarded against in [`Self::push_frame`] before this method is even called.
-    fn encode_one(
+    fn encode_one<D: SurfaceMemoryDescriptor>(
         &self,
-        surface: Surface<()>,
+        surface: Surface<D>,
         frame: &VideoFrame,
         decision: &FrameDecision,
         reference: Option<(cros_libva::VASurfaceID, DpbSlot)>,
-    ) -> (Option<Surface<()>>, Result<Packet, EncodeError>) {
+    ) -> (Option<Surface<D>>, Result<Packet, EncodeError>) {
         let num_macroblocks = u32::from(self.mb_width) * u32::from(self.mb_height);
 
         // Generous size hint: NV12 CQP I-frame output very rarely approaches raw size, but
@@ -250,7 +270,7 @@ impl VaapiVideoEncoder {
         };
 
         let timestamp = u64::try_from(frame.pts).unwrap_or(0);
-        let mut picture = Picture::new::<()>(timestamp, Rc::clone(&self.context), surface);
+        let mut picture = Picture::new::<D>(timestamp, Rc::clone(&self.context), surface);
         if let Some(seq_buf) = seq_buf {
             picture.add_buffer(seq_buf);
         }
@@ -259,7 +279,7 @@ impl VaapiVideoEncoder {
 
         // `begin`/`render`/`end` return only `VaError` on failure — the surface moved into
         // `picture` is unrecoverable past this point on those branches (see doc comment).
-        let Ok(picture) = picture.begin::<()>() else {
+        let Ok(picture) = picture.begin::<D>() else {
             return (None, Err(EncodeError::Backend));
         };
         let Ok(picture) = picture.render() else {
@@ -272,7 +292,7 @@ impl VaapiVideoEncoder {
         // `PictureNew`/`PictureSync` implement `PictureReclaimableSurface` — `PictureEnd`
         // does not, so there is no typestate-sanctioned way to pull the surface back out
         // here either; it drops along with the picture, same as the begin/render/end arms.
-        let Ok(picture) = picture.sync::<()>() else {
+        let Ok(picture) = picture.sync::<D>() else {
             return (None, Err(EncodeError::Backend));
         };
 
@@ -299,23 +319,33 @@ impl VaapiVideoEncoder {
         };
         (surface, Ok(packet))
     }
-}
 
-impl VideoEncoder for VaapiVideoEncoder {
-    fn stream_info(&self) -> &StreamInfo {
-        &self.info
+    /// Resolves `decision.reference` (if any) to the live `(VASurfaceID, DpbSlot)` pair
+    /// `encode_one` needs — the lost-reference-surface guard (ADR-0002 § Real gap found): a
+    /// missing reference slot must fail this call hard, before any surface is touched, since
+    /// `GopState::decide`'s own bookkeeping already advanced and cannot be un-done without
+    /// desyncing it from the physical session. Shared by both `push_frame_cpu` and
+    /// `push_frame_dmabuf` (ADR-0003) — `ZeroCopyGpu` forces `effective_gop_size <= 1`
+    /// (`open_cpu`), so `decision.reference` is always `None` on that path, but this guard is
+    /// still cheap and correct to run unconditionally rather than special-cased away.
+    fn resolve_reference(
+        &self,
+        decision: &FrameDecision,
+    ) -> Result<Option<(cros_libva::VASurfaceID, DpbSlot)>, EncodeError> {
+        match decision.reference {
+            Some((ref_slot, ref_dpb_slot)) => {
+                let ref_surface = self.surfaces[ref_slot]
+                    .as_ref()
+                    .ok_or(EncodeError::Backend)?;
+                Ok(Some((ref_surface.id(), ref_dpb_slot)))
+            }
+            None => Ok(None),
+        }
     }
 
-    fn push_frame(&mut self, frame: &VideoFrame) -> Result<(), EncodeError> {
-        if self.flushed {
-            return Err(EncodeError::Closed);
-        }
-        let VideoFrameStorage::Cpu { data } = &frame.storage else {
-            return Err(EncodeError::Unsupported);
-        };
-        if frame.width != self.width || frame.height != self.height {
-            return Err(EncodeError::InvalidInput);
-        }
+    /// CPU-upload input path (`VideoInputPreference::CpuUploadOk`, ADR-0001) — uploads `data`
+    /// into a pooled reference/reconstruction surface via `upload_cpu_nv12`, then encodes it.
+    fn push_frame_cpu(&mut self, frame: &VideoFrame, data: &Bytes) -> Result<(), EncodeError> {
         if data.len() < self.nv12_bytes {
             return Err(EncodeError::InvalidInput);
         }
@@ -324,20 +354,7 @@ impl VideoEncoder for VaapiVideoEncoder {
         // bookkeeping, counter advancement) happen unconditionally and are never retried —
         // `GopState::decide` is not idempotent.
         let decision = self.gop.decide(FrameRequest::Auto);
-
-        // Step 3 — the lost-reference-surface guard (ADR-0002 § Real gap found), with no
-        // Vulkan-side precedent: a missing reference slot must fail this call hard, before
-        // `decision.setup_slot`'s surface is even touched, since `GopState`'s bookkeeping above
-        // already advanced and cannot be un-done without desyncing it from the physical session.
-        let reference = match decision.reference {
-            Some((ref_slot, ref_dpb_slot)) => {
-                let ref_surface = self.surfaces[ref_slot]
-                    .as_ref()
-                    .ok_or(EncodeError::Backend)?;
-                Some((ref_surface.id(), ref_dpb_slot))
-            }
-            None => None,
-        };
+        let reference = self.resolve_reference(&decision)?;
 
         // Step 4: unchanged shape, new index source (`decision.setup_slot` replaces the old
         // `next_surface` round-robin cursor).
@@ -366,6 +383,59 @@ impl VideoEncoder for VaapiVideoEncoder {
         let packet = result?;
         self.pending.push_back(packet);
         Ok(())
+    }
+
+    /// Zero-Copy DMA-BUF import path (`VideoInputPreference::ZeroCopyGpu`, ADR-0003) — imports
+    /// `desc` as a single-use VA-API surface (`super::dmabuf::import_surface`) and encodes it
+    /// directly, no CPU upload. `open_cpu` already forces `effective_gop_size <= 1` for this
+    /// mode (see its own doc comment), so every call here is an independent IDR; the imported
+    /// surface is never written back into `self.surfaces` (it is not pooled — see ADR-0003 §
+    /// "Why no outstanding/lifetime bookkeeping is needed here") and is simply dropped
+    /// (`vaDestroySurfaces`) once `encode_one` returns.
+    fn push_frame_dmabuf(
+        &mut self,
+        frame: &VideoFrame,
+        desc: &mediaway_common::DmaBufDescriptor,
+    ) -> Result<(), EncodeError> {
+        let decision = self.gop.decide(FrameRequest::Auto);
+        let reference = self.resolve_reference(&decision)?;
+
+        let surface =
+            dmabuf::import_surface(self.context.display(), desc, self.width, self.height)?;
+
+        let (_returned_surface, result) = self.encode_one(surface, frame, &decision, reference);
+        let packet = result?;
+        self.pending.push_back(packet);
+        Ok(())
+    }
+}
+
+impl VideoEncoder for VaapiVideoEncoder {
+    fn stream_info(&self) -> &StreamInfo {
+        &self.info
+    }
+
+    fn push_frame(&mut self, frame: &VideoFrame) -> Result<(), EncodeError> {
+        if self.flushed {
+            return Err(EncodeError::Closed);
+        }
+        if frame.width != self.width || frame.height != self.height {
+            return Err(EncodeError::InvalidInput);
+        }
+
+        // ADR-0003 § Decision: the source surface's provenance must match `open()`'s declared
+        // `VideoInputPreference` — a caller that opened `ZeroCopyGpu` but pushes a `Cpu` frame
+        // (or vice versa) gets `InvalidInput`, never a silent fallback to the other path.
+        match (self.input, &frame.storage) {
+            (VideoInputPreference::CpuUploadOk, VideoFrameStorage::Cpu { data }) => {
+                self.push_frame_cpu(frame, data)
+            }
+            (
+                VideoInputPreference::ZeroCopyGpu,
+                VideoFrameStorage::Gpu(GpuBufferHandle::DmaBuf(desc)),
+            ) => self.push_frame_dmabuf(frame, desc),
+            _ => Err(EncodeError::InvalidInput),
+        }
     }
 
     fn poll_packet(&mut self) -> Result<Option<Packet>, EncodeError> {

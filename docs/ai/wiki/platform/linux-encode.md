@@ -26,6 +26,21 @@
   this backend's `pic_order_cnt_type = 2` output is not decodable by this workspace's own
   `mediaway-decoder::linux::vaapi` (which only accepts `pic_order_cnt_type == 0`) — a real,
   pre-existing, deliberately-unresolved cross-crate interop gap.
+- ADR: [0003](../../../../crates/mediaway-encoder/adr/linux/0003-vaapi-dmabuf-zero-copy-input.md)
+  — **Implemented, WSL2 + Windows compile/clippy/test-verified**: DMA-BUF Zero-Copy input,
+  reusing the decoder ADR's `GpuBufferHandle::DmaBuf` (new `vaapi/dmabuf.rs`). `encode_one`
+  became generic over the source surface's `cros_libva::SurfaceMemoryDescriptor` so a single-use
+  `Surface<DmaBufImportDescriptor>` (`Display::create_surfaces`) can flow through the same
+  `Picture<S, T>` typestate chain as the pooled `Surface<()>` reference/reconstruction surfaces —
+  no pool restructuring, confirmed (`Picture<S, T>`'s surface type is chosen per-call). Needs no
+  `outstanding` tracking (unlike decode): input consumption is bounded by one synchronous
+  `vaBeginPicture..vaSyncSurface` call, never pooled/recycled; `open()` forces
+  `effective_gop_size = 1` for `ZeroCopyGpu` sessions (all-IDR). `push_frame` rejects a
+  provenance/mode mismatch (`ZeroCopyGpu` session pushed a `Cpu` frame, or vice versa) as
+  `EncodeError::InvalidInput`, never a silent fallback. Defensively `dup()`s the caller's fd
+  before import, closing the encoder's own duplicate right after `create_surfaces` returns —
+  real driver dup-on-import behavior stays an unconfirmed open question. **Zero real VA-API
+  hardware verification** — same standing caveat as every VA-API path in this crate.
 
 ## ⚠️ Hardware verification status
 

@@ -53,7 +53,20 @@ impl AutoEncoder {
             Ok(Box::new(enc))
         }
 
-        #[cfg(not(any(windows, target_os = "linux")))]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        {
+            // mediaway-encoder::apple has no `auto` module either (same reasoning as Linux):
+            // `VTCompressionSession` only implements `VideoInputPreference::CpuUploadOk` today
+            // (see that crate's apple/adr/0001).
+            use mediaway_encoder::VideoInputPreference;
+            use mediaway_encoder::apple::AppleVideoEncoder;
+            let low_level =
+                config.to_low_level(VideoInputPreference::CpuUploadOk, config.gpu_device);
+            let enc = AppleVideoEncoder::open(&low_level)?;
+            Ok(Box::new(enc))
+        }
+
+        #[cfg(not(any(windows, target_os = "linux", target_os = "macos", target_os = "ios")))]
         {
             let _ = config;
             Err(EncodeError::NoBackend)
@@ -145,7 +158,14 @@ impl AutoDecoder {
             Ok(Box::new(dec))
         }
 
-        #[cfg(not(any(windows, target_os = "linux")))]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        {
+            use mediaway_decoder::apple::AppleVideoDecoder;
+            let dec = AppleVideoDecoder::open(config)?;
+            Ok(Box::new(dec))
+        }
+
+        #[cfg(not(any(windows, target_os = "linux", target_os = "macos", target_os = "ios")))]
         {
             let _ = config;
             Err(DecodeError::NoBackend)
@@ -205,7 +225,34 @@ pub fn decoder_support(codec: CodecKind) -> DecodeSupport {
         }
     }
 
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        use mediaway_decoder::apple::AppleVideoDecoder;
+        // VP9/AV1 require a container-supplied `vpcC`/`av1C` config record at `open()` (see
+        // `mediaway-decoder` apple/adr/0002) — a throwaway 64x64 probe with no `extra_data`
+        // cannot exercise either, so this probe only ever reports H.264/HEVC support live; VP9/
+        // AV1 report `NotImplemented` rather than a misleading `NoDevice`/`Supported` guess.
+        if matches!(
+            codec,
+            mediaway_common::CodecKind::Vp9 | mediaway_common::CodecKind::Av1
+        ) {
+            return DecodeSupport::Unavailable(DecodeUnavailable::NotImplemented);
+        }
+        let cfg = VideoDecoderConfig {
+            codec,
+            output: mediaway_decoder::VideoOutputPreference::CpuFramesOk,
+            ..VideoDecoderConfig::h264(64, 64, mediaway_common::Rational::new(1, 30))
+        };
+        match AppleVideoDecoder::open(&cfg) {
+            Ok(_) => DecodeSupport::Supported,
+            Err(DecodeError::Unsupported) => {
+                DecodeSupport::Unavailable(DecodeUnavailable::NotImplemented)
+            }
+            Err(_) => DecodeSupport::Unavailable(DecodeUnavailable::NoDevice),
+        }
+    }
+
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos", target_os = "ios")))]
     {
         let _ = codec;
         DecodeSupport::Unavailable(DecodeUnavailable::NotImplemented)

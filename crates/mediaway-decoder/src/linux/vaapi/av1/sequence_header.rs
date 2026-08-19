@@ -7,7 +7,7 @@
 //! `enable_masked_compound`/`enable_warped_motion`/`enable_dual_filter`/`enable_jnt_comp`/
 //! `enable_ref_frame_mvs`/`enable_superres`/`enable_cdef`/`enable_restoration`/
 //! `film_grain_params_present`) rejected if signaled. See
-//! [ADR-0003](../../../../adr/linux/0003-vaapi-av1-key-frame-decode.md) § Scope.
+//! [ADR-0005](../../../../adr/linux/0005-vaapi-av1-key-frame-decode.md) § Scope.
 //!
 //! Field presence/order cross-checked (not copied — a reader and a writer are structurally
 //! different code) against `windows::d3d12_video_encode::bitstream_av1::write_sequence_header`

@@ -5,9 +5,12 @@
 //!   per-picture `vaBeginPicture`/`vaRenderPicture`/`vaEndPicture`/`vaSyncSurface`), then NV12
 //!   read back via `vaCreateImage`/`vaGetImage`/`vaMapBuffer` into an owned `Bytes` — no
 //!   DMA-BUF export, so this is honest CPU decode, not a disguised Zero-Copy path.
-//! - [`VideoOutputPreference::ZeroCopyGpu`]: not implemented — returns
-//!   [`DecodeError::Unsupported`]. Deferred to a Zero-Copy DMA-BUF stage; see
-//!   [`docs/roadmap.md`](../docs/roadmap.md).
+//! - [`VideoOutputPreference::ZeroCopyGpu`]: DMA-BUF export via `vaExportSurfaceHandle`
+//!   (`vaapi::dmabuf`) — no CPU readback; the decoded surface's fd + DRM plane layout is
+//!   returned as [`mediaway_common::GpuBufferHandle::DmaBuf`]. No consumer of that handle
+//!   exists anywhere in this workspace yet (no Linux `mediaway-wgpu` bridge) — see
+//!   [`docs/roadmap.md`](../docs/roadmap.md) and
+//!   `adr/linux/0006-vaapi-dmabuf-zero-copy-output.md`.
 //!
 //! Policy: [ADR-0001](../adr/0001-vaapi-h264-cpu-out.md) — binding choice (`cros-libva`),
 //! decode scope (IDR pictures only, single slice per picture, `pic_order_cnt_type == 0`,

@@ -276,7 +276,7 @@ Same OS APIs with GPU surfaces (`GpuBufferHandle`, DXGI, …). Video only — au
 
 | Codec        | Windows | Web | Linux | Apple | Android |
 | ------------ | ------- | --- | ----- | ----- | ------- |
-| H.264 / AVC  | 🆗 / 🆗  | ✅ | 🛠️   | 👻    | 👻      |
+| H.264 / AVC  | 🆗 / 🆗  | ✅ | 🆗 / 🆗 | 👻    | 👻      |
 | HEVC / H.265 | 🆗 / 🆗  | 🛠️ | 🛠️   | 👻    | 👻      |
 | AV1          | 🆗 / 🆗  | 🛠️ | 🛠️   | 👻    | 👻      |
 | VP9          | 🆗 / 🆗  | 🛠️ | 🛠️   | 👻    | 👻      |

@@ -86,7 +86,7 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
       § Scope
 - [ ] VA-API AV1 encode — **blocked**, `cros-libva` 0.0.13 has no packed-header buffer type for
       the app-hand-constructed `frame_header_obu()` bytes AV1 encode requires; design-only, see
-      `adr/linux/0003-vaapi-av1-key-frame-and-inter-gop.md`
+      `adr/linux/0005-vaapi-av1-key-frame-and-inter-gop.md`
 - [x] VA-API VP9 `KEY_FRAME`-only baseline + single-forward-reference `INTER_FRAME` GOP
       (`VaapiVp9Encoder`, plain `cros-libva` `EncSequenceParameterBufferVP9`/
       `EncPictureParameterBufferVP9` field bags — **not blocked**, unlike the AV1 sibling above;

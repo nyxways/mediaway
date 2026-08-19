@@ -92,6 +92,8 @@ Canonical: [`docs/spec/gpu-interop.md`](../../../spec/gpu-interop.md) · ADR-000
   entire repo (confirmed via a direct code search) — no HAL-style escape
   hatch exists there the way `wgpu` has one; encode lives entirely in the
   separate WebCodecs spec.
+- Linux VA-API DMA-BUF Zero-Copy: **implemented, no real hardware verification** —
+  `adr/linux/0003-*.md`; new `GpuBufferHandle::DmaBuf(Box<..>)` (`Copy`-removal: zero call sites); no `mediaway::wgpu` consumer yet.
 - Other languages: same OS/WebGPU **handles** via FFI — not a fake wgpu object
 - Cores do not depend on wgpu
 - Encode intake (compatible / adapt / bridge): [backend-preference](../encode/backend-preference.md) · ADR-0004

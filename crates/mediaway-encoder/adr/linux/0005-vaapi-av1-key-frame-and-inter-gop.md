@@ -1,4 +1,4 @@
-# ADR-0003: VA-API AV1 encode — `KEY_FRAME`-only baseline + single-forward-reference `INTER_FRAME` GOP (ports from `vulkan/av1_params.rs`/`av1_gop.rs`, `windows/d3d12_video_encode/bitstream_av1.rs`)
+# ADR-0005: VA-API AV1 encode — `KEY_FRAME`-only baseline + single-forward-reference `INTER_FRAME` GOP (ports from `vulkan/av1_params.rs`/`av1_gop.rs`, `windows/d3d12_video_encode/bitstream_av1.rs`)
 
 - **Status**: Proposed — design complete, but genuinely **blocked** on a `cros-libva` gap this
   ADR cannot resolve by itself (see § Blocking dependency). Not "Accepted" like this folder's

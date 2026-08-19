@@ -39,17 +39,20 @@ fn open_unsupported_codec_returns_unsupported_without_hardware() {
     ));
 }
 
-/// `VideoInputPreference::ZeroCopyGpu` is not implemented this stage (DMA-BUF surface import
-/// is deferred — ADR-0001 § Scope) and is rejected before touching hardware, so this is
-/// deterministic on every machine too.
+/// `VideoInputPreference::ZeroCopyGpu` DMA-BUF import is implemented (ADR-0003) — `open()` now
+/// reaches the same VA-API `Display::open()` probe as `CpuUploadOk`, so on a machine with no
+/// real `/dev/dri/renderD*` device this fails with [`EncodeError::Backend`], never the old
+/// unconditional [`EncodeError::Unsupported`] rejection.
 #[test]
-fn open_zero_copy_gpu_returns_unsupported_without_hardware() {
+fn open_zero_copy_gpu_no_longer_unconditionally_unsupported() {
     let mut cfg = tiny_h264_cfg();
     cfg.input = VideoInputPreference::ZeroCopyGpu;
-    assert!(matches!(
-        LinuxVideoEncoder::open(&cfg),
-        Err(EncodeError::Unsupported)
-    ));
+    let result = LinuxVideoEncoder::open(&cfg).map(|_| ());
+    assert_ne!(
+        result,
+        Err(EncodeError::Unsupported),
+        "ZeroCopyGpu is a supported input mode as of ADR-0003"
+    );
 }
 
 /// End-to-end through the public [`LinuxVideoEncoder`] wrapper (delegation to the inner VA-API

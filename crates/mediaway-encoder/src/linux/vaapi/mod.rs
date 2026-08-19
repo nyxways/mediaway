@@ -5,11 +5,20 @@
 //! adds HEVC encode and [ADR-0004](../../adr/linux/0004-vaapi-vp9-key-frame-and-inter-gop.md)
 //! adds VP9 encode alongside H.264, all unified behind [`VaapiVideoEncoder`] (an enum, not
 //! `Box<dyn VideoEncoder>` — see `docs/spec/zero-cost-abstractions.md`). AV1 encode is
-//! designed but blocked — see [ADR-0003](../../adr/linux/0003-vaapi-av1-key-frame-and-inter-gop.md)
+//! designed but blocked — see [ADR-0005](../../adr/linux/0005-vaapi-av1-key-frame-and-inter-gop.md)
 //! § Why VP9 does not share AV1's packed-header blocker.
+//!
+//! Every raw VA-API call goes through `cros-libva`'s safe wrapper layer, same as ADR-0001 — this
+//! module is `#[allow(unsafe_code)]`, not `#[forbid]`, only because `dmabuf.rs`
+//! ([ADR-0006](../../adr/linux/0006-vaapi-dmabuf-zero-copy-input.md)) must reconstruct a
+//! [`std::os::fd::BorrowedFd`] from a caller-supplied raw fd number (`BorrowedFd::borrow_raw` is
+//! an `unsafe fn` in `std` itself — that reconstruction step cannot be expressed safely). Every
+//! `unsafe` block carries a `// SAFETY:` comment; `codec.rs`/`gop.rs`/`video.rs` still write none.
 
-// No raw FFI `unsafe` in this crate — see `crate` root doc comment / ADR-0001.
-#![forbid(unsafe_code)]
+// Every raw VA-API call goes through `cros-libva`'s safe wrapper layer — see ADR-0001. This
+// module is `#[allow(unsafe_code)]`, not `#[forbid]`, only because `dmabuf.rs` needs it (see
+// this file's own module doc above).
+#![allow(unsafe_code)]
 #![allow(
     clippy::redundant_pub_crate,
     unreachable_pub,
@@ -17,6 +26,7 @@
 )]
 
 mod codec;
+mod dmabuf;
 mod gop;
 mod hevc;
 mod hevc_gop;

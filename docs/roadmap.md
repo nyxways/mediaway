@@ -91,7 +91,7 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
       OBU output is invalid — confirmed driver-maturity limitation, not a Mediaway bug; AV1
       decode has not been started on this backend. (VA-API/Linux AV1 `KEY_FRAME`-only decode
       landed separately, compile+test-verified, zero real-hardware verification — see
-      `mediaway-decoder/adr/linux/0003-vaapi-av1-key-frame-decode.md`.)
+      `mediaway-decoder/adr/linux/0005-vaapi-av1-key-frame-decode.md`.)
 - [x] **VA-API/Linux VP9 Encode/Decode**: implemented, WSL2 compile+clippy+test-verified —
       encode is **not** blocked (unlike AV1: `cros-libva` VP9 encode structs are plain field
       bags, the driver synthesizes headers itself, confirmed via `FFmpeg`'s own

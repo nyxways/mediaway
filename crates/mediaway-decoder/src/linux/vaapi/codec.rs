@@ -55,7 +55,7 @@ pub(super) fn hevc_profile_candidates(
 
 /// VA-API profile candidates for AV1 decode — this crate's AV1 `SequenceHeader::parse` already
 /// rejects any `seq_profile` other than `0` (Main — see
-/// `adr/linux/0003-vaapi-av1-key-frame-decode.md` § Scope), so this always returns the single
+/// `adr/linux/0005-vaapi-av1-key-frame-decode.md` § Scope), so this always returns the single
 /// Main-profile candidate.
 #[must_use]
 pub(super) fn av1_profile_candidates() -> Vec<cros_libva::VAProfile::Type> {

@@ -8,7 +8,7 @@
 //! knowledge already validated by that writer's D3D12-driver-accepted output, but the
 //! `leb128()` **decoding** loop itself (continuation-bit accumulation) is new code: the writer
 //! only ever encodes. See
-//! [ADR-0003](../../../../adr/linux/0003-vaapi-av1-key-frame-decode.md) § Bitstream parsing.
+//! [ADR-0005](../../../../adr/linux/0005-vaapi-av1-key-frame-decode.md) § Bitstream parsing.
 
 #![forbid(unsafe_code)]
 

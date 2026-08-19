@@ -1,4 +1,4 @@
-# ADR-0003: VA-API AV1 `KEY_FRAME`-only decode (bit-reader reuse from `mediaway_sw::h264`; no OBU-parser porting source exists)
+# ADR-0005: VA-API AV1 `KEY_FRAME`-only decode (bit-reader reuse from `mediaway_sw::h264`; no OBU-parser porting source exists)
 
 - **Status**: Accepted — implemented (`src/linux/vaapi/av1.rs` +
   `src/linux/vaapi/av1/{obu,bits,sequence_header,frame_header,tile_info}.rs`), compile +
@@ -107,7 +107,7 @@ eliminate) that risk, both confirmed by reading them directly this session:
 ### Why AV1 decode needs no packed-header submission (unlike this ADR's encoder sibling)
 
 This ADR's `mediaway-encoder` sibling
-(`crates/mediaway-encoder/adr/linux/0003-vaapi-av1-key-frame-and-inter-gop.md`) found a real,
+(`crates/mediaway-encoder/adr/linux/0005-vaapi-av1-key-frame-and-inter-gop.md`) found a real,
 blocking `cros-libva` gap: AV1 **encode** needs the application to construct and submit real
 `frame_header_obu()` bytes via a packed-header buffer type `cros-libva` 0.0.13 does not wrap.
 **Decode has the opposite shape and no such gap.** VA-API decode (any codec) never asks the
@@ -476,7 +476,7 @@ need either a real driver, real AV1 test material, or the actual bit-level parse
   this ADR's primary (inverse-direction) cross-check source for field presence/order
   (`write_sequence_header`: lines 132-192; `write_frame_header`: lines 204-282; `write_tile_info`:
   lines 87-128)
-- `crates/mediaway-encoder/adr/linux/0003-vaapi-av1-key-frame-and-inter-gop.md` — this ADR's
+- `crates/mediaway-encoder/adr/linux/0005-vaapi-av1-key-frame-and-inter-gop.md` — this ADR's
   same-session encode-side sibling; source of the "no packed-header gap on the decode side"
   finding (§ Why AV1 decode needs no packed-header submission) and the shared § Note on this
   ADR's design brief correction

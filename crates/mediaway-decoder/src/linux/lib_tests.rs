@@ -65,7 +65,7 @@ fn open_vaapi_hevc_cpu_or_skip() {
 ///
 /// **Expected to skip in this development session** — same "zero real-hardware verification"
 /// disposition as [`open_vaapi_h264_cpu_or_skip`], see
-/// [ADR-0003](../adr/linux/0003-vaapi-av1-key-frame-decode.md). Real bitstream-level decode
+/// [ADR-0005](../adr/linux/0005-vaapi-av1-key-frame-decode.md). Real bitstream-level decode
 /// coverage (OBU scanning, sequence/frame header parsing) lives in `vaapi::av1`'s own sans-io
 /// unit tests, which need no VA-API device at all.
 #[test]

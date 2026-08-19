@@ -4,7 +4,7 @@
 //! min/max tile-count math (`bitstream_av1.rs:71-128`) — same spec section, same arithmetic,
 //! read direction is new but the formula is already validated by that writer's
 //! D3D12-driver-accepted output. See
-//! [ADR-0003](../../../../adr/linux/0003-vaapi-av1-key-frame-decode.md) § Scope: this crate
+//! [ADR-0005](../../../../adr/linux/0005-vaapi-av1-key-frame-decode.md) § Scope: this crate
 //! accepts only streams whose `tile_info()` resolves to exactly one tile column and one tile
 //! row (`TileCols == TileRows == 1`) — both the common uniform-spacing case (matching this
 //! workspace's own AV1 encoders) and the non-uniform case are parsed correctly (consuming the

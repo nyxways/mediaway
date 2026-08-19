@@ -49,7 +49,7 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
       sequence-header/frame-header parser (no AV1 decode precedent existed anywhere in this
       workspace to port from) — implemented, compile+clippy+test-verified on real WSL2 Linux;
       **zero real-hardware verification** (no VA-API device available this session); see
-      [adr/linux/0003](../adr/linux/0003-vaapi-av1-key-frame-decode.md)
+      [adr/linux/0005](../adr/linux/0005-vaapi-av1-key-frame-decode.md)
 - [x] `linux::vaapi` VP9 `KEY_FRAME` + general single-tile `INTER_FRAME` decode (compound
       prediction included, no artificial reference-count restriction — a real structural finding
       that VP9's entropy adaptation is driver-internal and its reference model needs only a

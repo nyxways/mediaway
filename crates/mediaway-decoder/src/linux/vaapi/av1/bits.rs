@@ -4,7 +4,7 @@
 //!
 //! AV1 never uses H.264/HEVC's `ue(v)`/`se(v)` Exp-Golomb, but the same raw-bit-extraction
 //! primitive underlies both — see
-//! [ADR-0003](../../../../adr/linux/0003-vaapi-av1-key-frame-decode.md) § Bitstream parsing
+//! [ADR-0005](../../../../adr/linux/0005-vaapi-av1-key-frame-decode.md) § Bitstream parsing
 //! for why this crate reuses `BitReader` rather than re-implementing MSB-first bit reads, and
 //! implements these three decoders locally (no H.264/HEVC equivalent exists to port from).
 

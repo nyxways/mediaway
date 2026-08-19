@@ -39,11 +39,15 @@ test is expected to skip until run on a machine with a real VA-API driver + GPU.
 - [ ] `pic_order_cnt_type` 1/2
 - [ ] Proven CI/`machine_id` cells once run on real VA-API hardware (promote 🆗 → ⚡ where earned)
 
-### 3 — Zero-Copy (deferred)
+### 3 — Zero-Copy (implemented, WSL2 + Windows compile/clippy/test-verified)
 
-- [ ] DMA-BUF surface export (`VideoOutputPreference::ZeroCopyGpu`,
-      `vaExportSurfaceHandle` / `VADRMPRIMESurfaceDescriptor`)
-- [ ] `GpuBufferHandle::Vulkan` interop path
+- [x] DMA-BUF surface export (`VideoOutputPreference::ZeroCopyGpu`,
+      `vaExportSurfaceHandle` / `VADRMPRIMESurfaceDescriptor`) —
+      [ADR-0006](../../adr/linux/0006-vaapi-dmabuf-zero-copy-output.md); **not**
+      `GpuBufferHandle::Vulkan` (corrected — DMA-BUF is a raw fd + plane layout, not a `VkImage`;
+      new `GpuBufferHandle::DmaBuf` variant landed in `mediaway-common`)
+- [ ] Real VA-API hardware verification (fd/plane direct inspection) — same standing gap as
+      every other VA-API path in this crate
 
 ### 4 — Multi-codec (deferred)
 

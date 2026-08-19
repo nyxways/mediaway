@@ -1,7 +1,7 @@
 //! VA-API decode helpers (Linux, `cros-libva`).
 //!
 //! [ADR-0003](../../adr/linux/0003-vaapi-hevc-p-slice-dpb.md) adds HEVC decode,
-//! [ADR-0003](../../adr/linux/0003-vaapi-av1-key-frame-decode.md) adds AV1 decode, and
+//! [ADR-0005](../../adr/linux/0005-vaapi-av1-key-frame-decode.md) adds AV1 decode, and
 //! [ADR-0004](../../adr/linux/0004-vaapi-vp9-key-frame-and-inter-decode.md) adds VP9 decode
 //! alongside H.264, all unified behind [`VaapiVideoDecoder`] (an enum, not `Box<dyn
 //! VideoDecoder>` — see `docs/spec/zero-cost-abstractions.md`).
@@ -14,6 +14,7 @@
 
 mod av1;
 mod codec;
+mod dmabuf;
 mod dpb;
 mod h264;
 mod hevc;

@@ -1,6 +1,6 @@
 //! VA-API AV1 decode session — `KEY_FRAME`-only, single tile, Main profile, CPU NV12 output.
 //!
-//! See [ADR-0003](../adr/linux/0003-vaapi-av1-key-frame-decode.md) for scope, the
+//! See [ADR-0005](../adr/linux/0005-vaapi-av1-key-frame-decode.md) for scope, the
 //! porting-methodology note (this parser is spec-derived, not ported — no AV1 decode
 //! precedent exists anywhere else in this workspace), and the **zero real-hardware
 //! verification** caveat this backend carries the same as its H.264 siblings.

@@ -3,16 +3,17 @@
 - Module: `mediaway-encoder::linux`
 - Bindings: [`cros-libva`](https://crates.io/crates/cros-libva) (BSD-3-Clause, `cfg(target_os =
   "linux")` dependency only — never pulled into non-Linux builds)
-- Codec: H.264 Constrained Baseline (`VAProfileH264ConstrainedBaseline`, `VAEntrypointEncSlice`),
-  HEVC Main (`VAProfileHEVCMain`, ADR-0003, same entrypoint), and VP9 Profile 0
-  (`VAProfileVP9Profile0`, ADR-0004, 3-step entrypoint probe `EncSlice` → `EncPicture` →
-  `EncSliceLP`) — dispatched via `vaapi::VaapiVideoEncoder`, an enum over the three per-codec
-  encoders (no `Box<dyn VideoEncoder>`); `LinuxVideoEncoder::open` picks a variant from
-  `config.codec`. AV1 encode is designed but **blocked** (see ADR-0003 below).
+- Codec: H.264 Constrained Baseline, HEVC Main (ADR-0003, same entrypoint), and VP9 Profile 0
+  (ADR-0004, 3-step entrypoint probe `EncSlice` → `EncPicture` → `EncSliceLP`) — dispatched via
+  `vaapi::VaapiVideoEncoder`, an enum over the three per-codec encoders (no `Box<dyn
+  VideoEncoder>`); `LinuxVideoEncoder::open` picks a variant from `config.codec`. AV1 encode is
+  designed but **blocked** (ADR-0005).
 - CPU: `upload_cpu_nv12` — `Image::create_from` (`vaCreateImage`+`vaGetImage`) + memcpy +
   `vaPutImage` on drop
-- Zero-Copy: **not implemented** — `VideoInputPreference::ZeroCopyGpu` returns `Unsupported`
-  (deferred: DMA-BUF surface import, `VASurfaceAttribExternalBuffers`)
+- Zero-Copy: **implemented** (ADR-0006) — `VideoInputPreference::ZeroCopyGpu` imports a
+  caller-supplied `GpuBufferHandle::DmaBuf` surface (`vaCreateSurfaces` +
+  `cros_libva::ExternalBufferDescriptor`) and encodes it directly, no CPU upload. Forces
+  all-IDR for the session (no GOP/P-frame references); each imported surface is single-use.
 - Rate control: `VA_RC_CQP` fixed QP only; **every pushed frame is an independent IDR by
   default** (`gop_size <= 1`) — real single-forward-reference P-frame GOP (H.264/HEVC/VP9) is
   **implemented**, capability-gated where applicable
@@ -34,26 +35,31 @@
   `log2_max_pic_order_cnt_lsb_minus4`/`max_num_ref_frames` field at all (the driver synthesizes
   HEVC parameter sets itself, unlike Vulkan Video), so `vaapi/hevc.rs` builds those fresh,
   grounded in FFmpeg's real `vaapi_encode_h265.c`.
-- ADR: [0003 (AV1)](../../../../crates/mediaway-encoder/adr/linux/0003-vaapi-av1-key-frame-and-inter-gop.md) —
-  **Design only, blocked**: AV1 `KEY_FRAME` baseline + single-forward-reference `INTER_FRAME`
-  GOP. Cannot be implemented against `cros-libva` 0.0.13 as pinned: real AV1 VA-API encode needs
-  the app to submit a packed `frame_header_obu()` bitstream buffer, a `BufferType` variant
-  `cros-libva` does not wrap (and this crate's `#![forbid(unsafe_code)]` rules out a raw-FFI
-  workaround) — needs a `cros-libva` fork/upstream PR first.
 - ADR: [0004 (VP9)](../../../../crates/mediaway-encoder/adr/linux/0004-vaapi-vp9-key-frame-and-inter-gop.md) —
   VP9 `KEY_FRAME` baseline + single-forward-reference `INTER_FRAME` GOP (new `vp9_gop.rs` 2-slot
   physical ping-pong state machine, cross-checked against FFmpeg's real
   `vaapi_encode_vp9_init_picture_params`). Real vendored `cros-libva` VP9 encode structs are
-  plain C-struct field bags — the driver synthesizes VP9's own header bytes (confirmed:
-  `vaapi_encode_vp9.c`'s comment "the one usable driver (i965) can write its own headers").
-  Entrypoint probe is a real 3-step ladder matching FFmpeg's own generic probe order — the ADR's
-  original design was a 2-step ladder, corrected once FFmpeg's source showed
-  `VAEntrypointEncPicture` is what VP9 actually needs (no slice concept). **Real caveat, not a
-  code bug**: VP9 VA-API *encode* driver support is narrow (i965 only) — meaningfully less
-  universal than VP9 decode.
+  plain C-struct field bags — the driver synthesizes VP9's own header bytes. Entrypoint probe is
+  a real 3-step ladder matching FFmpeg's own generic probe order. **Real caveat, not a code
+  bug**: VP9 VA-API *encode* driver support is narrow (i965 only) — meaningfully less universal
+  than VP9 decode.
+- ADR: [0005 (AV1)](../../../../crates/mediaway-encoder/adr/linux/0005-vaapi-av1-key-frame-and-inter-gop.md) —
+  **Design only, blocked**: AV1 `KEY_FRAME` baseline + single-forward-reference `INTER_FRAME`
+  GOP. Cannot be implemented against `cros-libva` 0.0.13 as pinned: real AV1 VA-API encode needs
+  the app to submit a packed `frame_header_obu()` bitstream buffer, a `BufferType` variant
+  `cros-libva` does not wrap (and this crate's `#![allow(unsafe_code)]`-scoped-to-`dmabuf.rs`
+  posture still rules out a raw-FFI workaround here) — needs a `cros-libva` fork/upstream PR.
+- ADR: [0006](../../../../crates/mediaway-encoder/adr/linux/0006-vaapi-dmabuf-zero-copy-input.md) —
+  DMA-BUF Zero-Copy input, reusing the decoder ADR's `GpuBufferHandle::DmaBuf`. `encode_one`
+  became generic over the source surface's `cros_libva::SurfaceMemoryDescriptor` so a single-use
+  `Surface<DmaBufImportDescriptor>` flows through the same `Picture<S, T>` typestate chain as
+  the pooled CPU-upload reference surfaces — no pool restructuring. Needs no `outstanding`
+  tracking (unlike decode): input consumption is bounded by one synchronous
+  `vaBeginPicture..vaSyncSurface` call. Defensively `dup()`s the caller's fd before import.
 
-All implemented codecs above: compile/clippy/test-verified on real WSL2 Linux only — **zero
-real-hardware verification**, same caveat for every ADR in this folder.
+All implemented codecs/ADRs above: compile/clippy/test-verified on real WSL2 Linux (+ Windows
+workspace-wide for the DMA-BUF work) only — **zero real-hardware verification**, same caveat for
+every ADR in this folder.
 
 ## ⚠️ Hardware verification status
 
@@ -71,4 +77,4 @@ in this crate as unverified until run on real Linux + VA-API hardware (Intel iHD
 | `IMFTransform` (one object) | `Config` + `Context` (capability vs. bound session) | VA-API separates driver capability from session |
 | Async event pump for HW MFTs | None needed | `vaSyncSurface` blocks; fully synchronous per frame |
 | `ProcessOutput` buffer loop | `EncCodedBuffer` + `MappedCodedBuffer` segments | Mapped buffer, not a pull queue |
-| DX11 Zero-Copy | Not implemented this stage | See ADR-0001 § Scope |
+| DX11 Zero-Copy | DMA-BUF import (ADR-0006) | Different mechanism, same Zero-Copy goal |

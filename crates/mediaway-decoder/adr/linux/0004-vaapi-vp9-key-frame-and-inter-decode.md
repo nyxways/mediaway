@@ -556,7 +556,7 @@ same WSL2 build): `VAProfileVP9Profile0 = 19`.
 ## References
 
 - [ADR-0001](0001-vaapi-h264-cpu-out.md) · [ADR-0002](0002-vaapi-h264-p-slice-dpb.md) ·
-  [ADR-0003](0003-vaapi-av1-key-frame-decode.md) — this crate's H.264/AV1 precedent; ADR-0003 is
+  [ADR-0005](0005-vaapi-av1-key-frame-decode.md) — this crate's H.264/AV1 precedent; ADR-0003 is
   this ADR's direct methodological template (cross-check-not-port strategy) and the source of the
   `INTER_FRAME`-deferral reasoning this ADR re-examines and finds does not transfer to VP9
 - `crates/mediaway-decoder/src/linux/vaapi/{codec,mod,h264,av1}.rs` — current H.264/AV1

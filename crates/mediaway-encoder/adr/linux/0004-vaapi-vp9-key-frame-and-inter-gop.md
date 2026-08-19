@@ -7,7 +7,7 @@
   3-step `EncSlice → EncPicture → EncSliceLP` entrypoint probe correction both held; every other
   field/struct assumption in § VA-API-specific plumbing compiled correctly against real
   `cros-libva` 0.0.13 vendored source on the first implementation pass — no further ADR-vs-reality
-  mismatch found. **Not blocked** — unlike [ADR-0003](0003-vaapi-av1-key-frame-and-inter-gop.md)
+  mismatch found. **Not blocked** — unlike [ADR-0005](0005-vaapi-av1-key-frame-and-inter-gop.md)
   (AV1), this ADR found no `cros-libva` gap preventing implementation. See § Why VP9 does not
   share AV1's packed-header blocker. **Zero real-hardware verification** remains — see § Zero
   real-hardware verification remains the honest baseline.
@@ -516,7 +516,7 @@ design entirely, not just unconfirmed.
 ## References
 
 - [ADR-0001](0001-vaapi-cros-libva-h264-cpu-upload.md) · [ADR-0002](0002-vaapi-h264-p-frame-gop.md)
-  · [ADR-0003](0003-vaapi-av1-key-frame-and-inter-gop.md) — this crate's H.264/AV1
+  · [ADR-0005](0005-vaapi-av1-key-frame-and-inter-gop.md) — this crate's H.264/AV1
   baseline/GOP precedent; ADR-0003 is this ADR's direct structural template (same "baseline + GOP
   in one ADR" shape) and the source of the packed-header-blocker contrast this ADR explains VP9
   does **not** share

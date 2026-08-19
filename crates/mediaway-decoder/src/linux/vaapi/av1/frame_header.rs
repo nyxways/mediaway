@@ -5,7 +5,7 @@
 //! `windows::d3d12_video_encode::bitstream_av1::write_frame_header`
 //! (`bitstream_av1.rs:204-282`), which already documents, per field, which §5.9.2
 //! conditional-inference rule applies for `frame_type == KEY_FRAME`. See
-//! [ADR-0003](../../../../adr/linux/0003-vaapi-av1-key-frame-decode.md) § Scope.
+//! [ADR-0005](../../../../adr/linux/0005-vaapi-av1-key-frame-decode.md) § Scope.
 //!
 //! Unlike the writer's fixed-configuration output, this parser accepts the full range of
 //! per-frame values VA-API's decode buffers actually carry (`base_q_idx`, loop-filter levels,

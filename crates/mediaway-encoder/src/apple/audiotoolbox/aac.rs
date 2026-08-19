@@ -102,9 +102,15 @@ impl AacEncoder {
 
         let mut converter: AudioConverterRef = std::ptr::null_mut();
         // SAFETY: `source`/`destination` are valid, fully-initialized `AudioStreamBasicDescription`
-        // values; `converter` starts null and is only read by this function's caller after a
-        // `NO_ERROR` status.
-        let status = unsafe { AudioConverterNew(&source, &destination, &mut converter) };
+        // values, live for this call (stack locals borrowed via `NonNull::from`); `converter`
+        // starts null and is only read by this function's caller after a `NO_ERROR` status.
+        let status = unsafe {
+            AudioConverterNew(
+                NonNull::from(&source),
+                NonNull::from(&destination),
+                NonNull::from(&mut converter),
+            )
+        };
         if status != NO_ERROR || converter.is_null() {
             return Err(EncodeError::Backend);
         }
@@ -201,7 +207,7 @@ impl AacEncoder {
                     self.converter,
                     input_proc,
                     std::ptr::from_mut(&mut ctx).cast::<c_void>(),
-                    &mut io_output_packet_size,
+                    NonNull::from(&mut io_output_packet_size),
                     NonNull::from(&mut output_list),
                     &mut packet_desc,
                 )
@@ -296,7 +302,7 @@ impl AacEncoder {
             AudioConverterGetProperty(
                 self.converter,
                 kAudioConverterCompressionMagicCookie,
-                &mut size,
+                NonNull::from(&mut size),
                 NonNull::from(&mut buf).cast(),
             )
         };

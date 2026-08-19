@@ -26,8 +26,8 @@ use objc2_core_foundation::{
 };
 use objc2_core_media::{CMSampleBuffer, CMTime, kCMSampleAttachmentKey_NotSync, kCMTimeIndefinite};
 use objc2_core_video::{
-    CVPixelBuffer, CVPixelBufferCreateWithPlanarBytes,
-    kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+    CVPixelBuffer, CVPixelBufferCreateWithPlanarBytes, CVPixelBufferGetHeight,
+    CVPixelBufferGetWidth, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
     kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
 };
 use objc2_video_toolbox::{
@@ -90,13 +90,14 @@ impl VideoToolboxVideoEncoder {
     /// Open according to [`VideoEncoderConfig::input`].
     pub(crate) fn open(config: &VideoEncoderConfig) -> Result<Self, EncodeError> {
         validate(config)?;
+        // `VideoInputPreference` has exactly these two variants today — both handled the same
+        // way here (the actual CPU-upload-vs-Zero-Copy branching happens per-frame in
+        // `push_frame`, not at `open()`). A real future third variant would be a compile error
+        // at this match, not a silent fallthrough — deliberately no wildcard arm.
         match config.input {
             VideoInputPreference::CpuUploadOk | VideoInputPreference::ZeroCopyGpu => {
                 Self::open_session(config)
             }
-            // `VideoInputPreference` is `#[non_exhaustive]` — an unmatched future variant is a
-            // real "we don't know this input path" case, not reachable today.
-            _ => Err(EncodeError::Unsupported),
         }
     }
 
@@ -237,8 +238,8 @@ impl VideoEncoder for VideoToolboxVideoEncoder {
                 // pure borrow, the same "opaque bits, caller owns the lifetime" contract every
                 // other `GpuBufferHandle` variant already documents.
                 let pixel_buffer = unsafe { ptr.as_ref() };
-                if pixel_buffer.width() != self.width as usize
-                    || pixel_buffer.height() != self.height as usize
+                if CVPixelBufferGetWidth(pixel_buffer) != self.width as usize
+                    || CVPixelBufferGetHeight(pixel_buffer) != self.height as usize
                 {
                     return Err(EncodeError::InvalidInput);
                 }

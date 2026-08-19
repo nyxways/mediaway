@@ -196,7 +196,7 @@ impl OpusEncoder {
                     std::ptr::from_mut(&mut ctx).cast::<c_void>(),
                     NonNull::from(&mut io_output_packet_size),
                     NonNull::from(&mut output_list),
-                    &mut packet_desc,
+                    &raw mut packet_desc,
                 )
             };
 
@@ -336,11 +336,10 @@ unsafe extern "C-unwind" fn input_proc(
     // SAFETY: per this function's own safety contract above.
     let ctx = unsafe { &mut *(in_user_data.cast::<InputContext<'_>>()) };
     let remaining = ctx.pcm.get(ctx.consumed..).unwrap_or(&[]);
-    let available_frames = if ctx.bytes_per_frame == 0 {
-        0
-    } else {
-        u32::try_from(remaining.len()).unwrap_or(u32::MAX) / ctx.bytes_per_frame
-    };
+    let available_frames = u32::try_from(remaining.len())
+        .unwrap_or(u32::MAX)
+        .checked_div(ctx.bytes_per_frame)
+        .unwrap_or(0);
     if available_frames == 0 {
         // SAFETY: `io_number_data_packets` is a valid, callback-scoped out-pointer per
         // `AudioConverterComplexInputDataProc`'s documented contract.

@@ -30,7 +30,7 @@ use mediaway_common::{Bytes, Packet, StreamInfo};
 #[cfg(target_os = "linux")]
 mod vaapi;
 
-/// Linux video encode session (VA-API H.264 when opened on Linux).
+/// Linux video encode session (VA-API H.264/VP9 when opened on Linux).
 pub struct LinuxVideoEncoder {
     #[cfg(target_os = "linux")]
     inner: Option<vaapi::VaapiVideoEncoder>,
@@ -44,7 +44,7 @@ impl LinuxVideoEncoder {
     /// # Errors
     ///
     /// Returns [`EncodeError::Unsupported`] when the codec/input path is not wired
-    /// (currently: anything but H.264 + [`VideoInputPreference::CpuUploadOk`]), or
+    /// (currently: anything but H.264/VP9 + [`VideoInputPreference::CpuUploadOk`]), or
     /// [`EncodeError::Backend`] when no VA-API display/driver is available (expected in
     /// any environment without a real `/dev/dri/renderD*` VA-API device — see ADR-0001).
     ///

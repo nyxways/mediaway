@@ -3,8 +3,11 @@
 - Module: `mediaway-encoder::linux`
 - Bindings: [`cros-libva`](https://crates.io/crates/cros-libva) (BSD-3-Clause, `cfg(target_os =
   "linux")` dependency only — never pulled into non-Linux builds)
-- Codec: H.264 Constrained Baseline only (`vaapi/codec.rs` → `VAProfileH264ConstrainedBaseline`,
-  `VAEntrypointEncSlice`)
+- Codec: H.264 Constrained Baseline (`vaapi/codec.rs` → `VAProfileH264ConstrainedBaseline`,
+  `VAEntrypointEncSlice`) and VP9 Profile 0 (`VAProfileVP9Profile0`, 3-step entrypoint probe
+  `EncSlice` → `EncPicture` → `EncSliceLP`) — dispatched via `vaapi::VaapiVideoEncoder`, an enum
+  over the two per-codec encoders (no `Box<dyn VideoEncoder>`, this backend's first multi-codec
+  **encoder** dispatch enum)
 - CPU: `upload_cpu_nv12` — `Image::create_from` (`vaCreateImage`+`vaGetImage`) + memcpy +
   `vaPutImage` on drop
 - Zero-Copy: **not implemented** — `VideoInputPreference::ZeroCopyGpu` returns `Unsupported`
@@ -36,6 +39,26 @@
   `cros-libva` fork/upstream PR first. There is **no VA-API HEVC ADR** in this workspace (HEVC
   exists only on the Vulkan backend) — an earlier task brief's premise to the contrary was
   checked and found false; see the ADR's own § Note.
+- ADR: [0004](../../../../crates/mediaway-encoder/adr/linux/0004-vaapi-vp9-key-frame-and-inter-gop.md) —
+  **Implemented, WSL2 compile+clippy+test-verified**: VP9 `KEY_FRAME` baseline +
+  single-forward-reference `INTER_FRAME` GOP (`vaapi/vp9.rs` + new `vaapi/vp9_gop.rs` 2-slot
+  physical ping-pong state machine, cross-checked — not ported, no in-workspace VP9 GOP
+  precedent existed — against `FFmpeg`'s real `vaapi_encode_vp9_init_picture_params`, quoted
+  verbatim in the ADR). Real vendored `cros-libva` VP9 encode structs
+  (`EncSequenceParameterBufferVP9`/`EncPictureParameterBufferVP9`) are plain C-struct field bags —
+  the driver synthesizes VP9's own header bytes, confirmed by `FFmpeg`'s own
+  `vaapi_encode_vp9.c` comment: "the one usable driver (i965) can write its own headers." The
+  missing `cros-libva::EncSliceParameter::VP9` variant is **not** a gap (real libva has no such
+  buffer for VP9 encode either) — confirmed, VP9 submits exactly two buffers per frame
+  (`EncSequenceParameter`, once per session, + `EncPictureParameter`), no third slice-shaped
+  buffer at all. Entrypoint probe is a real 3-step ladder (`EncSlice` → `EncPicture` →
+  `EncSliceLP`) per `FFmpeg`'s own generic `vaapi_encode.c` probe order — the ADR's own original
+  design was a 2-step ladder, corrected via its addendum after `FFmpeg`'s real generic source
+  showed `VAEntrypointEncPicture` is what VP9 actually uses (VP9 has no slice concept at all).
+  **Real caveat, not a code bug**: VP9 VA-API **encode** driver support is narrow (i965 only,
+  per `FFmpeg`'s own comment) — meaningfully less universal than VP9 *decode*; this is a
+  compile/test-verified-only backend addition, not an expected-to-work-on-most-hardware one.
+  **Zero real-hardware verification**, same caveat as every ADR in this folder.
 
 ## ⚠️ Hardware verification status
 

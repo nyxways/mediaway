@@ -50,7 +50,7 @@ const IDR_ONLY_LOG2_MAX_FRAME_NUM_MINUS4: u8 = 4;
 /// `VAConfigAttribEncMaxRefFrames` support (see [`probe_supports_p_frames`]) both fall back to
 /// all-IDR encode, byte-identical to this crate's pre-ADR-0002 output — see
 /// [`VideoEncoderConfig::gop_size`]'s own documented fallback contract.
-pub(crate) struct VaapiVideoEncoder {
+pub(crate) struct VaapiH264Encoder {
     context: Rc<Context>,
     /// Kept alive for the context's lifetime (`vaCreateContext` reads it at creation time,
     /// but VA-API does not document that the config may be destroyed immediately after —
@@ -69,7 +69,7 @@ pub(crate) struct VaapiVideoEncoder {
     gop: GopState,
     /// The GOP size this session actually honors: `1` when GOP mode is disabled (default
     /// `config.gop_size <= 1`, or [`supports_p_frames`](Self::supports_p_frames) is `false`),
-    /// `config.gop_size` otherwise. Not part of ADR-0002's `VaapiVideoEncoder` sketch verbatim —
+    /// `config.gop_size` otherwise. Not part of ADR-0002's `VaapiH264Encoder` sketch verbatim —
     /// added because [`build_seq_params`]/[`build_pic_params`] need to know whether GOP mode is
     /// active for the *whole session* (SPS `intra_period`/`log2_max_frame_num_minus4`,
     /// `reference_pic_flag`), which a single [`FrameDecision`] alone cannot tell them (an IDR
@@ -92,7 +92,7 @@ pub(crate) struct VaapiVideoEncoder {
     flushed: bool,
 }
 
-impl VaapiVideoEncoder {
+impl VaapiH264Encoder {
     /// Open according to [`VideoEncoderConfig::input`].
     pub(crate) fn open(config: &VideoEncoderConfig) -> Result<Self, EncodeError> {
         validate(config)?;
@@ -301,7 +301,7 @@ impl VaapiVideoEncoder {
     }
 }
 
-impl VideoEncoder for VaapiVideoEncoder {
+impl VideoEncoder for VaapiH264Encoder {
     fn stream_info(&self) -> &StreamInfo {
         &self.info
     }
@@ -678,7 +678,11 @@ fn invalid_picture_h264() -> PictureH264 {
 }
 
 fn validate(config: &VideoEncoderConfig) -> Result<(), EncodeError> {
-    if !super::codec::is_supported_video_codec(config.codec) {
+    // This encoder only ever handles H.264 — a VP9 config must route to `VaapiVp9Encoder`
+    // instead, not silently be accepted here (`codec::is_supported_video_codec` is the whole-
+    // of-crate "does any encoder here handle this codec" check used by the dispatcher, not a
+    // per-codec gate).
+    if config.codec != CodecKind::H264 {
         return Err(EncodeError::Unsupported);
     }
     if config.width == 0 || config.height == 0 {

@@ -14,5 +14,70 @@
 mod codec;
 mod gop;
 mod video;
+mod vp9;
+mod vp9_gop;
 
-pub(crate) use video::VaapiVideoEncoder;
+use crate::{EncodeError, VideoEncoder, VideoEncoderConfig};
+use mediaway_common::{CodecKind, Packet, StreamInfo, VideoFrame};
+
+use video::VaapiH264Encoder;
+use vp9::VaapiVp9Encoder;
+
+/// Dispatches to the right per-codec VA-API encode session based on
+/// [`VideoEncoderConfig::codec`] — a plain enum over this crate's concrete encoder types rather
+/// than `Box<dyn VideoEncoder>` (see `docs/spec/zero-cost-abstractions.md`). This is this
+/// backend's first multi-codec **encoder** dispatch enum — see
+/// [ADR-0004](../adr/linux/0004-vaapi-vp9-key-frame-and-inter-gop.md) § Decision.
+pub(crate) enum VaapiVideoEncoder {
+    H264(VaapiH264Encoder),
+    Vp9(VaapiVp9Encoder),
+}
+
+impl VaapiVideoEncoder {
+    /// Open the per-codec VA-API encoder matching `config.codec`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EncodeError::Unsupported`] for any codec this vaapi backend does not encode at
+    /// all, or the chosen encoder's own `open` errors otherwise.
+    pub(crate) fn open(config: &VideoEncoderConfig) -> Result<Self, EncodeError> {
+        if !codec::is_supported_video_codec(config.codec) {
+            return Err(EncodeError::Unsupported);
+        }
+        match config.codec {
+            CodecKind::H264 => Ok(Self::H264(VaapiH264Encoder::open(config)?)),
+            CodecKind::Vp9 => Ok(Self::Vp9(VaapiVp9Encoder::open(config)?)),
+            _ => Err(EncodeError::Unsupported),
+        }
+    }
+}
+
+impl VideoEncoder for VaapiVideoEncoder {
+    fn stream_info(&self) -> &StreamInfo {
+        match self {
+            Self::H264(e) => e.stream_info(),
+            Self::Vp9(e) => e.stream_info(),
+        }
+    }
+
+    fn push_frame(&mut self, frame: &VideoFrame) -> Result<(), EncodeError> {
+        match self {
+            Self::H264(e) => e.push_frame(frame),
+            Self::Vp9(e) => e.push_frame(frame),
+        }
+    }
+
+    fn poll_packet(&mut self) -> Result<Option<Packet>, EncodeError> {
+        match self {
+            Self::H264(e) => e.poll_packet(),
+            Self::Vp9(e) => e.poll_packet(),
+        }
+    }
+
+    fn flush(&mut self) -> Result<(), EncodeError> {
+        match self {
+            Self::H264(e) => e.flush(),
+            Self::Vp9(e) => e.flush(),
+        }
+    }
+}

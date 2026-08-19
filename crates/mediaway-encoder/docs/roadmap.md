@@ -46,6 +46,20 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
       `mediaway-encoder::vulkan::h264_gop::GopState`) — **ADR-0002 implemented**, capability-gated
       on `VAConfigAttribEncMaxRefFrames`; still zero real-hardware verification (WSL2
       check/clippy/test-verified only)
+- [ ] VA-API AV1 encode — **blocked**, `cros-libva` 0.0.13 has no packed-header buffer type for
+      the app-hand-constructed `frame_header_obu()` bytes AV1 encode requires; design-only, see
+      `adr/linux/0003-vaapi-av1-key-frame-and-inter-gop.md`
+- [x] VA-API VP9 `KEY_FRAME`-only baseline + single-forward-reference `INTER_FRAME` GOP
+      (`VaapiVp9Encoder`, plain `cros-libva` `EncSequenceParameterBufferVP9`/
+      `EncPictureParameterBufferVP9` field bags — **not blocked**, unlike the AV1 sibling above;
+      3-step entrypoint probe ladder `EncSlice` → `EncPicture` → `EncSliceLP`; new
+      `vp9_gop::GopState` 2-slot physical ping-pong; `linux/vaapi/mod.rs` gained this backend's
+      first multi-codec **encoder** dispatch enum) per **ADR-0004 implemented** — WSL2
+      check/clippy/test-verified only, **zero real-hardware verification**; real-world VP9 VA-API
+      *encode* driver support is narrow (`FFmpeg`'s own source names only the i965 classic driver
+      as working — VP9 *decode* is broadly supported, encode is not), so this is a
+      compile/test-verified-only addition even more than this crate's other VA-API backends, not
+      an expected-to-work-on-most-hardware one
 - [ ] Vulkan Video encode (alternative/complement to VA-API)
 - [ ] GPU buffer Zero-Copy where supported (DMA-BUF surface import)
 

@@ -33,7 +33,8 @@ use objc2_core_media::{
     CMTimeFlags, CMVideoFormatDescription, kCMBlockBufferCustomBlockSourceVersion,
 };
 use objc2_core_video::{
-    CVImageBuffer, CVPixelBuffer, CVPixelBufferLockFlags, kCVPixelBufferPixelFormatTypeKey,
+    CVImageBuffer, CVPixelBuffer, CVPixelBufferGetHeight, CVPixelBufferGetWidth,
+    CVPixelBufferLockFlags, kCVPixelBufferPixelFormatTypeKey,
     kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
 };
 use objc2_video_toolbox::{
@@ -528,8 +529,8 @@ fn build_zero_copy_frame(
     presentation_duration: CMTime,
     time_base: Rational,
 ) -> Option<PendingFrame> {
-    let width = u32::try_from(pixel_buffer.width()).ok()?;
-    let height = u32::try_from(pixel_buffer.height()).ok()?;
+    let width = u32::try_from(CVPixelBufferGetWidth(pixel_buffer)).ok()?;
+    let height = u32::try_from(CVPixelBufferGetHeight(pixel_buffer)).ok()?;
     if width == 0 || height == 0 {
         return None;
     }

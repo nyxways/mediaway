@@ -33,11 +33,13 @@
 #![allow(unsafe_code)]
 #![allow(
     dead_code,
+    unused_imports,
     reason = "every open()/push_packet() call path here is only reachable from this \
     module's own #[cfg(test)] tests today (not wired into crate::windows::WindowsVideoDecoder \
     yet, see module doc) — same root cause as mediaway-encoder-windows's \
     d3d12_video_encode module, resolved together once a later pass wires this backend \
-    into the public API"
+    into the public API. `unused_imports` covers the HEVC pub(crate) re-exports below, \
+    only reachable from this module's own #[cfg(test)] hardware-gated test today"
 )]
 #![allow(
     clippy::redundant_pub_crate,
@@ -66,6 +68,13 @@ use windows::Win32::Media::MediaFoundation::{
 use windows::Win32::System::Threading::CreateEventW;
 use windows::core::Interface;
 
+mod av1;
+mod av1_decoder;
+mod av1_frame_header;
+mod av1_obu;
+mod av1_ops;
+mod av1_pic_params;
+mod av1_sequence_header;
 mod dpb;
 mod h264;
 mod h264_pic_params;
@@ -73,6 +82,14 @@ mod h264_poc;
 mod h264_refs;
 mod h264_slice;
 mod h264_sps_pps;
+mod hevc;
+mod hevc_decoder;
+mod hevc_ops;
+mod hevc_pic_params;
+mod hevc_poc;
+mod hevc_refs;
+mod hevc_slice;
+mod hevc_vps_sps_pps;
 mod ops;
 mod setup;
 mod util;
@@ -81,10 +98,31 @@ mod util;
 #[path = "d3d12_video_decode_tests.rs"]
 mod tests;
 
+// See ADR-0004 § Test plan: written this pass, deliberately never executed by this
+// pass's implementer (or any subsequent hardware-attempting session without new,
+// explicit, informed consent) — real GPU-hang risk on code that has never been run at
+// all, compounding the still-unresolved H.264 D3D12 decode TDR (`tests` module above).
+// Kept as its own, distinctly-named module specifically so `cargo test`'s substring
+// filter can select every sans-io unit test in this file tree while trivially excluding
+// both hardware-gated integration tests by name.
+#[cfg(test)]
+#[path = "d3d12_video_decode_hevc_tests.rs"]
+mod hevc_hardware_tests;
+
+// See ADR-0005 § Test plan: same "written this pass, never executed" convention as
+// `hevc_hardware_tests` above, doubly cautioned by ADR-0005's own Open Question #1 (this
+// crate's own D3D12 AV1 encoder output is not confirmed decodable) — do not run.
+#[cfg(test)]
+#[path = "d3d12_video_decode_av1_tests.rs"]
+mod av1_hardware_tests;
+
 use dpb::DpbPool;
 use h264_poc::PocState;
 use h264_refs::H264RefMeta;
 use h264_sps_pps::{Pps, Sps};
+
+pub(crate) use av1_decoder::{D3d12VideoDecoderAv1, DecodedFrameAv1, DecodedOutputAv1};
+pub(crate) use hevc_decoder::{D3d12VideoDecoderHevc, DecodedFrameHevc, DecodedOutputHevc};
 
 /// Extra DPB slots above `max_num_ref_frames`, absorbing ordinary Zero-Copy-handle /
 /// output latency without contention (ADR-0002's "`caller_headroom`", default 2-4 —

@@ -295,8 +295,8 @@ Adapters: [`mediaway`](crates/mediaway/README.md) `wgpu` module 🆗 (DX12 ↔ W
 | Codec        | D3D11  | D3D12 | Vulkan | Metal |
 | ------------ | ------ | ----- | ------ | ----- |
 | H.264 / AVC  | 🆗 / 🆗 | ✅ / 🛠️ | ✅ / ✅ | 👻    |
-| HEVC / H.265 | 🆗 / 🆗 | ✅ / 🛠️ | ✅ / ✅ | 👻    |
-| AV1          | 🆗 / 🆗 | ✅ / 🛠️ | ❌ / ✅ | 👻    |
+| HEVC / H.265 | 🆗 / 🆗 | ✅ / 🆗 | ✅ / ✅ | 👻    |
+| AV1          | 🆗 / 🆗 | ✅ / 🆗 | ❌ / ✅ | 👻    |
 | VP9          | 🆗 / 🆗 | 👻    | 👻     | 👻    |
 
 

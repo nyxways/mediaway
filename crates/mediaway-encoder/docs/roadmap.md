@@ -46,6 +46,15 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
       `mediaway-encoder::vulkan::h264_gop::GopState`) — **ADR-0002 implemented**, capability-gated
       on `VAConfigAttribEncMaxRefFrames`; still zero real-hardware verification (WSL2
       check/clippy/test-verified only)
+- [x] VA-API HEVC Main profile single-forward-reference P-frame GOP (`vaapi/hevc.rs`/
+      `hevc_gop.rs`, `GopState` ported verbatim from `mediaway-encoder::vulkan::
+      hevc_gop::GopState`; fresh `EncSequenceParameterBufferHEVC`/`EncPictureParameterBufferHEVC`/
+      `EncSliceParameterBufferHEVC` construction — VA-API's own HEVC encode buffers have no
+      `StdVideoH265*`-equivalent field set, the driver synthesizes VPS/SPS/PPS itself) —
+      **ADR-0003 implemented**, `VaapiVideoSession` enum dispatch (H264/Hevc, no `Box<dyn>`);
+      still zero real-hardware verification (WSL2 check/clippy/test-verified only)
+- [ ] VA-API HEVC low-power entrypoint (`VAEntrypointEncSliceLP`) fallback — deferred, ADR-0003
+      § Scope
 - [ ] Vulkan Video encode (alternative/complement to VA-API)
 - [ ] GPU buffer Zero-Copy where supported (DMA-BUF surface import)
 

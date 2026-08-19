@@ -3,8 +3,10 @@
 - Module: `mediaway-decoder::linux`
 - Bindings: [`cros-libva`](https://crates.io/crates/cros-libva) (BSD-3-Clause, `cfg(target_os =
   "linux")` dependency only — never pulled into non-Linux builds)
-- Codec: H.264 baseline/main only (`vaapi/codec.rs` → `VAProfileH264ConstrainedBaseline` /
-  `VAProfileH264Main`, `VAEntrypointVLD`)
+- Codec: H.264 baseline/main (`vaapi/codec.rs` → `VAProfileH264ConstrainedBaseline` /
+  `VAProfileH264Main`) and HEVC Main (`VAProfileHEVCMain`, ADR-0003), both `VAEntrypointVLD`.
+  Dispatched behind a `VaapiVideoSession` enum (`H264(VaapiH264Decoder) | Hevc(VaapiHevcDecoder)`,
+  no `Box<dyn>`) in `vaapi/mod.rs`; `LinuxVideoDecoder::open` picks a variant from `config.codec`.
 - Scope: I and single-forward-reference P slices (real GOP/IPPP... decode), single slice per
   picture, `pic_order_cnt_type == 0`, progressive. Sliding-window DPB (`vaapi/dpb.rs`, ported
   from `vulkan/dpb.rs`), `RefPicList0[0]`-only reference (no reordering, no long-term refs, no
@@ -36,6 +38,24 @@
   (`pred_weight_table()`, `cabac_init_idc` unhandled) — rejected honestly
   here rather than inherited silently. Still zero real VA-API hardware
   verification.
+
+- ADR: [0003](../../../../crates/mediaway-decoder/adr/linux/0003-vaapi-hevc-p-slice-dpb.md) —
+  **Implemented, WSL2 compile+test-verified**: HEVC Main profile single-forward-reference
+  P-slice decode. Unlike ADR-0002's H.264 port, **no hardware-verified porting source existed**
+  — Vulkan's own HEVC decode is IDR-only in practice — so this is a **fresh design**: a small
+  single-slot `HevcDpb` (`vaapi/hevc_dpb.rs`, reuses `vaapi/dpb.rs::derive_pic_order_cnt_msb`
+  directly rather than re-deriving it — ITU-T H.265 §8.3.1 shares H.264 §8.2.1.1's MSB/LSB
+  formula), and a slice-header parser (`vaapi/hevc_slice.rs`) extended well past
+  `vulkan::hevc_slice.rs`'s own stopping point (VA-API needs many explicit per-slice fields —
+  SAO, temporal-MVP, merge-cand count, QP deltas — that Vulkan Video's hardware parses from raw
+  bytes directly). `vaapi/hevc_sps.rs`/`hevc_pps.rs` start from `vulkan::hevc_params.rs` and add
+  a real new PPS-parsing tail VA-API's own parameter buffers require
+  (`log2_parallel_merge_level_minus2`, `lists_modification_present_flag`, plus three new
+  reject-if-set extension flags). VA-API decode's `PictureParameterBufferHEVC` needs **no
+  VPS-derived field at all** (confirmed from `cros-libva`'s real source) — no `hevc_vps.rs`,
+  unlike the Vulkan decode module's `HevcVps` requirement. RPS shape is validated to exactly
+  `num_negative_pics == 1, delta_poc == -1, used_by_curr_pic` — anything else rejected as
+  `Unsupported`; CRA/random-access pictures are a permanent scope cut this session.
 
 ## ⚠️ Hardware verification status
 

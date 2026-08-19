@@ -3,8 +3,10 @@
 - Module: `mediaway-encoder::linux`
 - Bindings: [`cros-libva`](https://crates.io/crates/cros-libva) (BSD-3-Clause, `cfg(target_os =
   "linux")` dependency only — never pulled into non-Linux builds)
-- Codec: H.264 Constrained Baseline only (`vaapi/codec.rs` → `VAProfileH264ConstrainedBaseline`,
-  `VAEntrypointEncSlice`)
+- Codec: H.264 Constrained Baseline (`vaapi/codec.rs` → `VAProfileH264ConstrainedBaseline`) and
+  HEVC Main (`VAProfileHEVCMain`, ADR-0003), both `VAEntrypointEncSlice`. Dispatched behind a
+  `VaapiVideoSession` enum (`H264(VaapiVideoEncoder) | Hevc(VaapiHevcVideoEncoder)`, no
+  `Box<dyn>`) in `vaapi/mod.rs`; `LinuxVideoEncoder::open` picks a variant from `config.codec`.
 - CPU: `upload_cpu_nv12` — `Image::create_from` (`vaCreateImage`+`vaGetImage`) + memcpy +
   `vaPutImage` on drop
 - Zero-Copy: **not implemented** — `VideoInputPreference::ZeroCopyGpu` returns `Unsupported`
@@ -26,6 +28,20 @@
   this backend's `pic_order_cnt_type = 2` output is not decodable by this workspace's own
   `mediaway-decoder::linux::vaapi` (which only accepts `pic_order_cnt_type == 0`) — a real,
   pre-existing, deliberately-unresolved cross-crate interop gap.
+
+- ADR: [0003](../../../../crates/mediaway-encoder/adr/linux/0003-vaapi-hevc-p-frame-gop.md) —
+  **Implemented, WSL2 compile+test-verified**: HEVC Main profile single-forward-reference
+  P-frame GOP, porting `mediaway-encoder::vulkan::hevc_gop::GopState` verbatim into
+  `vaapi/hevc_gop.rs` (hardware-verified on Vulkan, simpler than H.264's — no
+  `frame_num`/`idr_pic_id`, and `poc` is never wrapped) but **not**
+  `vulkan::hevc_params.rs`'s `StdVideoH265*` construction — a real, confirmed API-shape gap:
+  `EncSequenceParameterBufferHEVC` has no `log2_max_pic_order_cnt_lsb_minus4`/
+  `max_num_ref_frames` field at all (the driver synthesizes HEVC parameter sets itself, unlike
+  Vulkan Video), so `vaapi/hevc.rs` builds those buffers fresh, grounded in FFmpeg's real
+  `vaapi_encode_h265.c`. Reuses `vaapi/video.rs::probe_supports_p_frames`/`upload_cpu_nv12`/
+  `nv12_size` directly (`pub(super)`, genuinely codec-agnostic) rather than duplicating them.
+  `VaapiVideoSession` enum (`H264`/`Hevc`) replaces the single concrete `VaapiVideoEncoder`
+  export in `vaapi/mod.rs` — no `Box<dyn>`.
 
 ## ⚠️ Hardware verification status
 

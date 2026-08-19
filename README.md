@@ -260,7 +260,7 @@ OS codec APIs (WMF, WebCodecs, VA-API, …) fed with CPU buffers (upload may app
 | Codec        | Windows  | Web      | Linux   | Apple   | Android |
 | ------------ | -------- | -------- | ------- | ------- | ------- |
 | H.264 / AVC  | ✅ / ✅  | ✅ / ✅ | 🆗 / 🆗 | 🆗 / 🆗 | 🆗 / 🆗 |
-| HEVC / H.265 | ✅ / ✅ | ❌ / ✅ | 🛠️   | 👻    | 👻      |
+| HEVC / H.265 | ✅ / ✅ | ❌ / ✅ | 🆗 / 🆗 | 👻    | 👻      |
 | AV1          | 🛠️ / 🛠️ | ✅      | 🛠️   | 👻    | 👻      |
 | VP9          | ✅ / ✅ | ✅      | 🛠️   | 👻    | 👻      |
 | ProRes       | 👻       | 👻       | 👻    | 👻    | 👻      |
@@ -296,7 +296,7 @@ Adapters: [`mediaway`](crates/mediaway/README.md) `wgpu` module 🆗 (DX12 ↔ W
 | ------------ | ------ | ----- | ------ | ----- |
 | H.264 / AVC  | 🆗 / 🆗 | ✅ / 🛠️ | ✅ / ✅ | 👻    |
 | HEVC / H.265 | 🆗 / 🆗 | ✅ / 🛠️ | ✅ / ✅ | 👻    |
-| AV1          | 🆗 / 🆗 | 🛠️    | ❌ / 🛠️ | 👻    |
+| AV1          | 🆗 / 🆗 | ✅ / 🛠️ | ❌ / 🛠️ | 👻    |
 | VP9          | 🆗 / 🆗 | 👻    | 👻     | 👻    |
 
 

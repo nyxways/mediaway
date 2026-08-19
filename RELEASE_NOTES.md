@@ -28,11 +28,23 @@
   "valid until next call" GPU-handle contract. **Zero compile verification as authored**. See
   `crates/mediaway-encoder/adr/apple/0003-videotoolbox-metal-zero-copy-encode.md` and
   `crates/mediaway-decoder/adr/apple/0003-videotoolbox-metal-zero-copy-decode.md`.
-- `mediaway::platform`: wired Apple into `encoder_support`/`decoder_support` (Opus, via the
-  existing cross-platform `SwOpusAudioEncoder`/`SwOpusAudioDecoder` — mirrors Windows' own
-  Software-fallback special case) and into `ScreenCapture::open`/`Microphone::open`/
+- `mediaway::platform`: wired Apple into `encoder_support`/`decoder_support` (Opus — see the
+  native `AudioConverter` bullet below) and into `ScreenCapture::open`/`Microphone::open`/
   `device_support`/`request_device_permission` (`mediaway-device::apple`'s Camera/Microphone/
   Screen backends were already implemented but unreachable through this cross-platform facade).
+- `mediaway-encoder::apple`/`mediaway-decoder::apple`: native Opus encode/decode via the same
+  `AudioToolbox` `AudioConverter` API AAC uses (`audiotoolbox::{OpusEncoder, OpusDecoder}`) —
+  replaces the cross-platform `SwOpusAudioEncoder`/`SwOpusAudioDecoder` as `AppleAudioEncoder`'s
+  Apple-side default (both remain directly usable elsewhere). No new Cargo dependency —
+  `kAudioFormatOpus` is a plain format ID already reachable through the AAC work's existing
+  bindings. Frame duration is converter-chosen (queried via
+  `kAudioConverterCurrentOutputStreamDescription`/`CurrentInputStreamDescription`), not
+  caller-selectable like `SwOpusAudioEncoder`'s `time_base`-as-duration contract — a real,
+  disclosed gap. No magic cookie needed either direction (Opus is self-describing per-packet).
+  Wired live into `mediaway::platform`'s Apple `encoder_support`/`decoder_support` Opus probes.
+  **Zero compile verification as authored**. See
+  `crates/mediaway-encoder/adr/apple/0005-audiotoolbox-opus-encode.md` and
+  `crates/mediaway-decoder/adr/apple/0005-audiotoolbox-opus-decode.md`.
 
 - `mediaway-encoder::apple`: HEVC encode (`kVTProfileLevel_HEVC_Main_AutoLevel`, CPU NV12
   upload, `hvcC` extradata via a new `iso_bmff::bitstream::hevc` module mirroring the existing

@@ -213,6 +213,21 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
       not a new gap). **Zero compile verification as authored**; see
       `mediaway-encoder/adr/apple/0004-audiotoolbox-aac-encode.md` and
       `mediaway-decoder/adr/apple/0004-audiotoolbox-aac-decode.md`.
+- [x] **Apple Opus, native (`AudioToolbox` `AudioConverter`)**: adds `audiotoolbox::{OpusEncoder,
+      OpusDecoder}`, reusing `AacEncoder`/`AacDecoder`'s pull-based `AudioConverter` shape almost
+      verbatim — `kAudioFormatOpus` needs no new Cargo dependency/feature. `AppleAudioEncoder`'s
+      `AudioBackend::Opus` now dispatches here instead of the cross-platform `SwOpusAudioEncoder`
+      (kept, still directly constructible, just no longer the Apple default). The one real
+      difference from AAC: Opus's frame size is **converter-chosen**, not spec-fixed — discovered
+      via `AudioConverterGetProperty(kAudioConverterCurrent{Output,Input}StreamDescription)` after
+      `open()`, since no local `objc2` evidence shows a way to request a specific duration (a real,
+      disclosed gap versus `SwOpusAudioEncoder`'s caller-selectable frame duration). No magic
+      cookie needed either direction — Opus is self-describing per-packet, matching
+      `windows::wmf::opus::WmfOpusDecoder`'s existing "no `extra_data`" precedent. **Wired into
+      `mediaway::platform`**: Apple's `encoder_support`/`decoder_support` Opus probes now open this
+      native backend live instead of the software one. **Zero compile verification as authored**;
+      see `mediaway-encoder/adr/apple/0005-audiotoolbox-opus-encode.md` and
+      `mediaway-decoder/adr/apple/0005-audiotoolbox-opus-decode.md`.
 
 ### 3. Media Containers, Protocols & Image Formats
 - [ ] **Static Image Containers & Codecs**: Expand facade traits and container cores to support image formats (**AVIF**, **HEIC**, **WebP**, **PNG**, **JPEG**, **GIF**).

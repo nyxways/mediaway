@@ -246,6 +246,10 @@ impl VideoEncoder for VideoToolboxVideoEncoder {
                 PixelBufferRef::Borrowed(pixel_buffer)
             }
             VideoFrameStorage::Gpu(_) => return Err(EncodeError::Unsupported),
+            // `VideoFrameStorage` is `#[non_exhaustive]` (declared in `mediaway-common`) — an
+            // unmatched future variant is a real "we don't know this storage kind" case, not
+            // reachable today.
+            &_ => return Err(EncodeError::Unsupported),
         };
 
         let pts = cmtime_from_pts(frame.pts, self.shared.time_base_den);

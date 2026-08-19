@@ -1,8 +1,10 @@
-//! `VTCompressionSession` H.264 CPU-upload encode session.
+//! `VTCompressionSession` CPU-upload encode session — H.264/HEVC.
 //!
-//! See [ADR-0001](../../adr/apple/0001-videotoolbox-h264-cpu-upload.md): binding choice, scope
-//! (Constrained-Baseline-class / CPU NV12 upload only / best-effort key-frame-interval), and the
-//! zero-compile-verification caveat for this crate as authored.
+//! See [ADR-0001](../../adr/apple/0001-videotoolbox-h264-cpu-upload.md) for the original H.264
+//! scope (Constrained-Baseline-class / CPU NV12 upload only / best-effort key-frame-interval) and
+//! [ADR-0002](../../adr/apple/0002-videotoolbox-hevc-encode.md) for the HEVC addition (Main-
+//! class profile) and VP9/AV1's permanent non-support (no `VideoToolbox` compression API exists
+//! for either). Both carry the zero-compile-verification caveat for this crate as authored.
 
 use std::collections::VecDeque;
 use std::ffi::c_void;
@@ -19,11 +21,7 @@ use objc2_core_foundation::{
     CFArray, CFBoolean, CFDictionary, CFNumber, CFNumberType, CFRetained, CFString, CFType,
     kCFBooleanFalse, kCFBooleanTrue,
 };
-use objc2_core_media::{
-    CMFormatDescription, CMSampleBuffer, CMTime,
-    CMVideoFormatDescriptionGetH264ParameterSetAtIndex, kCMSampleAttachmentKey_NotSync,
-    kCMTimeIndefinite,
-};
+use objc2_core_media::{CMSampleBuffer, CMTime, kCMSampleAttachmentKey_NotSync, kCMTimeIndefinite};
 use objc2_core_video::{
     CVPixelBuffer, CVPixelBufferCreateWithPlanarBytes,
     kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
@@ -34,10 +32,11 @@ use objc2_video_toolbox::{
     kVTCompressionPropertyKey_AllowFrameReordering, kVTCompressionPropertyKey_AverageBitRate,
     kVTCompressionPropertyKey_ExpectedFrameRate, kVTCompressionPropertyKey_MaxKeyFrameInterval,
     kVTCompressionPropertyKey_ProfileLevel, kVTCompressionPropertyKey_RealTime,
-    kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel,
+    kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel, kVTProfileLevel_HEVC_Main_AutoLevel,
 };
 
 use super::codec::codec_type;
+use super::extradata;
 
 /// `OSStatus`/`CVReturn` "no error" value (both use the plain C convention `0 == success`).
 const NO_ERROR: i32 = 0;
@@ -47,14 +46,17 @@ const NO_ERROR: i32 = 0;
 /// design.
 struct SharedState {
     pending: Mutex<VecDeque<Packet>>,
-    /// Set once, from the callback, after the first successfully decoded SPS/PPS pair —
+    /// Set once, from the callback, after the first successfully decoded SPS/PPS(+VPS) pair —
     /// [`VideoToolboxVideoEncoder::stream_info`] prefers this over `base_info` once present.
     finalized_info: OnceLock<StreamInfo>,
     base_info: StreamInfo,
     time_base_den: u32,
+    /// Selects [`extradata::extract_h264`] vs. [`extradata::extract_hevc`] in `handle_output`.
+    codec: CodecKind,
 }
 
-/// `VTCompressionSession` H.264 encode session (CPU NV12 upload, best-effort sync-frame cadence).
+/// `VTCompressionSession` encode session (CPU NV12 upload, best-effort sync-frame cadence) —
+/// H.264 or HEVC depending on [`SharedState::codec`].
 pub(crate) struct VideoToolboxVideoEncoder {
     session: CFRetained<VTCompressionSession>,
     shared: Arc<SharedState>,
@@ -100,6 +102,7 @@ impl VideoToolboxVideoEncoder {
             finalized_info: OnceLock::new(),
             base_info: stream_info_from(config),
             time_base_den: config.time_base.den,
+            codec: config.codec,
         });
         // Extra strong count handed to VideoToolbox as the callback's `refCon` — reclaimed once
         // in `Drop`, see that impl and ADR-0001 § Callback design.
@@ -278,9 +281,13 @@ unsafe extern "C-unwind" fn compression_output_callback(
 fn handle_output(shared: &SharedState, sample_buffer: &CMSampleBuffer) {
     if shared.finalized_info.get().is_none() {
         // SAFETY: `sample_buffer` is a valid, callback-scoped `CMSampleBuffer` reference.
-        if let Some(format_desc) = unsafe { sample_buffer.format_description() }
-            && let Some(extra_data) = extract_avcc_extra_data(&format_desc)
-        {
+        let extracted = unsafe { sample_buffer.format_description() }.and_then(|format_desc| {
+            match shared.codec {
+                CodecKind::Hevc => extradata::extract_hevc(&format_desc),
+                _ => extradata::extract_h264(&format_desc),
+            }
+        });
+        if let Some(extra_data) = extracted {
             let mut info = shared.base_info.clone();
             if let StreamInfo::Video { extra_data: ed, .. } = &mut info {
                 *ed = extra_data;
@@ -364,63 +371,6 @@ fn is_sync_sample(sample_buffer: &CMSampleBuffer) -> bool {
     !not_sync
         .downcast_ref::<CFBoolean>()
         .is_some_and(CFBoolean::as_bool)
-}
-
-/// SPS/PPS → `avcC`, reusing the existing `iso_bmff::bitstream::avc::to_avcc` helper (already
-/// used by `src/windows/wmf/video.rs`) rather than writing a new avcC builder — see ADR-0001.
-fn extract_avcc_extra_data(format_desc: &CMFormatDescription) -> Option<Bytes> {
-    let (sps_ptr, sps_len, param_count) = h264_parameter_set_at_index(format_desc, 0)?;
-    if param_count < 2 {
-        return None;
-    }
-    let (pps_ptr, pps_len, _) = h264_parameter_set_at_index(format_desc, 1)?;
-
-    // SAFETY: VideoToolbox guarantees `sps_ptr`/`pps_ptr` point at `sps_len`/`pps_len` valid
-    // bytes of `format_desc`'s own internal memory for as long as `format_desc` is retained
-    // (per `CMVideoFormatDescriptionGetH264ParameterSetAtIndex`'s own doc comment); copied out
-    // immediately below, no pointer outlives this function.
-    let (sps, pps) = unsafe {
-        (
-            std::slice::from_raw_parts(sps_ptr, sps_len),
-            std::slice::from_raw_parts(pps_ptr, pps_len),
-        )
-    };
-
-    let mut annex_b = Vec::with_capacity(8 + sps.len() + pps.len());
-    annex_b.extend_from_slice(&[0, 0, 0, 1]);
-    annex_b.extend_from_slice(sps);
-    annex_b.extend_from_slice(&[0, 0, 0, 1]);
-    annex_b.extend_from_slice(pps);
-
-    iso_bmff::bitstream::avc::to_avcc(&annex_b).avcc
-}
-
-/// One parameter-set NAL unit (pointer + length, into `format_desc`'s own internal memory) plus
-/// the total parameter-set count in `format_desc`'s AVC decoder configuration record.
-fn h264_parameter_set_at_index(
-    format_desc: &CMFormatDescription,
-    index: usize,
-) -> Option<(*const u8, usize, usize)> {
-    let mut ptr: *const u8 = std::ptr::null();
-    let mut len: usize = 0;
-    let mut count: usize = 0;
-
-    // SAFETY: `format_desc` is a valid, retained `CMFormatDescription` (obtained from the
-    // callback's sample buffer); all out-pointers below are valid local stack slots.
-    let status = unsafe {
-        CMVideoFormatDescriptionGetH264ParameterSetAtIndex(
-            format_desc,
-            index,
-            &raw mut ptr,
-            &raw mut len,
-            &raw mut count,
-            std::ptr::null_mut(),
-        )
-    };
-    if status != NO_ERROR || ptr.is_null() {
-        return None;
-    }
-    Some((ptr, len, count))
 }
 
 /// Copy CPU NV12 bytes into a fresh `CVPixelBuffer` (`CVPixelBufferCreateWithPlanarBytes`,
@@ -538,6 +488,14 @@ fn configure_properties(
     session: &VTCompressionSession,
     config: &VideoEncoderConfig,
 ) -> Result<(), EncodeError> {
+    // `CodecKind` is `#[non_exhaustive]` (declared in a different crate) — an unmatched future
+    // variant is a real "we don't know this profile" case, not reachable today (`codec_type`,
+    // called before this function in `open_cpu`, already rejects anything but H.264/HEVC).
+    let profile_level = match config.codec {
+        CodecKind::Hevc => kVTProfileLevel_HEVC_Main_AutoLevel,
+        _ => kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel,
+    };
+
     // SAFETY (all `set_*_property` calls below): `session` is a freshly created, not-yet-started
     // `VTCompressionSession`; every property key passed is a confirmed-real `&'static CFString`
     // from `objc2_video_toolbox`'s generated `VTCompressionProperties` bindings.
@@ -545,7 +503,7 @@ fn configure_properties(
         set_string_property(
             session,
             kVTCompressionPropertyKey_ProfileLevel,
-            kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel,
+            profile_level,
         )?;
         set_bool_property(session, kVTCompressionPropertyKey_RealTime, true)?;
         set_bool_property(
@@ -703,7 +661,7 @@ fn yuv420_size(width: u32, height: u32) -> Result<usize, EncodeError> {
 fn stream_info_from(config: &VideoEncoderConfig) -> StreamInfo {
     StreamInfo::Video {
         id: 0,
-        codec: CodecKind::H264,
+        codec: config.codec,
         time_base: config.time_base,
         geometry: VideoGeometry {
             width: config.width,

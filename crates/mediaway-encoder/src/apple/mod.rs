@@ -1,19 +1,21 @@
 //! Apple (macOS + iOS) encode backend (`VideoToolbox` `VTCompressionSession`, via `objc2`).
 //!
-//! - [`VideoInputPreference::CpuUploadOk`](crate::VideoInputPreference): H.264 session via
+//! - [`VideoInputPreference::CpuUploadOk`](crate::VideoInputPreference): H.264/HEVC session via
 //!   `VTCompressionSession` + `upload_cpu_nv12` (`CVPixelBufferCreateWithPlanarBytes`, one
 //!   copy) — `kVTCompressionPropertyKey_MaxKeyFrameInterval` requests
 //!   [`VideoEncoderConfig::gop_size`] sync frames, device-dependent, not a byte-exact
-//!   guarantee like Linux's raw bitstream approach.
+//!   guarantee like Linux's raw bitstream approach. VP9/AV1 are **not** supported — `VideoToolbox`
+//!   exposes no compression API for either codec at all (see ADR-0002).
 //! - [`VideoInputPreference::ZeroCopyGpu`]: not implemented — returns
 //!   [`EncodeError::Unsupported`]. Deferred to a Zero-Copy `CVPixelBuffer`/`IOSurface` stage;
 //!   see [`docs/roadmap.md`](../docs/roadmap.md).
 //!
-//! Policy: [ADR-0001](../adr/apple/0001-videotoolbox-h264-cpu-upload.md) — binding choice
-//! (`objc2-video-toolbox`/`objc2-core-video`/`objc2-core-media`/`objc2-core-foundation`), scope,
-//! and the **zero compile verification as authored** caveat (this crate's dev environment
-//! cannot cross-compile Apple code at all — no Xcode/Apple SDK reachable outside macOS). Read
-//! that caveat before relying on this backend.
+//! Policy: [ADR-0001](../adr/apple/0001-videotoolbox-h264-cpu-upload.md) — original binding
+//! choice (`objc2-video-toolbox`/`objc2-core-video`/`objc2-core-media`/`objc2-core-foundation`)
+//! and H.264 scope. [ADR-0002](../adr/apple/0002-videotoolbox-hevc-encode.md) — HEVC addition and
+//! VP9/AV1's permanent non-support. Both carry the **zero compile verification as authored**
+//! caveat (this crate's dev environment cannot cross-compile Apple code at all — no Xcode/Apple
+//! SDK reachable outside macOS). Read that caveat before relying on this backend.
 
 // Unlike Android/Linux, VideoToolbox/CoreMedia/CoreVideo's `objc2-*` bindings are plain C-API
 // `unsafe fn` wrappers with no safe layer (see ADR-0001 § Unsafe surface) — this module carries
@@ -31,7 +33,7 @@ use mediaway_common::{Bytes, Packet, StreamInfo};
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod videotoolbox;
 
-/// Apple video encode session (`VideoToolbox` H.264 when opened on macOS/iOS).
+/// Apple video encode session (`VideoToolbox` H.264/HEVC when opened on macOS/iOS).
 pub struct AppleVideoEncoder {
     #[cfg(any(target_os = "macos", target_os = "ios"))]
     inner: Option<videotoolbox::VideoToolboxVideoEncoder>,
@@ -45,7 +47,8 @@ impl AppleVideoEncoder {
     /// # Errors
     ///
     /// Returns [`EncodeError::Unsupported`] when the codec/input path is not wired (currently:
-    /// anything but H.264 + [`VideoInputPreference::CpuUploadOk`]), or [`EncodeError::Backend`]
+    /// anything but H.264/HEVC + [`VideoInputPreference::CpuUploadOk`] — VP9/AV1 have no
+    /// `VideoToolbox` compression API at all, see ADR-0002), or [`EncodeError::Backend`]
     /// when `VTCompressionSessionCreate`/`VTSessionSetProperty` fails (a real, honest failure —
     /// not every device has a given codec's HW encoder available — see ADR-0001).
     ///

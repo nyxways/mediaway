@@ -144,11 +144,13 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
         environment; `android` CI job (`.github/workflows/ci.yml`) added in the same PR as the
         first real gate, ahead of hardware verification
   - [x] Apple: `mediaway-encoder::apple` implemented (`VTCompressionSession` via `objc2-*`,
-        H.264 CPU-upload only, single module for macOS+iOS) per
-        `adr/apple/0001-videotoolbox-h264-cpu-upload.md` (**Accepted**) — **zero compile
+        H.264+HEVC CPU-upload, single module for macOS+iOS) per
+        `adr/apple/0001-videotoolbox-h264-cpu-upload.md` and
+        `adr/apple/0002-videotoolbox-hevc-encode.md` (both **Accepted**) — **zero compile
         verification as authored**, no Apple SDK/Xcode reachable in this dev environment
         (harder than Android's NDK-only gap: cannot legally cross-compile Apple code outside
         macOS); `apple-macos`/`apple-ios` CI jobs (`.github/workflows/ci.yml`) added in the same
-        PR as the first real gate, ahead of hardware verification. Per-packet `is_keyframe` is
-        an approximation (`gop_size <= 1 || packet_index == 0`) — real
-        `kCMSampleAttachmentKey_NotSync` reading deferred, see ADR-0001 § Implementation notes.
+        PR as the first real gate, ahead of hardware verification. VP9/AV1 encode is a
+        **permanent** `VideoToolbox` API gap (no compression-profile constants for either codec
+        exist), not deferred. Per-packet `is_keyframe` is real, via
+        `kCMSampleAttachmentKey_NotSync` reading — see ADR-0001 addendum.

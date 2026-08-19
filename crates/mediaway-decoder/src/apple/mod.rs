@@ -30,8 +30,8 @@
 #![cfg_attr(any(target_os = "macos", target_os = "ios"), allow(unsafe_code))]
 #![cfg_attr(not(any(target_os = "macos", target_os = "ios")), deny(unsafe_code))]
 
-#[cfg(not(feature = "video"))]
-compile_error!("enable the `video` feature on mediaway-decoder-apple");
+#[cfg(all(not(feature = "audio"), not(feature = "video")))]
+compile_error!("enable the `audio` and/or `video` feature on mediaway-decoder-apple");
 
 use crate::DecodeError;
 #[cfg(feature = "video")]
@@ -46,6 +46,15 @@ use mediaway_common::{Bytes, Packet, StreamInfo};
 // gate must include `test` even though `videotoolbox::video` itself stays Apple-only.
 #[cfg(any(target_os = "macos", target_os = "ios", test))]
 mod videotoolbox;
+
+#[cfg(all(any(target_os = "macos", target_os = "ios"), feature = "audio"))]
+mod audiotoolbox;
+/// Reachable as `mediaway_decoder::apple::AacDecoder` — see
+/// [ADR-0004](../adr/apple/0004-audiotoolbox-aac-decode.md). No `AppleAudioDecoder` wrapper
+/// exists (mirrors `mediaway-decoder::windows`'s own `WmfOpusDecoder` exposure — no
+/// `WindowsAudioDecoder` wrapper exists there either).
+#[cfg(all(any(target_os = "macos", target_os = "ios"), feature = "audio"))]
+pub use audiotoolbox::{AacDecoder, AacDecoderConfig};
 
 /// Apple video decode session (`VideoToolbox` H.264 when opened on macOS/iOS).
 #[cfg(feature = "video")]

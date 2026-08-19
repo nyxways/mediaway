@@ -300,6 +300,23 @@ this to the user explicitly, do not let a green CI job imply more confidence tha
   produces a runtime `NoSuchMethodError`, not a compile error, and this workspace has no Android
   emulator/device to catch that even after CI's compile step goes green.
 
+## Addendum (2026-08-19): `DesktopCaptureSource::Window` is genuinely blocked, not deferred
+
+Checked whether this ADR's `MediaProjection`-based design could be extended to
+`DesktopCaptureSource::Window` (single other-app window capture), the same request that landed
+`AppleWindowCapture` on macOS this session (`mediaway-device` adr/apple/0003 § Open questions #5 /
+§ Implementation notes 2026-08-19, via `ScreenCaptureKit`'s `SCContentFilter::
+initWithDesktopIndependentWindow`) and already exists on Windows (`WGC`'s `CreateForWindow`) and
+Linux (portal `SourceType::Window`, picker-only). **Android has no equivalent**:
+`MediaProjection`/`createVirtualDisplay` (§ Research above) only mirrors an entire physical
+display — there is no public Android API that hands an app a single other app's window surface to
+capture, for any app outside the window's own process (a deliberate app-sandboxing boundary, not
+an oversight). This is general Android platform knowledge, not verified from a local Android SDK
+source (none is cached in this workspace, same posture as this ADR's other unverified-from-source
+items). Marked `❌` (genuinely blocked — no upstream API) in the root README `## Device` table,
+not `👻` (not yet attempted) — see [`docs/ai/wiki/device/android-capture.md`](../../../../docs/ai/wiki/device/android-capture.md)
+§ Window.
+
 ## Consequences
 
 ### Positive

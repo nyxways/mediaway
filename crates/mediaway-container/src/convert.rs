@@ -106,14 +106,21 @@ const fn from_codec_kind(c: CodecKind) -> Codec {
         CodecKind::Opus => Codec::Opus,
         CodecKind::WebVtt => Codec::WebVtt,
         CodecKind::Tx3g => Codec::Tx3g,
-        // Raw capture, MP3, Vorbis, and VP8 are not ISOBMFF sample codecs this
-        // crate writes (VP8 is WebM/Matroska's domain, not MP4's); do not mux
-        // them via this helper.
+        // Raw capture, MP3, Vorbis, VP8, and ProRes are not ISOBMFF sample codecs this
+        // crate writes (VP8 is WebM/Matroska's domain, not MP4's; ProRes has no `iso-bmff`
+        // sample-entry support yet — VideoToolbox encode/decode only, see
+        // `mediaway-encoder`/`mediaway-decoder`'s apple ADRs); do not mux them via this helper.
         CodecKind::H264
         | CodecKind::RawVideo
         | CodecKind::RawAudio
         | CodecKind::Mp3
         | CodecKind::Vorbis
-        | CodecKind::Vp8 => Codec::H264,
+        | CodecKind::Vp8
+        | CodecKind::ProRes422Proxy
+        | CodecKind::ProRes422Lt
+        | CodecKind::ProRes422
+        | CodecKind::ProRes422Hq
+        | CodecKind::ProRes4444
+        | CodecKind::ProRes4444Xq => Codec::H264,
     }
 }

@@ -82,13 +82,18 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 - [x] `android` module: NDK `AMediaCodec` H.264 CPU NV12 decode, general GOP —
       zero compile/runtime verification (no NDK/device in dev env); see
       [adr/android/0001](../adr/android/0001-ndk-amediacodec-h264-cpu-out.md)
-- [x] `apple` module: `VTDecompressionSession` H.264/HEVC/VP9/AV1 general-GOP CPU-output decode
-      (`src/apple/`, H.264/HEVC one VPS(HEVC)/SPS/PPS + 4-byte length size; VP9/AV1 require a
-      container-supplied `vpcC`/`av1C` config record at `open()`, no bitstream parsing) —
-      compiles/lints on this Windows host (the real `objc2-*`-calling code in
+- [x] `apple` module: `VTDecompressionSession` H.264/HEVC/VP9/AV1 general-GOP CPU-output **and
+      Zero-Copy** decode (`src/apple/`, H.264/HEVC one VPS(HEVC)/SPS/PPS + 4-byte length size;
+      VP9/AV1 require a container-supplied `vpcC`/`av1C` config record at `open()`, no bitstream
+      parsing) — compiles/lints on this Windows host (the real `objc2-*`-calling code in
       `videotoolbox/{video,format_desc}.rs` is `cfg`-gated to Apple targets; pure `codec.rs`
       tick/NV12/validation helpers are host-testable and covered by real unit tests, 22 total),
       **zero compile verification of the Apple-only code path itself** (no Apple SDK in this dev
-      environment) — **wired into `mediaway::platform`'s `AutoDecoder`/`decoder_support`**; see
-      [adr/apple/0001](../adr/apple/0001-videotoolbox-h264-cpu-out.md) and
-      [adr/apple/0002](../adr/apple/0002-videotoolbox-hevc-vp9-av1-decode.md)
+      environment) — **wired into `mediaway::platform`'s `AutoDecoder`/`decoder_support`**;
+      Zero-Copy output (`GpuBufferHandle::Metal`) needs no DPB/slot-recycling bookkeeping unlike
+      this crate's VA-API/Vulkan Zero-Copy backends — `CVPixelBufferPool` grows on demand rather
+      than reusing a fixed slot, so the decoder just holds the last-returned handle's
+      `CFRetained` and releases it on the next call; see
+      [adr/apple/0001](../adr/apple/0001-videotoolbox-h264-cpu-out.md),
+      [adr/apple/0002](../adr/apple/0002-videotoolbox-hevc-vp9-av1-decode.md), and
+      [adr/apple/0003](../adr/apple/0003-videotoolbox-metal-zero-copy-decode.md)

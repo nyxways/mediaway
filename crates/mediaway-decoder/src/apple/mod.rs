@@ -6,17 +6,21 @@
 //!   (`VideoRange`) readback inside the decompression output callback
 //!   (`CVPixelBufferLockBaseAddress` + a stride-aware plane copy) — no `CVPixelBuffer`/
 //!   `IOSurface` export, so this is honest CPU decode, not a disguised Zero-Copy path.
-//! - [`VideoOutputPreference::ZeroCopyGpu`]: not implemented — returns
-//!   [`DecodeError::Unsupported`]. Deferred to a Zero-Copy `CVPixelBuffer`/`IOSurface`
-//!   (`GpuBufferHandle::Metal`) stage; see [`docs/roadmap.md`](../docs/roadmap.md).
+//! - [`VideoOutputPreference::ZeroCopyGpu`]: real Zero-Copy — a **new**, independent
+//!   `CFRetain` on the decoded `CVPixelBuffer` (`CFRetained::retain`, never a lock/plane-byte
+//!   read) is handed out as
+//!   [`GpuBufferHandle::Metal`](mediaway_common::GpuBufferHandle::Metal); valid until the next
+//!   `push_packet`/`poll_frame`/`flush` call, which releases it. See
+//!   [ADR-0003](../adr/apple/0003-videotoolbox-metal-zero-copy-decode.md).
 //!
 //! Policy: [ADR-0001](../adr/apple/0001-videotoolbox-h264-cpu-out.md) — original binding choice
 //! (`objc2-video-toolbox`/`objc2-core-media`/`objc2-core-video`/`objc2-core-foundation`), H.264
 //! scope (one SPS + one PPS, 4-byte AVCC length size only), byte framing (reuses
 //! `iso_bmff::bitstream::avc` both directions). [ADR-0002](../adr/apple/0002-videotoolbox-hevc-vp9-av1-decode.md)
-//! — HEVC/VP9/AV1 multicodec expansion. Both carry the **zero compile verification as
-//! authored** caveat (this crate's dev environment cannot cross-compile Apple code at all — no
-//! Xcode/Apple SDK reachable outside macOS). Read that caveat before relying on this backend.
+//! — HEVC/VP9/AV1 multicodec expansion. [ADR-0003](../adr/apple/0003-videotoolbox-metal-zero-copy-decode.md)
+//! — Zero-Copy output. All three carry the **zero compile verification as authored** caveat
+//! (this crate's dev environment cannot cross-compile Apple code at all — no Xcode/Apple SDK
+//! reachable outside macOS). Read that caveat before relying on this backend.
 
 // Unlike `linux::vaapi` (which forbids unsafe entirely — see that module's own doc comment),
 // VideoToolbox/CoreMedia/CoreVideo's `objc2-*` bindings are plain C-API `unsafe fn` wrappers
@@ -58,10 +62,9 @@ impl AppleVideoDecoder {
     ///
     /// # Errors
     ///
-    /// Returns [`DecodeError::Unsupported`] when the codec/output path is not wired (currently:
-    /// anything but H.264/HEVC/VP9/AV1 + [`VideoOutputPreference::CpuFramesOk`], or VP9/AV1
-    /// without a container-supplied config record — see `codec::requires_extra_data_at_open`),
-    /// or [`DecodeError::Backend`] on `VTDecompressionSessionCreate`/
+    /// Returns [`DecodeError::Unsupported`] when the codec is not H.264/HEVC/VP9/AV1, or VP9/AV1
+    /// lack a container-supplied config record (see `codec::requires_extra_data_at_open`), or
+    /// [`DecodeError::Backend`] on `VTDecompressionSessionCreate`/
     /// `CMVideoFormatDescriptionCreate*` failure.
     ///
     /// [`VideoOutputPreference::CpuFramesOk`]: crate::VideoOutputPreference::CpuFramesOk

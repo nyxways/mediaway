@@ -16,8 +16,8 @@ use std::sync::{Arc, Mutex};
 
 use crate::{DecodeError, VideoDecoder, VideoDecoderConfig, VideoOutputPreference};
 use mediaway_common::{
-    Bytes, CodecKind, Packet, PixelFormat, Rational, StreamInfo, VideoFrame, VideoFrameStorage,
-    VideoGeometry,
+    Bytes, CodecKind, GpuBufferHandle, NativeHandle, Packet, PixelFormat, Rational, StreamInfo,
+    VideoFrame, VideoFrameStorage, VideoGeometry,
 };
 
 use iso_bmff::bitstream::avc::parse_avc_decoder_config;
@@ -49,14 +49,25 @@ use super::format_desc;
 /// same reuse-for-both convention `mediaway-encoder::apple` already established.
 const NO_ERROR: i32 = 0;
 
+/// One decoded frame plus, for [`VideoOutputPreference::ZeroCopyGpu`], the real owned
+/// `CVPixelBuffer` reference backing its [`VideoFrameStorage::Gpu`] raw `NativeHandle` bits —
+/// `None` for [`VideoOutputPreference::CpuFramesOk`] frames, which own no backend resource. See
+/// [ADR-0003](../../../adr/apple/0003-videotoolbox-metal-zero-copy-decode.md) § Handle lifetime.
+struct PendingFrame {
+    frame: VideoFrame,
+    zero_copy_retain: Option<CFRetained<CVPixelBuffer>>,
+}
+
 /// State shared between [`VideoToolboxVideoDecoder`] and the `VTDecompressionOutputCallback`,
 /// which fires asynchronously on a VideoToolbox-internal thread — see ADR-0001 § Callback /
-/// output-collection design. Bundles `time_base` alongside the output queue (needed by the
-/// callback to convert VideoToolbox's returned `CMTime`s back to this crate's tick convention)
-/// the same way the encoder ADR's own `SharedState` bundles fields beyond a bare queue.
+/// output-collection design. Bundles `time_base`/`output` alongside the output queue (needed by
+/// the callback to convert `CMTime`s back to this crate's tick convention and to choose the
+/// CPU-copy vs. Zero-Copy path) the same way the encoder ADR's own `SharedState` bundles fields
+/// beyond a bare queue.
 struct SharedState {
-    pending: Mutex<VecDeque<VideoFrame>>,
+    pending: Mutex<VecDeque<PendingFrame>>,
     time_base: Rational,
+    output: VideoOutputPreference,
 }
 
 /// `VTDecompressionSession` decode session (CPU NV12 `VideoRange` readback, general GOP) —
@@ -77,6 +88,13 @@ pub(crate) struct VideoToolboxVideoDecoder {
     /// `Drop`.
     refcon_ptr: Option<*const SharedState>,
     codec: CodecKind,
+    /// The `CVPixelBuffer` reference backing the most recently [`Self::poll_frame`]-returned
+    /// [`VideoOutputPreference::ZeroCopyGpu`] handle — `None` for `CpuFramesOk` sessions.
+    /// Replaced (dropping, i.e. releasing, the previous value) at the start of every
+    /// `push_packet`/`poll_frame`/`flush` call, matching [`VideoDecoder::poll_frame`]'s
+    /// documented "valid until the next call" GPU-handle contract. See
+    /// [ADR-0003](../../../adr/apple/0003-videotoolbox-metal-zero-copy-decode.md).
+    last_zero_copy_retain: Option<CFRetained<CVPixelBuffer>>,
     info: StreamInfo,
     flushed: bool,
 }
@@ -99,6 +117,7 @@ impl VideoToolboxVideoDecoder {
         let shared = Arc::new(SharedState {
             pending: Mutex::new(VecDeque::new()),
             time_base: config.time_base,
+            output: config.output,
         });
 
         let mut decoder = Self {
@@ -107,6 +126,7 @@ impl VideoToolboxVideoDecoder {
             shared,
             refcon_ptr: None,
             codec: config.codec,
+            last_zero_copy_retain: None,
             info: stream_info_from(config),
             flushed: false,
         };
@@ -224,6 +244,9 @@ impl VideoDecoder for VideoToolboxVideoDecoder {
     }
 
     fn push_packet(&mut self, packet: &Packet) -> Result<(), DecodeError> {
+        // Drop (release) the previously `poll_frame`-returned Zero-Copy handle — a no-op for
+        // `CpuFramesOk` sessions, where this is always `None`. See `last_zero_copy_retain`'s doc.
+        self.last_zero_copy_retain = None;
         if self.flushed {
             return Err(DecodeError::Closed);
         }
@@ -306,15 +329,29 @@ impl VideoDecoder for VideoToolboxVideoDecoder {
     }
 
     fn poll_frame(&mut self) -> Result<Option<VideoFrame>, DecodeError> {
-        let mut pending = self
-            .shared
-            .pending
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        Ok(pending.pop_front())
+        // Same invalidation as `push_packet`/`flush` — see `last_zero_copy_retain`'s doc. Runs
+        // before the pop below so a caller polling repeatedly without pushing new packets still
+        // gets the documented one-call validity window, not an accidental extra grace period.
+        self.last_zero_copy_retain = None;
+        let popped = {
+            let mut pending = self
+                .shared
+                .pending
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            pending.pop_front()
+        };
+        let Some(popped) = popped else {
+            return Ok(None);
+        };
+        // Keep the new frame's retain alive (superseding the one just dropped above) until the
+        // next call — `None` for `CpuFramesOk` frames, which carry no backend resource.
+        self.last_zero_copy_retain = popped.zero_copy_retain;
+        Ok(Some(popped.frame))
     }
 
     fn flush(&mut self) -> Result<(), DecodeError> {
+        self.last_zero_copy_retain = None;
         if self.flushed {
             return Ok(());
         }
@@ -397,38 +434,102 @@ unsafe extern "C-unwind" fn decompression_output_callback(
         return;
     }
 
-    // SAFETY: `pixel_buffer` is a valid, concrete `CVPixelBuffer`; this backend only ever reads
-    // plane bytes below (never modifies the buffer), matching `ReadOnly`'s contract — a
-    // symmetric lock/unlock pair follows (unlocked with the same flags before every return
-    // path below).
-    if unsafe { pixel_buffer.lock_base_address(CVPixelBufferLockFlags::ReadOnly) } != NO_ERROR {
-        return;
-    }
+    let pending_frame = if shared.output == VideoOutputPreference::ZeroCopyGpu {
+        build_zero_copy_frame(
+            pixel_buffer,
+            presentation_time_stamp,
+            presentation_duration,
+            shared.time_base,
+        )
+    } else {
+        // SAFETY: `pixel_buffer` is a valid, concrete `CVPixelBuffer`; this backend only ever
+        // reads plane bytes below (never modifies the buffer), matching `ReadOnly`'s contract —
+        // a symmetric lock/unlock pair follows (unlocked with the same flags before every
+        // return path below).
+        if unsafe { pixel_buffer.lock_base_address(CVPixelBufferLockFlags::ReadOnly) } != NO_ERROR {
+            return;
+        }
 
-    let frame = build_frame(
-        pixel_buffer.base_address_of_plane(0),
-        pixel_buffer.bytes_per_row_of_plane(0),
-        pixel_buffer.base_address_of_plane(1),
-        pixel_buffer.bytes_per_row_of_plane(1),
-        pixel_buffer.height_of_plane(1),
-        pixel_buffer.width_of_plane(0),
-        pixel_buffer.height_of_plane(0),
-        presentation_time_stamp,
-        presentation_duration,
-        shared.time_base,
-    );
+        let frame = build_frame(
+            pixel_buffer.base_address_of_plane(0),
+            pixel_buffer.bytes_per_row_of_plane(0),
+            pixel_buffer.base_address_of_plane(1),
+            pixel_buffer.bytes_per_row_of_plane(1),
+            pixel_buffer.height_of_plane(1),
+            pixel_buffer.width_of_plane(0),
+            pixel_buffer.height_of_plane(0),
+            presentation_time_stamp,
+            presentation_duration,
+            shared.time_base,
+        );
 
-    // SAFETY: matches the lock above — always unlock with the same flags used to lock.
-    let _ = unsafe { pixel_buffer.unlock_base_address(CVPixelBufferLockFlags::ReadOnly) };
+        // SAFETY: matches the lock above — always unlock with the same flags used to lock.
+        let _ = unsafe { pixel_buffer.unlock_base_address(CVPixelBufferLockFlags::ReadOnly) };
 
-    let Some(frame) = frame else {
+        frame.map(|frame| PendingFrame {
+            frame,
+            zero_copy_retain: None,
+        })
+    };
+
+    let Some(pending_frame) = pending_frame else {
         return;
     };
     let mut pending = shared
         .pending
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    pending.push_back(frame);
+    pending.push_back(pending_frame);
+}
+
+/// Build a Zero-Copy [`PendingFrame`] from a `CVPixelBuffer` VideoToolbox still owns (borrowed
+/// for this callback's duration) — takes a **new**, independent owned reference via
+/// `CFRetained::retain` (never `lock_base_address`/reads no bytes), so the buffer stays valid
+/// past the callback's return. See
+/// [ADR-0003](../../../adr/apple/0003-videotoolbox-metal-zero-copy-decode.md) § Handle lifetime
+/// for who drops (releases) `zero_copy_retain` and when.
+fn build_zero_copy_frame(
+    pixel_buffer: &CVPixelBuffer,
+    presentation_time_stamp: CMTime,
+    presentation_duration: CMTime,
+    time_base: Rational,
+) -> Option<PendingFrame> {
+    let width = u32::try_from(pixel_buffer.width()).ok()?;
+    let height = u32::try_from(pixel_buffer.height()).ok()?;
+    if width == 0 || height == 0 {
+        return None;
+    }
+
+    // SAFETY: `pixel_buffer` is a valid, concrete `CVPixelBuffer` for the duration of this call
+    // (VideoToolbox's own callback contract) — `CFRetained::retain` takes a brand new, fully
+    // independent `+1` reference, unrelated to whatever lifetime VideoToolbox itself grants the
+    // callback's borrowed `image_buffer` parameter.
+    let retained = unsafe { CFRetained::retain(NonNull::from(pixel_buffer)) };
+    let bits = CFRetained::as_ptr(&retained).as_ptr() as usize;
+    let buffer = NativeHandle::new(bits)?;
+
+    let pts = ticks_from_cmtime_value(
+        presentation_time_stamp.value,
+        presentation_time_stamp.timescale,
+        time_base,
+    );
+    let duration = duration_ticks_from_cmtime_value(
+        presentation_duration.value,
+        presentation_duration.timescale,
+        time_base,
+    );
+
+    Some(PendingFrame {
+        frame: VideoFrame {
+            pts,
+            duration,
+            width,
+            height,
+            format: PixelFormat::Nv12,
+            storage: VideoFrameStorage::Gpu(GpuBufferHandle::Metal { buffer }),
+        },
+        zero_copy_retain: Some(retained),
+    })
 }
 
 /// Build a [`VideoFrame`] from a locked `CVPixelBuffer`'s NV12 plane pointers, or `None` on a
@@ -638,8 +739,12 @@ fn validate(config: &VideoDecoderConfig) -> Result<(), DecodeError> {
     if !is_supported_video_codec(config.codec) {
         return Err(DecodeError::Unsupported);
     }
-    if config.output != VideoOutputPreference::CpuFramesOk {
-        // Zero-Copy `CVPixelBuffer`/`IOSurface` output is deferred — see ADR-0001 § Scope.
+    // `VideoOutputPreference` is `#[non_exhaustive]` — an unmatched future variant is a real
+    // "we don't know this output path" case, not reachable today.
+    if !matches!(
+        config.output,
+        VideoOutputPreference::CpuFramesOk | VideoOutputPreference::ZeroCopyGpu
+    ) {
         return Err(DecodeError::Unsupported);
     }
     if config.pixel_format != PixelFormat::Nv12 {

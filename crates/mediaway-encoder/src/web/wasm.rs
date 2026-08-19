@@ -21,7 +21,7 @@ use web_sys::{
     VideoFrameBufferInit, VideoFrameInit, VideoPixelFormat,
 };
 
-use crate::web::chunks::EncodedVideoChunks;
+use crate::web::chunks::{EncodedAudioChunks, EncodedVideoChunks};
 use crate::web::config::{WebAudioOpenConfig, WebVideoOpenConfig};
 use crate::web::timestamp::timestamp_us_to_i32;
 
@@ -76,14 +76,14 @@ pub async fn is_webcodecs_video_codec_supported(codec: String) -> bool {
 }
 
 #[cfg(feature = "audio")]
-async fn audio_supported() -> bool {
+async fn audio_codec_supported(codec: &str, channels: u32, sample_rate: u32) -> bool {
     // `AudioEncoderConfig::new`'s web-sys signature is `(codec, number_of_channels,
     // sample_rate)` — NOT `(codec, sample_rate, number_of_channels)`. Swapped args here used
     // to build a nonsensical config (48,000 channels at 2 Hz), which `isConfigSupported`
     // correctly rejected — the real, deterministic reason `is_webcodecs_av_supported` always
     // reported unsupported, not the `VideoEncoder`/`AudioEncoder` `.close()` resource-hygiene
     // issue fixed alongside this.
-    let cfg = WebAudioEncoderConfig::new("mp4a.40.2", 2, 48_000);
+    let cfg = WebAudioEncoderConfig::new(codec, channels, sample_rate);
     let promise = AudioEncoder::is_config_supported(&cfg);
     // Same `{supported, config}` dictionary shape as `video_codec_supported` — see its
     // comment above.
@@ -92,6 +92,23 @@ async fn audio_supported() -> bool {
         .ok()
         .and_then(|v| v.get_supported())
         .unwrap_or(false)
+}
+
+#[cfg(feature = "audio")]
+async fn audio_supported() -> bool {
+    audio_codec_supported("mp4a.40.2", 2, 48_000).await
+}
+
+/// Probe `WebCodecs` support for an audio codec string (`mp4a.40.2`, `opus`, ...) at a given
+/// channel count / sample rate.
+#[cfg(feature = "audio")]
+#[wasm_bindgen]
+pub async fn is_webcodecs_audio_codec_supported(
+    codec: String,
+    channels: u32,
+    sample_rate: u32,
+) -> bool {
+    audio_codec_supported(&codec, channels, sample_rate).await
 }
 
 /// Encode one black NV12 frame + short silence via WebCodecs, mux to fMP4, return bytes.
@@ -307,9 +324,32 @@ async fn encode_one_h264_frame_from_webgpu_canvas() -> Result<Vec<u8>, JsValue> 
     result
 }
 
+/// Pending audio encode result before being split into [`EncodedAudioChunks`]'s parallel
+/// vecs: `(timestamp_us, payload)` per chunk — audio counterpart of [`PendingChunks`].
 #[cfg(feature = "audio")]
-async fn encode_one_aac_buffer() -> Result<Vec<u8>, JsValue> {
-    let chunks: Rc<RefCell<Vec<Vec<u8>>>> = Rc::new(RefCell::new(Vec::new()));
+type PendingAudioChunks = Rc<RefCell<Vec<(f64, Vec<u8>)>>>;
+
+/// Encode `frame_count` frames of silence via `WebCodecs`, returning every encoded chunk.
+///
+/// Generalizes [`encode_one_aac_buffer`] to an arbitrary `codec`/`channels`/`sample_rate`/
+/// `bitrate_bps` — mirrors [`encode_video_frames`]'s "return every chunk" shape.
+///
+/// `frame_count`'s safe minimum (how many samples must be buffered before `flush()` yields a
+/// complete chunk) is codec-specific and **caller-supplied, never guessed here**. AAC's own
+/// 4096-frame margin (see [`encode_one_aac_buffer`]) was found empirically for AAC's MDCT
+/// look-ahead/priming delay and must not be assumed for other codecs — Opus (2.5-60 ms
+/// frames, no MDCT priming in the same sense) needs its own real-browser measurement, not
+/// performed in this environment (wasm32 compile-verified only, no browser runtime here).
+#[cfg(feature = "audio")]
+#[wasm_bindgen]
+pub async fn encode_audio_buffer(
+    codec: String,
+    channels: u32,
+    sample_rate: u32,
+    bitrate_bps: u32,
+    frame_count: u32,
+) -> Result<EncodedAudioChunks, JsValue> {
+    let chunks: PendingAudioChunks = Rc::new(RefCell::new(Vec::new()));
     // clone: Rc callback share
     let chunks_cb = chunks.clone();
     let copy_err: Rc<RefCell<Option<JsValue>>> = Rc::new(RefCell::new(None));
@@ -322,7 +362,7 @@ async fn encode_one_aac_buffer() -> Result<Vec<u8>, JsValue> {
                 Some(JsValue::from_str("EncodedAudioChunk::copy_to failed"));
             return;
         }
-        chunks_cb.borrow_mut().push(buf);
+        chunks_cb.borrow_mut().push((chunk.timestamp(), buf));
     }) as Box<dyn FnMut(EncodedAudioChunk)>);
     let enc_err: Rc<RefCell<Option<JsValue>>> = Rc::new(RefCell::new(None));
     // clone: Rc callback share
@@ -338,28 +378,30 @@ async fn encode_one_aac_buffer() -> Result<Vec<u8>, JsValue> {
     error.forget();
     output.forget();
 
-    let cfg = WebAudioEncoderConfig::new("mp4a.40.2", 2, 48_000); // (codec, channels, sample_rate)
-    cfg.set_bitrate(128_000);
+    let cfg = WebAudioEncoderConfig::new(&codec, channels, sample_rate); // (codec, channels, sample_rate)
+    cfg.set_bitrate(bitrate_bps);
     enc.configure(&cfg)
         .map_err(|_| JsValue::from_str("AudioEncoder::configure"))?;
 
-    // A real (non-simulated) AAC encoder needs more than one 1024-sample AAC frame buffered
-    // before it can flush a complete output chunk (MDCT look-ahead/priming delay) — a single
-    // 1024-frame `AudioData` reliably throws `EncodingError: Flushing error` on real Chrome;
-    // verified empirically that >=2048 frames (2 AAC frames' worth) flushes cleanly, so this
-    // uses a safety margin of 4 frames.
-    const FRAME_COUNT: u32 = 4096;
-    let data = silence_f32_interleaved(2, FRAME_COUNT);
+    let data = silence_f32_interleaved(channels, frame_count);
     let arr = Float32Array::new_with_length(data.len() as u32);
     for (i, sample) in data.iter().enumerate() {
         arr.set_index(i as u32, *sample);
     }
+    // `AudioDataInit::new`'s sample-rate parameter is `f32` (not `f64` like the timestamp
+    // params elsewhere in this module) — `sample_rate` is a small caller-supplied integer
+    // (e.g. 48_000), always exact in f32.
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "sample_rate is a small encoder-config integer, always exact in f32"
+    )]
+    let sample_rate_f32 = sample_rate as f32;
     let audio_init = AudioDataInit::new(
         arr.as_ref(),
         AudioSampleFormat::F32,
-        2,
-        FRAME_COUNT,
-        48_000.0,
+        channels,
+        frame_count,
+        sample_rate_f32,
         0,
     );
     let audio = AudioData::new(&audio_init).map_err(|_| JsValue::from_str("AudioData::new"))?;
@@ -371,11 +413,34 @@ async fn encode_one_aac_buffer() -> Result<Vec<u8>, JsValue> {
     take_js_err(&enc_err)?;
     take_js_err(&copy_err)?;
 
-    chunks
-        .borrow()
-        .first()
-        .cloned() // clone: take owned chunk buffer out of RefCell
-        .ok_or_else(|| JsValue::from_str("no audio chunk"))
+    let mut collected = chunks.borrow_mut();
+    let mut timestamps_us = Vec::with_capacity(collected.len());
+    let mut payloads = Vec::with_capacity(collected.len());
+    for (ts, data) in collected.drain(..) {
+        timestamps_us.push(ts);
+        payloads.push(data);
+    }
+    Ok(EncodedAudioChunks::new(timestamps_us, payloads))
+}
+
+/// Thin AAC-fixed caller of [`encode_audio_buffer`], keeping [`webcodecs_av_fmp4_smoke`]'s
+/// exact prior behavior (`codec`/`channels`/`sample_rate`/`bitrate`/`frame_count` unchanged
+/// from before this function was generalized).
+#[cfg(feature = "audio")]
+async fn encode_one_aac_buffer() -> Result<Vec<u8>, JsValue> {
+    // A real (non-simulated) AAC encoder needs more than one 1024-sample AAC frame buffered
+    // before it can flush a complete output chunk (MDCT look-ahead/priming delay) — a single
+    // 1024-frame `AudioData` reliably throws `EncodingError: Flushing error` on real Chrome;
+    // verified empirically that >=2048 frames (2 AAC frames' worth) flushes cleanly, so this
+    // uses a safety margin of 4 frames. AAC-specific — see `encode_audio_buffer`'s doc comment
+    // for why this margin is not reused for other codecs.
+    const FRAME_COUNT: u32 = 4096;
+    let chunks =
+        encode_audio_buffer("mp4a.40.2".to_string(), 2, 48_000, 128_000, FRAME_COUNT).await?;
+    if chunks.chunk_count() == 0 {
+        return Err(JsValue::from_str("no audio chunk"));
+    }
+    Ok(chunks.data(0))
 }
 
 #[cfg(feature = "video")]

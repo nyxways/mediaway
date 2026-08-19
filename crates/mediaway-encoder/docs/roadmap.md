@@ -35,6 +35,10 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 - [x] Add `mediaway-encoder-web`
 - [x] WebCodecs `VideoEncoder` / `AudioEncoder` (CPU path)
 - [x] `GPUTexture` → encode Zero-Copy (via WebGPU-backed `OffscreenCanvas`; see caveat below)
+- [x] Codec-parameterized audio smoke surface (`is_webcodecs_audio_codec_supported`,
+      `encode_audio_buffer`), exercised via Opus alongside AAC — adr/web/0001; wasm32
+      compile-verified only, no real-browser verification in this environment; no
+      `OpusEncoderConfig` knobs (no `web-sys` binding); no Opus fMP4 mux (`iso-bmff` gap)
 
 ### 3 — Linux
 

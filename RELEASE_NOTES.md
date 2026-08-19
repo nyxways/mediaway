@@ -8,6 +8,21 @@
 
 ### Added
 
+- `mediaway-encoder::apple`: HEVC encode (`kVTProfileLevel_HEVC_Main_AutoLevel`, CPU NV12
+  upload, `hvcC` extradata via a new `iso_bmff::bitstream::hevc` module mirroring the existing
+  H.264 `avc.rs` shape). VP9/AV1 encode confirmed to be a **permanent** `VideoToolbox` API gap —
+  zero compression-profile constants for either codec exist anywhere in the generated
+  `objc2-video-toolbox` bindings — not a deferred stage. **Zero compile verification as authored**
+  (no Apple SDK in this dev environment, same posture as this backend's existing H.264 path). See
+  `crates/mediaway-encoder/adr/apple/0002-videotoolbox-hevc-encode.md`.
+- `mediaway-decoder::apple`: HEVC decode (`CMVideoFormatDescriptionCreateFromHEVCParameterSets`,
+  same general-GOP black-box-DPB shape as H.264) and VP9/AV1 decode (generic
+  `CMVideoFormatDescriptionCreate` + a `SampleDescriptionExtensionAtoms` extension atom wrapping a
+  container-supplied `vpcC`/`av1C` config record — no bitstream parsing, `extra_data` required at
+  `open()`). Also newly wired into `mediaway::platform`'s `AutoEncoder`/`AutoDecoder`/
+  `decoder_support` (previously unwired for every Apple codec). **Zero compile verification as
+  authored**. See `crates/mediaway-decoder/adr/apple/0002-videotoolbox-hevc-vp9-av1-decode.md`.
+
 - `mediaway-decoder::vulkan`: AV1 decode via `VK_KHR_video_decode_av1`, scoped to
   `frame_type == KEY_FRAME`/`show_frame == 1`/single-tile pictures (general-GOP AV1 decode
   remains a follow-up). Real sans-io OBU/sequence-header/`KEY_FRAME`-frame-header parsing

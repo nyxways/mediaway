@@ -171,6 +171,19 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
       authored** (no macOS/Xcode in this dev environment); `apple-macos`/`apple-ios` CI jobs
       extended with a `mediaway-device` lint step in the same PR. All 4 ADRs
       (`mediaway-device/adr/apple/0001-0004`) Accepted.
+- [x] **Apple multicodec (HEVC encode/decode, VP9/AV1 decode)**: `mediaway-encoder::apple` gains
+      HEVC encode (`kVTProfileLevel_HEVC_Main_AutoLevel`, `hvcC` extradata via a new
+      `iso_bmff::bitstream::hevc` module mirroring `avc.rs`); VP9/AV1 encode found to be a
+      **permanent** `VideoToolbox` API gap (zero compression-profile constants for either codec
+      anywhere in the `objc2-video-toolbox` bindings), not a deferred stage. `mediaway-decoder::apple`
+      gains HEVC (`CMVideoFormatDescriptionCreateFromHEVCParameterSets`, same shape as H.264) and
+      VP9/AV1 decode (generic `CMVideoFormatDescriptionCreate` + `SampleDescriptionExtensionAtoms`
+      extension atom — no bitstream parsing, requires a container-supplied `vpcC`/`av1C` config
+      record up front, unlike H.264/HEVC's in-band discovery) — also newly **wired into
+      `mediaway::platform`'s `AutoEncoder`/`AutoDecoder`/`decoder_support`** (previously unwired for
+      every codec). **Zero compile verification as authored** (same posture as every other Apple
+      backend); see `mediaway-encoder/adr/apple/0002-videotoolbox-hevc-encode.md` and
+      `mediaway-decoder/adr/apple/0002-videotoolbox-hevc-vp9-av1-decode.md`.
 
 ### 3. Media Containers, Protocols & Image Formats
 - [ ] **Static Image Containers & Codecs**: Expand facade traits and container cores to support image formats (**AVIF**, **HEIC**, **WebP**, **PNG**, **JPEG**, **GIF**).

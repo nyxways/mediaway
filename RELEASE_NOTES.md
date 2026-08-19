@@ -74,6 +74,33 @@
   real-hardware verification** (no VA-API device available this session), same standing caveat
   as this backend's H.264 path. See
   `crates/mediaway-decoder/adr/linux/0003-vaapi-av1-key-frame-decode.md`.
+- `mediaway-encoder::linux`: VP9 `KEY_FRAME` baseline + single-forward-reference `INTER_FRAME`
+  GOP VA-API encode (`VAProfileVP9Profile0`, plain `cros-libva`
+  `EncSequenceParameterBufferVP9`/`EncPictureParameterBufferVP9` field bags — no packed-header
+  buffer needed, unlike this crate's still-blocked AV1 encode design). New `vp9_gop::GopState`
+  2-slot physical ping-pong state machine and this backend's first multi-codec **encoder**
+  dispatch enum (`VaapiVideoEncoder`, alongside the existing H.264 encoder). Entrypoint probe is
+  a real 3-step ladder (`VAEntrypointEncSlice` → `VAEntrypointEncPicture` →
+  `VAEntrypointEncSliceLP`) matching FFmpeg's own generic VA-API encode probe order. **Real
+  driver-support caveat**: FFmpeg's own source names only the older i965 driver as a working VP9
+  VA-API encode target — meaningfully narrower than VP9 *decode*'s broad support, so this is a
+  compile/test-verified-only addition. Compile + clippy + test-verified on real WSL2 Linux —
+  **zero real-hardware verification** (no VA-API device available this session). See
+  `crates/mediaway-encoder/adr/linux/0004-vaapi-vp9-key-frame-and-inter-gop.md`.
+- `mediaway-decoder::linux`: VP9 `KEY_FRAME` + general single-tile `INTER_FRAME` VA-API decode
+  (`VAProfileVP9Profile0`, `VAEntrypointVLD`), including compound prediction with no artificial
+  reference-count restriction (VA-API's `reference_frames[8]` array is always fully populated
+  regardless of active-reference count — a real structural finding, confirmed against FFmpeg's
+  `vaapi_vp9.c`) — a broader real-world-stream-compatible scope than this crate's own AV1
+  sibling reached. A spec-derived `uncompressed_header()` parser copied verbatim from the real
+  primary VP9 specification text (`pdftotext`-extracted this session) and a new persistent
+  8-logical-slot reference shadow table (`vp9::ref_table`, 2 fields/slot — width/height — versus
+  AV1's 12-field-per-slot state) backed by a 9-physical-surface pool with a pigeonhole-guaranteed
+  free-index allocator. Dispatched alongside the existing H.264/AV1 VA-API decoders via the
+  `VaapiVideoDecoder` enum. Compile + clippy + test-verified on real WSL2 Linux (100+ new
+  hand-constructed bitstream-fixture unit tests) — **zero real-hardware verification** (no
+  VA-API device available this session). See
+  `crates/mediaway-decoder/adr/linux/0004-vaapi-vp9-key-frame-and-inter-decode.md`.
 
 ### Changed
 

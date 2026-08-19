@@ -14,8 +14,8 @@
 | [linux-decode](linux-decode.md) | VA-API H.264 CPU-output decode backend — real GOP (IPPP...) decode via a sliding-window DPB, single-forward-reference P-slices (ADR-0002); AV1 `KEY_FRAME`-only single-tile decode implemented (ADR-0003); zero HW verification caveat |
 | [android-encode](android-encode.md) | NDK `AMediaCodec` H.264 CPU-upload encode — implemented, zero compile verification until CI |
 | [android-decode](android-decode.md) | NDK `AMediaCodec` H.264 CPU-output decode — **implemented, zero compile/runtime verification**; general-GOP (not IDR-only), decoder-chosen output layout |
-| [apple-encode](apple-encode.md) | `VideoToolbox` `VTCompressionSession` H.264/HEVC CPU-upload encode — implemented, zero compile verification until CI; VP9/AV1 permanently unsupported (no VideoToolbox compression API) |
-| [apple-decode](apple-decode.md) | `VideoToolbox` `VTDecompressionSession` H.264/HEVC/VP9/AV1 general-GOP CPU-output decode — implemented, wired into `mediaway::platform`, zero compile verification |
+| [apple-encode](apple-encode.md) | `VideoToolbox` `VTCompressionSession` H.264/HEVC CPU-upload **and Zero-Copy** encode — implemented, zero compile verification until CI; VP9/AV1 permanently unsupported (no VideoToolbox compression API) |
+| [apple-decode](apple-decode.md) | `VideoToolbox` `VTDecompressionSession` H.264/HEVC/VP9/AV1 general-GOP CPU-output **and Zero-Copy** decode — implemented, wired into `mediaway::platform`, zero compile verification |
 | [vulkan-encode](vulkan-encode.md) | Vulkan Video H.264 encode: capability probe + real minimal session, hardware-verified |
 | [vulkan-decode](vulkan-decode.md) | Vulkan Video decode: H.264 **hardware-verified** (first general-GOP backend in workspace); HEVC IDR decode **hardware-verified** too (P/B deferred) |
 | [vulkan-decode-av1](vulkan-decode-av1.md) | Vulkan Video AV1 decode: `KEY_FRAME`-only, single-tile, **hardware-verified** on first attempt (no driver-maturity wall, unlike AV1 Vulkan encode) |

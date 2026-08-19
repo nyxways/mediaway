@@ -276,14 +276,14 @@ Same OS APIs with GPU surfaces (`GpuBufferHandle`, DXGI, …). Video only — au
 
 | Codec        | Windows | Web | Linux | Apple | Android |
 | ------------ | ------- | --- | ----- | ----- | ------- |
-| H.264 / AVC  | 🆗 / 🆗  | ✅ | 🆗 / 🆗 | 👻    | 👻      |
-| HEVC / H.265 | 🆗 / 🆗  | 🆗 / 🛠️ | 🛠️   | 👻    | 👻      |
-| AV1          | 🆗 / 🆗  | 🆗 / 🛠️ | 🛠️   | 👻    | 👻      |
-| VP9          | 🆗 / 🆗  | 🆗 / 🛠️ | 🛠️   | 👻    | 👻      |
+| H.264 / AVC  | 🆗 / 🆗  | ✅ | 🆗 / 🆗 | 🆗 / 🆗 | 👻      |
+| HEVC / H.265 | 🆗 / 🆗  | 🆗 / 🛠️ | 🛠️   | 🆗 / 🆗 | 👻      |
+| AV1          | 🆗 / 🆗  | 🆗 / 🛠️ | 🛠️   | ❌ / 🆗 | 👻      |
+| VP9          | 🆗 / 🆗  | 🆗 / 🛠️ | 🛠️   | ❌ / 🆗 | 👻      |
 | ProRes       | 👻      | 👻  | 👻    | 👻    | 👻      |
 
 
-Detail: `mediaway-encoder::{windows, web}` (`windows` = WMF + DX11 Zero-Copy; `web` = WebCodecs + WebGPU).
+Detail: `mediaway-encoder::{windows, web, apple}` (`windows` = WMF + DX11 Zero-Copy; `web` = WebCodecs + WebGPU; `apple` = VideoToolbox + `CVPixelBuffer` Zero-Copy).
 
 ### GPU — by API
 
@@ -294,13 +294,13 @@ Adapters: [`mediaway`](crates/mediaway/README.md) `wgpu` module 🆗 (DX12 ↔ W
 
 | Codec        | D3D11  | D3D12 | Vulkan | Metal |
 | ------------ | ------ | ----- | ------ | ----- |
-| H.264 / AVC  | 🆗 / 🆗 | ✅ / 🛠️ | ✅ / ✅ | 👻    |
-| HEVC / H.265 | 🆗 / 🆗 | ✅ / 🆗 | ✅ / ✅ | 👻    |
-| AV1          | 🆗 / 🆗 | ✅ / 🆗 | ❌ / ✅ | 👻    |
-| VP9          | 🆗 / 🆗 | 👻    | 👻     | 👻    |
+| H.264 / AVC  | 🆗 / 🆗 | ✅ / 🛠️ | ✅ / ✅ | 🆗 / 🆗 |
+| HEVC / H.265 | 🆗 / 🆗 | ✅ / 🆗 | ✅ / ✅ | 🆗 / 🆗 |
+| AV1          | 🆗 / 🆗 | ✅ / 🆗 | ❌ / ✅ | ❌ / 🆗 |
+| VP9          | 🆗 / 🆗 | 👻    | 👻     | ❌ / 🆗 |
 
 
-Detail: [`mediaway`](crates/mediaway/README.md) `wgpu` module · `mediaway-encoder::{windows, vulkan}` · `mediaway-decoder::{windows, vulkan}`.
+Detail: [`mediaway`](crates/mediaway/README.md) `wgpu` module · `mediaway-encoder::{windows, vulkan, apple}` · `mediaway-decoder::{windows, vulkan, apple}`.
 
 ### GPU — by vendor
 

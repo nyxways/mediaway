@@ -8,6 +8,17 @@
 
 ### Added
 
+- `mediaway-encoder::apple`/`mediaway-decoder::apple`: real Zero-Copy `GpuBufferHandle::Metal`
+  support. Encode input (`VideoInputPreference::ZeroCopyGpu`) borrows the caller's `CVPixelBuffer`
+  directly for one `encode_frame` call — no retain/release. Decode output
+  (`VideoOutputPreference::ZeroCopyGpu`) takes a new, independent `CFRetained::retain` per decoded
+  frame; unlike this workspace's VA-API DMA-BUF Zero-Copy, `VTDecompressionSession`'s
+  `CVPixelBufferPool` grows on demand rather than reusing a fixed slot, so no DPB-style
+  `outstanding` tracking is needed — the decoder holds the last-`poll_frame`-returned handle and
+  releases it on the next `push_packet`/`poll_frame`/`flush` call, matching this crate's existing
+  "valid until next call" GPU-handle contract. **Zero compile verification as authored**. See
+  `crates/mediaway-encoder/adr/apple/0003-videotoolbox-metal-zero-copy-encode.md` and
+  `crates/mediaway-decoder/adr/apple/0003-videotoolbox-metal-zero-copy-decode.md`.
 - `mediaway::platform`: wired Apple into `encoder_support`/`decoder_support` (Opus, via the
   existing cross-platform `SwOpusAudioEncoder`/`SwOpusAudioDecoder` — mirrors Windows' own
   Software-fallback special case) and into `ScreenCapture::open`/`Microphone::open`/

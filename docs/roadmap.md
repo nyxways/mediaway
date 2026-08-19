@@ -184,6 +184,21 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
       every codec). **Zero compile verification as authored** (same posture as every other Apple
       backend); see `mediaway-encoder/adr/apple/0002-videotoolbox-hevc-encode.md` and
       `mediaway-decoder/adr/apple/0002-videotoolbox-hevc-vp9-av1-decode.md`.
+- [x] **Apple Zero-Copy (`GpuBufferHandle::Metal`)**: `mediaway-encoder::apple` gains
+      `VideoInputPreference::ZeroCopyGpu` — a plain borrow of the caller's `CVPixelBuffer` for one
+      `encode_frame` call, no retain/release at all. `mediaway-decoder::apple` gains
+      `VideoOutputPreference::ZeroCopyGpu` — a new, independent `CFRetained::retain` per decoded
+      frame; unlike VA-API's DMA-BUF Zero-Copy, `VTDecompressionSession`'s `CVPixelBufferPool`
+      grows on demand rather than reusing a fixed slot, so no DPB-style `outstanding` tracking is
+      needed — the decoder just holds the last-returned handle's retain and releases it on the
+      next `push_packet`/`poll_frame`/`flush` call, matching this crate's existing "valid until
+      next call" GPU-handle contract. Also wires Apple Opus (via the existing cross-platform
+      `SwOpusAudioEncoder`/`SwOpusAudioDecoder`) and `mediaway-device::apple`'s already-implemented
+      Camera/Microphone/Screen backends into `mediaway::platform` (both were previously
+      unreachable through that facade, same class of gap the multicodec wiring above found for
+      video). **Zero compile verification as authored**; see
+      `mediaway-encoder/adr/apple/0003-videotoolbox-metal-zero-copy-encode.md` and
+      `mediaway-decoder/adr/apple/0003-videotoolbox-metal-zero-copy-decode.md`.
 
 ### 3. Media Containers, Protocols & Image Formats
 - [ ] **Static Image Containers & Codecs**: Expand facade traits and container cores to support image formats (**AVIF**, **HEIC**, **WebP**, **PNG**, **JPEG**, **GIF**).

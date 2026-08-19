@@ -5,11 +5,26 @@ ADR: [0001](../../../../crates/mediaway-decoder/adr/apple/0001-videotoolbox-h264
 `mediaway-encoder::apple`) — H.264 only.
 [0002](../../../../crates/mediaway-decoder/adr/apple/0002-videotoolbox-hevc-vp9-av1-decode.md) —
 **Accepted** — HEVC/VP9/AV1 multicodec expansion, **wired into `mediaway::platform`'s
-`AutoDecoder`/`decoder_support`** (`crates/mediaway/src/platform.rs`). Implemented at `src/apple/`
-per these ADRs — `cargo check`/`clippy` pass on this Windows host (the real `objc2-*`-calling code
-in `videotoolbox/{video,format_desc}.rs` is `cfg`-gated to Apple targets and cannot be
-type-checked here; the pure helpers in `videotoolbox/codec.rs` have no `objc2-*` dependency and
-are covered by real, passing unit tests, 22 total).
+`AutoDecoder`/`decoder_support`** (`crates/mediaway/src/platform.rs`).
+[0003](../../../../crates/mediaway-decoder/adr/apple/0003-videotoolbox-metal-zero-copy-decode.md)
+— **Accepted** — Zero-Copy output. Implemented at `src/apple/` per these ADRs — `cargo check`/
+`clippy` pass on this Windows host (the real `objc2-*`-calling code in
+`videotoolbox/{video,format_desc}.rs` is `cfg`-gated to Apple targets and cannot be type-checked
+here; the pure helpers in `videotoolbox/codec.rs` have no `objc2-*` dependency and are covered by
+real, passing unit tests, 22 total).
+
+## Zero-Copy output — real, one handle outstanding at a time
+
+`VideoOutputPreference::ZeroCopyGpu` skips `lock_base_address`/plane copy — the callback takes a
+**new**, independent `CFRetained::retain` on the decoded `CVPixelBuffer`, hands its bits out as
+`GpuBufferHandle::Metal`. Unlike VA-API's DMA-BUF Zero-Copy (`adr/linux/0006`),
+`CVPixelBufferPool` **grows on demand** rather than reusing a fixed slot — no `outstanding`/
+DPB-style tracking needed; the real risk is unbounded growth, not corruption. Contract:
+`VideoToolboxVideoDecoder` holds the last-`poll_frame`-returned handle's retain and drops
+(releases) it at the start of the *next* `push_packet`/`poll_frame`/`flush` — same "valid until
+the next call" convention every other Zero-Copy decoder here documents, enforced by plain Rust
+`Drop` instead of manual fd/slot bookkeeping. `PendingFrame { frame, zero_copy_retain }` bundles
+the optional retain into `pending`'s element type — no second, separately-locked collection.
 
 ## HEVC — mirrors H.264 exactly
 
@@ -32,16 +47,14 @@ session API genuinely needs full picture parameters this crate must derive). `ex
 already hold a valid `vpcC`/`av1C` at `open()` — `DecodeError::Unsupported` if empty, no in-band
 lazy discovery like H.264/HEVC get.
 
-**Corpus note:** no `mediaway-decoder::android` backend exists in this repo yet either, despite
-being referenced by a prior task briefing — this ADR is grounded in `linux::vaapi` (CPU-output
-structure) and `vulkan` (general-GOP precedent) instead. Do not assume an Android decode ADR
-exists until one is actually written.
+**Corpus note:** ADR-0001 is grounded in `linux::vaapi` (CPU-output structure) and `vulkan`
+(general-GOP precedent), not an Android decode ADR — none existed in this repo when it was written.
 
 ## Scope (ADR-0001, H.264 — HEVC/VP9/AV1 scope is above)
 
 - H.264 CPU NV12 (`VideoRange`) readback via `CVPixelBufferLockBaseAddress` +
-  `width_of_plane`/`base_address_of_plane`. No Zero-Copy output yet
-  (`GpuBufferHandle::Metal` already exists in `mediaway-common`, wiring deferred).
+  `width_of_plane`/`base_address_of_plane`. Zero-Copy output (`GpuBufferHandle::Metal`) — see the
+  section above — landed via ADR-0003, for all four codecs this backend supports.
 - **General GOP (P/B frames), not IDR-only** — `VTDecompressionSession` is a black-box HW/SW
   decoder (like Android's `AMediaCodec`, unlike VA-API): the OS owns the DPB/reference-picture
   list entirely. This crate never builds one.
@@ -63,19 +76,17 @@ after `decode_frame` returns) — bridged via the same `Arc<Mutex<VecDeque<Video
 ## `CVImageBuffer → CVPixelBuffer` downcast — checked, not unchecked
 
 Confirmed real: `objc2_core_foundation::CFType::downcast_ref::<CVPixelBuffer>()` (checked via
-`ConcreteType::type_id()`), not a raw pointer cast. `None` → skip the frame, documented, not a
-panic.
+`ConcreteType::type_id()`), not a raw pointer cast. `None` → skip the frame, not a panic.
 
 ## Deps (added to `Cargo.toml`)
 
 Same `objc2-*` family/version (`"0.3"`) `mediaway-encoder::apple` already pins, in a
 `[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]` block:
 `objc2-video-toolbox` (`VTDecompressionSession`, `VTDecompressionProperties`, `VTErrors`,
-`VTSession`, `objc2-core-media`, `objc2-core-video`), `objc2-core-media` (adds `CMBlockBuffer`
-to the encoder's own list), `objc2-core-video` (`CVReturn` instead of the encoder's
-`CVPixelBufferPool`), `objc2-core-foundation` (no `CFArray` this stage). See the ADR's Decision
-section for the exact reasoning per feature. ADR-0002 added `CFData`/`CFPropertyList` to
-`objc2-core-foundation` (VP9/AV1's extension-atom dictionary construction).
+`VTSession`, `objc2-core-media`, `objc2-core-video`), `objc2-core-media` (`CMBlockBuffer`),
+`objc2-core-video` (`CVReturn`), `objc2-core-foundation` (no `CFArray` this stage) — see the
+ADR's Decision section for the exact reasoning per feature. ADR-0002 added `CFData`/
+`CFPropertyList` (VP9/AV1's extension-atom dictionary construction).
 
 ## Open items (not settled from local `objc2` source)
 

@@ -228,6 +228,32 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
       native backend live instead of the software one. **Zero compile verification as authored**;
       see `mediaway-encoder/adr/apple/0005-audiotoolbox-opus-encode.md` and
       `mediaway-decoder/adr/apple/0005-audiotoolbox-opus-decode.md`.
+- [x] **Apple ProRes (`VideoToolbox`)**: `mediaway-common::CodecKind` gains six new variants
+      (`ProRes422Proxy`/`ProRes422Lt`/`ProRes422`/`ProRes422Hq`/`ProRes4444`/`ProRes4444Xq`,
+      discriminants 13-18) rather than one `ProRes` variant + a profile field — confirmed low
+      ripple (only `mediaway-ffi/src/common/types.rs` and `mediaway-container/src/convert.rs` have
+      a truly exhaustive `CodecKind` match with no wildcard) versus the alternative, which would
+      have broken every full-literal `VideoEncoderConfig`/`VideoDecoderConfig` construction site
+      across the workspace. Both crates' existing `VideoToolbox` session/callback/Zero-Copy/
+      CPU-upload machinery is entirely codec-agnostic already — ProRes reuses all of it; only
+      per-codec dispatch tables (`codec_type`, `configure_properties`, `format_desc::
+      raw_codec_type`, `open()`'s construction-path selection) needed new arms. Encode CPU input
+      stays NV12 4:2:0 8-bit (grounded in `AVAssetWriterInput`'s doc comment that 8-bit 4:2:0
+      sources are fine for ProRes, converted internally — flagged as adjacent-API evidence, not
+      confirmed at the `VTCompressionSession` level); `gop_size`/`bitrate_bps` silently unused
+      (all-intra, profile-fixed quality — no corresponding properties exist). Decode needs **no**
+      config record at all (a new `format_desc::create_raw_no_extension`, unlike VP9/AV1's
+      extension-atom path) — session built eagerly from geometry alone; CPU readback still forces
+      lossy NV12 downsampling from ProRes's native higher bit depth/chroma (Zero-Copy output is
+      unaffected, native format). Also fixed a real pre-existing bug surfaced while wiring this:
+      the encoder's extradata-dispatch `match` had a `_ => extract_h264` catch-all that would have
+      silently misapplied H.264 extraction to any future non-H.264/HEVC codec. **ProRes RAW/RAW
+      HQ are permanently unsupported** — encode has zero API surface at all (camera-capture-only);
+      decode has a real but separate `VTRAWProcessingSession` API this stage does not implement
+      (RAW output is pre-demosaic sensor data, not a `CVPixelBuffer` this crate's `VideoFrame`
+      model can represent). **Zero compile verification as authored**; see
+      `mediaway-encoder/adr/apple/0006-videotoolbox-prores-encode.md` and
+      `mediaway-decoder/adr/apple/0006-videotoolbox-prores-decode.md`.
 
 ### 3. Media Containers, Protocols & Image Formats
 - [ ] **Static Image Containers & Codecs**: Expand facade traits and container cores to support image formats (**AVIF**, **HEIC**, **WebP**, **PNG**, **JPEG**, **GIF**).

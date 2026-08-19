@@ -14,6 +14,10 @@
   constants exist anywhere in the generated `objc2-video-toolbox` bindings (confirmed by
   grepping the whole tree); `VideoToolbox` exposes no public compression API for either codec.
   See `adr/apple/0002-videotoolbox-hevc-encode.md`.
+- ProRes: 6 profiles (`CodecKind::ProRes422Proxy`…`ProRes4444Xq`, own `CMVideoCodecType` each, no
+  shared `kVTProfileLevel_ProRes*`), reuses this same session/CPU-upload/Zero-Copy machinery
+  unchanged — see [apple-prores](apple-prores.md) for the full writeup. ProRes RAW is a
+  **separate** permanent gap (camera-capture-only, no compression API at all).
 - HEVC extradata: `CMVideoFormatDescriptionGetHEVCParameterSetAtIndex` extracts VPS+SPS+PPS,
   built into an `hvcC` via the new `iso_bmff::bitstream::hevc::to_hvcc` (mirrors H.264's
   `to_avcc` reuse below, generalized from 2 parameter-set types to 3). Extraction dispatch lives

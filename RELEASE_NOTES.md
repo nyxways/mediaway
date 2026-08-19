@@ -45,6 +45,22 @@
   **Zero compile verification as authored**. See
   `crates/mediaway-encoder/adr/apple/0005-audiotoolbox-opus-encode.md` and
   `crates/mediaway-decoder/adr/apple/0005-audiotoolbox-opus-decode.md`.
+- `mediaway-common::CodecKind`: six new ProRes variants (`ProRes422Proxy`/`ProRes422Lt`/
+  `ProRes422`/`ProRes422Hq`/`ProRes4444`/`ProRes4444Xq`). `mediaway-encoder::apple`/
+  `mediaway-decoder::apple`: ProRes encode/decode via `VideoToolbox` `VTCompressionSession`/
+  `VTDecompressionSession`, reusing the existing H.264/HEVC session/callback/Zero-Copy/CPU-upload
+  machinery entirely unchanged (ProRes is unconditionally all-intra with no in-band parameter
+  sets, architecturally simpler than H.264/HEVC here). `VideoEncoderConfig::gop_size`/
+  `bitrate_bps` are silently unused for ProRes (no corresponding `VideoToolbox` property exists).
+  Decode needs no config record at all (new `format_desc::create_raw_no_extension`, unlike
+  VP9/AV1's extension-atom path) — CPU readback still downsamples to NV12, a real quality loss
+  from ProRes's native higher bit depth/chroma (Zero-Copy output unaffected). **ProRes RAW/RAW HQ
+  are permanently unsupported** (encode: no compression API at all; decode: needs a separate
+  unimplemented `VTRAWProcessingSession`). Also fixed a real pre-existing bug: the encoder's
+  extradata-extraction dispatch had a silent H.264-fallback catch-all for any non-HEVC codec.
+  **Zero compile verification as authored**. See
+  `crates/mediaway-encoder/adr/apple/0006-videotoolbox-prores-encode.md` and
+  `crates/mediaway-decoder/adr/apple/0006-videotoolbox-prores-decode.md`.
 
 - `mediaway-encoder::apple`: HEVC encode (`kVTProfileLevel_HEVC_Main_AutoLevel`, CPU NV12
   upload, `hvcC` extradata via a new `iso_bmff::bitstream::hevc` module mirroring the existing

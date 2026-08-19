@@ -263,7 +263,7 @@ OS codec APIs (WMF, WebCodecs, VA-API, …) fed with CPU buffers (upload may app
 | HEVC / H.265 | ✅ / ✅ | ❌ / ✅ | 🆗 / 🆗 | 🆗 / 🆗 | 👻      |
 | AV1          | 🛠️ / ✅ | ✅      | ❌ / 🆗 | ❌ / 🆗 | 👻      |
 | VP9          | ✅ / ✅ | ✅      | 🆗 / 🆗 | ❌ / 🆗 | 👻      |
-| ProRes       | 👻       | 👻       | 👻    | 👻    | 👻      |
+| ProRes       | 👻       | 👻       | 👻    | 🆗 / 🆗 | 👻      |
 | AAC          | 🆗 / 👻 | 🆗       | 🛠️   | 🆗 / 🆗 | 👻      |
 | Opus         | ✅ / ✅ | 🆗      | 🛠️   | 🆗 / 🆗 | 👻      |
 
@@ -280,7 +280,7 @@ Same OS APIs with GPU surfaces (`GpuBufferHandle`, DXGI, …). Video only — au
 | HEVC / H.265 | 🆗 / 🆗  | 🆗 / 🛠️ | 🛠️   | 🆗 / 🆗 | 👻      |
 | AV1          | 🆗 / 🆗  | 🆗 / 🛠️ | 🛠️   | ❌ / 🆗 | 👻      |
 | VP9          | 🆗 / 🆗  | 🆗 / 🛠️ | 🛠️   | ❌ / 🆗 | 👻      |
-| ProRes       | 👻      | 👻  | 👻    | 👻    | 👻      |
+| ProRes       | 👻      | 👻  | 👻    | 🆗 / 🆗 | 👻      |
 
 
 Detail: `mediaway-encoder::{windows, web, apple}` (`windows` = WMF + DX11 Zero-Copy; `web` = WebCodecs + WebGPU; `apple` = VideoToolbox + `CVPixelBuffer` Zero-Copy).
@@ -298,6 +298,7 @@ Adapters: [`mediaway`](crates/mediaway/README.md) `wgpu` module 🆗 (DX12 ↔ W
 | HEVC / H.265 | 🆗 / 🆗 | ✅ / 🆗 | ✅ / ✅ | 🆗 / 🆗 |
 | AV1          | 🆗 / 🆗 | ✅ / 🆗 | ❌ / ✅ | ❌ / 🆗 |
 | VP9          | 🆗 / 🆗 | 👻    | 👻     | ❌ / 🆗 |
+| ProRes       | 👻     | 👻    | 👻     | 🆗 / 🆗 |
 
 
 Detail: [`mediaway`](crates/mediaway/README.md) `wgpu` module · `mediaway-encoder::{windows, vulkan, apple}` · `mediaway-decoder::{windows, vulkan, apple}`.
@@ -309,16 +310,13 @@ Detail: [`mediaway`](crates/mediaway/README.md) `wgpu` module · `mediaway-encod
 - **NVIDIA** — `mediaway-encoder::nvenc` ([`mediaway-encoder`](crates/mediaway-encoder/README.md)), **hardware-verified** H.264/HEVC/AV1 CPU-upload encode.
 - **Intel** — `mediaway-encoder::quicksync` ([`mediaway-encoder`](crates/mediaway-encoder/README.md)), **hardware-verified** H.264/HEVC encode; AV1 is ❌ (no hardware support on this iGPU generation).
 - **AMD** — `mediaway-encoder::amf` ([`mediaway-encoder`](crates/mediaway-encoder/README.md)), `shiguredo_amf`-backed H.264 CPU-upload encode, Linux `x86_64` only — 🆗 compiles / compile-verified (WSL2 Linux `x86_64`), **zero real AMD GPU/driver hardware verification** (none available in this workspace).
-- **Apple** — no separate vendor SDK exists (unlike NVENC/AMF/QuickSync, which sit apart from the OS's own video API). `VideoToolbox` **is** both the OS integration path *and* the hardware encode path simultaneously — checked directly against the `objc2-video-toolbox` bindings, there is no lower-level Apple encode API this table's "separate from OS" framing could point to. See the OS · CPU table above for Apple's real marks (H.264/HEVC 🆗, AV1/VP9 encode ❌ — no `VideoToolbox` compression API for either).
 
-| Codec        | NVIDIA | AMD | Intel | Apple | Qualcomm |
-| ------------ | ------ | --- | ----- | ----- | -------- |
-| H.264 / AVC  | ✅     | 🆗 | ✅   | 👻*   | 👻       |
-| HEVC / H.265 | ✅    | 🆗 | ✅   | 👻*   | 👻       |
-| AV1          | ✅    | 🆗 | ❌   | 👻*   | 👻       |
-| VP9          | 👻     | 👻  | 👻    | 👻*   | 👻       |
-
-\* Apple: out of scope for this table, not "not gotten to yet" — see the Apple bullet above.
+| Codec        | NVIDIA | AMD | Intel | Qualcomm |
+| ------------ | ------ | --- | ----- | -------- |
+| H.264 / AVC  | ✅     | 🆗 | ✅   | 👻       |
+| HEVC / H.265 | ✅    | 🆗 | ✅   | 👻       |
+| AV1          | ✅    | 🆗 | ❌   | 👻       |
+| VP9          | 👻     | 👻  | 👻    | 👻       |
 
 
 ### CPU / SW

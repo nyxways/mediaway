@@ -89,7 +89,21 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
       (`mediaway-decoder/adr/vulkan/0001-vulkan-video-decode.md`'s 2026-08-05 addendum).
 - [ ] **Vulkan AV1 Encode/Decode**: encode is structurally hardware-verified but every frame's
       OBU output is invalid — confirmed driver-maturity limitation, not a Mediaway bug; AV1
-      decode has not been started.
+      decode has not been started on this backend. (VA-API/Linux AV1 `KEY_FRAME`-only decode
+      landed separately, compile+test-verified, zero real-hardware verification — see
+      `mediaway-decoder/adr/linux/0005-vaapi-av1-key-frame-decode.md`.)
+- [x] **VA-API/Linux VP9 Encode/Decode**: implemented, WSL2 compile+clippy+test-verified —
+      encode is **not** blocked (unlike AV1: `cros-libva` VP9 encode structs are plain field
+      bags, the driver synthesizes headers itself, confirmed via `FFmpeg`'s own
+      `vaapi_encode_vp9.c`), but real-world VP9 VA-API *encode* driver support is narrow (i965
+      only, per that same `FFmpeg` comment) — a compile/test-verified-only addition. Decode
+      scope is `KEY_FRAME` + general `INTER_FRAME` (no artificial reference-count restriction —
+      VP9's `reference_frames[8]` array is always fully populated regardless of
+      active-reference count), a spec-derived parser cross-checked against the real primary VP9
+      spec text (`pdftotext`-extracted this session, correcting an earlier "`su(n)`" assumption
+      to the real `s(n)` shape). **Zero real-hardware verification** on either side. See
+      `mediaway-encoder/adr/linux/0004-vaapi-vp9-key-frame-and-inter-gop.md` and
+      `mediaway-decoder/adr/linux/0004-vaapi-vp9-key-frame-and-inter-decode.md`.
 - [x] **Windows CPU Decode Bug**: `WindowsVideoDecoder`'s `CpuFramesOk` H.264 path — both real
       bugs (AVCC/Annex-B framing mismatch, and a test double-free misattributed as a decoder
       abort) found and fixed 2026-08-05

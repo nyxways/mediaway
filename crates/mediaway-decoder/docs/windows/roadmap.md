@@ -192,7 +192,69 @@ honestly (`DecodeError::Unsupported` from `open_sw_decoder`, no fabricated fallb
       parsing should become a shared sans-io crate (overlaps with
       `mediaway-decoder-linux`'s VA-API needs); no POC-based display-order reorder
       ("bumping") buffer yet — output is in decode order.
-- [ ] HEVC, AV1 — not started; separate follow-up tasks per ADR-0002.
+- [x] **HEVC implemented, sans-io-verified only** ([ADR-0004](../adr/windows/0004-d3d12-hevc-single-forward-ref-p-slice-decode.md)):
+      single-forward-reference P-slice + I/IDR, Main profile, 8-bit 4:2:0, single-tile/
+      no-WPP. New files only under `src/windows/d3d12_video_decode/`: `hevc.rs` (open-time
+      support query), `hevc_vps_sps_pps.rs` (SPS/PPS + 2-byte NAL header parse — no VPS
+      parsing needed, `DXVA_PicParams_HEVC` has no profile/tier/level field at all, so
+      `profile_tier_level()`'s bits are skipped, not decoded, and there is no `hevc_ptl.rs`
+      submodule), `hevc_slice.rs` (slice-segment-header + short-term RPS, ported from
+      `crate::vulkan::hevc_slice`, extended with `num_ref_idx_l0_active == 1` +
+      `NumPicTotalCurr == 1` scope checks the Vulkan source never needed), `hevc_poc.rs`
+      (POC, genuinely new — no HEVC MSB-cycle tracking existed anywhere in this workspace),
+      `hevc_refs.rs` (RPS-application DPB eviction + `RefPicList`/`RefPicSetStCurrBefore`/
+      `After` construction, also new), `hevc_pic_params.rs` (hand-defined DXVA structs,
+      ground-truthed against the Wine `dxva.h` mirror, same absent-from-`windows`-crate
+      situation H.264 hit), `hevc_ops.rs`/`hevc_decoder.rs` (parallel to `ops.rs`/the
+      top-level `Session`/`D3d12VideoDecoder` — real, acknowledged duplication, deliberate
+      per ADR-0004 to avoid touching H.264's still-unresolved-hang baseline files).
+      `dpb.rs`/`setup.rs`/`util.rs` reused unchanged, confirming ADR-0004's own claim they
+      were already codec-generic. 42 new sans-io unit tests pass (SPS/PPS parsing, slice/RPS
+      parsing incl. the single-forward-reference rejections, POC MSB-wrap, DPB eviction,
+      DXVA struct packing); `cargo check`/`clippy --all-targets -- -D warnings` clean.
+      **Zero real hardware verification, deliberately** — the new hardware-gated
+      integration test (`d3d12_video_decode_hevc_tests.rs`, same `..._or_skip` soft-skip
+      convention as the H.264 one) is written and compiles but was never run: real GPU-hang
+      risk on completely unverified code, compounding the still-unresolved H.264 D3D12
+      decode TDR (see above). `RefPicSetStCurrBefore`/`After` index semantics
+      (byte-indices into `RefPicList[15]`, ADR-0004's own believed-not-confirmed
+      assumption) and the exact `DXVA_PicParams_HEVC` union layout past the first
+      coding-flags union remain unconfirmed against a primary source (`libavcodec/
+      dxva2_hevc.c`) — first tasks before any real hardware attempt.
+- [x] **AV1 implemented, sans-io-verified only** ([ADR-0005](../adr/windows/0005-d3d12-av1-key-frame-decode.md)):
+      `KEY_FRAME`-only, Main profile, 8-bit 4:2:0, single-tile — no reference-frame use of
+      any kind, so no `av1_refs.rs`/POC module at all (`frame_refs[7]`/
+      `RefFrameMapTextureIndex[8]` are always the trivial all-`0xFF` state). New files only
+      under `src/windows/d3d12_video_decode/`: `av1.rs` (open-time support query), `av1_obu.rs`
+      (`leb128()`/`obu_header()` read-side + `split_obus`, AV1's length-prefixed OBU framing —
+      **not** `mediaway_sw::h264::split_annex_b`), `av1_sequence_header.rs`/`av1_frame_header.rs`
+      (`sequence_header_obu()`/`uncompressed_header()`/`tile_info()`/`quantization_params()`/
+      `loop_filter_params()` parsing, cross-checked field-by-field against
+      `mediaway-encoder-windows`'s `bitstream_av1.rs::write_sequence_header`/
+      `write_frame_header`'s own inference-rule comments), `av1_pic_params.rs` (hand-defined
+      `DXVA_PicParams_AV1`/`DXVA_PicEntry_AV1`/`DXVA_Tile_AV1` `repr(C)` structs, ground-truthed
+      against Microsoft's own official Windows Driver DDI reference — fetched directly this
+      pass, a **primary** source, stronger footing than H.264/HEVC's own Wine-mirror
+      ground-truthing), `av1_decoder.rs`/`av1_ops.rs` (parallel to `ops.rs`/`hevc_ops.rs` — real,
+      acknowledged duplication, same ADR-0004 precedent; **no** `INVERSE_QUANTIZATION_MATRIX`
+      frame argument, since `DXVA_PicParams_AV1.quantization` carries `qm_y`/`qm_u`/`qm_v`
+      inline, a genuine structural difference from H.264/HEVC). Real, deliberate scope
+      narrowing beyond ADR-0005's own literal text (documented in-module, mirrors HEVC's own
+      CRA-rejection precedent): `timing_info_present_flag`/`initial_display_delay_present_flag`/
+      `frame_id_numbers_present_flag` all rejected, `operating_points_cnt_minus_1` must be `0`,
+      and `tile_info()` supports `uniform_tile_spacing_flag == 1` only. `dpb.rs`/`setup.rs`/
+      `util.rs` reused unchanged. 43 new sans-io unit tests pass (OBU/leb128 framing,
+      sequence-header/frame-header parsing incl. every scope-cut rejection, DXVA struct
+      packing/sizing); `cargo check`/`clippy --all-targets -- -D warnings`/`fmt --check` clean.
+      **Zero real hardware verification, deliberately** — the new hardware-gated integration
+      test (`d3d12_video_decode_av1_tests.rs`, same `..._or_skip` soft-skip convention) is
+      written and compiles but was never run: real GPU-hang risk on completely unverified code,
+      **doubly cautioned** beyond HEVC's own precedent — this crate family's own D3D12 AV1
+      *encoder* output is on record (`docs/standards/registry.toml`'s `av1-bitstream-spec`
+      entry) as not confirmed decodable by `libdav1d`, so even a future, separately-consented
+      hardware attempt may have no valid input bitstream to chain from at all (ADR-0005 Open
+      Question #1) — resolving that is the first task before any real hardware attempt, not
+      this decoder's own logic.
 - [ ] Integration pass: make the module `pub`, wire into `WindowsVideoDecoder`'s
       `Backend` dispatch, decide the `GpuBufferHandle`/`DecodeError` cross-crate
       questions above.

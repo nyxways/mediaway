@@ -4,20 +4,23 @@
 //!   Constrained Baseline `VAEntrypointEncSlice` session (CQP rate control) +
 //!   `upload_cpu_nv12` (copy) — every pushed frame is encoded as an independent IDR
 //!   intra frame (no GOP / P-frame reference management this stage).
-//! - [`VideoInputPreference::ZeroCopyGpu`]: not implemented — returns
-//!   [`EncodeError::Unsupported`]. Deferred to a Zero-Copy DMA-BUF stage; see
-//!   [`docs/roadmap.md`](../docs/roadmap.md).
+//! - [`VideoInputPreference::ZeroCopyGpu`]: DMA-BUF import via `vaCreateSurfaces`
+//!   (`vaapi::dmabuf`) — no CPU upload; a caller-supplied
+//!   [`mediaway_common::GpuBufferHandle::DmaBuf`] surface is imported and encoded directly.
+//!   Forces all-IDR encode for the session (no GOP / P-frame references) — each imported
+//!   surface is single-use, never held across calls; see
+//!   `adr/linux/0006-vaapi-dmabuf-zero-copy-input.md`.
 //!
 //! Policy: [ADR-0001](../adr/0001-vaapi-cros-libva-h264-cpu-upload.md) — binding choice
 //! (`cros-libva`), scope, and the **zero real-hardware verification** caveat for this crate
 //! as authored (compile-verified on Linux only; no VA-API driver was available to run
 //! against). Read that caveat before relying on this backend.
 
-// Unlike `mediaway-encoder-windows`, this crate writes no raw FFI `unsafe` of its own: all
-// VA-API calls go through `cros-libva`'s safe wrapper layer (`Display`/`Config`/`Context`/
-// `Surface`/`Picture`/`Buffer`). See ADR-0001 for why that safe surface is sufficient for
-// this crate's scope.
-#![forbid(unsafe_code)]
+// Most VA-API calls go through `cros-libva`'s safe wrapper layer (`Display`/`Config`/`Context`/
+// `Surface`/`Picture`/`Buffer`) — see ADR-0001. `#[allow]`, not `#[forbid]`, because
+// `vaapi::dmabuf` (ADR-0003) must reconstruct a `BorrowedFd` from a caller-supplied raw fd
+// number, which `std` itself only exposes as an `unsafe fn` — see that module's doc comment.
+#![allow(unsafe_code)]
 
 #[cfg(not(feature = "video"))]
 compile_error!("enable the `video` feature on mediaway-encoder-linux");
@@ -30,7 +33,8 @@ use mediaway_common::{Bytes, Packet, StreamInfo};
 #[cfg(target_os = "linux")]
 mod vaapi;
 
-/// Linux video encode session (VA-API H.264 when opened on Linux).
+/// Linux video encode session (VA-API H.264/HEVC/VP9 when opened on Linux, unified behind
+/// `vaapi::VaapiVideoEncoder`). AV1 is designed but blocked — see that ADR.
 pub struct LinuxVideoEncoder {
     #[cfg(target_os = "linux")]
     inner: Option<vaapi::VaapiVideoEncoder>,
@@ -43,12 +47,13 @@ impl LinuxVideoEncoder {
     ///
     /// # Errors
     ///
-    /// Returns [`EncodeError::Unsupported`] when the codec/input path is not wired
-    /// (currently: anything but H.264 + [`VideoInputPreference::CpuUploadOk`]), or
-    /// [`EncodeError::Backend`] when no VA-API display/driver is available (expected in
+    /// Returns [`EncodeError::Unsupported`] when the codec/input path is not wired (currently:
+    /// anything but H.264/HEVC/VP9 + [`VideoInputPreference::CpuUploadOk`]/[`VideoInputPreference::ZeroCopyGpu`]),
+    /// or [`EncodeError::Backend`] when no VA-API display/driver is available (expected in
     /// any environment without a real `/dev/dri/renderD*` VA-API device — see ADR-0001).
     ///
     /// [`VideoInputPreference::CpuUploadOk`]: crate::VideoInputPreference::CpuUploadOk
+    /// [`VideoInputPreference::ZeroCopyGpu`]: crate::VideoInputPreference::ZeroCopyGpu
     #[cfg(target_os = "linux")]
     pub fn open(config: &VideoEncoderConfig) -> Result<Self, EncodeError> {
         let inner = vaapi::VaapiVideoEncoder::open(config)?;

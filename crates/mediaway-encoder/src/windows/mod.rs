@@ -479,8 +479,31 @@ mod tests {
                 assert!(!p.payload.is_empty());
                 packets += 1;
             }
+            assert_av1c_when_av1_produced_packets(codec, packets, &enc);
             eprintln!("{codec:?} cpu packets={packets}");
         }
+    }
+
+    /// A real AV1 encoder MFT was found and produced ≥1 packet — assert the `av1C` fix
+    /// (ADR-0010) actually landed, not just "some bytes came out". No-op for other codecs
+    /// or when zero packets were produced (honest skip already logged by the caller).
+    fn assert_av1c_when_av1_produced_packets(
+        codec: CodecKind,
+        packets: usize,
+        enc: &WindowsVideoEncoder,
+    ) {
+        if codec != CodecKind::Av1 || packets == 0 {
+            return;
+        }
+        let extra_data = enc.stream_info().extra_data();
+        assert!(
+            !extra_data.is_empty(),
+            "AV1 av1C extra_data must be non-empty"
+        );
+        assert_eq!(
+            extra_data[0], 0x81,
+            "AV1 av1C marker/version byte (marker=1, version=1)"
+        );
     }
 
     #[test]
@@ -579,7 +602,13 @@ mod tests {
                 continue;
             }
             let _ = enc.flush();
-            eprintln!("{codec:?} dx11 open+push ok");
+            let mut packets = 0usize;
+            while let Ok(Some(p)) = enc.poll_packet() {
+                assert!(!p.payload.is_empty());
+                packets += 1;
+            }
+            assert_av1c_when_av1_produced_packets(codec, packets, &enc);
+            eprintln!("{codec:?} dx11 open+push ok, packets={packets}");
         }
     }
 

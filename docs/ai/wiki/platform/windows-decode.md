@@ -37,10 +37,9 @@ two real bugs, both fixed — both tests un-`#[ignore]`d:
   `DecodeFrame1`) alongside WMF, self-contained and **not** wired into `WindowsVideoDecoder`
   yet (`mod d3d12_video_decode;`, non-`pub`, same trick ADR-0007's encode module used). Unlike
   WMF, the app parses the bitstream itself (DXVA-shaped picture-parameter buffers per codec).
-- Scope (broader than the encode-side D3D12 precedent and the Linux VA-API sibling): **general
-  GOP** (P/B refs, real DPB) across H.264 + HEVC + AV1 from the start, not IDR-only. **H.264
-  implemented this round** (real SPS/PPS/slice/POC-types-0/1/2/ref-list/sliding-window-DPB
-  logic, `src/d3d12_video_decode/`); HEVC/AV1 are follow-up addenda.
+- Scope: general GOP (P/B refs, real DPB) for **H.264** (real SPS/PPS/slice/POC-types-0/1/2/
+  ref-list/sliding-window-DPB logic); HEVC narrowed to single-forward-ref P-slice; AV1
+  narrowed to `KEY_FRAME`-only (no reference use at all) — see § below for both.
 - 45 pure sans-io unit tests pass (parsing, POC, ref-list construction, DPB eviction — no
   hardware needed); `cargo check`/`clippy` clean.
 - **Paused, not hardware-verified — real GPU hang, not a soft error**: `windows` crate 0.62.2
@@ -71,12 +70,14 @@ two real bugs, both fixed — both tests un-`#[ignore]`d:
   stream, both not yet tried). Struct field order/layout re-confirmed correct separately
   (Wine `dxva.h` mirror) — no layout bug.
 - `GpuBufferHandle::DirectX12` has no `subresource` field — Zero-Copy output uses a local
-  `DecodedOutput` type instead; flagged as a cross-crate follow-up.
-- DPB = one fixed-size NV12 texture array; Zero-Copy output points at DPB subresources
-  directly; callers must release promptly or get a backpressure error (FFmpeg hwaccel
-  surface-pool model), never a silent overwrite.
+  `DecodedOutput` type instead; flagged as a cross-crate follow-up. DPB = one fixed-size
+  NV12 texture array; callers must release outstanding handles promptly or get a
+  backpressure error (FFmpeg hwaccel surface-pool model), never a silent overwrite.
 - ADR: [0002](../../../../crates/mediaway-decoder/adr/windows/0002-d3d12-native-video-decode.md)
-  (2026-07-30 addendum has the full hang-debugging trail).
+  (2026-07-30 addendum: full hang-debugging trail). HEVC/AV1: parallel `hevc*.rs`/`av1*.rs`
+  files, **implemented, sans-io-verified only** — [HEVC](windows-decode-d3d12-hevc.md)
+  (ADR-0004), [AV1](windows-decode-d3d12-av1.md) (ADR-0005). Do not run any of the three
+  D3D12 decode hardware tests.
 
 ## wgpu decode interop bridge (implemented — ADR-0003)
 

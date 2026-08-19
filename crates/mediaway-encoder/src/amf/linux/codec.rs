@@ -6,11 +6,13 @@
 use crate::EncodeError;
 use mediaway_common::{CodecKind, Rational};
 
-/// Whether this backend's video encode path accepts `codec` (H.264 only this stage — see
-/// ADR-0002 § Scope).
+/// Whether this backend's video encode path accepts `codec` (H.264 / HEVC / AV1 — see
+/// [ADR-0003](../../adr/amf/0003-amf-linux-hevc-av1-codec-dispatch.md)). VP9 stays
+/// unsupported: `shiguredo_amf`'s own `CodecConfig` has no VP9 variant to dispatch to (ADR-0003
+/// § Context), not a Mediaway-side restriction.
 #[must_use]
 pub(super) const fn is_supported_video_codec(codec: CodecKind) -> bool {
-    matches!(codec, CodecKind::H264)
+    matches!(codec, CodecKind::H264 | CodecKind::Hevc | CodecKind::Av1)
 }
 
 /// `EncoderConfig::framerate_num`/`framerate_den` from a seconds-per-tick [`Rational`]

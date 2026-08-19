@@ -5,9 +5,12 @@
 //!   per-picture `vaBeginPicture`/`vaRenderPicture`/`vaEndPicture`/`vaSyncSurface`), then NV12
 //!   read back via `vaCreateImage`/`vaGetImage`/`vaMapBuffer` into an owned `Bytes` — no
 //!   DMA-BUF export, so this is honest CPU decode, not a disguised Zero-Copy path.
-//! - [`VideoOutputPreference::ZeroCopyGpu`]: not implemented — returns
-//!   [`DecodeError::Unsupported`]. Deferred to a Zero-Copy DMA-BUF stage; see
-//!   [`docs/roadmap.md`](../docs/roadmap.md).
+//! - [`VideoOutputPreference::ZeroCopyGpu`]: DMA-BUF export via `vaExportSurfaceHandle`
+//!   (`vaapi::dmabuf`) — no CPU readback; the decoded surface's fd + DRM plane layout is
+//!   returned as [`mediaway_common::GpuBufferHandle::DmaBuf`]. No consumer of that handle
+//!   exists anywhere in this workspace yet (no Linux `mediaway-wgpu` bridge) — see
+//!   [`docs/roadmap.md`](../docs/roadmap.md) and
+//!   `adr/linux/0006-vaapi-dmabuf-zero-copy-output.md`.
 //!
 //! Policy: [ADR-0001](../adr/0001-vaapi-h264-cpu-out.md) — binding choice (`cros-libva`),
 //! decode scope (IDR pictures only, single slice per picture, `pic_order_cnt_type == 0`,
@@ -34,11 +37,12 @@ use mediaway_common::{Bytes, Packet, StreamInfo};
 #[cfg(target_os = "linux")]
 mod vaapi;
 
-/// Linux video decode session (VA-API H.264 when opened on Linux).
+/// Linux video decode session (VA-API H.264/HEVC/AV1/VP9 when opened on Linux, unified behind
+/// `vaapi::VaapiVideoDecoder`).
 #[cfg(feature = "video")]
 pub struct LinuxVideoDecoder {
     #[cfg(target_os = "linux")]
-    inner: Option<vaapi::VaapiH264Decoder>,
+    inner: Option<vaapi::VaapiVideoDecoder>,
     #[cfg(not(target_os = "linux"))]
     _priv: (),
 }
@@ -49,15 +53,16 @@ impl LinuxVideoDecoder {
     ///
     /// # Errors
     ///
-    /// Returns [`DecodeError::Unsupported`] when the codec/output path is not wired
-    /// (currently: anything but H.264 + [`VideoOutputPreference::CpuFramesOk`]), or
-    /// [`DecodeError::Backend`] on VA-API failure. No `/dev/dri/renderD*` VA-API display is
-    /// expected in most CI/dev environments — see ADR-0001's hardware caveat.
+    /// Returns [`DecodeError::Unsupported`] when the codec/output path is not wired (currently:
+    /// anything but H.264/HEVC (single-forward-reference)/AV1 `KEY_FRAME`-only/VP9 +
+    /// [`VideoOutputPreference::CpuFramesOk`]), or [`DecodeError::Backend`] on VA-API failure.
+    /// No `/dev/dri/renderD*` VA-API display is expected in most CI/dev environments — see
+    /// ADR-0001's hardware caveat.
     ///
     /// [`VideoOutputPreference::CpuFramesOk`]: crate::VideoOutputPreference::CpuFramesOk
     #[cfg(target_os = "linux")]
     pub fn open(config: &VideoDecoderConfig) -> Result<Self, DecodeError> {
-        let inner = vaapi::VaapiH264Decoder::open(config)?;
+        let inner = vaapi::VaapiVideoDecoder::open(config)?;
         Ok(Self { inner: Some(inner) })
     }
 

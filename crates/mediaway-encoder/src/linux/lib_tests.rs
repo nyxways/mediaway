@@ -39,17 +39,20 @@ fn open_unsupported_codec_returns_unsupported_without_hardware() {
     ));
 }
 
-/// `VideoInputPreference::ZeroCopyGpu` is not implemented this stage (DMA-BUF surface import
-/// is deferred — ADR-0001 § Scope) and is rejected before touching hardware, so this is
-/// deterministic on every machine too.
+/// `VideoInputPreference::ZeroCopyGpu` DMA-BUF import is implemented (ADR-0003) — `open()` now
+/// reaches the same VA-API `Display::open()` probe as `CpuUploadOk`, so on a machine with no
+/// real `/dev/dri/renderD*` device this fails with [`EncodeError::Backend`], never the old
+/// unconditional [`EncodeError::Unsupported`] rejection.
 #[test]
-fn open_zero_copy_gpu_returns_unsupported_without_hardware() {
+fn open_zero_copy_gpu_no_longer_unconditionally_unsupported() {
     let mut cfg = tiny_h264_cfg();
     cfg.input = VideoInputPreference::ZeroCopyGpu;
-    assert!(matches!(
-        LinuxVideoEncoder::open(&cfg),
-        Err(EncodeError::Unsupported)
-    ));
+    let result = LinuxVideoEncoder::open(&cfg).map(|_| ());
+    assert_ne!(
+        result,
+        Err(EncodeError::Unsupported),
+        "ZeroCopyGpu is a supported input mode as of ADR-0003"
+    );
 }
 
 /// End-to-end through the public [`LinuxVideoEncoder`] wrapper (delegation to the inner VA-API
@@ -92,4 +95,110 @@ fn open_h264_cpu_upload_or_skip_without_hw() {
         packets += 1;
     }
     eprintln!("LinuxVideoEncoder packets={packets}");
+}
+
+/// ADR-0003: end-to-end through the public [`LinuxVideoEncoder`] wrapper for HEVC (delegation to
+/// `vaapi::VaapiVideoEncoder::Hevc`). **Expected to skip in the session that authored this
+/// crate** — see
+/// [`adr/linux/0003-vaapi-hevc-p-frame-gop.md`](../adr/linux/0003-vaapi-hevc-p-frame-gop.md)
+/// § Zero real-hardware verification and `vaapi::hevc_tests::vaapi_open_and_encode_or_skip_without_hw`
+/// for the lower-level equivalent.
+#[test]
+fn open_hevc_cpu_upload_or_skip_without_hw() {
+    let mut cfg = tiny_h264_cfg();
+    cfg.codec = mediaway_common::CodecKind::Hevc;
+    let mut enc = match LinuxVideoEncoder::open(&cfg) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("skip: LinuxVideoEncoder::open failed ({e:?}) — no VA-API display?");
+            return;
+        }
+    };
+
+    let nv12_len = 64 * 64 + (64 * 64) / 2;
+    let frame = VideoFrame {
+        pts: 0,
+        duration: 1,
+        width: 64,
+        height: 64,
+        format: mediaway_common::PixelFormat::Nv12,
+        storage: mediaway_common::VideoFrameStorage::Cpu {
+            data: Bytes::from(vec![0u8; nv12_len]),
+        },
+    };
+
+    if let Err(e) = enc.push_frame(&frame) {
+        eprintln!("skip: push_frame failed ({e:?})");
+        return;
+    }
+    let _ = enc.flush();
+
+    let mut packets = 0usize;
+    while let Ok(Some(p)) = enc.poll_packet() {
+        assert!(!p.payload.is_empty());
+        packets += 1;
+    }
+    eprintln!("LinuxVideoEncoder hevc packets={packets}");
+}
+
+const fn tiny_vp9_cfg() -> VideoEncoderConfig {
+    VideoEncoderConfig {
+        codec: mediaway_common::CodecKind::Vp9,
+        width: 64,
+        height: 64,
+        time_base: Rational::new(1, 30),
+        bitrate_bps: 500_000,
+        pixel_format: mediaway_common::PixelFormat::Nv12,
+        color_range: mediaway_common::ColorRange::Video,
+        input: VideoInputPreference::CpuUploadOk,
+        gpu_device: None,
+        gop_size: 1,
+        rate_control: None,
+        intra_refresh_period: None,
+    }
+}
+
+/// End-to-end through the public [`LinuxVideoEncoder`] wrapper for VP9. **Expected to skip in
+/// the session that authored this crate** — see
+/// [ADR-0004](../adr/linux/0004-vaapi-vp9-key-frame-and-inter-gop.md) § Real caveat found this
+/// session: even on real hardware, VP9 encode driver support is narrow (i965-only per `FFmpeg`'s
+/// own comment), so this is a real, additional possibility of an honest skip beyond the
+/// "no VA-API device at all" case every other backend in this folder carries.
+#[test]
+fn open_vp9_cpu_upload_or_skip_without_hw() {
+    let cfg = tiny_vp9_cfg();
+    let mut enc = match LinuxVideoEncoder::open(&cfg) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!(
+                "skip: LinuxVideoEncoder::open failed ({e:?}) — no VA-API VP9 encode config?"
+            );
+            return;
+        }
+    };
+
+    let nv12_len = 64 * 64 + (64 * 64) / 2;
+    let frame = VideoFrame {
+        pts: 0,
+        duration: 1,
+        width: 64,
+        height: 64,
+        format: mediaway_common::PixelFormat::Nv12,
+        storage: mediaway_common::VideoFrameStorage::Cpu {
+            data: Bytes::from(vec![0u8; nv12_len]),
+        },
+    };
+
+    if let Err(e) = enc.push_frame(&frame) {
+        eprintln!("skip: push_frame failed ({e:?})");
+        return;
+    }
+    let _ = enc.flush();
+
+    let mut packets = 0usize;
+    while let Ok(Some(p)) = enc.poll_packet() {
+        assert!(!p.payload.is_empty());
+        packets += 1;
+    }
+    eprintln!("LinuxVideoEncoder vp9 packets={packets}");
 }

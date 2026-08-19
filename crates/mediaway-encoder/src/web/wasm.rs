@@ -21,7 +21,7 @@ use web_sys::{
     VideoFrameBufferInit, VideoFrameInit, VideoPixelFormat,
 };
 
-use crate::web::chunks::EncodedVideoChunks;
+use crate::web::chunks::{EncodedAudioChunks, EncodedVideoChunks};
 use crate::web::config::{WebAudioOpenConfig, WebVideoOpenConfig};
 use crate::web::timestamp::timestamp_us_to_i32;
 
@@ -58,7 +58,9 @@ async fn video_codec_supported(codec: &str) -> bool {
     let Ok(frame) = black_nv12_frame(64, 64) else {
         return false;
     };
-    let ok = encode_frame_via(&frame, codec).await.is_ok();
+    let ok = encode_frame_via(&frame, codec, 64, 64, 500_000)
+        .await
+        .is_ok();
     frame.close();
     ok
 }
@@ -76,14 +78,14 @@ pub async fn is_webcodecs_video_codec_supported(codec: String) -> bool {
 }
 
 #[cfg(feature = "audio")]
-async fn audio_supported() -> bool {
+async fn audio_codec_supported(codec: &str, channels: u32, sample_rate: u32) -> bool {
     // `AudioEncoderConfig::new`'s web-sys signature is `(codec, number_of_channels,
     // sample_rate)` — NOT `(codec, sample_rate, number_of_channels)`. Swapped args here used
     // to build a nonsensical config (48,000 channels at 2 Hz), which `isConfigSupported`
     // correctly rejected — the real, deterministic reason `is_webcodecs_av_supported` always
     // reported unsupported, not the `VideoEncoder`/`AudioEncoder` `.close()` resource-hygiene
     // issue fixed alongside this.
-    let cfg = WebAudioEncoderConfig::new("mp4a.40.2", 2, 48_000);
+    let cfg = WebAudioEncoderConfig::new(codec, channels, sample_rate);
     let promise = AudioEncoder::is_config_supported(&cfg);
     // Same `{supported, config}` dictionary shape as `video_codec_supported` — see its
     // comment above.
@@ -92,6 +94,23 @@ async fn audio_supported() -> bool {
         .ok()
         .and_then(|v| v.get_supported())
         .unwrap_or(false)
+}
+
+#[cfg(feature = "audio")]
+async fn audio_supported() -> bool {
+    audio_codec_supported("mp4a.40.2", 2, 48_000).await
+}
+
+/// Probe `WebCodecs` support for an audio codec string (`mp4a.40.2`, `opus`, ...) at a given
+/// channel count / sample rate.
+#[cfg(feature = "audio")]
+#[wasm_bindgen]
+pub async fn is_webcodecs_audio_codec_supported(
+    codec: String,
+    channels: u32,
+    sample_rate: u32,
+) -> bool {
+    audio_codec_supported(&codec, channels, sample_rate).await
 }
 
 /// Encode one black NV12 frame + short silence via WebCodecs, mux to fMP4, return bytes.
@@ -107,11 +126,47 @@ pub async fn webcodecs_av_fmp4_smoke() -> Result<Vec<u8>, JsValue> {
 }
 
 /// Probe whether this browser can source a WebCodecs `VideoFrame` from a WebGPU-backed
-/// canvas: WebCodecs H.264 support, plus `navigator.gpu` and a grantable adapter/device.
+/// canvas for `codec`: WebCodecs support for that codec string, plus `navigator.gpu` and a
+/// grantable adapter/device.
+#[cfg(feature = "video")]
+async fn webgpu_video_codec_supported(codec: &str) -> bool {
+    video_codec_supported(codec).await && request_gpu_device().await.is_ok()
+}
+
+/// H.264 convenience wrapper over [`is_webgpu_video_codec_supported`].
+///
+/// Kept additive (rather than replaced) to preserve this existing zero-arg entry point's
+/// callers, mirroring how [`encode_video_frames`] was added alongside the pre-existing fixed
+/// H.264 CPU path instead of replacing it. See
+/// `crates/mediaway-encoder/adr/web/0001-webgpu-multi-codec-video-encode.md` Open Question #3.
 #[cfg(feature = "video")]
 #[wasm_bindgen]
 pub async fn is_webgpu_video_frame_supported() -> bool {
-    video_supported().await && request_gpu_device().await.is_ok()
+    webgpu_video_codec_supported("avc1.42E01E").await
+}
+
+/// Probe `WebCodecs` + `WebGPU` support for a video codec string sourced from a
+/// WebGPU-backed canvas.
+///
+/// Accepts `avc1…`, `hev1…`/`hvc1…`, `av01…`, `vp09…`. Generalizes
+/// [`is_webgpu_video_frame_supported`] to arbitrary codecs, mirroring
+/// [`is_webcodecs_video_codec_supported`]'s relationship to the CPU path's `video_supported`.
+#[cfg(feature = "video")]
+#[wasm_bindgen]
+pub async fn is_webgpu_video_codec_supported(codec: String) -> bool {
+    webgpu_video_codec_supported(&codec).await
+}
+
+/// Encode one WebGPU-resident frame via `WebCodecs` for `codec`, mux to fMP4, return bytes.
+#[cfg(feature = "video")]
+async fn gpu_video_fmp4_smoke_for(codec: &str) -> Result<Vec<u8>, JsValue> {
+    if !webgpu_video_codec_supported(codec).await {
+        return Err(JsValue::from_str(
+            "WebCodecs codec or WebGPU device not supported",
+        ));
+    }
+    let vchunk = encode_video_frame_from_webgpu_canvas_impl(codec, 64, 64, 500_000).await?;
+    mux_video_chunk(codec, &vchunk)
 }
 
 /// Encode one WebGPU-resident frame via WebCodecs, mux to fMP4, return bytes. Video-only
@@ -119,16 +174,26 @@ pub async fn is_webgpu_video_frame_supported() -> bool {
 /// "`GPUTexture` → encode Zero-Copy" — see [`webgpu_canvas_frame`] for the honest cost
 /// contract (GPU-resident, no CPU readback in the Mediaway path; not an unconditional
 /// Zero-Copy guarantee, since a raw `GPUTexture` cannot be passed to `VideoFrame` directly).
+///
+/// H.264 convenience wrapper over [`webcodecs_gpu_video_fmp4_smoke_with_codec`] — kept
+/// additive for the same reason as [`is_webgpu_video_frame_supported`].
 #[cfg(feature = "video")]
 #[wasm_bindgen]
 pub async fn webcodecs_gpu_video_fmp4_smoke() -> Result<Vec<u8>, JsValue> {
-    if !is_webgpu_video_frame_supported().await {
-        return Err(JsValue::from_str(
-            "WebCodecs H.264 or WebGPU device not supported",
-        ));
-    }
-    let vchunk = encode_one_h264_frame_from_webgpu_canvas().await?;
-    mux_video_chunk(&vchunk)
+    gpu_video_fmp4_smoke_for("avc1.42E01E").await
+}
+
+/// Generalizes [`webcodecs_gpu_video_fmp4_smoke`] to an arbitrary `WebCodecs` video `codec`
+/// string (`avc1…`, `hev1…`/`hvc1…`, `av01…`, `vp09…`).
+///
+/// # HEVC framing — unverified
+///
+/// See [`mux_video_chunk`]'s doc comment: whether this actually produces a correct `hvc1`
+/// fMP4 sample for HEVC depends on an open, real-browser-only question (ADR-0001 §2).
+#[cfg(feature = "video")]
+#[wasm_bindgen]
+pub async fn webcodecs_gpu_video_fmp4_smoke_with_codec(codec: String) -> Result<Vec<u8>, JsValue> {
+    gpu_video_fmp4_smoke_for(&codec).await
 }
 
 fn iso_err(error: &Error) -> JsValue {
@@ -142,17 +207,27 @@ fn take_js_err(cell: &RefCell<Option<JsValue>>) -> Result<(), JsValue> {
 #[cfg(feature = "video")]
 async fn encode_one_h264_frame() -> Result<Vec<u8>, JsValue> {
     let frame = black_nv12_frame(64, 64)?;
-    encode_frame_via(&frame, "avc1.42E01E").await
+    encode_frame_via(&frame, "avc1.42E01E", 64, 64, 500_000).await
 }
 
-/// Configure a `VideoEncoder` for `codec`, encode one `frame`, flush, and drain the first
-/// chunk.
+/// Configure a `VideoEncoder` for `codec`/`width`/`height`/`bitrate_bps`, encode one `frame`,
+/// flush, and drain the first chunk.
 ///
 /// Shared by the CPU NV12 path ([`encode_one_h264_frame`]), the WebGPU-canvas path
-/// ([`encode_one_h264_frame_from_webgpu_canvas`]), and [`video_codec_supported`]'s real-encode
-/// probe — all three just need *some* `VideoFrame` encoded through WebCodecs.
+/// ([`encode_video_frame_from_webgpu_canvas_impl`]), and [`video_codec_supported`]'s
+/// real-encode probe — all three just need *some* `VideoFrame` encoded through WebCodecs.
+/// `width`/`height`/`bitrate_bps` are explicit parameters (rather than the fixed 64×64 /
+/// 500 kbps this function used before the GPU-surface path needed caller-chosen sizes) so
+/// [`encode_video_frame_from_webgpu_canvas`] can honor its own `width`/`height`/`bitrate_bps`
+/// arguments instead of silently ignoring them.
 #[cfg(feature = "video")]
-async fn encode_frame_via(frame: &VideoFrame, codec: &str) -> Result<Vec<u8>, JsValue> {
+async fn encode_frame_via(
+    frame: &VideoFrame,
+    codec: &str,
+    width: u32,
+    height: u32,
+    bitrate_bps: u32,
+) -> Result<Vec<u8>, JsValue> {
     let chunks: Rc<RefCell<Vec<Vec<u8>>>> = Rc::new(RefCell::new(Vec::new()));
     // clone: Rc callback share
     let chunks_cb = chunks.clone();
@@ -182,10 +257,10 @@ async fn encode_frame_via(frame: &VideoFrame, codec: &str) -> Result<Vec<u8>, Js
     error.forget();
     output.forget();
 
-    let cfg = WebVideoEncoderConfig::new(codec, 64, 64);
-    cfg.set_width(64);
-    cfg.set_height(64);
-    cfg.set_bitrate(500_000);
+    let cfg = WebVideoEncoderConfig::new(codec, width, height);
+    cfg.set_width(width);
+    cfg.set_height(height);
+    cfg.set_bitrate(bitrate_bps);
     cfg.set_framerate(30.0);
     enc.configure(&cfg)
         .map_err(|_| JsValue::from_str("VideoEncoder::configure"))?;
@@ -299,17 +374,67 @@ async fn webgpu_canvas_frame(width: u32, height: u32) -> Result<VideoFrame, JsVa
         .map_err(|_| JsValue::from_str("VideoFrame::new from WebGPU canvas failed"))
 }
 
+/// Build a WebGPU-canvas `VideoFrame` at `width`x`height` and encode it via `WebCodecs` for
+/// `codec`/`bitrate_bps`. Shared implementation behind the codec-parameterized public entry
+/// point ([`encode_video_frame_from_webgpu_canvas`]) and the fixed-H.264 smoke path
+/// ([`gpu_video_fmp4_smoke_for`]).
 #[cfg(feature = "video")]
-async fn encode_one_h264_frame_from_webgpu_canvas() -> Result<Vec<u8>, JsValue> {
-    let frame = webgpu_canvas_frame(64, 64).await?;
-    let result = encode_frame_via(&frame, "avc1.42E01E").await;
+async fn encode_video_frame_from_webgpu_canvas_impl(
+    codec: &str,
+    width: u32,
+    height: u32,
+    bitrate_bps: u32,
+) -> Result<Vec<u8>, JsValue> {
+    let frame = webgpu_canvas_frame(width, height).await?;
+    let result = encode_frame_via(&frame, codec, width, height, bitrate_bps).await;
     frame.close();
     result
 }
 
+/// Generalizes the previous fixed-64×64/H.264-only WebGPU-canvas encode path to an arbitrary
+/// codec.
+///
+/// Accepts a `WebCodecs` video `codec` string and caller-chosen `width`/`height`/
+/// `bitrate_bps`, per `crates/mediaway-encoder/adr/web/0001-webgpu-multi-codec-video-encode.md`'s
+/// Decision. [`webgpu_canvas_frame`] itself needs no codec-specific branching (pixel format,
+/// not video codec) — only this call site and [`mux_video_chunk`] downstream do.
+#[cfg(feature = "video")]
+#[wasm_bindgen]
+pub async fn encode_video_frame_from_webgpu_canvas(
+    codec: String,
+    width: u32,
+    height: u32,
+    bitrate_bps: u32,
+) -> Result<Vec<u8>, JsValue> {
+    encode_video_frame_from_webgpu_canvas_impl(&codec, width, height, bitrate_bps).await
+}
+
+/// Pending audio encode result before being split into [`EncodedAudioChunks`]'s parallel
+/// vecs: `(timestamp_us, payload)` per chunk — audio counterpart of [`PendingChunks`].
 #[cfg(feature = "audio")]
-async fn encode_one_aac_buffer() -> Result<Vec<u8>, JsValue> {
-    let chunks: Rc<RefCell<Vec<Vec<u8>>>> = Rc::new(RefCell::new(Vec::new()));
+type PendingAudioChunks = Rc<RefCell<Vec<(f64, Vec<u8>)>>>;
+
+/// Encode `frame_count` frames of silence via `WebCodecs`, returning every encoded chunk.
+///
+/// Generalizes [`encode_one_aac_buffer`] to an arbitrary `codec`/`channels`/`sample_rate`/
+/// `bitrate_bps` — mirrors [`encode_video_frames`]'s "return every chunk" shape.
+///
+/// `frame_count`'s safe minimum (how many samples must be buffered before `flush()` yields a
+/// complete chunk) is codec-specific and **caller-supplied, never guessed here**. AAC's own
+/// 4096-frame margin (see [`encode_one_aac_buffer`]) was found empirically for AAC's MDCT
+/// look-ahead/priming delay and must not be assumed for other codecs — Opus (2.5-60 ms
+/// frames, no MDCT priming in the same sense) needs its own real-browser measurement, not
+/// performed in this environment (wasm32 compile-verified only, no browser runtime here).
+#[cfg(feature = "audio")]
+#[wasm_bindgen]
+pub async fn encode_audio_buffer(
+    codec: String,
+    channels: u32,
+    sample_rate: u32,
+    bitrate_bps: u32,
+    frame_count: u32,
+) -> Result<EncodedAudioChunks, JsValue> {
+    let chunks: PendingAudioChunks = Rc::new(RefCell::new(Vec::new()));
     // clone: Rc callback share
     let chunks_cb = chunks.clone();
     let copy_err: Rc<RefCell<Option<JsValue>>> = Rc::new(RefCell::new(None));
@@ -322,7 +447,7 @@ async fn encode_one_aac_buffer() -> Result<Vec<u8>, JsValue> {
                 Some(JsValue::from_str("EncodedAudioChunk::copy_to failed"));
             return;
         }
-        chunks_cb.borrow_mut().push(buf);
+        chunks_cb.borrow_mut().push((chunk.timestamp(), buf));
     }) as Box<dyn FnMut(EncodedAudioChunk)>);
     let enc_err: Rc<RefCell<Option<JsValue>>> = Rc::new(RefCell::new(None));
     // clone: Rc callback share
@@ -338,28 +463,30 @@ async fn encode_one_aac_buffer() -> Result<Vec<u8>, JsValue> {
     error.forget();
     output.forget();
 
-    let cfg = WebAudioEncoderConfig::new("mp4a.40.2", 2, 48_000); // (codec, channels, sample_rate)
-    cfg.set_bitrate(128_000);
+    let cfg = WebAudioEncoderConfig::new(&codec, channels, sample_rate); // (codec, channels, sample_rate)
+    cfg.set_bitrate(bitrate_bps);
     enc.configure(&cfg)
         .map_err(|_| JsValue::from_str("AudioEncoder::configure"))?;
 
-    // A real (non-simulated) AAC encoder needs more than one 1024-sample AAC frame buffered
-    // before it can flush a complete output chunk (MDCT look-ahead/priming delay) — a single
-    // 1024-frame `AudioData` reliably throws `EncodingError: Flushing error` on real Chrome;
-    // verified empirically that >=2048 frames (2 AAC frames' worth) flushes cleanly, so this
-    // uses a safety margin of 4 frames.
-    const FRAME_COUNT: u32 = 4096;
-    let data = silence_f32_interleaved(2, FRAME_COUNT);
+    let data = silence_f32_interleaved(channels, frame_count);
     let arr = Float32Array::new_with_length(data.len() as u32);
     for (i, sample) in data.iter().enumerate() {
         arr.set_index(i as u32, *sample);
     }
+    // `AudioDataInit::new`'s sample-rate parameter is `f32` (not `f64` like the timestamp
+    // params elsewhere in this module) — `sample_rate` is a small caller-supplied integer
+    // (e.g. 48_000), always exact in f32.
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "sample_rate is a small encoder-config integer, always exact in f32"
+    )]
+    let sample_rate_f32 = sample_rate as f32;
     let audio_init = AudioDataInit::new(
         arr.as_ref(),
         AudioSampleFormat::F32,
-        2,
-        FRAME_COUNT,
-        48_000.0,
+        channels,
+        frame_count,
+        sample_rate_f32,
         0,
     );
     let audio = AudioData::new(&audio_init).map_err(|_| JsValue::from_str("AudioData::new"))?;
@@ -371,11 +498,34 @@ async fn encode_one_aac_buffer() -> Result<Vec<u8>, JsValue> {
     take_js_err(&enc_err)?;
     take_js_err(&copy_err)?;
 
-    chunks
-        .borrow()
-        .first()
-        .cloned() // clone: take owned chunk buffer out of RefCell
-        .ok_or_else(|| JsValue::from_str("no audio chunk"))
+    let mut collected = chunks.borrow_mut();
+    let mut timestamps_us = Vec::with_capacity(collected.len());
+    let mut payloads = Vec::with_capacity(collected.len());
+    for (ts, data) in collected.drain(..) {
+        timestamps_us.push(ts);
+        payloads.push(data);
+    }
+    Ok(EncodedAudioChunks::new(timestamps_us, payloads))
+}
+
+/// Thin AAC-fixed caller of [`encode_audio_buffer`], keeping [`webcodecs_av_fmp4_smoke`]'s
+/// exact prior behavior (`codec`/`channels`/`sample_rate`/`bitrate`/`frame_count` unchanged
+/// from before this function was generalized).
+#[cfg(feature = "audio")]
+async fn encode_one_aac_buffer() -> Result<Vec<u8>, JsValue> {
+    // A real (non-simulated) AAC encoder needs more than one 1024-sample AAC frame buffered
+    // before it can flush a complete output chunk (MDCT look-ahead/priming delay) — a single
+    // 1024-frame `AudioData` reliably throws `EncodingError: Flushing error` on real Chrome;
+    // verified empirically that >=2048 frames (2 AAC frames' worth) flushes cleanly, so this
+    // uses a safety margin of 4 frames. AAC-specific — see `encode_audio_buffer`'s doc comment
+    // for why this margin is not reused for other codecs.
+    const FRAME_COUNT: u32 = 4096;
+    let chunks =
+        encode_audio_buffer("mp4a.40.2".to_string(), 2, 48_000, 128_000, FRAME_COUNT).await?;
+    if chunks.chunk_count() == 0 {
+        return Err(JsValue::from_str("no audio chunk"));
+    }
+    Ok(chunks.data(0))
 }
 
 #[cfg(feature = "video")]
@@ -599,14 +749,59 @@ fn mux_av_chunks(video: &[u8], audio: &[u8]) -> Result<Vec<u8>, JsValue> {
     Ok(bytes)
 }
 
-/// Video-only fMP4 mux (one H.264 track) — companion to [`mux_av_chunks`] for the
-/// WebGPU-canvas smoke path, which has no audio chunk to interleave.
+/// Map a `WebCodecs` video codec string's fourcc prefix to an `iso_bmff::Codec` for
+/// sample-entry selection, per ADR-0001 §1 (`avc1…`→`H264`, `hvc1…`/`hev1…`→`Hevc`,
+/// `av01…`→`Av1`, `vp09…`→`Vp9`).
+///
+/// # Deviation from ADR-0001 §1's literal wording: `vp08.` (VP8) is intentionally unmapped
+///
+/// ADR-0001 §1 lists `vp09`/`vp08` together as both mapping to `Vp9`. That is not followed
+/// here: `iso_bmff::Codec` has no `Vp8` variant at all (VP8 is WebM/Matroska's domain, not
+/// MP4's — see `mediaway-container::convert::from_codec_kind`'s identical note), so mapping a
+/// real `vp08.` (VP8) codec string to `Codec::Vp9` would silently mislabel the muxed sample
+/// entry with the wrong codec identity rather than merely being imprecise. `vp08.` therefore
+/// falls through to this function's `Err` case like any other unrecognized codec string.
 #[cfg(feature = "video")]
-fn mux_video_chunk(video: &[u8]) -> Result<Vec<u8>, JsValue> {
+fn iso_codec_for(codec: &str) -> Result<Codec, JsValue> {
+    if codec.starts_with("avc1") {
+        Ok(Codec::H264)
+    } else if codec.starts_with("hvc1") || codec.starts_with("hev1") {
+        Ok(Codec::Hevc)
+    } else if codec.starts_with("av01") {
+        Ok(Codec::Av1)
+    } else if codec.starts_with("vp09") {
+        Ok(Codec::Vp9)
+    } else {
+        Err(JsValue::from_str(&format!(
+            "unrecognized video codec for fMP4 muxing: {codec}"
+        )))
+    }
+}
+
+/// Video-only fMP4 mux (one track, selected by `codec`) — companion to [`mux_av_chunks`] for
+/// the WebGPU-canvas smoke path, which has no audio chunk to interleave.
+///
+/// # HEVC framing — unverified
+///
+/// `iso-bmff`'s `hvc1` sample entry expects **length-prefixed** HEVC NALs and performs no
+/// Annex-B → HVCC conversion (unlike `Codec::H264`, which converts automatically — see
+/// `docs/ai/wiki/container/mp4-sample-entries.md`). Whether a `WebCodecs` `VideoEncoder`
+/// actually emits length-prefixed `EncodedVideoChunk` bytes for an `hvc1.…`-prefixed codec
+/// string (as opposed to Annex-B, which `hev1.…` may imply) is genuinely unverified in this
+/// environment: this crate only compile-verifies against `wasm32-unknown-unknown` here, with
+/// no real browser runtime available to observe actual `EncodedVideoChunk` byte layout. If
+/// real-browser verification (`docs/ai/wiki/encode/web-real-chrome-bugs.md`) later shows
+/// Annex-B output, HEVC muxed through this function is a structurally valid but
+/// bitstream-incorrect `hvc1` sample entry until an Annex-B → HVCC conversion step is added
+/// (deferred — see
+/// `crates/mediaway-encoder/adr/web/0001-webgpu-multi-codec-video-encode.md` §2).
+#[cfg(feature = "video")]
+fn mux_video_chunk(codec: &str, video: &[u8]) -> Result<Vec<u8>, JsValue> {
+    let iso_codec = iso_codec_for(codec)?;
     let mut open = Muxer::with_fragment_batch(1);
     open.add_track(Track {
         id: 0,
-        codec: Codec::H264,
+        codec: iso_codec,
         time_base: Rational::new(1, 90_000),
         width: 64,
         height: 64,

@@ -260,12 +260,12 @@ OS codec APIs (WMF, WebCodecs, VA-API, …) fed with CPU buffers (upload may app
 | Codec        | Windows  | Web      | Linux   | Apple   | Android |
 | ------------ | -------- | -------- | ------- | ------- | ------- |
 | H.264 / AVC  | ✅ / ✅  | ✅ / ✅ | 🆗 / 🆗 | 🆗 / 🆗 | 🆗 / 🆗 |
-| HEVC / H.265 | ✅ / ✅ | ❌ / ✅ | 🛠️   | 👻    | 👻      |
-| AV1          | 🛠️ / 🛠️ | ✅      | 🛠️   | 👻    | 👻      |
-| VP9          | ✅ / ✅ | ✅      | 🛠️   | 👻    | 👻      |
+| HEVC / H.265 | ✅ / ✅ | ❌ / ✅ | 🆗 / 🆗 | 👻    | 👻      |
+| AV1          | 🛠️ / ✅ | ✅      | ❌ / 🆗 | 👻    | 👻      |
+| VP9          | ✅ / ✅ | ✅      | 🆗 / 🆗 | 👻    | 👻      |
 | ProRes       | 👻       | 👻       | 👻    | 👻    | 👻      |
 | AAC          | 🆗       | 🆗       | 🛠️   | 👻    | 👻      |
-| Opus         | ✅ / ✅ | 🛠️      | 🛠️   | 👻    | 👻      |
+| Opus         | ✅ / ✅ | 🆗      | 🛠️   | 👻    | 👻      |
 
 Detail: backends live as `#[cfg]`-gated modules — `mediaway-decoder::{windows, web, linux}`, `mediaway-encoder::{windows, web, linux}`.
 
@@ -276,10 +276,10 @@ Same OS APIs with GPU surfaces (`GpuBufferHandle`, DXGI, …). Video only — au
 
 | Codec        | Windows | Web | Linux | Apple | Android |
 | ------------ | ------- | --- | ----- | ----- | ------- |
-| H.264 / AVC  | 🆗 / 🆗  | ✅ | 🛠️   | 👻    | 👻      |
-| HEVC / H.265 | 🆗 / 🆗  | 🛠️ | 🛠️   | 👻    | 👻      |
-| AV1          | 🆗 / 🆗  | 🛠️ | 🛠️   | 👻    | 👻      |
-| VP9          | 🆗 / 🆗  | 🛠️ | 🛠️   | 👻    | 👻      |
+| H.264 / AVC  | 🆗 / 🆗  | ✅ | 🆗 / 🆗 | 👻    | 👻      |
+| HEVC / H.265 | 🆗 / 🆗  | 🆗 / 🛠️ | 🛠️   | 👻    | 👻      |
+| AV1          | 🆗 / 🆗  | 🆗 / 🛠️ | 🛠️   | 👻    | 👻      |
+| VP9          | 🆗 / 🆗  | 🆗 / 🛠️ | 🛠️   | 👻    | 👻      |
 | ProRes       | 👻      | 👻  | 👻    | 👻    | 👻      |
 
 
@@ -295,8 +295,8 @@ Adapters: [`mediaway`](crates/mediaway/README.md) `wgpu` module 🆗 (DX12 ↔ W
 | Codec        | D3D11  | D3D12 | Vulkan | Metal |
 | ------------ | ------ | ----- | ------ | ----- |
 | H.264 / AVC  | 🆗 / 🆗 | ✅ / 🛠️ | ✅ / ✅ | 👻    |
-| HEVC / H.265 | 🆗 / 🆗 | ✅ / 🛠️ | ✅ / ✅ | 👻    |
-| AV1          | 🆗 / 🆗 | 🛠️    | ❌ / 🛠️ | 👻    |
+| HEVC / H.265 | 🆗 / 🆗 | ✅ / 🆗 | ✅ / ✅ | 👻    |
+| AV1          | 🆗 / 🆗 | ✅ / 🆗 | ❌ / ✅ | 👻    |
 | VP9          | 🆗 / 🆗 | 👻    | 👻     | 👻    |
 
 
@@ -313,8 +313,8 @@ Detail: [`mediaway`](crates/mediaway/README.md) `wgpu` module · `mediaway-encod
 | Codec        | NVIDIA | AMD | Intel | Apple | Qualcomm |
 | ------------ | ------ | --- | ----- | ----- | -------- |
 | H.264 / AVC  | ✅     | 🆗 | ✅   | 👻    | 👻       |
-| HEVC / H.265 | ✅    | 🛠️ | ✅   | 👻    | 👻       |
-| AV1          | ✅    | 🛠️ | ❌   | 👻    | 👻       |
+| HEVC / H.265 | ✅    | 🆗 | ✅   | 👻    | 👻       |
+| AV1          | ✅    | 🆗 | ❌   | 👻    | 👻       |
 | VP9          | 👻     | 👻  | 👻    | 👻    | 👻       |
 
 

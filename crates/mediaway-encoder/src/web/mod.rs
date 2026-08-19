@@ -6,7 +6,7 @@ mod chunks;
 mod config;
 mod timestamp;
 
-pub use chunks::EncodedVideoChunks;
+pub use chunks::{EncodedAudioChunks, EncodedVideoChunks};
 pub use config::{WebAudioOpenConfig, WebVideoOpenConfig};
 
 #[cfg(target_arch = "wasm32")]

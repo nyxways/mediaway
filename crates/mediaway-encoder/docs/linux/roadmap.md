@@ -32,11 +32,15 @@ test is expected to skip until run on a machine with a real VA-API driver + GPU.
 - [ ] VBR/CBR rate control (`VAEncMiscParameterRateControl`/`FrameRate`)
 - [ ] Proven CI/`machine_id` cells once run on real VA-API hardware (promote 🆗 → ⚡ where earned)
 
-### 3 — Zero-Copy (deferred)
+### 3 — Zero-Copy (implemented, WSL2 + Windows compile/clippy/test-verified)
 
-- [ ] DMA-BUF surface import (`VideoInputPreference::ZeroCopyGpu`,
-      `VASurfaceAttribExternalBuffers` / `VADRMPRIMESurfaceDescriptor`)
-- [ ] `GpuBufferHandle::Vulkan` interop path
+- [x] DMA-BUF surface import (`VideoInputPreference::ZeroCopyGpu`,
+      `VASurfaceAttribExternalBuffers` / `VADRMPRIMESurfaceDescriptor`) —
+      [ADR-0006](../../adr/linux/0006-vaapi-dmabuf-zero-copy-input.md); **not**
+      `GpuBufferHandle::Vulkan` (corrected — reuses the decoder's `GpuBufferHandle::DmaBuf`
+      variant instead)
+- [ ] Real VA-API hardware verification (decode-export → encode-import round trip) — same
+      standing gap as every other VA-API path in this crate
 
 ### 4 — Multi-codec (deferred)
 

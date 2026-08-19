@@ -34,9 +34,19 @@ fn validate_accepts_h264_cpu_upload_config() {
 }
 
 #[test]
-fn validate_rejects_non_h264_codec() {
+fn validate_accepts_hevc_and_av1_cpu_upload_config() {
     let mut cfg = tiny_h264_cfg(64, 64);
     cfg.codec = CodecKind::Hevc;
+    assert!(validate(&cfg).is_ok());
+    cfg.codec = CodecKind::Av1;
+    assert!(validate(&cfg).is_ok());
+}
+
+#[test]
+fn validate_rejects_vp9_codec() {
+    // `shiguredo_amf`'s own `CodecConfig` has no VP9 variant — ADR-0003 § Context.
+    let mut cfg = tiny_h264_cfg(64, 64);
+    cfg.codec = CodecKind::Vp9;
     assert_eq!(validate(&cfg), Err(EncodeError::Unsupported));
 }
 
@@ -90,6 +100,52 @@ fn stream_info_from_config_carries_geometry_and_timebase() {
     }
 }
 
+/// Regression test for the ADR-0003-fixed `stream_info_from` bug: the returned `codec` must
+/// track `config.codec` for HEVC/AV1, not stay hardcoded to `CodecKind::H264`.
+#[test]
+fn stream_info_from_carries_hevc_and_av1_codec() {
+    let mut cfg = tiny_h264_cfg(64, 32);
+    cfg.codec = CodecKind::Hevc;
+    let info = stream_info_from(&cfg);
+    assert!(matches!(
+        info,
+        StreamInfo::Video {
+            codec: CodecKind::Hevc,
+            ..
+        }
+    ));
+
+    cfg.codec = CodecKind::Av1;
+    let info = stream_info_from(&cfg);
+    assert!(matches!(
+        info,
+        StreamInfo::Video {
+            codec: CodecKind::Av1,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn codec_config_for_dispatches_h264_hevc_av1() {
+    assert!(matches!(
+        codec_config_for(CodecKind::H264),
+        Ok(CodecConfig::H264(_))
+    ));
+    assert!(matches!(
+        codec_config_for(CodecKind::Hevc),
+        Ok(CodecConfig::Hevc(_))
+    ));
+    assert!(matches!(
+        codec_config_for(CodecKind::Av1),
+        Ok(CodecConfig::Av1(_))
+    ));
+    assert!(matches!(
+        codec_config_for(CodecKind::Vp9),
+        Err(EncodeError::Unsupported)
+    ));
+}
+
 // --- Hardware-gated: real shiguredo_amf / AMD AMF session ----------------------------------
 
 /// Opens a real AMD AMF H.264 CPU-upload session and, if a driver is available, encodes one
@@ -104,11 +160,36 @@ fn stream_info_from_config_carries_geometry_and_timebase() {
 /// driver can verify the path this crate was written against.
 #[test]
 fn amf_open_and_encode_or_skip_without_hw() {
-    let cfg = tiny_h264_cfg(64, 64);
-    let mut session = match AmfSession::open(&cfg) {
+    open_encode_or_skip(&tiny_h264_cfg(64, 64), "h264");
+}
+
+/// HEVC counterpart of [`amf_open_and_encode_or_skip_without_hw`] — same "expected to skip,
+/// no AMD hardware in this workspace" honesty posture, exercising the ADR-0003 HEVC dispatch.
+#[test]
+fn amf_open_and_encode_hevc_or_skip_without_hw() {
+    let mut cfg = tiny_h264_cfg(64, 64);
+    cfg.codec = CodecKind::Hevc;
+    open_encode_or_skip(&cfg, "hevc");
+}
+
+/// AV1 counterpart of [`amf_open_and_encode_or_skip_without_hw`] — same "expected to skip, no
+/// AMD hardware in this workspace" honesty posture, exercising the ADR-0003 AV1 dispatch.
+#[test]
+fn amf_open_and_encode_av1_or_skip_without_hw() {
+    let mut cfg = tiny_h264_cfg(64, 64);
+    cfg.codec = CodecKind::Av1;
+    open_encode_or_skip(&cfg, "av1");
+}
+
+/// Shared body for the hardware-gated smoke tests above: open a real AMD AMF CPU-upload
+/// session for `cfg` and, if a driver is available, encode one black NV12 frame end to end
+/// (`Encoder::new` → `alloc_surface` → `upload_cpu_nv12` → `encode` → callback-populated queue
+/// → `finish` → `poll_packet`). `label` only tags the diagnostic `eprintln!`.
+fn open_encode_or_skip(cfg: &VideoEncoderConfig, label: &str) {
+    let mut session = match AmfSession::open(cfg) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("skip: AmfSession::open failed ({e:?}) — no AMD AMF driver?");
+            eprintln!("skip: AmfSession::open failed ({e:?}) — no AMD AMF driver? ({label})");
             return;
         }
     };
@@ -126,7 +207,7 @@ fn amf_open_and_encode_or_skip_without_hw() {
     };
 
     if let Err(e) = session.push_frame(&frame) {
-        eprintln!("skip: push_frame failed ({e:?}) — no usable AMF encode session?");
+        eprintln!("skip: push_frame failed ({e:?}) — no usable AMF encode session? ({label})");
         return;
     }
     let _ = session.flush();
@@ -136,5 +217,5 @@ fn amf_open_and_encode_or_skip_without_hw() {
         assert!(!p.payload.is_empty());
         packets += 1;
     }
-    eprintln!("amf h264 cpu-upload packets={packets}");
+    eprintln!("amf {label} cpu-upload packets={packets}");
 }

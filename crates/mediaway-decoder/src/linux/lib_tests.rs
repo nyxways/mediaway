@@ -40,3 +40,84 @@ fn open_vaapi_h264_cpu_or_skip() {
     dec.flush().expect("flush without packets");
     assert!(dec.poll_frame().expect("poll").is_none());
 }
+
+/// Attempts to open a real VA-API display and HEVC CPU-output decode session through the public
+/// [`LinuxVideoDecoder`] wrapper (delegation to `vaapi::VaapiVideoDecoder::Hevc`).
+///
+/// **Expected to skip in this development session** — same zero-real-hardware disposition as
+/// `open_vaapi_h264_cpu_or_skip` above. See
+/// [`adr/linux/0003-vaapi-hevc-p-slice-dpb.md`](../adr/linux/0003-vaapi-hevc-p-slice-dpb.md).
+#[test]
+fn open_vaapi_hevc_cpu_or_skip() {
+    let cfg = VideoDecoderConfig::hevc(64, 64, Rational::new(1, 30));
+    let mut dec = match LinuxVideoDecoder::open(&cfg) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("skip: no VA-API display available ({e:?})");
+            return;
+        }
+    };
+    dec.flush().expect("flush without packets");
+    assert!(dec.poll_frame().expect("poll").is_none());
+}
+
+/// Attempts to open a real VA-API display and AV1 `KEY_FRAME`-only CPU-output decode session.
+///
+/// **Expected to skip in this development session** — same "zero real-hardware verification"
+/// disposition as [`open_vaapi_h264_cpu_or_skip`], see
+/// [ADR-0005](../adr/linux/0005-vaapi-av1-key-frame-decode.md). Real bitstream-level decode
+/// coverage (OBU scanning, sequence/frame header parsing) lives in `vaapi::av1`'s own sans-io
+/// unit tests, which need no VA-API device at all.
+#[test]
+fn open_vaapi_av1_cpu_or_skip() {
+    let cfg = VideoDecoderConfig {
+        codec: CodecKind::Av1,
+        width: 64,
+        height: 64,
+        time_base: Rational::new(1, 30),
+        pixel_format: PixelFormat::Nv12,
+        output: VideoOutputPreference::CpuFramesOk,
+        gpu_device: None,
+        extra_data: Bytes::new(),
+    };
+    let mut dec = match LinuxVideoDecoder::open(&cfg) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("skip: no VA-API display available ({e:?})");
+            return;
+        }
+    };
+    dec.flush().expect("flush without packets");
+    assert!(dec.poll_frame().expect("poll").is_none());
+}
+
+/// Attempts to open a real VA-API display and VP9 `KEY_FRAME`+`INTER_FRAME` CPU-output decode
+/// session.
+///
+/// **Expected to skip in this development session** — same "zero real-hardware verification"
+/// disposition as [`open_vaapi_h264_cpu_or_skip`], see
+/// [ADR-0004](../adr/linux/0004-vaapi-vp9-key-frame-and-inter-decode.md). Real bitstream-level
+/// decode coverage (`uncompressed_header()` parsing) lives in `vaapi::vp9`'s own sans-io unit
+/// tests, which need no VA-API device at all.
+#[test]
+fn open_vaapi_vp9_cpu_or_skip() {
+    let cfg = VideoDecoderConfig {
+        codec: CodecKind::Vp9,
+        width: 64,
+        height: 64,
+        time_base: Rational::new(1, 30),
+        pixel_format: PixelFormat::Nv12,
+        output: VideoOutputPreference::CpuFramesOk,
+        gpu_device: None,
+        extra_data: Bytes::new(),
+    };
+    let mut dec = match LinuxVideoDecoder::open(&cfg) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("skip: no VA-API display available ({e:?})");
+            return;
+        }
+    };
+    dec.flush().expect("flush without packets");
+    assert!(dec.poll_frame().expect("poll").is_none());
+}

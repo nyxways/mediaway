@@ -35,9 +35,37 @@ fn high_profile_idc_is_unsupported_this_session() {
 }
 
 #[test]
-fn only_h264_codec_kind_is_supported() {
+fn h264_hevc_av1_and_vp9_codec_kinds_are_supported() {
     assert!(is_supported_video_codec(CodecKind::H264));
-    assert!(!is_supported_video_codec(CodecKind::Hevc));
-    assert!(!is_supported_video_codec(CodecKind::Av1));
-    assert!(!is_supported_video_codec(CodecKind::Vp9));
+    assert!(is_supported_video_codec(CodecKind::Hevc));
+    assert!(is_supported_video_codec(CodecKind::Av1));
+    assert!(is_supported_video_codec(CodecKind::Vp9));
+}
+
+#[test]
+fn av1_profile_candidates_is_main_profile_only() {
+    assert_eq!(
+        av1_profile_candidates(),
+        vec![cros_libva::VAProfile::VAProfileAV1Profile0]
+    );
+}
+
+#[test]
+fn vp9_profile_candidates_is_profile_0_only() {
+    assert_eq!(
+        vp9_profile_candidates(),
+        vec![cros_libva::VAProfile::VAProfileVP9Profile0]
+    );
+}
+
+#[test]
+fn main_profile_idc_yields_hevc_main_only() {
+    let candidates = hevc_profile_candidates(1).expect("main supported");
+    assert_eq!(candidates, vec![cros_libva::VAProfile::VAProfileHEVCMain]);
+}
+
+#[test]
+fn non_main_hevc_profile_idc_is_unsupported() {
+    assert_eq!(hevc_profile_candidates(2), Err(DecodeError::Unsupported));
+    assert_eq!(hevc_profile_candidates(0), Err(DecodeError::Unsupported));
 }

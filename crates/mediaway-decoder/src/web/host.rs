@@ -8,6 +8,7 @@
 
 use wasm_bindgen::prelude::*;
 
+use crate::web::audio_frames::DecodedAudioData;
 use crate::web::frames::DecodedVideoFrames;
 
 /// Host build: `WebCodecs` unavailable.
@@ -39,5 +40,36 @@ pub async fn decode_video_chunks(
     _chunk_timestamps_us: Vec<f64>,
     _chunk_is_key: Vec<u8>,
 ) -> Result<DecodedVideoFrames, JsValue> {
+    Err(JsValue::from_str("wasm32 browser only"))
+}
+
+/// Host build: `WebCodecs` unavailable.
+#[cfg(feature = "audio")]
+#[wasm_bindgen]
+pub async fn is_webcodecs_audio_decode_supported(
+    _codec: String,
+    _channels: u32,
+    _sample_rate: u32,
+) -> bool {
+    false
+}
+
+/// Host build: returns an error (browser-only).
+#[cfg(feature = "audio")]
+#[wasm_bindgen]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "mirrors wasm decode_audio_chunks signature"
+)]
+pub async fn decode_audio_chunks(
+    _codec: String,
+    _channels: u32,
+    _sample_rate: u32,
+    _description: Option<Vec<u8>>,
+    _chunk_data: Vec<u8>,
+    _chunk_offsets: Vec<u32>,
+    _chunk_lengths: Vec<u32>,
+    _chunk_timestamps_us: Vec<f64>,
+) -> Result<DecodedAudioData, JsValue> {
     Err(JsValue::from_str("wasm32 browser only"))
 }

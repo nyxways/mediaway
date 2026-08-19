@@ -1,10 +1,13 @@
-//! `WebCodecs` decode backend (wasm32). `EncodedVideoChunk` → `VideoFrame` path.
+//! `WebCodecs` decode backend (wasm32). `EncodedVideoChunk` → `VideoFrame` and
+//! `EncodedAudioChunk` → `AudioData` paths.
 
 #![forbid(unsafe_code)]
 
+mod audio_frames;
 mod frames;
 mod timestamp;
 
+pub use audio_frames::DecodedAudioData;
 pub use frames::DecodedVideoFrames;
 
 #[cfg(target_arch = "wasm32")]

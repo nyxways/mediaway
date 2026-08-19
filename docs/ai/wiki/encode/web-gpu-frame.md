@@ -1,6 +1,9 @@
 # Web: WebGPU-backed `VideoFrame` (Stage 2 GPU path)
 
-`mediaway-encoder::web` `wasm.rs`: `webcodecs_gpu_video_fmp4_smoke` / `is_webgpu_video_frame_supported`.
+`mediaway-encoder::web` `wasm.rs`: `webcodecs_gpu_video_fmp4_smoke` / `is_webgpu_video_frame_supported`
+(H.264, kept as thin wrappers) plus their codec-parameterized siblings
+`webcodecs_gpu_video_fmp4_smoke_with_codec` / `is_webgpu_video_codec_supported` /
+`encode_video_frame_from_webgpu_canvas` (HEVC/AV1/VP9, see § Multi-codec below).
 
 ## Key finding — no `GPUTexture` → `VideoFrame` constructor
 
@@ -60,3 +63,32 @@ test-environment limit, never a bug in this crate's WebGPU/H.264 code.
 That same real-Chrome session also surfaced three independent, real bugs invisible on the
 Playwright build (which never reaches these paths): see
 [web-real-chrome-bugs](web-real-chrome-bugs.md) for all three and their fixes.
+
+## Multi-codec extension (HEVC / AV1 / VP9) — implemented, wasm32 compile-verified only
+
+The GPU-canvas leg itself is codec-agnostic (canvas pixel format, not the video codec); it
+needed **no** changes. `encode_frame_via`/`webgpu_canvas_frame` now take `codec`/`width`/
+`height`/`bitrate_bps` explicitly, and a new `iso_codec_for(codec: &str) -> Result<Codec,
+JsValue>` fourcc-prefix mapper (`avc1`→`H264`, `hvc1`/`hev1`→`Hevc`, `av01`→`Av1`, `vp09`→`Vp9`)
+feeds the generalized `mux_video_chunk(codec, video)`. `vp08.` (VP8) is deliberately **not**
+mapped — `iso_bmff::Codec` has no `Vp8` variant (VP8 is WebM's domain, not MP4's), so mapping
+it to `Vp9` would mislabel the sample entry rather than just being imprecise.
+
+**Verification status**: this environment has no real browser runtime, only
+`wasm32-unknown-unknown` compile + clippy. All claims below are therefore compile-time /
+design-level, not empirically confirmed:
+
+- **HEVC NAL framing — unverified.** `iso-bmff`'s `hvc1` sample entry expects
+  length-prefixed NALs with no Annex-B conversion (unlike `Codec::H264`). Whether an
+  `hvc1.…`-prefixed `VideoEncoder` config actually emits length-prefixed
+  `EncodedVideoChunk` bytes in real Chrome/Edge — the only lever available, since pinned
+  `web-sys` 0.3.104 has no `HevcEncoderConfig`/`avc`/`hevc` extension dictionary — is an open
+  question requiring the real-CDP-Chrome method above (§ Real Chrome via CDP). If Annex-B
+  turns out to be what's actually emitted, HEVC fMP4 output from this path is structurally
+  valid but bitstream-incorrect until an Annex-B → HVCC conversion step is added.
+- AV1 (raw OBU) / VP9 (raw frame) need no such conversion — lower risk.
+- HEVC hardware/license gating and minimum coded-size constraints for HEVC/AV1 HW encoders
+  are also unverified — expected to honestly report unsupported in most headless CI.
+
+Full investigation, alternatives, and open questions:
+[`crates/mediaway-encoder/adr/web/0001-webgpu-multi-codec-video-encode.md`](../../../crates/mediaway-encoder/adr/web/0001-webgpu-multi-codec-video-encode.md).

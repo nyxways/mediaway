@@ -39,12 +39,62 @@ impl NativeHandle {
     }
 }
 
+/// One plane's byte layout within a [`DmaBufDescriptor`]'s referenced DRM object(s).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct DmaBufPlane {
+    /// Which `DmaBufDescriptor` object this plane's bytes live in — `0` or `1`
+    /// (this type caps object count at 2; see field docs on [`DmaBufDescriptor`]).
+    pub object_index: u8,
+    /// Byte offset of this plane within its object.
+    pub offset: u32,
+    /// Row pitch (stride) in bytes.
+    pub pitch: u32,
+}
+
+/// Linux DRM/GEM DMA-BUF surface — VA-API's native Zero-Copy export shape.
+///
+/// (`vaExportSurfaceHandle` + `VADRMPRIMESurfaceDescriptor`), scoped to the ≤2-plane,
+/// ≤2-object case this workspace's NV12 pipelines produce (see `mediaway-decoder`
+/// `adr/linux/0006-vaapi-dmabuf-zero-copy-output.md`'s "why scoped, not general" note
+/// before adding a 3rd/4th plane or object).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct DmaBufDescriptor {
+    /// Primary DMA-BUF fd (DRM object 0 bits, offset by `+1` so fd `0` still round-trips
+    /// through `NativeHandle`'s non-zero representation — same convention
+    /// `vulkan::zero_copy::build_handle` already uses for a `slot_index` of `0`).
+    /// **Borrowed by convention, not owned by this struct** — see the owning ADR's
+    /// § Fd lifetime contract for who calls `close(2)` and when.
+    pub fd0: NativeHandle,
+    /// Second DMA-BUF fd (DRM object 1), only when the driver reported `num_objects == 2`
+    /// (a driver that splits Y/UV into separate objects instead of composing them).
+    pub fd1: Option<NativeHandle>,
+    /// `DRM_FORMAT_*` (e.g. `DRM_FORMAT_NV12`) — **not** `VA_FOURCC_*`; numerically identical
+    /// for NV12 today but a distinct namespace (see the owning ADR's Open questions).
+    pub fourcc: u32,
+    /// DRM format modifier (tiling layout). `0` is `DRM_FORMAT_MOD_LINEAR`, itself a valid,
+    /// meaningful value — never treated as "absent" (unlike `NativeHandle`'s `0`-is-None
+    /// convention).
+    pub modifier: u64,
+    /// Surface width in pixels.
+    pub width: u32,
+    /// Surface height in pixels.
+    pub height: u32,
+    /// NV12 = 2 entries used; unused trailing entries are zeroed and ignored.
+    pub planes: [DmaBufPlane; 2],
+    /// Number of entries in `planes` actually populated (1 or 2).
+    pub plane_count: u8,
+}
+
 /// Native GPU buffer / texture handle without CPU readback.
 ///
 /// Variants are declared early so facades can name Zero-Copy inputs. Backends
 /// that do not support a variant return an explicit unsupported error — never
 /// silently read back.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+///
+/// **Not `Copy`**: the [`GpuBufferHandle::DmaBuf`] variant boxes its payload (see that
+/// variant's doc) — a `Box` field is never `Copy`. Every other variant stays trivially
+/// cheap to `Clone`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum GpuBufferHandle {
     /// `ID3D11Texture2D*` (+ subresource index).
@@ -86,6 +136,14 @@ pub enum GpuBufferHandle {
         /// Host-defined texture id (not a raw WASM pointer).
         texture_id: u64,
     },
+    /// Linux DRM/GEM DMA-BUF export (VA-API's native Zero-Copy mechanism). Boxed — a faithful
+    /// descriptor (fd + DRM fourcc + modifier + dims + per-plane layout) is 4-5x larger than
+    /// every other variant, and this enum is embedded by value in `VideoFrameStorage::Gpu` on
+    /// every platform's hot path — boxing keeps `size_of::<GpuBufferHandle>()` unaffected for
+    /// builds that never construct a `DmaBuf` value. See this variant's owning ADR
+    /// (`mediaway-decoder` `adr/linux/0006-vaapi-dmabuf-zero-copy-output.md`) for the full
+    /// rationale.
+    DmaBuf(Box<DmaBufDescriptor>),
 }
 
 /// Native GPU **device** handle — owns the buffers submitted via [`GpuBufferHandle`].

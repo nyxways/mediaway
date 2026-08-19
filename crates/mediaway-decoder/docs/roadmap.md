@@ -27,6 +27,11 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 
 - [x] Add `mediaway-decoder-web`
 - [x] WebCodecs decode + `VideoFrame` / WebGPU interop
+- [x] First audio decode surface (`is_webcodecs_audio_decode_supported`,
+      `decode_audio_chunks -> DecodedAudioData`), codec-parameterized from the start,
+      exercised via Opus — adr/web/0001; wasm32 compile-verified only, no real-browser
+      verification in this environment; `AudioData` planar/interleaved readback shape
+      unverified against real Chrome
 
 ### 3 — Linux
 
@@ -37,10 +42,40 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
       compile+test-verified on real WSL2 Linux (`libva-dev`); **zero
       real-hardware verification** (no VA-API device available this
       session); see [adr/linux/0002](../adr/linux/0002-vaapi-h264-p-slice-dpb.md)
+- [x] `linux::vaapi` HEVC decode: HEVC Main profile IDR I-slices +
+      single-forward-reference P-slices, **fresh** single-slot `HevcDpb`
+      (no hardware-verified porting source existed — Vulkan's own HEVC
+      decode is IDR-only) — implemented, compile+test-verified on real
+      WSL2 Linux (`libva-dev`); **zero real-hardware verification**; CRA/
+      random-access pictures a permanent scope cut; `VaapiVideoDecoder`
+      enum unifies H.264/HEVC/AV1/VP9 dispatch (no `Box<dyn>`); see
+      [adr/linux/0003](../adr/linux/0003-vaapi-hevc-p-slice-dpb.md)
+- [x] `linux::vaapi` AV1 `KEY_FRAME`-only decode: single tile, Main profile, spec-derived OBU/
+      sequence-header/frame-header parser (no AV1 decode precedent existed anywhere in this
+      workspace to port from) — implemented, compile+clippy+test-verified on real WSL2 Linux;
+      **zero real-hardware verification** (no VA-API device available this session); see
+      [adr/linux/0005](../adr/linux/0005-vaapi-av1-key-frame-decode.md)
+- [x] `linux::vaapi` VP9 `KEY_FRAME` + general single-tile `INTER_FRAME` decode (compound
+      prediction included, no artificial reference-count restriction — a real structural finding
+      that VP9's entropy adaptation is driver-internal and its reference model needs only a
+      two-field-per-slot shadow table, not AV1's twelve-field one — a genuinely broader
+      real-world-stream-compatible scope than this crate's own AV1 sibling reached): spec-derived
+      `uncompressed_header()` parser copied verbatim from the real primary VP9 spec text
+      (`pdftotext`-extracted this session), persistent 8-logical-slot reference shadow table
+      (`vp9::ref_table`, `POOL_SIZE = 9` physical surfaces, pigeonhole-guaranteed free-index
+      allocation) — implemented, compile+clippy+test-verified on real WSL2 Linux (100+ new
+      sans-io bitstream-parser unit tests); **zero real-hardware verification** (no VA-API device
+      available this session); see
+      [adr/linux/0004](../adr/linux/0004-vaapi-vp9-key-frame-and-inter-decode.md)
 - [x] `vulkan` module (portable, not OS-suffixed — see
       [adr/vulkan/0001](../adr/vulkan/0001-vulkan-video-decode.md)): H.264
       general-GOP decode **hardware-verified** (RTX 4090); HEVC IDR decode
-      **hardware-verified**; HEVC P/B and AV1 still deferred
+      **hardware-verified**; HEVC P/B still deferred; AV1 `KEY_FRAME`-only,
+      single-tile decode **hardware-verified** (RTX 4090, first attempt, no
+      driver-maturity wall — unlike this workspace's AV1 Vulkan *encode*
+      path) per
+      [adr/vulkan/0002](../adr/vulkan/0002-av1-decode-keyframe-first.md);
+      general-GOP AV1 (`INTER_FRAME`, multi-tile, film grain) still deferred
 
 ### 4 — Other
 

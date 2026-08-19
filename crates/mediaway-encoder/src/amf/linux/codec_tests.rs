@@ -5,10 +5,11 @@
 use super::*;
 
 #[test]
-fn is_supported_video_codec_accepts_only_h264() {
+fn is_supported_video_codec_accepts_h264_hevc_av1_but_not_vp9() {
     assert!(is_supported_video_codec(CodecKind::H264));
-    assert!(!is_supported_video_codec(CodecKind::Hevc));
-    assert!(!is_supported_video_codec(CodecKind::Av1));
+    assert!(is_supported_video_codec(CodecKind::Hevc));
+    assert!(is_supported_video_codec(CodecKind::Av1));
+    // `shiguredo_amf`'s own `CodecConfig` has no VP9 variant — ADR-0003 § Context.
     assert!(!is_supported_video_codec(CodecKind::Vp9));
 }
 

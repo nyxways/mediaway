@@ -8,6 +8,15 @@
 
 ### Added
 
+- `mediaway-decoder::vulkan`: AV1 decode via `VK_KHR_video_decode_av1`, scoped to
+  `frame_type == KEY_FRAME`/`show_frame == 1`/single-tile pictures (general-GOP AV1 decode
+  remains a follow-up). Real sans-io OBU/sequence-header/`KEY_FRAME`-frame-header parsing
+  (segmentation, quantization, loop filter, CDEF, loop restoration, tile info all real, not
+  stubs) plus a real Vulkan Video session/decode path — **hardware-verified on the RTX 4090
+  reference machine on the first attempt**, decoding a real `mediaway-sw::av1::Av1Encoder`
+  (`rav1e`-backed) `KEY_FRAME` with hard content assertions; does not share this workspace's
+  confirmed AV1 Vulkan *encode* driver-maturity limitation. See
+  `crates/mediaway-decoder/adr/vulkan/0002-av1-decode-keyframe-first.md`.
 - `mediaway-decoder::android`: first Android decode backend (NDK `AMediaCodec` via the `ndk`
   crate), H.264 CPU NV12 output only, `COLOR_FormatYUV420SemiPlanar` only (reject-not-guess on
   any other reported output color format), general GOP (not IDR-only — the device manages its
@@ -20,6 +29,14 @@
   against real crate source) — **zero real AMD GPU/driver hardware verification** (none
   available in this workspace). Not wired into `auto`/`capability` yet. See
   `crates/mediaway-encoder/adr/amf/0002-amf-linux-shiguredo-amf-h264-cpu-upload.md`.
+- `mediaway-encoder::amf`: extended the H.264-only backend above to also accept HEVC and AV1 —
+  `shiguredo_amf`'s own `CodecConfig` already has first-class `Hevc`/`Av1` variants, so this is
+  a codec-dispatch widening, not new plumbing. VP9 stays unsupported (`shiguredo_amf` has no
+  VP9 `CodecConfig` variant — the dependency's real ceiling, not a Mediaway restriction). Also
+  fixes a latent `stream_info_from` bug that would have mislabeled HEVC/AV1 streams as H.264.
+  Same WSL2 compile/clippy/test verification, **zero real AMD GPU/driver hardware
+  verification** as the H.264 path above. See
+  `crates/mediaway-encoder/adr/amf/0003-amf-linux-hevc-av1-codec-dispatch.md`.
 - `mediaway-encoder::android`: first Android backend (NDK `AMediaCodec` via the `ndk` crate),
   H.264 CPU-upload encode only. Zero compile verification as authored (no Android NDK in the
   dev environment) — a new CI job compiles/lints it against a real NDK before it is trusted;
@@ -65,6 +82,123 @@
   `crates/mediaway-device/adr/apple/0001-avfoundation-camera-capture.md`,
   `0002-avaudioengine-microphone-capture.md`, `0003-screencapturekit-macos-screen-capture.md`,
   `0004-replaykit-ios-inapp-screen-capture.md`.
+- `mediaway-encoder::linux` (`linux::vaapi`) HEVC encode: HEVC Main profile
+  single-forward-reference P-frame GOP alongside the existing H.264 path, dispatched behind a
+  new `VaapiVideoEncoder` enum (no `Box<dyn>`). `hevc_gop.rs`'s `GopState` is a verbatim port of
+  `mediaway-encoder::vulkan::hevc_gop::GopState`; `EncSequenceParameterBufferHEVC`/
+  `EncPictureParameterBufferHEVC`/`EncSliceParameterBufferHEVC` construction is fresh (VA-API's
+  own HEVC encode buffers carry no `StdVideoH265*`-equivalent field set — the driver synthesizes
+  VPS/SPS/PPS itself), grounded in FFmpeg's real `vaapi_encode_h265.c` conventions. SAO and
+  temporal-MVP are deliberately disabled in the emitted SPS to keep this encoder's output the
+  simplest possible shape for the sibling VA-API HEVC decoder to round-trip. Compile- and
+  test-verified on real Linux (WSL2 Ubuntu, real `libva-dev` headers/bindgen output) — **zero
+  real VA-API hardware verification**. See
+  `crates/mediaway-encoder/adr/linux/0003-vaapi-hevc-p-frame-gop.md`.
+- `mediaway-decoder::linux` (`linux::vaapi`) HEVC decode: HEVC Main profile IDR I-slices and
+  single-forward-reference P-slices alongside the existing H.264 path, dispatched behind a new
+  `VaapiVideoDecoder` enum (no `Box<dyn>`). No hardware-verified porting source existed for this
+  path (Vulkan's own HEVC decode is IDR-only), so the single-slot `HevcDpb` (`hevc_dpb.rs`) and
+  the slice-header parser (`hevc_slice.rs`, extended well past `vulkan::hevc_slice.rs`'s own
+  stopping point — SAO, temporal-MVP, merge-cand count, QP deltas) are fresh designs grounded in
+  ITU-T H.265 and FFmpeg's real `vaapi_hevc.c`. Any short-term RPS shape other than exactly one
+  immediately-preceding reference is rejected as `Unsupported`; CRA/random-access pictures are a
+  permanent scope cut. Compile- and test-verified on real Linux (WSL2 Ubuntu, real `libva-dev`
+  headers/bindgen output) — **zero real VA-API hardware verification**. See
+  `crates/mediaway-decoder/adr/linux/0003-vaapi-hevc-p-slice-dpb.md`.
+- `mediaway-decoder::linux`: AV1 `KEY_FRAME`-only VA-API decode (`VAProfileAV1Profile0`,
+  `VAEntrypointVLD`), single tile, Main profile, every optional coding tool (segmentation, film
+  grain, CDEF, loop restoration, superres, warped motion) rejected as `Unsupported` if signaled.
+  A spec-derived OBU/sequence-header/frame-header parser — no AV1 decode existed anywhere in
+  this workspace to port from. Dispatched alongside the existing H.264 VA-API decoder via a new
+  `VaapiVideoDecoder` enum. Compile + clippy + test-verified on real WSL2 Linux — **zero
+  real-hardware verification** (no VA-API device available this session), same standing caveat
+  as this backend's H.264 path. See
+  `crates/mediaway-decoder/adr/linux/0005-vaapi-av1-key-frame-decode.md`.
+- `mediaway-encoder::linux`: VP9 `KEY_FRAME` baseline + single-forward-reference `INTER_FRAME`
+  GOP VA-API encode (`VAProfileVP9Profile0`, plain `cros-libva`
+  `EncSequenceParameterBufferVP9`/`EncPictureParameterBufferVP9` field bags — no packed-header
+  buffer needed, unlike this crate's still-blocked AV1 encode design). New `vp9_gop::GopState`
+  2-slot physical ping-pong state machine and this backend's first multi-codec **encoder**
+  dispatch enum (`VaapiVideoEncoder`, alongside the existing H.264 encoder). Entrypoint probe is
+  a real 3-step ladder (`VAEntrypointEncSlice` → `VAEntrypointEncPicture` →
+  `VAEntrypointEncSliceLP`) matching FFmpeg's own generic VA-API encode probe order. **Real
+  driver-support caveat**: FFmpeg's own source names only the older i965 driver as a working VP9
+  VA-API encode target — meaningfully narrower than VP9 *decode*'s broad support, so this is a
+  compile/test-verified-only addition. Compile + clippy + test-verified on real WSL2 Linux —
+  **zero real-hardware verification** (no VA-API device available this session). See
+  `crates/mediaway-encoder/adr/linux/0004-vaapi-vp9-key-frame-and-inter-gop.md`.
+- `mediaway-decoder::linux`: VP9 `KEY_FRAME` + general single-tile `INTER_FRAME` VA-API decode
+  (`VAProfileVP9Profile0`, `VAEntrypointVLD`), including compound prediction with no artificial
+  reference-count restriction (VA-API's `reference_frames[8]` array is always fully populated
+  regardless of active-reference count — a real structural finding, confirmed against FFmpeg's
+  `vaapi_vp9.c`) — a broader real-world-stream-compatible scope than this crate's own AV1
+  sibling reached. A spec-derived `uncompressed_header()` parser copied verbatim from the real
+  primary VP9 specification text (`pdftotext`-extracted this session) and a new persistent
+  8-logical-slot reference shadow table (`vp9::ref_table`, 2 fields/slot — width/height — versus
+  AV1's 12-field-per-slot state) backed by a 9-physical-surface pool with a pigeonhole-guaranteed
+  free-index allocator. Dispatched alongside the existing H.264/AV1 VA-API decoders via the
+  `VaapiVideoDecoder` enum. Compile + clippy + test-verified on real WSL2 Linux (100+ new
+  hand-constructed bitstream-fixture unit tests) — **zero real-hardware verification** (no
+  VA-API device available this session). See
+  `crates/mediaway-decoder/adr/linux/0004-vaapi-vp9-key-frame-and-inter-decode.md`.
+- `mediaway-decoder::windows`: D3D12 native HEVC decode (`d3d12_video_decode` module, still
+  unregistered), single-forward-reference P-slice + I/IDR, Main profile, 8-bit 4:2:0, parallel
+  to the existing H.264 path (new `hevc*.rs` files only, no edits to H.264's own still-unresolved
+  GPU-hang baseline). Sans-io-verified only — 42 new unit tests plus `cargo check`/`clippy`
+  clean; **zero real GPU hardware verification, deliberately**, given a confirmed, repeatedly
+  reproduced D3D12 decode TDR on this workspace's own H.264 path. See
+  `crates/mediaway-decoder/adr/windows/0004-d3d12-hevc-single-forward-ref-p-slice-decode.md`.
+- `mediaway-decoder::windows`: D3D12 native AV1 decode (`d3d12_video_decode` module, still
+  unregistered), `KEY_FRAME`-only, Main profile, 8-bit 4:2:0, single-tile, parallel to the
+  existing H.264/HEVC paths (new `av1*.rs` files only). Sans-io-verified only — 43 new unit
+  tests plus `cargo check`/`clippy`/`fmt` clean; **zero real GPU hardware verification,
+  deliberately**, same TDR-avoidance reasoning as HEVC, plus an open question of whether this
+  crate's own D3D12 AV1 encoder output is decodable at all. See
+  `crates/mediaway-decoder/adr/windows/0005-d3d12-av1-key-frame-decode.md`.
+- `mediaway-decoder::linux`: VA-API DMA-BUF Zero-Copy decode output
+  (`VideoOutputPreference::ZeroCopyGpu`, `vaExportSurfaceHandle` via `cros-libva`'s
+  `Surface::export_prime()`), new codec-agnostic `vaapi/dmabuf.rs` and a new
+  `mediaway_common::GpuBufferHandle::DmaBuf(Box<DmaBufDescriptor>)` variant (boxed — drops
+  `Copy` from the whole enum). DPB slot recycling now tracks outstanding Zero-Copy handles
+  (`Dpb::mark_outstanding`/`clear_outstanding`), refusing to recycle a slot a caller still holds
+  a handle into. WSL2 + Windows compile/clippy/test-verified; zero real VA-API hardware
+  verification (no device available). See
+  `crates/mediaway-decoder/adr/linux/0006-vaapi-dmabuf-zero-copy-output.md`.
+- `mediaway-encoder::linux`: VA-API DMA-BUF Zero-Copy encode input
+  (`VideoInputPreference::ZeroCopyGpu`, `vaCreateSurfaces` import via `cros-libva`'s
+  `ExternalBufferDescriptor`), new codec-agnostic `vaapi/dmabuf.rs`, reusing the decoder's
+  `GpuBufferHandle::DmaBuf`. A single-use imported surface flows through the existing
+  `Picture<S, T>` typestate chain alongside the pooled CPU-upload reference surfaces, with no
+  pool restructuring; forces all-IDR encode for `ZeroCopyGpu` sessions. WSL2 + Windows
+  compile/clippy/test-verified; zero real VA-API hardware verification. See
+  `crates/mediaway-encoder/adr/linux/0006-vaapi-dmabuf-zero-copy-input.md`.
+- `mediaway-encoder::web`: generalized the AAC-hardcoded audio smoke/probe functions into a
+  codec-parameterized surface — `is_webcodecs_audio_codec_supported(codec, channels,
+  sample_rate)` and `encode_audio_buffer(codec, channels, sample_rate, bitrate_bps,
+  frame_count) -> EncodedAudioChunks` (new type), mirroring the video side's existing
+  codec-parameterized shape. Opus is exercised as the second codec through this generalized
+  surface (no Opus-only functions, no `OpusEncoderConfig` knobs — no reachable `web-sys`
+  binding — no Opus fMP4 mux claim, `EncodedAudioChunk`-level validation only). `wasm32`
+  compile-verified only, no real browser runtime available in this environment. See
+  `crates/mediaway-encoder/adr/web/0001-webcodecs-opus-audio-encode.md`.
+- `mediaway-decoder::web`: first audio decode surface in this module (previously video-only) —
+  `is_webcodecs_audio_decode_supported(codec, channels, sample_rate)` and
+  `decode_audio_chunks(...) -> DecodedAudioData` (new type), codec-parameterized from the
+  start and exercised via Opus (AAC decode is reachable through the same function). Sample
+  readback trusts the browser's reported `AudioData` format (planar or interleaved) rather
+  than forcing a conversion. `wasm32` compile-verified only, no real browser runtime available
+  in this environment — the exact planar/interleaved readback byte layout is unverified
+  against real Chrome. See
+  `crates/mediaway-decoder/adr/web/0001-webcodecs-opus-audio-decode.md`.
+- `mediaway-encoder::web`: generalized the WebGPU-canvas GPU-surface encode path from
+  hardcoded H.264 to HEVC/AV1/VP9 (`is_webgpu_video_codec_supported`,
+  `encode_video_frame_from_webgpu_canvas`, `webcodecs_gpu_video_fmp4_smoke_with_codec`), plus a
+  new WebCodecs-codec-string → `iso_bmff::Codec` mapper for fMP4 muxing. Existing zero-arg
+  H.264 entry points (`is_webgpu_video_frame_supported`, `webcodecs_gpu_video_fmp4_smoke`) are
+  kept as thin wrappers. `wasm32` compile-verified only — no real browser runtime available in
+  this environment; HEVC's Annex-B-vs-length-prefixed NAL framing for `iso-bmff`'s `hvc1`
+  sample entry is explicitly unverified. See
+  `crates/mediaway-encoder/adr/web/0001-webgpu-multi-codec-video-encode.md`.
 
 ### Changed
 
@@ -121,6 +255,17 @@
   `PipeWire(String)` (`node.name`) variant; `Select::Id(DeviceId::from_pipewire_node_name(..))`
   now sets `PW_KEY_TARGET_OBJECT` on the capture stream. Real-hardware (real `libpipewire` link)
   compile and unit-test verified via WSL2.
+- Windows `mediaway-encoder-windows`: WMF AV1 encode's `refresh_extradata` was codec-blind and
+  ran every codec's `MF_MT_MPEG_SEQUENCE_HEADER` blob through the H.264-Annex-B-specific
+  `avc::to_avcc`, silently writing a non-conformant raw blob into the MP4 `av1C` box for AV1
+  output. New `iso_bmff::bitstream::av1::to_av1c` builds a real `AV1CodecConfigurationRecord`
+  from the Sequence Header OBU; `refresh_extradata` is now codec-aware. Also adds a real
+  `MFTEnumEx(MFT_CATEGORY_VIDEO_ENCODER, …)` diagnostic
+  (`wmf::video::tests::list_encoder_mfts_for_each_codec`) mirroring the decode-side probe —
+  real finding on the verification host: an AV1 encoder MFT (NVIDIA + Intel) is registered
+  under `MFT_ENUM_FLAG_HARDWARE`, but not reachable through either the CPU-upload or DX11
+  Zero-Copy path yet on that host (see `crates/mediaway-encoder/docs/roadmap.md`). See
+  `crates/mediaway-encoder/adr/windows/0010-wmf-av1-encode-config-record-and-mft-probe.md`.
 
 ### Removed
 

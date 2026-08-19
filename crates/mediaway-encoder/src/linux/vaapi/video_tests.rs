@@ -1,4 +1,4 @@
-//! Tests for [`super::VaapiVideoEncoder`] — see `docs/conventions/testing.md` Tier 1.
+//! Tests for [`super::VaapiH264Encoder`] — see `docs/conventions/testing.md` Tier 1.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -146,10 +146,10 @@ fn stream_info_from_config_carries_geometry_and_timebase() {
 #[test]
 fn vaapi_open_and_encode_or_skip_without_hw() {
     let cfg = tiny_h264_cfg(64, 64);
-    let mut enc = match VaapiVideoEncoder::open(&cfg) {
+    let mut enc = match VaapiH264Encoder::open(&cfg) {
         Ok(e) => e,
         Err(e) => {
-            eprintln!("skip: VaapiVideoEncoder::open failed ({e:?}) — no VA-API display?");
+            eprintln!("skip: VaapiH264Encoder::open failed ({e:?}) — no VA-API display?");
             return;
         }
     };
@@ -208,10 +208,10 @@ fn black_nv12_frame(pts: i64, width: u32, height: u32) -> VideoFrame {
 fn vaapi_gop_cadence_or_skip_without_hw() {
     const GOP_SIZE: u32 = 3;
     let cfg = tiny_h264_gop_cfg(64, 64, GOP_SIZE);
-    let mut enc = match VaapiVideoEncoder::open(&cfg) {
+    let mut enc = match VaapiH264Encoder::open(&cfg) {
         Ok(e) => e,
         Err(e) => {
-            eprintln!("skip: VaapiVideoEncoder::open failed ({e:?}) — no VA-API display?");
+            eprintln!("skip: VaapiH264Encoder::open failed ({e:?}) — no VA-API display?");
             return;
         }
     };
@@ -264,10 +264,10 @@ fn vaapi_gop_cadence_or_skip_without_hw() {
 #[test]
 fn vaapi_push_frame_errors_on_lost_reference_surface_or_skip_without_hw() {
     let cfg = tiny_h264_gop_cfg(64, 64, 3);
-    let mut enc = match VaapiVideoEncoder::open(&cfg) {
+    let mut enc = match VaapiH264Encoder::open(&cfg) {
         Ok(e) => e,
         Err(e) => {
-            eprintln!("skip: VaapiVideoEncoder::open failed ({e:?}) — no VA-API display?");
+            eprintln!("skip: VaapiH264Encoder::open failed ({e:?}) — no VA-API display?");
             return;
         }
     };

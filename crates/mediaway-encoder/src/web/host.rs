@@ -8,7 +8,7 @@
 
 use wasm_bindgen::prelude::*;
 
-use crate::web::chunks::EncodedVideoChunks;
+use crate::web::chunks::{EncodedAudioChunks, EncodedVideoChunks};
 use crate::web::config::{WebAudioOpenConfig, WebVideoOpenConfig};
 
 /// Host build: `WebCodecs` unavailable.
@@ -50,6 +50,30 @@ pub async fn encode_video_frames(
     _lumas: Vec<u8>,
     _timestamps_us: Vec<f64>,
 ) -> Result<EncodedVideoChunks, JsValue> {
+    Err(JsValue::from_str("wasm32 browser only"))
+}
+
+/// Host build: `WebCodecs` unavailable.
+#[cfg(feature = "audio")]
+#[wasm_bindgen]
+pub async fn is_webcodecs_audio_codec_supported(
+    _codec: String,
+    _channels: u32,
+    _sample_rate: u32,
+) -> bool {
+    false
+}
+
+/// Host build: returns an error (browser-only).
+#[cfg(feature = "audio")]
+#[wasm_bindgen]
+pub async fn encode_audio_buffer(
+    _codec: String,
+    _channels: u32,
+    _sample_rate: u32,
+    _bitrate_bps: u32,
+    _frame_count: u32,
+) -> Result<EncodedAudioChunks, JsValue> {
     Err(JsValue::from_str("wasm32 browser only"))
 }
 

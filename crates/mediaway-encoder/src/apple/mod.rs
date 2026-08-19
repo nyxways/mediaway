@@ -24,14 +24,20 @@
 // real `unsafe` blocks with `// SAFETY:` comments, matching `src/windows/`'s discipline. The
 // crate root's `#![allow(unsafe_code)]` (see `lib.rs`) applies here.
 
-#[cfg(not(feature = "video"))]
-compile_error!("enable the `video` feature on mediaway-encoder-apple");
+#[cfg(all(not(feature = "audio"), not(feature = "video")))]
+compile_error!("enable the `audio` and/or `video` feature on mediaway-encoder-apple");
 
 use crate::EncodeError;
+#[cfg(feature = "audio")]
+use crate::{AudioEncoder, AudioEncoderConfig};
 use crate::{VideoEncoder, VideoEncoderConfig};
+#[cfg(feature = "audio")]
+use mediaway_common::AudioFrame;
 use mediaway_common::VideoFrame;
 use mediaway_common::{Bytes, Packet, StreamInfo};
 
+#[cfg(all(any(target_os = "macos", target_os = "ios"), feature = "audio"))]
+mod audiotoolbox;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod videotoolbox;
 
@@ -117,6 +123,127 @@ impl VideoEncoder for AppleVideoEncoder {
     fn flush(&mut self) -> Result<(), EncodeError> {
         Err(EncodeError::Unsupported)
     }
+}
+
+/// Apple audio encode session.
+///
+/// AAC via `AudioConverter` ([ADR-0004](../adr/apple/0004-audiotoolbox-aac-encode.md)) or Opus
+/// via `mediaway-sw` (cross-platform, no Apple-specific code), dispatched by
+/// [`AudioEncoderConfig::codec`] — mirrors
+/// `mediaway-encoder::windows::WindowsAudioEncoder`'s identical `AudioBackend` shape.
+#[cfg(feature = "audio")]
+pub struct AppleAudioEncoder {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    inner: Option<AudioBackend>,
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+    _priv: (),
+}
+
+/// Per-codec audio backend behind [`AppleAudioEncoder`].
+#[cfg(all(feature = "audio", any(target_os = "macos", target_os = "ios")))]
+enum AudioBackend {
+    /// `AudioConverter` AAC-LC encoder.
+    Aac(audiotoolbox::AacEncoder),
+    /// Software Opus encoder (`unsafe-libopus` via `mediaway-sw`) — no `VideoToolbox`/
+    /// `AudioToolbox` Opus encoder exists.
+    Opus(crate::SwOpusAudioEncoder),
+}
+
+#[cfg(feature = "audio")]
+impl AppleAudioEncoder {
+    /// Open an Apple audio encoder for `config`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EncodeError::Unsupported`] for any codec but AAC/Opus, or
+    /// [`EncodeError::Backend`] on `AudioConverter`/`unsafe-libopus` failure.
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    pub fn open(config: &AudioEncoderConfig) -> Result<Self, EncodeError> {
+        let inner = match config.codec {
+            mediaway_common::CodecKind::Aac => {
+                AudioBackend::Aac(audiotoolbox::AacEncoder::open(config)?)
+            }
+            mediaway_common::CodecKind::Opus => {
+                AudioBackend::Opus(crate::SwOpusAudioEncoder::open(config)?)
+            }
+            _ => return Err(EncodeError::Unsupported),
+        };
+        Ok(Self { inner: Some(inner) })
+    }
+
+    /// Host / non-Apple build: encoder unavailable.
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+    pub const fn open(_config: &AudioEncoderConfig) -> Result<Self, EncodeError> {
+        Err(EncodeError::Unsupported)
+    }
+}
+
+#[cfg(all(feature = "audio", any(target_os = "macos", target_os = "ios")))]
+impl AudioEncoder for AppleAudioEncoder {
+    fn stream_info(&self) -> &StreamInfo {
+        match self.inner.as_ref() {
+            Some(AudioBackend::Aac(e)) => e.stream_info(),
+            Some(AudioBackend::Opus(e)) => e.stream_info(),
+            None => closed_audio_stream_info(),
+        }
+    }
+
+    fn push_frame(&mut self, frame: &AudioFrame) -> Result<(), EncodeError> {
+        match self.inner.as_mut() {
+            Some(AudioBackend::Aac(e)) => e.push_frame(frame),
+            Some(AudioBackend::Opus(e)) => e.push_frame(frame),
+            None => Err(EncodeError::Closed),
+        }
+    }
+
+    fn poll_packet(&mut self) -> Result<Option<Packet>, EncodeError> {
+        match self.inner.as_mut() {
+            Some(AudioBackend::Aac(e)) => e.poll_packet(),
+            Some(AudioBackend::Opus(e)) => e.poll_packet(),
+            None => Err(EncodeError::Closed),
+        }
+    }
+
+    fn flush(&mut self) -> Result<(), EncodeError> {
+        match self.inner.as_mut() {
+            Some(AudioBackend::Aac(e)) => e.flush(),
+            Some(AudioBackend::Opus(e)) => e.flush(),
+            None => Err(EncodeError::Closed),
+        }
+    }
+}
+
+#[cfg(all(feature = "audio", not(any(target_os = "macos", target_os = "ios"))))]
+impl AudioEncoder for AppleAudioEncoder {
+    fn stream_info(&self) -> &StreamInfo {
+        closed_audio_stream_info()
+    }
+
+    fn push_frame(&mut self, _frame: &AudioFrame) -> Result<(), EncodeError> {
+        Err(EncodeError::Unsupported)
+    }
+
+    fn poll_packet(&mut self) -> Result<Option<Packet>, EncodeError> {
+        Ok(None)
+    }
+
+    fn flush(&mut self) -> Result<(), EncodeError> {
+        Err(EncodeError::Unsupported)
+    }
+}
+
+#[cfg(feature = "audio")]
+fn closed_audio_stream_info() -> &'static StreamInfo {
+    use std::sync::OnceLock;
+    static INFO: OnceLock<StreamInfo> = OnceLock::new();
+    INFO.get_or_init(|| StreamInfo::Audio {
+        id: 0,
+        codec: mediaway_common::CodecKind::Aac,
+        time_base: mediaway_common::Rational::new(1, 48_000),
+        extra_data: Bytes::new(),
+        sample_rate: 0,
+        channels: 0,
+    })
 }
 
 fn closed_stream_info() -> &'static StreamInfo {

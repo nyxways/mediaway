@@ -74,6 +74,18 @@ pub enum CodecKind {
     RawAudio = 11,
     /// VP8 video.
     Vp8 = 12,
+    /// Apple `ProRes` 422 Proxy video.
+    ProRes422Proxy = 13,
+    /// Apple `ProRes` 422 LT video.
+    ProRes422Lt = 14,
+    /// Apple `ProRes` 422 (standard) video.
+    ProRes422 = 15,
+    /// Apple `ProRes` 422 HQ video.
+    ProRes422Hq = 16,
+    /// Apple `ProRes` 4444 video.
+    ProRes4444 = 17,
+    /// Apple `ProRes` 4444 XQ video.
+    ProRes4444Xq = 18,
 }
 
 impl CodecKind {
@@ -82,7 +94,18 @@ impl CodecKind {
     pub const fn is_video(self) -> bool {
         matches!(
             self,
-            Self::H264 | Self::Hevc | Self::Av1 | Self::Vp9 | Self::Vp8 | Self::RawVideo
+            Self::H264
+                | Self::Hevc
+                | Self::Av1
+                | Self::Vp9
+                | Self::Vp8
+                | Self::RawVideo
+                | Self::ProRes422Proxy
+                | Self::ProRes422Lt
+                | Self::ProRes422
+                | Self::ProRes422Hq
+                | Self::ProRes4444
+                | Self::ProRes4444Xq
         )
     }
 }

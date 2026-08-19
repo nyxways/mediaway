@@ -358,7 +358,7 @@ unsafe extern "C-unwind" fn input_proc(
     in_user_data: *mut c_void,
 ) -> i32 {
     // SAFETY: per this function's own safety contract above.
-    let ctx = unsafe { &mut *(in_user_data.cast::<InputContext>()) };
+    let ctx = unsafe { &mut *(in_user_data.cast::<InputContext<'_>>()) };
     // Only ever supply the front packet once per `AudioConverterFillComplexBuffer` call — this
     // backend's queue-popping in `decode_ready_frames` happens only after that call returns.
     if ctx.consumed {

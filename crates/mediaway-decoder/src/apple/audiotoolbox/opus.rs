@@ -311,7 +311,7 @@ unsafe extern "C-unwind" fn input_proc(
     in_user_data: *mut c_void,
 ) -> i32 {
     // SAFETY: per this function's own safety contract above.
-    let ctx = unsafe { &mut *(in_user_data.cast::<InputContext>()) };
+    let ctx = unsafe { &mut *(in_user_data.cast::<InputContext<'_>>()) };
     if ctx.consumed {
         // SAFETY: `io_number_data_packets` is a valid, callback-scoped out-pointer.
         unsafe {

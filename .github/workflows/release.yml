@@ -459,6 +459,8 @@ jobs:
         working-directory: bindings/nodejs
         run: |
           bun install
+          bun node_modules/typescript/bin/tsc -p packages/ffi/tsconfig.json
+          bun node_modules/typescript/bin/tsc -p packages/container/tsconfig.json
           node node_modules/tsx/dist/cli.mjs test/mux-roundtrip.test.ts
           node node_modules/tsx/dist/cli.mjs test/all-formats-smoke.test.ts
 
@@ -508,6 +510,16 @@ jobs:
 
       - name: C# round-trip test (Pipeline, real VideoToolbox hardware)
         run: dotnet test bindings/csharp/tests/Mediaway.Pipeline.Tests/Mediaway.Pipeline.Tests.csproj
+
+      # TEMPORARY — remove alongside the debug_log() helper in
+      # crates/mediaway-encoder/src/apple/videotoolbox/video.rs once the real
+      # EncoderBackendFailure root cause is confirmed. eprintln! alone doesn't reach this
+      # job's console log (VSTest's testhost process isolation swallows raw native stderr),
+      # so the diagnostic writes to a fixed-path file instead; dump it regardless of whether
+      # the Pipeline test step above passed or failed.
+      - name: Dump VideoToolbox debug log (temporary diagnostic)
+        if: always()
+        run: cat /tmp/mediaway-videotoolbox-debug.log || echo "(no debug log written)"
 
       - name: Python container round-trip test
         working-directory: bindings/python

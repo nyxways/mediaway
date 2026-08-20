@@ -44,6 +44,23 @@ use super::extradata;
 /// `OSStatus`/`CVReturn` "no error" value (both use the plain C convention `0 == success`).
 const NO_ERROR: i32 = 0;
 
+/// TEMPORARY diagnostic — remove once the real bindings-tests-macos `EncoderBackendFailure`
+/// root cause is confirmed from CI output. `eprintln!` alone turned out not to reach the
+/// `dotnet test` GitHub Actions log (VSTest's testhost process isolation swallows raw native
+/// stderr writes) — appending to a fixed-path file, then `cat`-ing it as an `if: always()` CI
+/// step, is a more reliable channel.
+fn debug_log(msg: &str) {
+    use std::io::Write as _;
+    eprintln!("mediaway: {msg}");
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/mediaway-videotoolbox-debug.log")
+    {
+        let _ = writeln!(f, "{msg}");
+    }
+}
+
 /// State shared between [`VideoToolboxVideoEncoder`] and the `VTCompressionOutputCallback`,
 /// which fires asynchronously on a VideoToolbox-internal thread — see ADR-0001 § Callback
 /// design.
@@ -137,20 +154,16 @@ impl VideoToolboxVideoEncoder {
             )
         };
         if status != NO_ERROR {
-            // TEMPORARY diagnostic — remove once the real bindings-tests-macos
-            // EncoderBackendFailure root cause is confirmed from CI output.
-            eprintln!(
-                "mediaway: VTCompressionSessionCreate failed: status={status} codec={codec} {width}x{height}"
-            );
+            debug_log(&format!(
+                "VTCompressionSessionCreate failed: status={status} codec={codec} {width}x{height}"
+            ));
             // SAFETY: reclaims the extra strong count taken above; no callback can have fired
             // since the session was never successfully created.
             drop(unsafe { Arc::from_raw(refcon_ptr) });
             return Err(EncodeError::Backend);
         }
         let Some(session_ptr) = NonNull::new(session_ptr) else {
-            eprintln!(
-                "mediaway: VTCompressionSessionCreate reported NO_ERROR but session_ptr is null"
-            );
+            debug_log("VTCompressionSessionCreate reported NO_ERROR but session_ptr is null");
             // SAFETY: same reasoning as the failure branch above.
             drop(unsafe { Arc::from_raw(refcon_ptr) });
             return Err(EncodeError::Backend);
@@ -161,6 +174,7 @@ impl VideoToolboxVideoEncoder {
         let session = unsafe { CFRetained::from_raw(session_ptr) };
 
         if let Err(e) = configure_properties(&session, config) {
+            debug_log(&format!("configure_properties failed: {e:?}"));
             // SAFETY: same reasoning as the earlier failure branches — no callback can have
             // fired via a session whose configuration never completed successfully.
             unsafe { session.invalidate() };
@@ -643,16 +657,19 @@ unsafe fn set_i32_property(
     // SAFETY: `&value` is a valid stack `i32` matching `CFNumberType::SInt32Type`'s contract.
     let number =
         unsafe { CFNumber::new(None, CFNumberType::SInt32Type, (&raw const value).cast()) };
-    let number = number.ok_or(EncodeError::Backend)?;
+    let Some(number) = number else {
+        debug_log(&format!("CFNumber::new returned None for value={value}"));
+        return Err(EncodeError::Backend);
+    };
     // SAFETY: `session` derefs to `&VTSession` (`= CFType`) per CoreFoundation toll-free
     // bridging; `number` is a valid, just-created `CFNumber`.
     let status = unsafe { VTSessionSetProperty(session, key, Some(&number)) };
     if status == NO_ERROR {
         Ok(())
     } else {
-        // TEMPORARY diagnostic — remove once the real bindings-tests-macos
-        // EncoderBackendFailure root cause is confirmed from CI output.
-        eprintln!("mediaway: set_i32_property failed: status={status} value={value}");
+        debug_log(&format!(
+            "set_i32_property failed: status={status} value={value}"
+        ));
         Err(EncodeError::Backend)
     }
 }
@@ -681,9 +698,9 @@ unsafe fn set_bool_property(
     if status == NO_ERROR {
         Ok(())
     } else {
-        // TEMPORARY diagnostic — remove once the real bindings-tests-macos
-        // EncoderBackendFailure root cause is confirmed from CI output.
-        eprintln!("mediaway: set_bool_property failed: status={status} value={value}");
+        debug_log(&format!(
+            "set_bool_property failed: status={status} value={value}"
+        ));
         Err(EncodeError::Backend)
     }
 }
@@ -703,9 +720,7 @@ unsafe fn set_string_property(
     if status == NO_ERROR {
         Ok(())
     } else {
-        // TEMPORARY diagnostic — remove once the real bindings-tests-macos
-        // EncoderBackendFailure root cause is confirmed from CI output.
-        eprintln!("mediaway: set_string_property failed: status={status}");
+        debug_log(&format!("set_string_property failed: status={status}"));
         Err(EncodeError::Backend)
     }
 }

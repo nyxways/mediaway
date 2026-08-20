@@ -42,27 +42,39 @@ impl AutoEncoder {
 
         #[cfg(target_os = "linux")]
         {
-            // mediaway-encoder-linux has no `auto` module (unlike Windows): its VA-API
-            // backend only implements `VideoInputPreference::CpuUploadOk` today (see
-            // that crate's ADR-0001), so there is no path selection to do here.
+            // mediaway-encoder-linux has no `auto` module (unlike Windows), but its VA-API
+            // backend does have a real Zero-Copy path (`GpuBufferHandle::DmaBuf`, adr/linux/
+            // 0006) alongside CpuUpload — try it first when the caller signals GPU-resident
+            // frames (`gpu_device: Some(_)`), matching the Windows chain's ZC-before-CPU
+            // ordering. See ADR-0004.
             use mediaway_encoder::VideoInputPreference;
             use mediaway_encoder::linux::LinuxVideoEncoder;
-            let low_level =
-                config.to_low_level(VideoInputPreference::CpuUploadOk, config.gpu_device);
-            let enc = LinuxVideoEncoder::open(&low_level)?;
+            if config.gpu_device.is_some() {
+                let low = config.to_low_level(VideoInputPreference::ZeroCopyGpu, config.gpu_device);
+                if let Ok(enc) = LinuxVideoEncoder::open(&low) {
+                    return Ok(Box::new(enc));
+                }
+            }
+            let low = config.to_low_level(VideoInputPreference::CpuUploadOk, config.gpu_device);
+            let enc = LinuxVideoEncoder::open(&low)?;
             Ok(Box::new(enc))
         }
 
         #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
-            // mediaway-encoder::apple has no `auto` module either (same reasoning as Linux):
-            // `VTCompressionSession` only implements `VideoInputPreference::CpuUploadOk` today
-            // (see that crate's apple/adr/0001).
+            // mediaway-encoder::apple has no `auto` module either, but `VTCompressionSession`
+            // does have a real Zero-Copy path (`GpuBufferHandle::Metal`, apple/adr/0003)
+            // alongside CpuUpload — same ZC-before-CPU ordering as Linux/Windows. See ADR-0004.
             use mediaway_encoder::VideoInputPreference;
             use mediaway_encoder::apple::AppleVideoEncoder;
-            let low_level =
-                config.to_low_level(VideoInputPreference::CpuUploadOk, config.gpu_device);
-            let enc = AppleVideoEncoder::open(&low_level)?;
+            if config.gpu_device.is_some() {
+                let low = config.to_low_level(VideoInputPreference::ZeroCopyGpu, config.gpu_device);
+                if let Ok(enc) = AppleVideoEncoder::open(&low) {
+                    return Ok(Box::new(enc));
+                }
+            }
+            let low = config.to_low_level(VideoInputPreference::CpuUploadOk, config.gpu_device);
+            let enc = AppleVideoEncoder::open(&low)?;
             Ok(Box::new(enc))
         }
 

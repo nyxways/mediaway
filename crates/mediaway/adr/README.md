@@ -11,6 +11,7 @@ then:
 | [0001](0001-frame-filter-hook.md) | Mid-pipeline frame filter hook on `EncodeSession` | Proposed |
 | [0002](0002-platform-dispatch-avoid-box-dyn.md) | Platform dispatch shape (avoid `Box<dyn>`) | Accepted |
 | [0003](0003-audio-track-and-apm-integration.md) | Audio track support on `EncodeSession`, with optional `mediaway-audio-apm` (AEC/NS/AGC + VAD) integration | Accepted |
+| [0004](0004-autoencoder-zerocopy-linux-apple.md) | `AutoEncoder::open` — wire Linux/Apple `ZeroCopyGpu` into the auto chain | Accepted |
 
 Template: [`template.md`](template.md)
 

@@ -123,6 +123,16 @@ impl Muxer<Live> {
         }
     }
 
+    /// Backfill `track_id`'s `extra_data` if it is still empty — see
+    /// [`iso_bmff::mux::Muxer::set_track_extra_data`] for when this is needed (an
+    /// encoder backend whose config record is only known after encoding at least one
+    /// frame, e.g. `VideoToolbox`) and its no-op conditions.
+    pub fn set_track_extra_data(&mut self, track_id: u32, extra_data: mediaway_common::Bytes) {
+        if let Some(live) = self.live.as_mut() {
+            live.set_track_extra_data(track_id, extra_data);
+        }
+    }
+
     /// Poll container bytes.
     pub fn poll_bytes(&mut self, out: &mut Vec<u8>) -> usize {
         self.live.as_mut().map_or(0, |m| m.poll_bytes(out))

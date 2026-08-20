@@ -44,8 +44,26 @@
           Link="mediaway_ffi.dll"
           CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\..\..\target\debug\mediaway_ffi.dll"
-          Condition="!Exists('..\..\runtime\win-x64\native\mediaway_ffi.dll')"
+          Condition="!Exists('..\..\runtime\win-x64\native\mediaway_ffi.dll') AND Exists('..\..\..\..\target\debug\mediaway_ffi.dll')"
           Link="mediaway_ffi.dll"
+          CopyToOutputDirectory="PreserveNewest" />
+    <!--
+      macOS: two architectures can be staged side by side (native-assets-macos
+      builds both x86_64 and arm64), so pick the one matching the actual host
+      running this test process — RuntimeInformation.OSArchitecture, not a
+      blind Exists() check, or both would match and collide on one Link name.
+    -->
+    <None Include="..\..\runtime\osx-arm64\native\libmediaway_ffi.dylib"
+          Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64' AND Exists('..\..\runtime\osx-arm64\native\libmediaway_ffi.dylib')"
+          Link="libmediaway_ffi.dylib"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\runtime\osx-x64\native\libmediaway_ffi.dylib"
+          Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' != 'Arm64' AND Exists('..\..\runtime\osx-x64\native\libmediaway_ffi.dylib')"
+          Link="libmediaway_ffi.dylib"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\..\target\debug\libmediaway_ffi.dylib"
+          Condition="!Exists('..\..\runtime\osx-arm64\native\libmediaway_ffi.dylib') AND !Exists('..\..\runtime\osx-x64\native\libmediaway_ffi.dylib') AND Exists('..\..\..\..\target\debug\libmediaway_ffi.dylib')"
+          Link="libmediaway_ffi.dylib"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

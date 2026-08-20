@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 
 use crate::error::PipelineError;
 use crate::filter::{FilterError, FrameFilter};
-use mediaway_common::{AudioFrame, VideoFrame, VideoFrameStorage};
+use mediaway_common::{AudioFrame, StreamInfo, VideoFrame, VideoFrameStorage};
 use mediaway_container::mp4;
 use mediaway_encoder::{AudioEncoder, VideoEncoder};
 use mediaway_sw::apm::{AudioProcessor, VoiceActivityDetector};
@@ -302,6 +302,23 @@ impl<E: VideoEncoder> EncodeSession<E> {
 
     fn drain(&mut self) -> Result<(), PipelineError> {
         while let Some(mut pkt) = self.encoder.poll_packet()? {
+            // A backend whose config record is only known after encoding at least one
+            // frame (e.g. `VideoToolbox`, which determines SPS/PPS internally rather
+            // than deriving them from open-time config) reports empty `extra_data` from
+            // `stream_info()` at `open()` time — by the time `poll_packet` returns a
+            // packet, the backend has necessarily finished encoding it, so `stream_info()`
+            // now reflects the real, finalized value. A no-op once the muxer already has
+            // real `extra_data` (from this call or from `push_packet`'s own in-band
+            // Annex-B extraction) or once the moov header is already written.
+            if let StreamInfo::Video { extra_data, .. } = self.encoder.stream_info()
+                && !extra_data.is_empty()
+            {
+                // clone: Bytes refcount bump, not a payload copy — set_track_extra_data
+                // needs an owned value but this fires at most once in practice (a no-op
+                // once the muxer's own extra_data is no longer empty).
+                self.muxer
+                    .set_track_extra_data(self.track_id, extra_data.clone());
+            }
             pkt.stream_id = self.track_id;
             self.muxer.push_packet(&pkt)?;
         }

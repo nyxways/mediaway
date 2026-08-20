@@ -49,7 +49,7 @@ members = [
 # See docs/spec/crate-packaging.md · docs/adr/0003-crate-packaging.md
 
 [workspace.package]
-version = "0.1.6"
+version = "0.1.8"
 edition = "2024"
 rust-version = "1.96"
 license = "MIT OR Apache-2.0"

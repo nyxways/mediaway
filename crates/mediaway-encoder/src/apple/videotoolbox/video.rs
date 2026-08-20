@@ -1,7 +1,10 @@
 //! `VTCompressionSession` CPU-upload encode session — H.264/HEVC/`ProRes`.
 //!
 //! See [ADR-0001](../../adr/apple/0001-videotoolbox-h264-cpu-upload.md) for the original H.264
-//! scope (Constrained-Baseline-class / CPU NV12 upload only / best-effort key-frame-interval),
+//! scope (Baseline-class / CPU NV12 upload only / best-effort key-frame-interval — plain
+//! `Baseline`, not `ConstrainedBaseline`: VideoToolbox's hardware encoder rejects the latter
+//! outright, see the ADR's 2026-08-20 addendum; `AllowFrameReordering: false` and Baseline's own
+//! CAVLC-only constraint already keep the practical bitstream Constrained-Baseline-class),
 //! [ADR-0002](../../adr/apple/0002-videotoolbox-hevc-encode.md) for the HEVC addition (Main-
 //! class profile) and VP9/AV1's permanent non-support (no `VideoToolbox` compression API exists
 //! for either), and [ADR-0006](../../adr/apple/0006-videotoolbox-prores-encode.md) for the six
@@ -35,7 +38,7 @@ use objc2_video_toolbox::{
     kVTCompressionPropertyKey_AllowFrameReordering, kVTCompressionPropertyKey_AverageBitRate,
     kVTCompressionPropertyKey_ExpectedFrameRate, kVTCompressionPropertyKey_MaxKeyFrameInterval,
     kVTCompressionPropertyKey_ProfileLevel, kVTCompressionPropertyKey_RealTime,
-    kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel, kVTProfileLevel_HEVC_Main_AutoLevel,
+    kVTProfileLevel_H264_Baseline_AutoLevel, kVTProfileLevel_HEVC_Main_AutoLevel,
 };
 
 use super::codec::codec_type;
@@ -602,7 +605,13 @@ fn configure_properties(
             // anything but H.264/HEVC/ProRes).
             let profile_level = match config.codec {
                 CodecKind::Hevc => kVTProfileLevel_HEVC_Main_AutoLevel,
-                _ => kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel,
+                // Plain Baseline, not ConstrainedBaseline — VideoToolbox's hardware encoder
+                // rejects ConstrainedBaseline outright (`VTSessionSetProperty` returns
+                // `kVTParameterErr`, hardware-confirmed on real Apple Silicon CI — see
+                // ADR-0001's 2026-08-20 addendum). `AllowFrameReordering: false` above plus
+                // Baseline's own CAVLC-only constraint already keep the practical bitstream
+                // Constrained-Baseline-class.
+                _ => kVTProfileLevel_H264_Baseline_AutoLevel,
             };
             set_string_property(
                 session,
@@ -635,7 +644,9 @@ unsafe fn set_i32_property(
     // SAFETY: `&value` is a valid stack `i32` matching `CFNumberType::SInt32Type`'s contract.
     let number =
         unsafe { CFNumber::new(None, CFNumberType::SInt32Type, (&raw const value).cast()) };
-    let number = number.ok_or(EncodeError::Backend)?;
+    let Some(number) = number else {
+        return Err(EncodeError::Backend);
+    };
     // SAFETY: `session` derefs to `&VTSession` (`= CFType`) per CoreFoundation toll-free
     // bridging; `number` is a valid, just-created `CFNumber`.
     let status = unsafe { VTSessionSetProperty(session, key, Some(&number)) };

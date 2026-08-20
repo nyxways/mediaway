@@ -234,7 +234,7 @@ jobs:
             --target wasm32-unknown-unknown --release
 
   android:
-    name: android compile (mediaway-encoder, mediaway-device)
+    name: android compile (mediaway-encoder, mediaway-decoder, mediaway-device)
     runs-on: ubuntu-latest
     needs: [affected]
     # Compile-only, same accepted shape as the `wasm` job above: this workspace's dev
@@ -249,6 +249,7 @@ jobs:
       ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/')) &&
           (needs.affected.outputs.set == 'ALL' ||
           contains(needs.affected.outputs.set, 'mediaway-encoder') ||
+          contains(needs.affected.outputs.set, 'mediaway-decoder') ||
           contains(needs.affected.outputs.set, 'mediaway-device') ||
           contains(needs.affected.outputs.set, 'mediaway-common')) }}
     steps:
@@ -287,6 +288,12 @@ jobs:
         run: |
           cargo ndk -t arm64-v8a --platform 21 clippy -p mediaway-encoder --all-features --all-targets -- -D warnings
 
+      - name: Lint mediaway-decoder for Android (arm64-v8a, API 21)
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          cargo ndk -t arm64-v8a --platform 21 clippy -p mediaway-decoder --all-features --all-targets -- -D warnings
+
       - name: Lint mediaway-device for Android (arm64-v8a, API 26)
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
@@ -294,7 +301,7 @@ jobs:
           cargo ndk -t arm64-v8a --platform 26 clippy -p mediaway-device --all-features --all-targets -- -D warnings
 
   apple-macos:
-    name: apple compile (macOS, mediaway-encoder, mediaway-device)
+    name: apple compile (macOS, mediaway-encoder, mediaway-decoder, mediaway-device)
     runs-on: macos-14
     needs: [affected]
     # Compile + lint only, same accepted shape as `wasm`/`android` above: this workspace's dev
@@ -307,6 +314,7 @@ jobs:
       ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/')) &&
           (needs.affected.outputs.set == 'ALL' ||
           contains(needs.affected.outputs.set, 'mediaway-encoder') ||
+          contains(needs.affected.outputs.set, 'mediaway-decoder') ||
           contains(needs.affected.outputs.set, 'mediaway-device') ||
           contains(needs.affected.outputs.set, 'mediaway-common')) }}
     steps:
@@ -319,12 +327,16 @@ jobs:
         run: |
           cargo clippy -p mediaway-encoder --all-features --all-targets -- -D warnings
 
+      - name: Lint mediaway-decoder for macOS (native)
+        run: |
+          cargo clippy -p mediaway-decoder --all-features --all-targets -- -D warnings
+
       - name: Lint mediaway-device for macOS (native)
         run: |
           cargo clippy -p mediaway-device --all-features --all-targets -- -D warnings
 
   apple-ios:
-    name: apple compile (iOS cross-compile, mediaway-encoder, mediaway-device)
+    name: apple compile (iOS cross-compile, mediaway-encoder, mediaway-decoder, mediaway-device)
     runs-on: macos-14
     needs: [affected]
     # Compile-only, cross-compiled — no simulator boot, mirroring the `android` job's
@@ -336,6 +348,7 @@ jobs:
       ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/')) &&
           (needs.affected.outputs.set == 'ALL' ||
           contains(needs.affected.outputs.set, 'mediaway-encoder') ||
+          contains(needs.affected.outputs.set, 'mediaway-decoder') ||
           contains(needs.affected.outputs.set, 'mediaway-device') ||
           contains(needs.affected.outputs.set, 'mediaway-common')) }}
     steps:
@@ -350,6 +363,10 @@ jobs:
       - name: Lint mediaway-encoder for iOS (cross-compile)
         run: |
           cargo clippy --target aarch64-apple-ios -p mediaway-encoder --all-features --all-targets -- -D warnings
+
+      - name: Lint mediaway-decoder for iOS (cross-compile)
+        run: |
+          cargo clippy --target aarch64-apple-ios -p mediaway-decoder --all-features --all-targets -- -D warnings
 
       - name: Lint mediaway-device for iOS (cross-compile)
         run: |

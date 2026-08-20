@@ -17,6 +17,8 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -33,4 +35,4 @@ Documentation = "https://nyxways.github.io/mediaway/"
 packages = ["mediaway"]
 
 [tool.setuptools.package-data]
-mediaway = ["_native/*.dll", "py.typed"]
+mediaway = ["_native/*.dll", "_native/*.so", "_native/*.dylib", "py.typed"]

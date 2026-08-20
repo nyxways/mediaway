@@ -83,10 +83,14 @@ fn rust_config(
 /// codec-driven branch `mediaway::platform`'s own `encoder_support` probe already
 /// established for Opus: `CodecKind::Opus` always resolves to `mediaway-sw`'s
 /// pure-Rust backend (cross-platform, no `#[cfg]`) — no inbox WMF Opus encoder MFT
-/// exists on Windows (`docs/ai/wiki/license/sw-opus.md`). Every other codec keeps the
-/// existing OS-backend dispatch: Windows reaches the real WMF AAC backend; every
-/// other platform returns `EncodeError::NoBackend` (graceful, not an error the
-/// caller must treat as a bug).
+/// exists on Windows (`docs/ai/wiki/license/sw-opus.md`), and Apple's own native
+/// `AudioConverter` Opus path is reachable directly via `AppleAudioEncoder`, not
+/// through this AAC-oriented auto path. Every other codec keeps the existing
+/// OS-backend dispatch: Windows reaches the real WMF AAC backend, Apple reaches the
+/// real `AudioToolbox` AAC-LC backend (`AppleAudioEncoder`, ADR apple/0004 — added
+/// after this function's Apple branch was found missing on the first real
+/// `bindings-tests-macos` CI run); every other platform returns
+/// `EncodeError::NoBackend` (graceful, not an error the caller must treat as a bug).
 fn open_audio_encoder(config: &AudioEncoderConfig) -> Result<Box<dyn AudioEncoder>, EncodeError> {
     if config.codec == CodecKind::Opus {
         return Ok(Box::new(mediaway_encoder::SwOpusAudioEncoder::open(
@@ -100,7 +104,13 @@ fn open_audio_encoder(config: &AudioEncoderConfig) -> Result<Box<dyn AudioEncode
             mediaway_encoder::windows::WindowsAudioEncoder::open(config)?,
         ))
     }
-    #[cfg(not(windows))]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        Ok(Box::new(mediaway_encoder::apple::AppleAudioEncoder::open(
+            config,
+        )?))
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "ios")))]
     {
         let _ = config;
         Err(EncodeError::NoBackend)

@@ -9,7 +9,7 @@ use crate::bitstream::to_avcc;
 use crate::codec_features::check_codec;
 use crate::error::Error;
 use crate::isobmff::{write_fragment, write_ftyp, write_moov};
-use crate::types::{Codec, Sample, Track};
+use crate::types::{Bytes, Codec, Sample, Track};
 use crate::{INLINE_SAMPLES, INLINE_TRACKS};
 use smallvec::SmallVec;
 use std::marker::PhantomData;
@@ -123,6 +123,28 @@ impl Muxer<Live> {
     #[must_use]
     pub fn tracks(&self) -> &[Track] {
         &self.tracks
+    }
+
+    /// Backfill `track_id`'s `extra_data` if it is still empty — for an encoder backend
+    /// whose config record (SPS/PPS-derived `avcC`, etc.) is only known after encoding
+    /// at least one frame (e.g. `VideoToolbox`, which determines SPS/PPS internally
+    /// rather than deriving them from open-time config), so [`Muxer::add_track`]'s
+    /// initial [`Track::extra_data`] is necessarily empty. Callers should call this with
+    /// the encoder's now-current `extra_data` right before pushing that first packet —
+    /// [`Muxer::push_packet`]'s own in-band Annex-B extraction already covers backends
+    /// that emit Annex-B-framed samples with in-band parameter sets, so this only
+    /// matters for AVCC-native output (no in-band SPS/PPS to extract from). A no-op
+    /// once the moov header is written (too late to matter) or once `extra_data` is
+    /// already non-empty (never overwrites a real value).
+    pub fn set_track_extra_data(&mut self, track_id: u32, extra_data: Bytes) {
+        if self.header_written {
+            return;
+        }
+        if let Some(track) = self.tracks.iter_mut().find(|t| t.id == track_id)
+            && track.extra_data.is_empty()
+        {
+            track.extra_data = extra_data;
+        }
     }
 
     /// Push a compressed Sample (H.264 Annex-B auto-converted to AVCC).

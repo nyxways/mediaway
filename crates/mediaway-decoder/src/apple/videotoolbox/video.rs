@@ -33,9 +33,11 @@ use objc2_core_media::{
     CMTimeFlags, CMVideoFormatDescription, kCMBlockBufferCustomBlockSourceVersion,
 };
 use objc2_core_video::{
-    CVImageBuffer, CVPixelBuffer, CVPixelBufferGetHeight, CVPixelBufferGetWidth,
-    CVPixelBufferLockFlags, kCVPixelBufferPixelFormatTypeKey,
-    kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+    CVImageBuffer, CVPixelBuffer, CVPixelBufferGetBaseAddressOfPlane,
+    CVPixelBufferGetBytesPerRowOfPlane, CVPixelBufferGetHeight, CVPixelBufferGetHeightOfPlane,
+    CVPixelBufferGetPixelFormatType, CVPixelBufferGetWidth, CVPixelBufferGetWidthOfPlane,
+    CVPixelBufferLockBaseAddress, CVPixelBufferLockFlags, CVPixelBufferUnlockBaseAddress,
+    kCVPixelBufferPixelFormatTypeKey, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
 };
 use objc2_video_toolbox::{
     VTDecodeFrameFlags, VTDecodeInfoFlags, VTDecompressionOutputCallbackRecord,
@@ -220,21 +222,22 @@ impl VideoToolboxVideoDecoder {
             decompressionOutputRefCon: refcon_ptr.cast::<c_void>().cast_mut(),
         };
 
-        let mut session_out: Option<CFRetained<VTDecompressionSession>> = None;
+        let mut session_out: *mut VTDecompressionSession = std::ptr::null_mut();
         // SAFETY: `video_format_desc` is a valid, just-created video format description;
         // `dest_attrs` is a valid `CFDictionary`; `callback_record.decompressionOutputCallback`
         // is a real `extern "C-unwind" fn` matching `VTDecompressionOutputCallback`'s exact
         // signature; `decompressionOutputRefCon` is a valid, live pointer for at least the
-        // session's lifetime (reclaimed only in `Drop`, after `invalidate()`); `session_out`
-        // starts `None`.
+        // session's lifetime (reclaimed only in `Drop`, after `invalidate()`); `callback_record`
+        // outlives this call (stack value, borrowed only for the duration of `create`);
+        // `session_out` is a valid stack out-pointer.
         let status = unsafe {
-            VTDecompressionSession::new(
+            VTDecompressionSession::create(
                 None,
                 &video_format_desc,
                 None,
                 Some(&dest_attrs),
-                Some(&callback_record),
-                &mut session_out,
+                std::ptr::from_ref(&callback_record),
+                NonNull::from(&mut session_out),
             )
         };
         if status != NO_ERROR {
@@ -243,11 +246,15 @@ impl VideoToolboxVideoDecoder {
             drop(unsafe { Arc::from_raw(refcon_ptr) });
             return Err(DecodeError::Backend);
         }
-        let Some(session) = session_out else {
+        let Some(session_ptr) = NonNull::new(session_out) else {
             // SAFETY: same reasoning as the failure branch above.
             drop(unsafe { Arc::from_raw(refcon_ptr) });
             return Err(DecodeError::Backend);
         };
+        // SAFETY: `session_ptr` came from `VTDecompressionSessionCreate`, which just reported
+        // success — the Create Rule guarantees a +1 retain count this call now owns.
+        let session: CFRetained<VTDecompressionSession> =
+            unsafe { CFRetained::from_raw(session_ptr) };
 
         self.video_format_desc = Some(video_format_desc);
         self.session = Some(session);
@@ -355,8 +362,14 @@ impl VideoDecoder for VideoToolboxVideoDecoder {
         // `info_flags_out` are intentionally unused (`null_mut`/`None`) — this backend recovers
         // timing from the output callback's own `CMTime` parameters, not a threaded-through
         // refcon (ADR-0001 § Callback design).
-        let status =
-            unsafe { session.decode_frame(&sample_buffer, flags, std::ptr::null_mut(), None) };
+        let status = unsafe {
+            session.decode_frame(
+                &sample_buffer,
+                flags,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
         if status != NO_ERROR {
             return Err(DecodeError::Backend);
         }
@@ -458,12 +471,14 @@ unsafe extern "C-unwind" fn decompression_output_callback(
     // duration of this callback invocation per `VTDecompressionOutputCallback`'s own contract.
     let image_buffer = unsafe { &*image_buffer };
 
-    // Checked, not unchecked, downcast (ADR-0001 § Callback design) — `None` is a documented,
-    // non-panicking skipped frame, not an assumption this crate cannot honestly make.
-    let Some(pixel_buffer) = image_buffer.downcast_ref::<CVPixelBuffer>() else {
-        return;
-    };
-    if pixel_buffer.pixel_format_type() != kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange {
+    // `CVPixelBuffer` is a type alias for `CVImageBuffer` (`objc2-core-video`), not a distinct
+    // downcast target — `image_buffer` already *is* a `&CVPixelBuffer` once VideoToolbox has
+    // handed it back through this callback (the session was created with a pixel-buffer-typed
+    // `destinationImageBufferAttributes`, so nothing else can appear here).
+    let pixel_buffer: &CVPixelBuffer = image_buffer;
+    if CVPixelBufferGetPixelFormatType(pixel_buffer)
+        != kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+    {
         // VideoToolbox declined the requested NV12/VideoRange destination format — do not
         // misinterpret the bytes (ADR-0001 § Callback design).
         return;
@@ -481,25 +496,29 @@ unsafe extern "C-unwind" fn decompression_output_callback(
         // reads plane bytes below (never modifies the buffer), matching `ReadOnly`'s contract —
         // a symmetric lock/unlock pair follows (unlocked with the same flags before every
         // return path below).
-        if unsafe { pixel_buffer.lock_base_address(CVPixelBufferLockFlags::ReadOnly) } != NO_ERROR {
+        if unsafe { CVPixelBufferLockBaseAddress(pixel_buffer, CVPixelBufferLockFlags::ReadOnly) }
+            != NO_ERROR
+        {
             return;
         }
 
         let frame = build_frame(
-            pixel_buffer.base_address_of_plane(0),
-            pixel_buffer.bytes_per_row_of_plane(0),
-            pixel_buffer.base_address_of_plane(1),
-            pixel_buffer.bytes_per_row_of_plane(1),
-            pixel_buffer.height_of_plane(1),
-            pixel_buffer.width_of_plane(0),
-            pixel_buffer.height_of_plane(0),
+            CVPixelBufferGetBaseAddressOfPlane(pixel_buffer, 0),
+            CVPixelBufferGetBytesPerRowOfPlane(pixel_buffer, 0),
+            CVPixelBufferGetBaseAddressOfPlane(pixel_buffer, 1),
+            CVPixelBufferGetBytesPerRowOfPlane(pixel_buffer, 1),
+            CVPixelBufferGetHeightOfPlane(pixel_buffer, 1),
+            CVPixelBufferGetWidthOfPlane(pixel_buffer, 0),
+            CVPixelBufferGetHeightOfPlane(pixel_buffer, 0),
             presentation_time_stamp,
             presentation_duration,
             shared.time_base,
         );
 
         // SAFETY: matches the lock above — always unlock with the same flags used to lock.
-        let _ = unsafe { pixel_buffer.unlock_base_address(CVPixelBufferLockFlags::ReadOnly) };
+        let _ = unsafe {
+            CVPixelBufferUnlockBaseAddress(pixel_buffer, CVPixelBufferLockFlags::ReadOnly)
+        };
 
         frame.map(|frame| PendingFrame {
             frame,
@@ -626,12 +645,12 @@ fn build_frame(
     })
 }
 
-/// `destinationImageBufferAttributes` for `VTDecompressionSession::new` — forces NV12
+/// `destinationImageBufferAttributes` for `VTDecompressionSession::create` — forces NV12
 /// (`kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange`) output (ADR-0001 § Session lifecycle):
 /// **`VideoRange`, not `FullRange`** — decode consumes arbitrary third-party H.264 streams, for
 /// which `VideoRange` is the more honest default absent VUI-based range detection (deferred,
 /// ADR-0001 § Scope).
-fn destination_pixel_buffer_attributes() -> CFRetained<CFDictionary<CFString, CFType>> {
+fn destination_pixel_buffer_attributes() -> CFRetained<CFDictionary> {
     // Bit-pattern reinterpret of the `FourCharCode`/`OSType` pixel-format-type constant as a
     // signed 32-bit `CFNumber` — the standard CoreFoundation convention for a FourCC-valued
     // property (same reinterpretation `mediaway-encoder::apple` already uses for its own
@@ -642,7 +661,12 @@ fn destination_pixel_buffer_attributes() -> CFRetained<CFDictionary<CFString, CF
     // SAFETY: `kCVPixelBufferPixelFormatTypeKey` is a real, always-initialized CoreVideo
     // framework constant (an `extern "C"` static, safe to read for the process's lifetime).
     let key = unsafe { kCVPixelBufferPixelFormatTypeKey };
-    CFDictionary::<CFString, CFType>::from_slices(&[key], &[number_ct])
+    let dict = CFDictionary::<CFString, CFType>::from_slices(&[key], &[number_ct]);
+    // SAFETY: `CFDictionary<CFString, CFType>` and the bare `CFDictionary` (==
+    // `CFDictionary<Opaque, Opaque>`, `VTDecompressionSession::create`'s own
+    // `destination_image_buffer_attributes` parameter type) are the identical Core Foundation
+    // object at runtime — same toll-free-bridging cast `format_desc::create_raw` already makes.
+    unsafe { CFRetained::cast_unchecked(dict) }
 }
 
 /// Per-packet `CMSampleTimingInfo` from `Packet::{pts, dts, duration}` (ADR-0001 § Timestamps).
@@ -692,34 +716,40 @@ fn create_block_buffer(payload: &Bytes) -> Result<CFRetained<CMBlockBuffer>, Dec
         refCon: refcon_ptr,
     };
 
-    let mut block_buffer_out: Option<CFRetained<CMBlockBuffer>> = None;
+    let mut block_buffer_out: *mut CMBlockBuffer = std::ptr::null_mut();
     // SAFETY: `data_ptr` points at `len` valid, exclusively-owned bytes for at least the
     // lifetime of the returned `CMBlockBuffer` (reclaimed exactly once by `free_avcc_block`,
     // which VideoToolbox calls when the block buffer's backing memory is freed);
     // `custom_block_source.FreeBlock` is a real `extern "C-unwind" fn` matching
-    // `CMBlockBufferCustomBlockSource`'s exact `FreeBlock` signature; `block_buffer_out` starts
-    // `None`.
+    // `CMBlockBufferCustomBlockSource`'s exact `FreeBlock` signature; `block_buffer_out` is a
+    // valid stack out-pointer.
     let status = unsafe {
-        CMBlockBuffer::with_memory_block(
+        CMBlockBuffer::create_with_memory_block(
             None,
             data_ptr,
             len,
             None,
-            Some(&custom_block_source),
+            std::ptr::from_ref(&custom_block_source),
             0,
             len,
             0,
-            &mut block_buffer_out,
+            NonNull::from(&mut block_buffer_out),
         )
     };
     if status != NO_ERROR {
         // SAFETY: creation failed before VideoToolbox could take ownership of the box (the
-        // custom `FreeBlock` callback is never invoked on a `with_memory_block` failure) —
-        // reclaim it here instead, the only path that would otherwise leak it.
+        // custom `FreeBlock` callback is never invoked on a `create_with_memory_block` failure)
+        // — reclaim it here instead, the only path that would otherwise leak it.
         drop(unsafe { Box::from_raw(refcon_ptr.cast::<Vec<u8>>()) });
         return Err(DecodeError::Backend);
     }
-    block_buffer_out.ok_or(DecodeError::Backend)
+    let Some(block_buffer_ptr) = NonNull::new(block_buffer_out) else {
+        drop(unsafe { Box::from_raw(refcon_ptr.cast::<Vec<u8>>()) });
+        return Err(DecodeError::Backend);
+    };
+    // SAFETY: `block_buffer_ptr` came from `CMBlockBufferCreateWithMemoryBlock`, which just
+    // reported success — the Create Rule guarantees a +1 retain count this call now owns.
+    Ok(unsafe { CFRetained::from_raw(block_buffer_ptr) })
 }
 
 /// SAFETY: `ref_con` is exactly the `Box::into_raw(Box::new(Vec<u8>))` pointer
@@ -741,15 +771,15 @@ fn create_sample_buffer(
     format_desc: &CMVideoFormatDescription,
     timing: &CMSampleTimingInfo,
 ) -> Result<CFRetained<CMSampleBuffer>, DecodeError> {
-    let mut sample_buffer_out: Option<CFRetained<CMSampleBuffer>> = None;
+    let mut sample_buffer_out: *mut CMSampleBuffer = std::ptr::null_mut();
     // SAFETY: `block_buffer` is a valid, just-created `CMBlockBuffer`; `format_desc` is the
     // session's own retained format description (kept alive by `VideoToolboxVideoDecoder::
     // video_format_desc` for the whole session, `Deref`s to `&CMFormatDescription`); `timing`
     // is a valid stack value describing exactly the one sample in this buffer
     // (`num_sample_timing_entries: 1`, matching `CMSampleBufferCreate`'s "one entry applies to
-    // all samples in this call" contract); `sample_buffer_out` starts `None`.
+    // all samples in this call" contract); `sample_buffer_out` is a valid stack out-pointer.
     let status = unsafe {
-        CMSampleBuffer::new(
+        CMSampleBuffer::create(
             None,
             Some(block_buffer),
             true,
@@ -761,13 +791,18 @@ fn create_sample_buffer(
             std::ptr::from_ref(timing),
             0,
             std::ptr::null(),
-            &mut sample_buffer_out,
+            NonNull::from(&mut sample_buffer_out),
         )
     };
     if status != NO_ERROR {
         return Err(DecodeError::Backend);
     }
-    sample_buffer_out.ok_or(DecodeError::Backend)
+    let Some(sample_buffer_ptr) = NonNull::new(sample_buffer_out) else {
+        return Err(DecodeError::Backend);
+    };
+    // SAFETY: `sample_buffer_ptr` came from `CMSampleBufferCreate`, which just reported success
+    // — the Create Rule guarantees a +1 retain count this call now owns.
+    Ok(unsafe { CFRetained::from_raw(sample_buffer_ptr) })
 }
 
 fn validate(config: &VideoDecoderConfig) -> Result<(), DecodeError> {

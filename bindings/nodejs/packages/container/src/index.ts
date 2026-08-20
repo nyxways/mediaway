@@ -28,7 +28,18 @@ export interface Rational {
   den: number;
 }
 
-export type VideoCodec = "h264" | "hevc" | "av1" | "vp9" | "vp8";
+export type VideoCodec =
+  | "h264"
+  | "hevc"
+  | "av1"
+  | "vp9"
+  | "vp8"
+  | "prores_422_proxy"
+  | "prores_422_lt"
+  | "prores_422"
+  | "prores_422_hq"
+  | "prores_4444"
+  | "prores_4444_xq";
 export type AudioCodec = "aac" | "opus" | "mp3" | "raw_audio";
 export type PixelFormat = "nv12" | "bgra8" | "rgba8" | "i420" | "yuy2";
 
@@ -94,6 +105,12 @@ export const CODEC_TO_ABI: Record<string, number> = {
   vorbis: 7,
   raw_audio: 11,
   vp8: 12,
+  prores_422_proxy: 13,
+  prores_422_lt: 14,
+  prores_422: 15,
+  prores_422_hq: 16,
+  prores_4444: 17,
+  prores_4444_xq: 18,
 };
 export const ABI_TO_CODEC: Record<number, string> = Object.fromEntries(
   Object.entries(CODEC_TO_ABI).map(([k, v]) => [v, k])

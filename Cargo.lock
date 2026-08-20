@@ -1209,7 +1209,7 @@ dependencies = [
 
 [[package]]
 name = "iso-bmff-wasm"
-version = "0.1.6"
+version = "0.1.8"
 dependencies = [
  "bytes",
  "iso-bmff",
@@ -1442,7 +1442,7 @@ dependencies = [
 
 [[package]]
 name = "mediaway"
-version = "0.1.6"
+version = "0.1.8"
 dependencies = [
  "mediaway-common",
  "mediaway-container",
@@ -1460,7 +1460,7 @@ dependencies = [
 
 [[package]]
 name = "mediaway-avcli"
-version = "0.1.6"
+version = "0.1.8"
 dependencies = [
  "bytes",
  "mediaway-common",
@@ -1470,7 +1470,7 @@ dependencies = [
 
 [[package]]
 name = "mediaway-avprobe"
-version = "0.1.6"
+version = "0.1.8"
 dependencies = [
  "mediaway-common",
  "mediaway-container",
@@ -1480,14 +1480,14 @@ dependencies = [
 
 [[package]]
 name = "mediaway-common"
-version = "0.1.6"
+version = "0.1.8"
 dependencies = [
  "bytes",
 ]
 
 [[package]]
 name = "mediaway-container"
-version = "0.1.6"
+version = "0.1.8"
 dependencies = [
  "adts-core",
  "ebml-webm",
@@ -1503,8 +1503,9 @@ dependencies = [
 
 [[package]]
 name = "mediaway-decoder"
-version = "0.1.6"
+version = "0.1.8"
 dependencies = [
+ "bytes",
  "criterion",
  "cros-libva",
  "iso-bmff",
@@ -1530,7 +1531,7 @@ dependencies = [
 
 [[package]]
 name = "mediaway-device"
-version = "0.1.6"
+version = "0.1.8"
 dependencies = [
  "ashpd",
  "block2",
@@ -1563,7 +1564,7 @@ dependencies = [
 
 [[package]]
 name = "mediaway-encoder"
-version = "0.1.6"
+version = "0.1.8"
 dependencies = [
  "bytes",
  "criterion",
@@ -1593,7 +1594,7 @@ dependencies = [
 
 [[package]]
 name = "mediaway-examples"
-version = "0.1.6"
+version = "0.1.8"
 dependencies = [
  "mediaway",
  "mediaway-common",
@@ -1605,7 +1606,7 @@ dependencies = [
 
 [[package]]
 name = "mediaway-ffi"
-version = "0.1.6"
+version = "0.1.8"
 dependencies = [
  "mediaway",
  "mediaway-common",
@@ -1621,7 +1622,7 @@ dependencies = [
 
 [[package]]
 name = "mediaway-sw"
-version = "0.1.6"
+version = "0.1.8"
 dependencies = [
  "mediaway-common",
  "rav1e",
@@ -1634,7 +1635,7 @@ dependencies = [
 
 [[package]]
 name = "mediaway-test-media"
-version = "0.1.6"
+version = "0.1.8"
 dependencies = [
  "blake3",
  "thiserror 2.0.20",
@@ -3093,7 +3094,7 @@ checksum = "03c2856837ef78f57382f06b2b8563a2f512f7185d732608fd9176cb3b8edf0e"
 
 [[package]]
 name = "vpl-sys"
-version = "0.1.6"
+version = "0.1.8"
 dependencies = [
  "bindgen 0.71.1",
  "libloading",

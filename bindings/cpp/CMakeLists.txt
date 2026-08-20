@@ -1,15 +1,21 @@
-# Mediaway native bindings package (C ABI headers + C++ wrapper + win-x64 DLLs).
+# Mediaway native bindings package (C ABI headers + C++ wrapper + prebuilt
+# native lib for the host platform).
 #
 # Installs:
 #   include/mediaway/container.h  include/mediaway/pipeline.h  include/mediaway/device.h
 #   include/mediaway/mediaway.hpp (C++ RAII wrapper)
-#   bin/mediaway_*_ffi.dll        (Windows GNU runtime — add bin/ to PATH)
+#   bin/mediaway_ffi.dll          (Windows GNU runtime — add bin/ to PATH)
+#   lib/libmediaway_ffi.so/.dylib (Linux/macOS runtime)
 #   lib/pkgconfig/mediaway.pc     (C consumers)
 #   MediawayConfig.cmake          (C++ consumers: find_package(mediaway))
 #
-# Packaged as Mediaway-<version>-win64.zip/.tar.gz via CPack. The DLLs are
-# Rust build artifacts staged by tools/scripts/copy-native-dlls.ts; point
-# MEDIAWAY_NATIVE_DIR elsewhere to override.
+# Packaged as Mediaway-<version>-<platform>.zip/.tar.gz via CPack, one
+# archive per (OS, arch) — see docs/adr/0024-multi-platform-native-binding-
+# distribution.md. The native libs are Rust build artifacts staged by
+# tools/scripts/copy-native-dlls.ts; point MEDIAWAY_NATIVE_DIR_OVERRIDE
+# elsewhere to override, or MEDIAWAY_PLATFORM_TAG to force the archive
+# name/RID when cross-building (CMAKE_SYSTEM_PROCESSOR does not reliably
+# self-report the target arch for a cross-compiled macOS arm64 build).
 #
 # Usage:
 #   cmake -S bindings/cpp -B build -DCMAKE_INSTALL_PREFIX=prefix
@@ -25,11 +31,45 @@ set(MEDIAWAY_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/../../crates/mediaway-ffi/include/mediaway/device.h
 )
 set(MEDIAWAY_CPP_HEADER ${CMAKE_CURRENT_SOURCE_DIR}/include/mediaway/mediaway.hpp)
+
+if(NOT MEDIAWAY_PLATFORM_TAG)
+  if(WIN32)
+    set(MEDIAWAY_PLATFORM_TAG "win64")
+  elseif(APPLE)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+      set(MEDIAWAY_PLATFORM_TAG "macos-arm64")
+    else()
+      set(MEDIAWAY_PLATFORM_TAG "macos-x64")
+    endif()
+  else()
+    set(MEDIAWAY_PLATFORM_TAG "linux-x64")
+  endif()
+endif()
+
+# RID matching tools/scripts/copy-native-dlls.ts's staging layout
+# (bindings/native/runtime/<rid>).
+if(MEDIAWAY_PLATFORM_TAG STREQUAL "win64")
+  set(MEDIAWAY_RID "win-x64")
+elseif(MEDIAWAY_PLATFORM_TAG STREQUAL "macos-arm64")
+  set(MEDIAWAY_RID "osx-arm64")
+elseif(MEDIAWAY_PLATFORM_TAG STREQUAL "macos-x64")
+  set(MEDIAWAY_RID "osx-x64")
+else()
+  set(MEDIAWAY_RID "linux-x64")
+endif()
+
 set(MEDIAWAY_NATIVE_DIR ${MEDIAWAY_NATIVE_DIR_OVERRIDE})
 if(NOT MEDIAWAY_NATIVE_DIR)
-  set(MEDIAWAY_NATIVE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../native/runtime/win-x64)
+  set(MEDIAWAY_NATIVE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../native/runtime/${MEDIAWAY_RID})
 endif()
-file(GLOB MEDIAWAY_DLLS ${MEDIAWAY_NATIVE_DIR}/*.dll)
+
+if(WIN32)
+  file(GLOB MEDIAWAY_DLLS ${MEDIAWAY_NATIVE_DIR}/*.dll)
+elseif(APPLE)
+  file(GLOB MEDIAWAY_DLLS ${MEDIAWAY_NATIVE_DIR}/*.dylib)
+else()
+  file(GLOB MEDIAWAY_DLLS ${MEDIAWAY_NATIVE_DIR}/*.so)
+endif()
 
 # Header-only INTERFACE library — the whole "package" for C and C++ consumers.
 add_library(mediaway INTERFACE)
@@ -48,9 +88,18 @@ target_link_libraries(mediaway INTERFACE
 target_compile_definitions(mediaway INTERFACE MEDIAWAY_STATIC=1)
 
 install(FILES ${MEDIAWAY_HEADERS} ${MEDIAWAY_CPP_HEADER} DESTINATION include/mediaway)
-install(FILES ${MEDIAWAY_DLLS} DESTINATION bin)
-file(GLOB MEDIAWAY_IMPORT_LIBS ${MEDIAWAY_NATIVE_DIR}/*.dll.a)
-install(FILES ${MEDIAWAY_IMPORT_LIBS} DESTINATION lib)
+if(WIN32)
+  # DLLs are loaded from PATH at runtime, not the linker search path — the
+  # Windows convention is bin/, unlike Unix shared objects (lib/ below).
+  install(FILES ${MEDIAWAY_DLLS} DESTINATION bin)
+  file(GLOB MEDIAWAY_IMPORT_LIBS ${MEDIAWAY_NATIVE_DIR}/*.dll.a)
+  install(FILES ${MEDIAWAY_IMPORT_LIBS} DESTINATION lib)
+else()
+  # Linux/macOS: the shared object is both the link-time and load-time
+  # artifact, no separate import lib — lib/ matches the linker search path
+  # already configured above ($<INSTALL_INTERFACE:${CMAKE_INSTALL_PREFIX}/lib>).
+  install(FILES ${MEDIAWAY_DLLS} DESTINATION lib)
+endif()
 install(TARGETS mediaway EXPORT MediawayTargets)
 install(EXPORT MediawayTargets
   NAMESPACE mediaway::
@@ -89,10 +138,10 @@ file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/mediaway.pc
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/mediaway.pc
   DESTINATION lib/pkgconfig)
 
-# CPack: a self-contained win64 archive with headers + DLLs.
+# CPack: a self-contained per-platform archive with headers + native lib.
 set(CPACK_PACKAGE_NAME "Mediaway")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
-set(CPACK_PACKAGE_FILE_NAME "Mediaway-${PROJECT_VERSION}-win64")
+set(CPACK_PACKAGE_FILE_NAME "Mediaway-${PROJECT_VERSION}-${MEDIAWAY_PLATFORM_TAG}")
 set(CPACK_GENERATOR "ZIP;TGZ")
 set(CPACK_STRIP_FILES OFF)
 # Stage packages (and the _CPack_Packages temp dir) inside the build dir —

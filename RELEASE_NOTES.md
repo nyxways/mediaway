@@ -1,377 +1,331 @@
-# Mediaway release notes
+# Mediaway v0.1.8
 
-<!-- Dev changes accumulate under ## Unreleased (AGENTS.md § 10). Finalize
-     with `/release-notes <version>`; reset this template with
-     `/release-notes reset`. See docs/ai/wiki/meta/release-notes.md. -->
-
-## Unreleased
+## What's new
 
 ### Added
 
-- `mediaway-encoder::apple`: AAC-LC encode via `AudioToolbox`'s `AudioConverter`
-  (`AppleAudioEncoder`, `Aac`/`Opus` dispatch, mirrors `WindowsAudioEncoder`'s shape). Float32
-  PCM input only, no conversion needed (unlike the Windows WMF backend, which downconverts to
-  S16). `mediaway-decoder::apple`: AAC-LC decode via the same `AudioConverter` API — **the first
-  AAC decoder in this workspace at all**, requires a container-supplied `AudioSpecificConfig` at
-  `open()`. Neither wired into `mediaway::platform` (matches existing Windows audio-backend
-  scope). **Zero compile verification as authored**. See
-  `crates/mediaway-encoder/adr/apple/0004-audiotoolbox-aac-encode.md` and
-  `crates/mediaway-decoder/adr/apple/0004-audiotoolbox-aac-decode.md`.
-- `mediaway-encoder::apple`/`mediaway-decoder::apple`: real Zero-Copy `GpuBufferHandle::Metal`
-  support. Encode input (`VideoInputPreference::ZeroCopyGpu`) borrows the caller's `CVPixelBuffer`
-  directly for one `encode_frame` call — no retain/release. Decode output
-  (`VideoOutputPreference::ZeroCopyGpu`) takes a new, independent `CFRetained::retain` per decoded
-  frame; unlike this workspace's VA-API DMA-BUF Zero-Copy, `VTDecompressionSession`'s
-  `CVPixelBufferPool` grows on demand rather than reusing a fixed slot, so no DPB-style
-  `outstanding` tracking is needed — the decoder holds the last-`poll_frame`-returned handle and
-  releases it on the next `push_packet`/`poll_frame`/`flush` call, matching this crate's existing
-  "valid until next call" GPU-handle contract. **Zero compile verification as authored**. See
-  `crates/mediaway-encoder/adr/apple/0003-videotoolbox-metal-zero-copy-encode.md` and
-  `crates/mediaway-decoder/adr/apple/0003-videotoolbox-metal-zero-copy-decode.md`.
-- `mediaway::platform`: wired Apple into `encoder_support`/`decoder_support` (Opus — see the
-  native `AudioConverter` bullet below) and into `ScreenCapture::open`/`Microphone::open`/
-  `device_support`/`request_device_permission` (`mediaway-device::apple`'s Camera/Microphone/
-  Screen backends were already implemented but unreachable through this cross-platform facade).
-- `mediaway-encoder::apple`/`mediaway-decoder::apple`: native Opus encode/decode via the same
-  `AudioToolbox` `AudioConverter` API AAC uses (`audiotoolbox::{OpusEncoder, OpusDecoder}`) —
-  replaces the cross-platform `SwOpusAudioEncoder`/`SwOpusAudioDecoder` as `AppleAudioEncoder`'s
-  Apple-side default (both remain directly usable elsewhere). No new Cargo dependency —
-  `kAudioFormatOpus` is a plain format ID already reachable through the AAC work's existing
-  bindings. Frame duration is converter-chosen (queried via
-  `kAudioConverterCurrentOutputStreamDescription`/`CurrentInputStreamDescription`), not
-  caller-selectable like `SwOpusAudioEncoder`'s `time_base`-as-duration contract — a real,
-  disclosed gap. No magic cookie needed either direction (Opus is self-describing per-packet).
-  Wired live into `mediaway::platform`'s Apple `encoder_support`/`decoder_support` Opus probes.
-  **Zero compile verification as authored**. See
-  `crates/mediaway-encoder/adr/apple/0005-audiotoolbox-opus-encode.md` and
-  `crates/mediaway-decoder/adr/apple/0005-audiotoolbox-opus-decode.md`.
-- `mediaway-common::CodecKind`: six new ProRes variants (`ProRes422Proxy`/`ProRes422Lt`/
-  `ProRes422`/`ProRes422Hq`/`ProRes4444`/`ProRes4444Xq`). `mediaway-encoder::apple`/
-  `mediaway-decoder::apple`: ProRes encode/decode via `VideoToolbox` `VTCompressionSession`/
-  `VTDecompressionSession`, reusing the existing H.264/HEVC session/callback/Zero-Copy/CPU-upload
-  machinery entirely unchanged (ProRes is unconditionally all-intra with no in-band parameter
-  sets, architecturally simpler than H.264/HEVC here). `VideoEncoderConfig::gop_size`/
-  `bitrate_bps` are silently unused for ProRes (no corresponding `VideoToolbox` property exists).
-  Decode needs no config record at all (new `format_desc::create_raw_no_extension`, unlike
-  VP9/AV1's extension-atom path) — CPU readback still downsamples to NV12, a real quality loss
-  from ProRes's native higher bit depth/chroma (Zero-Copy output unaffected). **ProRes RAW/RAW HQ
-  are permanently unsupported** (encode: no compression API at all; decode: needs a separate
-  unimplemented `VTRAWProcessingSession`). Also fixed a real pre-existing bug: the encoder's
-  extradata-extraction dispatch had a silent H.264-fallback catch-all for any non-HEVC codec.
-  **Zero compile verification as authored**. See
-  `crates/mediaway-encoder/adr/apple/0006-videotoolbox-prores-encode.md` and
-  `crates/mediaway-decoder/adr/apple/0006-videotoolbox-prores-decode.md`.
-
-- `mediaway-encoder::apple`: HEVC encode (`kVTProfileLevel_HEVC_Main_AutoLevel`, CPU NV12
-  upload, `hvcC` extradata via a new `iso_bmff::bitstream::hevc` module mirroring the existing
-  H.264 `avc.rs` shape). VP9/AV1 encode confirmed to be a **permanent** `VideoToolbox` API gap —
-  zero compression-profile constants for either codec exist anywhere in the generated
-  `objc2-video-toolbox` bindings — not a deferred stage. **Zero compile verification as authored**
-  (no Apple SDK in this dev environment, same posture as this backend's existing H.264 path). See
-  `crates/mediaway-encoder/adr/apple/0002-videotoolbox-hevc-encode.md`.
-- `mediaway-decoder::apple`: HEVC decode (`CMVideoFormatDescriptionCreateFromHEVCParameterSets`,
-  same general-GOP black-box-DPB shape as H.264) and VP9/AV1 decode (generic
-  `CMVideoFormatDescriptionCreate` + a `SampleDescriptionExtensionAtoms` extension atom wrapping a
-  container-supplied `vpcC`/`av1C` config record — no bitstream parsing, `extra_data` required at
-  `open()`). Also newly wired into `mediaway::platform`'s `AutoEncoder`/`AutoDecoder`/
-  `decoder_support` (previously unwired for every Apple codec). **Zero compile verification as
-  authored**. See `crates/mediaway-decoder/adr/apple/0002-videotoolbox-hevc-vp9-av1-decode.md`.
-
-- `mediaway-decoder::vulkan`: AV1 decode via `VK_KHR_video_decode_av1`, scoped to
-  `frame_type == KEY_FRAME`/`show_frame == 1`/single-tile pictures (general-GOP AV1 decode
-  remains a follow-up). Real sans-io OBU/sequence-header/`KEY_FRAME`-frame-header parsing
-  (segmentation, quantization, loop filter, CDEF, loop restoration, tile info all real, not
-  stubs) plus a real Vulkan Video session/decode path — **hardware-verified on the RTX 4090
-  reference machine on the first attempt**, decoding a real `mediaway-sw::av1::Av1Encoder`
-  (`rav1e`-backed) `KEY_FRAME` with hard content assertions; does not share this workspace's
-  confirmed AV1 Vulkan *encode* driver-maturity limitation. See
-  `crates/mediaway-decoder/adr/vulkan/0002-av1-decode-keyframe-first.md`.
-- `mediaway-decoder::android`: first Android decode backend (NDK `AMediaCodec` via the `ndk`
-  crate), H.264 CPU NV12 output only, `COLOR_FormatYUV420SemiPlanar` only (reject-not-guess on
-  any other reported output color format), general GOP (not IDR-only — the device manages its
-  own DPB). Zero compile verification and zero runtime verification as authored (no Android NDK
-  or device/emulator in the dev environment); not wired into `auto`/`capability` yet. See
-  `crates/mediaway-decoder/adr/android/0001-ndk-amediacodec-h264-cpu-out.md`.
-- `mediaway-encoder::amf`: AMD AMF video encode backend (`shiguredo_amf`), H.264 CPU-upload
-  encode only, Linux `x86_64` only (the crate's own platform limit). Compile-verified on real
-  Linux `x86_64` via WSL2 (including the `AMF_PLANE_TYPE`/`amf_pts`/`amf_size` types confirmed
-  against real crate source) — **zero real AMD GPU/driver hardware verification** (none
-  available in this workspace). Not wired into `auto`/`capability` yet. See
-  `crates/mediaway-encoder/adr/amf/0002-amf-linux-shiguredo-amf-h264-cpu-upload.md`.
-- `mediaway-encoder::amf`: extended the H.264-only backend above to also accept HEVC and AV1 —
-  `shiguredo_amf`'s own `CodecConfig` already has first-class `Hevc`/`Av1` variants, so this is
-  a codec-dispatch widening, not new plumbing. VP9 stays unsupported (`shiguredo_amf` has no
-  VP9 `CodecConfig` variant — the dependency's real ceiling, not a Mediaway restriction). Also
-  fixes a latent `stream_info_from` bug that would have mislabeled HEVC/AV1 streams as H.264.
-  Same WSL2 compile/clippy/test verification, **zero real AMD GPU/driver hardware
-  verification** as the H.264 path above. See
-  `crates/mediaway-encoder/adr/amf/0003-amf-linux-hevc-av1-codec-dispatch.md`.
-- `mediaway-encoder::android`: first Android backend (NDK `AMediaCodec` via the `ndk` crate),
-  H.264 CPU-upload encode only. Zero compile verification as authored (no Android NDK in the
-  dev environment) — a new CI job compiles/lints it against a real NDK before it is trusted;
-  not wired into `auto`/`capability` yet. See
-  `crates/mediaway-encoder/adr/android/0001-ndk-amediacodec-h264-cpu-upload.md`.
-- `mediaway-decoder::apple`: first Apple decode backend (`VideoToolbox`
-  `VTDecompressionSession` via `objc2-*`), H.264 CPU NV12 (`VideoRange`) readback decode only,
-  one module for both macOS and iOS. General GOP (P/B frames) — VideoToolbox owns the DPB and
-  P/B-frame reordering internally via `kVTDecodeFrame_EnableTemporalProcessing`; this crate
-  builds no reference-picture list itself. Scope this stage: exactly one SPS + one PPS, 4-byte
-  AVCC length-prefix size only. Zero compile verification as authored (this dev environment
-  cannot cross-compile Apple code at all outside macOS/Xcode) — new Apple CI jobs compile/lint
-  it against real Apple SDKs before it is trusted; not wired into `auto`/`capability` yet. See
-  `crates/mediaway-decoder/adr/apple/0001-videotoolbox-h264-cpu-out.md`.
-- `mediaway-encoder::apple`: last "Other" platform encoder backend (`VideoToolbox`
-  `VTCompressionSession` via `objc2-*`), H.264 CPU-upload encode only, one module for both
-  macOS and iOS. Zero compile verification as authored (this dev environment cannot
-  cross-compile Apple code at all outside macOS/Xcode) — new `apple-macos`/`apple-ios` CI jobs
-  compile/lint it against real Apple SDKs before it is trusted; not wired into
-  `auto`/`capability` yet. Per-packet `is_keyframe` is a documented approximation. See
-  `crates/mediaway-encoder/adr/apple/0001-videotoolbox-h264-cpu-upload.md`.
-- `VideoEncoderConfig::color_range` (`ColorRange::Video`/`Full`, `mediaway-common`): configurable
-  YUV sample range for encoder input. Only the Apple backend honors it so far; other backends
-  accept the field without yet branching on it (documented capability-gated fallback, same
-  convention as `gop_size`).
-- `mediaway-device::android`: first Android device-capture backend — camera (Camera2 NDK raw
-  FFI), microphone (AAudio blocking read), and screen (`MediaProjection` + JNI, with a
-  documented host-app consent-flow contract). minSdk 26 (differs from
-  `mediaway-encoder::android`'s 21). Zero compile verification as authored (no Android NDK in
-  the dev environment) — the `android` CI job now also lints `mediaway-device` against a real
-  NDK before it is trusted; not wired into any cross-platform capture-selection API yet. See
-  `crates/mediaway-device/adr/android/0001-camera2-ndk-native-camera-capture.md`,
-  `0002-aaudio-microphone-capture.md`, `0003-mediaprojection-jni-screen-capture.md`.
-- `mediaway-device::apple`: first Apple device-capture backend — camera (`AVCaptureSession` +
-  an `objc2` `define_class!` delegate), microphone (`AVAudioEngine` input tap), macOS screen
-  (`ScreenCaptureKit`), and iOS screen (`ReplayKit` in-app capture, plus a push-in/pull-out
-  `AppleBroadcastExtensionCapture` sink for a host project's own Broadcast Upload Extension
-  target — this crate cannot build that `.appex` target itself; see the host-extension contract
-  in `crates/mediaway-device/adr/apple/0004-replaykit-ios-inapp-screen-capture.md`). Zero
-  compile verification as authored (no macOS/Xcode in the dev environment) — the
-  `apple-macos`/`apple-ios` CI jobs now also lint `mediaway-device`; not wired into any
-  cross-platform capture-selection API yet. See
-  `crates/mediaway-device/adr/apple/0001-avfoundation-camera-capture.md`,
-  `0002-avaudioengine-microphone-capture.md`, `0003-screencapturekit-macos-screen-capture.md`,
-  `0004-replaykit-ios-inapp-screen-capture.md`.
-- `mediaway-encoder::linux` (`linux::vaapi`) HEVC encode: HEVC Main profile
-  single-forward-reference P-frame GOP alongside the existing H.264 path, dispatched behind a
-  new `VaapiVideoEncoder` enum (no `Box<dyn>`). `hevc_gop.rs`'s `GopState` is a verbatim port of
-  `mediaway-encoder::vulkan::hevc_gop::GopState`; `EncSequenceParameterBufferHEVC`/
-  `EncPictureParameterBufferHEVC`/`EncSliceParameterBufferHEVC` construction is fresh (VA-API's
-  own HEVC encode buffers carry no `StdVideoH265*`-equivalent field set — the driver synthesizes
-  VPS/SPS/PPS itself), grounded in FFmpeg's real `vaapi_encode_h265.c` conventions. SAO and
-  temporal-MVP are deliberately disabled in the emitted SPS to keep this encoder's output the
-  simplest possible shape for the sibling VA-API HEVC decoder to round-trip. Compile- and
-  test-verified on real Linux (WSL2 Ubuntu, real `libva-dev` headers/bindgen output) — **zero
-  real VA-API hardware verification**. See
-  `crates/mediaway-encoder/adr/linux/0003-vaapi-hevc-p-frame-gop.md`.
-- `mediaway-decoder::linux` (`linux::vaapi`) HEVC decode: HEVC Main profile IDR I-slices and
-  single-forward-reference P-slices alongside the existing H.264 path, dispatched behind a new
-  `VaapiVideoDecoder` enum (no `Box<dyn>`). No hardware-verified porting source existed for this
-  path (Vulkan's own HEVC decode is IDR-only), so the single-slot `HevcDpb` (`hevc_dpb.rs`) and
-  the slice-header parser (`hevc_slice.rs`, extended well past `vulkan::hevc_slice.rs`'s own
-  stopping point — SAO, temporal-MVP, merge-cand count, QP deltas) are fresh designs grounded in
-  ITU-T H.265 and FFmpeg's real `vaapi_hevc.c`. Any short-term RPS shape other than exactly one
-  immediately-preceding reference is rejected as `Unsupported`; CRA/random-access pictures are a
-  permanent scope cut. Compile- and test-verified on real Linux (WSL2 Ubuntu, real `libva-dev`
-  headers/bindgen output) — **zero real VA-API hardware verification**. See
-  `crates/mediaway-decoder/adr/linux/0003-vaapi-hevc-p-slice-dpb.md`.
-- `mediaway-decoder::linux`: AV1 `KEY_FRAME`-only VA-API decode (`VAProfileAV1Profile0`,
-  `VAEntrypointVLD`), single tile, Main profile, every optional coding tool (segmentation, film
-  grain, CDEF, loop restoration, superres, warped motion) rejected as `Unsupported` if signaled.
-  A spec-derived OBU/sequence-header/frame-header parser — no AV1 decode existed anywhere in
-  this workspace to port from. Dispatched alongside the existing H.264 VA-API decoder via a new
-  `VaapiVideoDecoder` enum. Compile + clippy + test-verified on real WSL2 Linux — **zero
-  real-hardware verification** (no VA-API device available this session), same standing caveat
-  as this backend's H.264 path. See
-  `crates/mediaway-decoder/adr/linux/0005-vaapi-av1-key-frame-decode.md`.
-- `mediaway-encoder::linux`: VP9 `KEY_FRAME` baseline + single-forward-reference `INTER_FRAME`
-  GOP VA-API encode (`VAProfileVP9Profile0`, plain `cros-libva`
-  `EncSequenceParameterBufferVP9`/`EncPictureParameterBufferVP9` field bags — no packed-header
-  buffer needed, unlike this crate's still-blocked AV1 encode design). New `vp9_gop::GopState`
-  2-slot physical ping-pong state machine and this backend's first multi-codec **encoder**
-  dispatch enum (`VaapiVideoEncoder`, alongside the existing H.264 encoder). Entrypoint probe is
-  a real 3-step ladder (`VAEntrypointEncSlice` → `VAEntrypointEncPicture` →
-  `VAEntrypointEncSliceLP`) matching FFmpeg's own generic VA-API encode probe order. **Real
-  driver-support caveat**: FFmpeg's own source names only the older i965 driver as a working VP9
-  VA-API encode target — meaningfully narrower than VP9 *decode*'s broad support, so this is a
-  compile/test-verified-only addition. Compile + clippy + test-verified on real WSL2 Linux —
-  **zero real-hardware verification** (no VA-API device available this session). See
-  `crates/mediaway-encoder/adr/linux/0004-vaapi-vp9-key-frame-and-inter-gop.md`.
-- `mediaway-decoder::linux`: VP9 `KEY_FRAME` + general single-tile `INTER_FRAME` VA-API decode
-  (`VAProfileVP9Profile0`, `VAEntrypointVLD`), including compound prediction with no artificial
-  reference-count restriction (VA-API's `reference_frames[8]` array is always fully populated
-  regardless of active-reference count — a real structural finding, confirmed against FFmpeg's
-  `vaapi_vp9.c`) — a broader real-world-stream-compatible scope than this crate's own AV1
-  sibling reached. A spec-derived `uncompressed_header()` parser copied verbatim from the real
-  primary VP9 specification text (`pdftotext`-extracted this session) and a new persistent
-  8-logical-slot reference shadow table (`vp9::ref_table`, 2 fields/slot — width/height — versus
-  AV1's 12-field-per-slot state) backed by a 9-physical-surface pool with a pigeonhole-guaranteed
-  free-index allocator. Dispatched alongside the existing H.264/AV1 VA-API decoders via the
-  `VaapiVideoDecoder` enum. Compile + clippy + test-verified on real WSL2 Linux (100+ new
-  hand-constructed bitstream-fixture unit tests) — **zero real-hardware verification** (no
-  VA-API device available this session). See
-  `crates/mediaway-decoder/adr/linux/0004-vaapi-vp9-key-frame-and-inter-decode.md`.
-- `mediaway-decoder::windows`: D3D12 native HEVC decode (`d3d12_video_decode` module, still
-  unregistered), single-forward-reference P-slice + I/IDR, Main profile, 8-bit 4:2:0, parallel
-  to the existing H.264 path (new `hevc*.rs` files only, no edits to H.264's own still-unresolved
-  GPU-hang baseline). Sans-io-verified only — 42 new unit tests plus `cargo check`/`clippy`
-  clean; **zero real GPU hardware verification, deliberately**, given a confirmed, repeatedly
-  reproduced D3D12 decode TDR on this workspace's own H.264 path. See
-  `crates/mediaway-decoder/adr/windows/0004-d3d12-hevc-single-forward-ref-p-slice-decode.md`.
-- `mediaway-decoder::windows`: D3D12 native AV1 decode (`d3d12_video_decode` module, still
-  unregistered), `KEY_FRAME`-only, Main profile, 8-bit 4:2:0, single-tile, parallel to the
-  existing H.264/HEVC paths (new `av1*.rs` files only). Sans-io-verified only — 43 new unit
-  tests plus `cargo check`/`clippy`/`fmt` clean; **zero real GPU hardware verification,
-  deliberately**, same TDR-avoidance reasoning as HEVC, plus an open question of whether this
-  crate's own D3D12 AV1 encoder output is decodable at all. See
-  `crates/mediaway-decoder/adr/windows/0005-d3d12-av1-key-frame-decode.md`.
-- `mediaway-decoder::linux`: VA-API DMA-BUF Zero-Copy decode output
-  (`VideoOutputPreference::ZeroCopyGpu`, `vaExportSurfaceHandle` via `cros-libva`'s
-  `Surface::export_prime()`), new codec-agnostic `vaapi/dmabuf.rs` and a new
-  `mediaway_common::GpuBufferHandle::DmaBuf(Box<DmaBufDescriptor>)` variant (boxed — drops
-  `Copy` from the whole enum). DPB slot recycling now tracks outstanding Zero-Copy handles
-  (`Dpb::mark_outstanding`/`clear_outstanding`), refusing to recycle a slot a caller still holds
-  a handle into. WSL2 + Windows compile/clippy/test-verified; zero real VA-API hardware
-  verification (no device available). See
-  `crates/mediaway-decoder/adr/linux/0006-vaapi-dmabuf-zero-copy-output.md`.
-- `mediaway-encoder::linux`: VA-API DMA-BUF Zero-Copy encode input
-  (`VideoInputPreference::ZeroCopyGpu`, `vaCreateSurfaces` import via `cros-libva`'s
-  `ExternalBufferDescriptor`), new codec-agnostic `vaapi/dmabuf.rs`, reusing the decoder's
-  `GpuBufferHandle::DmaBuf`. A single-use imported surface flows through the existing
-  `Picture<S, T>` typestate chain alongside the pooled CPU-upload reference surfaces, with no
-  pool restructuring; forces all-IDR encode for `ZeroCopyGpu` sessions. WSL2 + Windows
-  compile/clippy/test-verified; zero real VA-API hardware verification. See
-  `crates/mediaway-encoder/adr/linux/0006-vaapi-dmabuf-zero-copy-input.md`.
-- `mediaway-encoder::web`: generalized the AAC-hardcoded audio smoke/probe functions into a
-  codec-parameterized surface — `is_webcodecs_audio_codec_supported(codec, channels,
-  sample_rate)` and `encode_audio_buffer(codec, channels, sample_rate, bitrate_bps,
-  frame_count) -> EncodedAudioChunks` (new type), mirroring the video side's existing
-  codec-parameterized shape. Opus is exercised as the second codec through this generalized
-  surface (no Opus-only functions, no `OpusEncoderConfig` knobs — no reachable `web-sys`
-  binding — no Opus fMP4 mux claim, `EncodedAudioChunk`-level validation only). `wasm32`
-  compile-verified only, no real browser runtime available in this environment. See
-  `crates/mediaway-encoder/adr/web/0001-webcodecs-opus-audio-encode.md`.
-- `mediaway-decoder::web`: first audio decode surface in this module (previously video-only) —
-  `is_webcodecs_audio_decode_supported(codec, channels, sample_rate)` and
-  `decode_audio_chunks(...) -> DecodedAudioData` (new type), codec-parameterized from the
-  start and exercised via Opus (AAC decode is reachable through the same function). Sample
-  readback trusts the browser's reported `AudioData` format (planar or interleaved) rather
-  than forcing a conversion. `wasm32` compile-verified only, no real browser runtime available
-  in this environment — the exact planar/interleaved readback byte layout is unverified
-  against real Chrome. See
-  `crates/mediaway-decoder/adr/web/0001-webcodecs-opus-audio-decode.md`.
-- `mediaway-encoder::web`: generalized the WebGPU-canvas GPU-surface encode path from
-  hardcoded H.264 to HEVC/AV1/VP9 (`is_webgpu_video_codec_supported`,
-  `encode_video_frame_from_webgpu_canvas`, `webcodecs_gpu_video_fmp4_smoke_with_codec`), plus a
-  new WebCodecs-codec-string → `iso_bmff::Codec` mapper for fMP4 muxing. Existing zero-arg
-  H.264 entry points (`is_webgpu_video_frame_supported`, `webcodecs_gpu_video_fmp4_smoke`) are
-  kept as thin wrappers. `wasm32` compile-verified only — no real browser runtime available in
-  this environment; HEVC's Annex-B-vs-length-prefixed NAL framing for `iso-bmff`'s `hvc1`
-  sample entry is explicitly unverified. See
-  `crates/mediaway-encoder/adr/web/0001-webgpu-multi-codec-video-encode.md`.
-- `mediaway::wgpu::WgpuDx12Bridge`: two new Zero-Copy paths alongside the existing `GpuCopy`
-  `copy_frame`. `render_target()` + `handle()` let a caller render directly into the bridge's own
-  shared D3D12 texture (now `RENDER_ATTACHMENT`-capable) instead of copying a separately-owned
-  texture into it — no GPU→GPU copy, only a CPU↔GPU sync stall remains.
-  `from_external_shared_resource()` imports a caller-owned, already-`D3D12_HEAP_FLAG_SHARED`
-  resource instead of allocating one (new `mediaway-encoder::windows::D3d12SharedEncodeBridge::
-  open_with_resource`). Hardware-verified on an RTX 4090. See
-  `crates/mediaway/adr/wgpu/0005-render-target-and-external-shared-resource.md` and
-  `crates/mediaway-encoder/adr/windows/0011-shared-encode-bridge-external-resource.md`.
-- `mediaway_encoder::auto::Backend`: new `Vulkan` variant, resolving the taxonomy gap flagged in
-  `docs/ai/wiki/encode/backend-preference.md` (Vulkan Video didn't fit the `Os`/vendor-SDK split
-  cleanly). Windows `AutoVideoEncoder`'s `AutoHardwareOnly` ranking now tries it after
-  NVENC/QuickSync, and `Explicit(Backend::Vulkan)` opens it directly — both hardware-verified on
-  an RTX 4090. See `crates/mediaway-encoder/adr/0004-backend-preference.md`'s 2026-08-20 addendum.
-- Windows **window capture** (`WindowsWindowCapture`/WGC) real-hardware-verified as genuinely
-  Zero-Copy end to end: a new smoke test creates a real win32 window and D3D11 device, opens a
-  real WGC session, and confirms a real `GpuBufferHandle::DirectX11` frame is delivered — no
-  `CopyResource`/`memcpy` anywhere in the path. Closes the "prove capture" gap
-  `crates/mediaway-device/adr/windows/0004-wgc-window-capture.md` left open. README Window/
-  Windows cell is now **⚡** — the first Zero-Copy mark in the codec/device support tables.
-- `mediaway-device::windows_desktop`: new opt-in `CaptureSharing::Exclusive` mode for Windows
-  screen capture (`DesktopVideoCaptureConfig::sharing`) — true Zero-Copy, no `CopyResource` at
-  all, no driver thread, no ring. The caller asserts it is the only consumer for the output; a
-  concurrent second `open()` fails with `CaptureError::AccessDenied` (enforced by DXGI itself).
-  Default stays `CaptureSharing::Shared` (unchanged behavior, one mandatory copy, joinable by
-  other consumers). Hardware-verified on an RTX 4090. See
-  `crates/mediaway-device/adr/windows/0008-exclusive-desktop-duplication-zero-copy.md`.
+- **Multi-platform native binding distribution** (ADR-0024): every published binding package —
+  npm (`@mediaway/*`), NuGet (`Mediaway.*`), PyPI (`mediaway`), and the C/CPack archive — now
+  ships native libs for Linux x86_64 and macOS (x86_64 + arm64) alongside the existing Windows
+  x64 build, not Windows-only. `release.yml` gained `native-assets-linux`/`native-assets-macos`
+  build jobs and matching `bindings-tests-linux`/`bindings-tests-macos` RC-gate jobs (container
+  round-trip on Linux; container + real hardware `VideoToolbox` pipeline round-trip on macOS,
+  since `macos-14` runners are real Apple Silicon). NuGet gained `runtimes/linux-x64`,
+  `osx-x64`, `osx-arm64` alongside `win-x64`; PyPI ships one wheel per platform
+  (`manylinux_2_39_x86_64`, `macosx_11_0_x86_64`, `macosx_11_0_arm64`); CPack produces one
+  archive per platform from a single job (the C++ wrapper is a header-only `INTERFACE` target
+  over a prebuilt lib, so no cross-platform runner is needed just to package it).
+  `@mediaway/ffi` bundles every platform's lib directly (measured ~1.9-3.1 MB per platform
+  release build — small enough that a per-platform `optionalDependencies` split wasn't worth
+  the complexity). **Linux real-verified this session** via WSL2: built the release `.so` on
+  real Linux, ran the actual C#/Python/Node/C round-trip tests against it, and installed the
+  built PyPI wheel into a clean venv — not just a compile check. **macOS `native-assets-macos`
+  (the actual compile) is now real-CI-verified** — passed on a real `macos-14` runner after the
+  `mediaway-decoder::apple` FFI fixes below; the full `bindings-tests-macos` RC gate (container +
+  hardware round-trip) is still being confirmed as of this note. Android AAR/Maven distribution
+  is a separate, not-yet-implemented design (ADR-0025, Proposed).
+- Apple (macOS/iOS): first full encode/decode backend via `VideoToolbox` — H.264, HEVC, VP9/AV1
+  decode, ProRes encode/decode, plus AAC-LC and Opus audio encode/decode via `AudioToolbox`
+  (the workspace's first AAC decoder); real Zero-Copy Metal (`CVPixelBuffer`) paths for encode
+  input and decode output; wired into `mediaway::platform` for encoder/decoder support, capture,
+  and permissions. **Authored with zero Apple compile verification** — no macOS/Xcode in this
+  dev environment; ProRes RAW is permanently out of scope (no `VideoToolbox` API for it)
+- Apple device capture: first backend for camera (`AVCaptureSession`), microphone
+  (`AVAudioEngine`), and screen (`ScreenCaptureKit` on macOS, `ReplayKit` + a host Broadcast
+  Upload Extension contract on iOS). Same zero-compile-verification caveat as above
+- Android: first decode backend (NDK `AMediaCodec`, H.264 CPU output) and first device-capture
+  backend (Camera2, AAudio microphone, `MediaProjection` screen). **Authored with zero Android
+  compile verification** — no NDK/device/emulator in this dev environment
+- AMD AMF: new video encode backend (`shiguredo_amf`, Linux x86_64 only) — H.264, HEVC, AV1.
+  Compile/test-verified on WSL2; no real AMD GPU available to hardware-verify
+- Vulkan: AV1 decode (`VK_KHR_video_decode_av1`), keyframe-only for now — hardware-verified on
+  an RTX 4090 on the first attempt
+- `mediaway_encoder::auto::Backend::Vulkan` — Vulkan Video is now a first-class `AutoEncoder`
+  backend choice on Windows, tried after NVENC/QuickSync; hardware-verified on an RTX 4090
+- Linux (VA-API): HEVC encode/decode GOP, VP9 encode/decode, AV1 keyframe-only decode, and
+  DMA-BUF Zero-Copy for both encode input and decode output. Compile/test-verified on WSL2 —
+  no real VA-API hardware available to verify this cycle
+- Windows: D3D12 native HEVC and AV1 (keyframe-only) decode paths, sans-io-verified only —
+  deliberately not run on real hardware given a known, reproduced TDR on this workspace's
+  existing D3D12 H.264 decode path
+- Windows window capture (WGC) confirmed genuinely Zero-Copy end to end on real hardware — no
+  `CopyResource`/`memcpy` anywhere in the path. README's first ⚡ Zero-Copy mark
+- Windows screen capture: new opt-in `CaptureSharing::Exclusive` mode — true Zero-Copy, no
+  driver thread or ring, single-consumer only (DXGI itself rejects a second concurrent `open()`).
+  Hardware-verified on an RTX 4090; default sharing behavior is unchanged
+- `mediaway::wgpu::WgpuDx12Bridge`: two new Zero-Copy paths — render directly into the bridge's
+  own shared texture instead of copying into it, and import a caller-owned externally-shared
+  D3D12 resource instead of allocating one. Hardware-verified on an RTX 4090
+- Web (WebCodecs): audio encode/decode generalized from AAC-only to also cover Opus; GPU-surface
+  video encode generalized from H.264-only to also cover HEVC/AV1/VP9. `wasm32` compile-verified
+  only — no real browser runtime in this dev environment
+- `VideoEncoderConfig::color_range` (`ColorRange::Video`/`Full`) — configurable YUV sample range;
+  honored by the Apple backend so far, other backends accept it without branching on it yet
+- `CodecKind`: six new ProRes variants (422 Proxy/LT/422/HQ, 4444, 4444 XQ), synced through to the
+  `mediaway-ffi` C ABI (`mediaway_codec_kind_t`)
 
 ### Changed
 
-- `mediaway-decoder::linux` (`linux::vaapi`) H.264 decode: extended from IDR-only to real GOP
-  (IPPP...) decode — single-forward-reference P-slices and non-IDR I-slices now route through a
-  shared per-picture pipeline with a sliding-window DPB ported from `mediaway-decoder::vulkan`'s
-  hardware-verified DPB/POC arithmetic. No B-slices, reference-list reordering, long-term
-  references, weighted prediction, CABAC P-slices, or multi-reference decode this round (all
-  rejected honestly, not misparsed). Compile- and test-verified on real Linux (WSL2 Ubuntu, real
-  `libva-dev` headers/bindgen output) — **zero real VA-API hardware verification** (no working
-  VA-API device available in this workspace). See
-  `crates/mediaway-decoder/adr/linux/0002-vaapi-h264-p-slice-dpb.md`.
-- `mediaway-encoder::linux` (`linux::vaapi`) H.264 encode: extended from all-IDR to real
-  single-forward-reference P-frame GOP (IPPP...) encode — `VideoEncoderConfig::gop_size` finally
-  read by this backend, real `frame_num`/reference-picture-list wiring ported from
-  `mediaway-encoder::vulkan::h264_gop::GopState`'s hardware-verified decision state machine.
-  Capability-gated on `VAConfigAttribEncMaxRefFrames` (queried via `Display::get_config_attributes`
-  at session-open time); `gop_size <= 1` or an unsupporting driver both fall back to all-IDR
-  encode, byte-identical to the previous output. No B-frames, multi-reference, reference-list
-  reordering, long-term references, or rate control this round (all deliberately deferred, not
-  silently dropped). Compile- and test-verified on real Linux (WSL2 Ubuntu, real `libva-dev`
-  headers/bindgen output) — **zero real VA-API hardware verification** (no working VA-API device
-  available in this workspace). See `crates/mediaway-encoder/adr/linux/0002-vaapi-h264-p-frame-gop.md`.
-- `mediaway`'s `wgpu` dependency bumped from 26.x to 30.x (workspace MSRV now 1.96 clears
-  30.x's rustc floor). Fixed six real breaking-API changes in the DX12 HAL escape-hatch bridges
-  (`create_texture_from_hal`'s new `initial_state` parameter, `PollType::Wait`'s new struct
-  shape, `Instance::new`/`InstanceDescriptor`/`enumerate_adapters` signature changes) and
-  removed the `windows-hal-interop` 0.58 straddle dependency entirely, since `wgpu-hal` 30.x now
-  pins the same `windows` 0.62 line this workspace already uses. Real-hardware re-verified
-  (RTX 4090): the DX12→D3D11 decode-import bridge tests actually ran (not skipped), including a
-  byte-exact NV12 pixel round trip. See `crates/mediaway/adr/wgpu/0004-wgpu-30-upgrade.md`.
-- Windows `WindowsScreenCapture`: shared (multi-consumer) sessions now fan out each frame via a
-  fixed-depth ring of GPU textures any number of caught-up consumers share through cheap `Arc`
-  clones, replacing the previous one-`CopyResource`-per-attached-consumer design — a straggling
-  consumer degrades to its own transient copy only, never blocking the driver thread or other
-  consumers. Compiled and linted on real hardware; end-to-end frame delivery through the new
-  ring is not yet hardware-verified (see
-  `crates/mediaway-device/adr/windows/0007-ring-buffer-shared-desktop-duplication.md`).
+- Linux (VA-API) H.264 decode: extended from IDR-only to real GOP decode (single-forward-reference
+  P-slices, non-IDR I-slices)
+- Linux (VA-API) H.264 encode: extended from all-IDR to real single-forward-reference P-frame GOP
+  encode, now honoring `VideoEncoderConfig::gop_size`; falls back to all-IDR on unsupporting
+  drivers or `gop_size <= 1`
+- `mediaway`'s `wgpu` dependency bumped 26.x → 30.x (workspace MSRV now 1.96); fixed six breaking
+  DX12 HAL API changes and dropped an interim `windows-hal-interop` straddle dependency.
+  Re-verified on real hardware (RTX 4090), including a byte-exact NV12 round trip
+- Windows shared (multi-consumer) screen capture: replaced one-`CopyResource`-per-consumer with a
+  fixed-depth GPU-texture ring shared via `Arc` clones — a straggling consumer now only costs
+  itself a transient copy instead of blocking the driver thread or other consumers
 
 ### Fixed
 
-- Android `mediaway-encoder::android` backend: `AMediaFormat`'s `i-frame-interval` (seconds
-  between key frames) was hardcoded to `0` instead of being computed from
-  `VideoEncoderConfig::gop_size`.
-- Android `mediaway-encoder::android` backend: `StreamInfo::extra_data` (SPS/PPS `avcC`) was
-  never populated — always empty, even though `AMediaCodec` delivers `csd-0`/`csd-1` via a
-  `BUFFER_FLAG_CODEC_CONFIG` output buffer before the first frame. Now captured and converted
-  to `avcC`.
-- Apple `mediaway-encoder::apple` backend: `Packet::is_keyframe` was a `gop_size <= 1 ||
-  packet_index == 0` approximation, not real per-sample sync-frame detection. Now reads the
-  real `kCMSampleAttachmentKey_NotSync` attachment VideoToolbox sets on each encoded sample.
-- Linux `mediaway-device::linux` microphone capture: `Select` only ever accepted `Default` —
-  a non-default `PipeWire` source could not be targeted at all. `DeviceId` gained a
-  `PipeWire(String)` (`node.name`) variant; `Select::Id(DeviceId::from_pipewire_node_name(..))`
-  now sets `PW_KEY_TARGET_OBJECT` on the capture stream. Real-hardware (real `libpipewire` link)
-  compile and unit-test verified via WSL2.
-- Windows `mediaway-encoder-windows`: WMF AV1 encode's `refresh_extradata` was codec-blind and
-  ran every codec's `MF_MT_MPEG_SEQUENCE_HEADER` blob through the H.264-Annex-B-specific
-  `avc::to_avcc`, silently writing a non-conformant raw blob into the MP4 `av1C` box for AV1
-  output. New `iso_bmff::bitstream::av1::to_av1c` builds a real `AV1CodecConfigurationRecord`
-  from the Sequence Header OBU; `refresh_extradata` is now codec-aware. Also adds a real
-  `MFTEnumEx(MFT_CATEGORY_VIDEO_ENCODER, …)` diagnostic
-  (`wmf::video::tests::list_encoder_mfts_for_each_codec`) mirroring the decode-side probe —
-  real finding on the verification host: an AV1 encoder MFT (NVIDIA + Intel) is registered
-  under `MFT_ENUM_FLAG_HARDWARE`, but not reachable through either the CPU-upload or DX11
-  Zero-Copy path yet on that host (see `crates/mediaway-encoder/docs/roadmap.md`). See
-  `crates/mediaway-encoder/adr/windows/0010-wmf-av1-encode-config-record-and-mft-probe.md`.
-- `mediaway::platform::AutoEncoder::open`: Linux and Apple branches were hardcoding
-  `VideoInputPreference::CpuUploadOk`, ignoring `config.gpu_device` even though both backends
-  already implement a real Zero-Copy GPU path (`mediaway-encoder::linux`'s VA-API DMA-BUF import,
-  `mediaway-encoder::apple`'s `VideoToolbox` `CVPixelBuffer` borrow). Now tries `ZeroCopyGpu`
-  first when `gpu_device` is `Some(_)`, falling back to `CpuUploadOk` — matching the Windows
-  chain's existing ZC-before-CPU ordering. See
-  `crates/mediaway/adr/0004-autoencoder-zerocopy-linux-apple.md`.
+- Android encoder: key-frame interval was hardcoded to `0` instead of being derived from
+  `VideoEncoderConfig::gop_size`
+- Android encoder: SPS/PPS extradata (`avcC`) was never populated despite being available
+- Apple encoder: `Packet::is_keyframe` was an approximation (`gop_size <= 1 || index == 0`); now
+  reads VideoToolbox's real per-sample sync-frame attachment
+- Linux microphone capture: a non-default PipeWire source could not be selected at all — `Select`
+  only ever accepted `Default`
+- Windows WMF AV1 encode: extradata refresh ran every codec's sequence-header blob through the
+  H.264-specific converter, writing a non-conformant `av1C` box for AV1 output
+- `mediaway::platform::AutoEncoder::open`: Linux and Apple branches ignored `config.gpu_device`
+  and always used CPU-upload input, even though both backends already have a real Zero-Copy GPU
+  path — now tries Zero-Copy first when a GPU device is supplied, matching Windows
+- CI: the `android`/`apple-macos`/`apple-ios` jobs only ever compiled/linted `mediaway-encoder`
+  and `mediaway-device` for those targets — `mediaway-decoder` (this release's Apple HEVC/VP9/
+  AV1/ProRes/AAC/Opus decode and Android `AMediaCodec` decode) had never been compiled on any
+  platform-specific CI runner at all. Added it to all three jobs' trigger conditions and lint
+  steps
+- C#/Python/Node.js `CodecKind` mirrors were missing the six new ProRes variants already present
+  in the Rust `CodecKind` and the C ABI header, leaving them out of numeric sync with the native
+  ABI — added (C++'s `Codec` enum is a narrower, deliberately curated muxable subset that already
+  excludes AV1/VP9/WebVTT/Tx3g pre-existing this release; left as is, out of scope here)
+- PyPI wheel `package-data` only ever globbed `_native/*.dll` — the Linux/macOS wheels this
+  release adds would have shipped with no native lib inside at all (or, worse, a stale one — see
+  next bullet). Fixed to include `*.so`/`*.dylib`; caught by actually installing a built Linux
+  wheel into a clean venv and running the real round-trip test against it, not a dry build
+- `bindings/python`'s wheel build reused `setuptools`' own `build/` staging directory across
+  platform iterations without cleaning it — a wheel built for platform N in a multi-platform loop
+  (as the new `pypi` release job does) silently carried every earlier platform's native lib
+  forward too. `tools/scripts/build-python-package.ts` now clears `build/` before every build
+- `bindings/c/tests/run-roundtrip.sh` (the C-ABI RC-gate check) was Windows-only — hardcoded
+  `.dll`, `PATH`-based library resolution, and a `win-x64` native dir default. Generalized to
+  detect the host OS and use the right lib filename/extension and runtime search-path variable
+  (`LD_LIBRARY_PATH`/`DYLD_LIBRARY_PATH`), real-verified running it on Linux via WSL2
+- **Real bugs caught while getting v0.1.7/v0.1.8's release run to actually pass** (v0.1.7's
+  crates.io publish is already permanent, and v0.1.8's own crates.io publish already succeeded
+  too — these are `release.yml`/binding-metadata-only fixes, no crate source changed, so no new
+  version bump was needed to retry):
+  - `mediaway-decoder::apple`'s `VideoToolbox` FFI genuinely did not compile on real macOS — 21
+    errors across `format_desc.rs`/`video.rs`, all the same root cause: the code assumed
+    `objc2-core-media`/`objc2-video-toolbox` expose idiomatic associated constructors
+    (`CMFormatDescription::new`, `VTDecompressionSession::new`,
+    `CVPixelBuffer::lock_base_address`, …), but the real crates expose C-style free functions
+    with `NonNull<*const/mut T>` Create-Rule out-parameters instead (confirmed by reading the
+    actual `objc2-core-media`/`objc2-core-video`/`objc2-video-toolbox` 0.3.2 source;
+    `mediaway-encoder::apple`'s equivalent code already used the correct shape). Rewrote every
+    affected call site to the real API — real-CI-verified: `native-assets-macos` now compiles on
+    a real `macos-14` runner.
+  - `native-assets-linux`'s pinned `ubuntu-22.04` runner (ADR-0024's original choice) turned out
+    to be genuinely too old for two of this workspace's real Linux dependencies — `libspa` (a
+    `pipewire` dependency) calls `spa_meta_first`/`spa_meta_region_is_valid`, static-inline
+    helpers absent from that release's `libspa-0.2-dev`; separately, `cros-libva`'s AV1 encode
+    struct bindings need fields that release's libva 2.14 doesn't have. Both are bindgen'd from
+    **system** headers/libraries, not pinned Rust crate versions, so this session's own WSL2
+    testing (Ubuntu 24.04) never hit either gap. Fixed by moving the pin to **`ubuntu-24.04`**
+    instead (glibc floor now ≥ 2.39, PyPI tag `manylinux_2_39_x86_64`) rather than chasing PPA
+    backports package-by-package — see ADR-0024's Implementation note for the full correction.
+  - The `native-assets-linux`/`native-assets-macos` artifacts never uploaded the real
+    `bindings/python/mediaway/_native/` path directly (only the merge-safe `_native-staging/
+    <rid>/` copy, to avoid the two macOS architectures colliding on one filename) — the
+    `bindings-tests-linux`/`bindings-tests-macos` RC-gate jobs assumed it was already there and
+    failed immediately on a missing-directory error before running any real test. Both jobs now
+    copy the right platform's staged lib into place themselves first.
+  - `Mediaway.Container.Tests.csproj`/`Mediaway.Pipeline.Tests.csproj` (the C# RC-gate tests) only
+    ever knew how to stage `mediaway_ffi.dll`/`libmediaway_ffi.so` for a local `dotnet test` run
+    — no macOS entry existed at all, so `bindings-tests-macos` failed with `DllNotFoundException`
+    on every test. Added `libmediaway_ffi.dylib` staging for both `osx-arm64`/`osx-x64` (selected
+    via `RuntimeInformation.OSArchitecture`, since `native-assets-macos` stages both
+    architectures side by side and a blind `Exists()` check would collide).
+  - `bindings-tests-linux` only installed `build-essential` (for the C round-trip test) — every
+    C# test failed with `DllNotFoundException` there too, but for a different reason than macOS's
+    missing-entry bug: `libmediaway_ffi.so` *was* found and `dlopen`'d, but its own transitive
+    dependency `libva.so.2` (VA-API runtime, dynamically linked even though these tests never
+    touch a real GPU) wasn't installed on that job's bare runner — `native-assets-linux` already
+    installs `libpipewire-0.3-dev`/`libva-dev` to *build*, but `bindings-tests-linux` never
+    installed anything to satisfy the same libraries at *load* time. Added.
+  - With the staging bugs fixed, `bindings-tests-macos`'s container tests passed for real (11/11)
+    — but `mediaway-ffi::pipeline::audio::open_audio_encoder` (the C ABI's auto-audio-encoder
+    dispatch) had **only ever had a Windows branch**; every other platform, including macOS,
+    unconditionally returned `EncodeError::NoBackend` even though `mediaway-encoder::apple::
+    AppleAudioEncoder` (AAC-LC via `AudioToolbox`) was implemented earlier this same release
+    cycle — the C ABI dispatch layer was simply never updated to call it. Added the missing Apple
+    branch. `mediaway::platform::AutoEncoder::open` (the video path) already routes to
+    `AppleVideoEncoder` correctly, but `bindings-tests-macos`'s hardware `EncodeToMp4Tests`/
+    `DecodeRoundtripTests` still failed with a real `EncoderBackendFailure`/`DecoderBackendFailure`
+    (an actual `VideoToolbox` OS/API failure, not a missing-dispatch bug). Root cause: this crate's
+    H.264 `ProfileLevel` was set to `kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel`, which
+    VideoToolbox's **hardware** encoder rejects outright (`VTSessionSetProperty` returns
+    `kVTParameterErr`) — Constrained Baseline drops B-frames/CABAC and Apple's hardware encoder
+    never allocates a session for it. Switched to plain `kVTProfileLevel_H264_Baseline_AutoLevel`,
+    which keeps the same practical bitstream shape (`AllowFrameReordering: false` already forbids
+    B-frames, and Baseline's own CAVLC-only constraint matches) while actually working on real
+    hardware — see `mediaway-encoder` ADR-0001's 2026-08-20 addendum. With H.264 encode fixed,
+    `DecodeRoundtripTests` got one step further and failed differently:
+    `DecodeSession.Open()` threw `InvalidInput` on a structurally valid but hollow `avcC`
+    (zero-length SPS/PPS). Root cause: `EncodeSession::open` registers the MP4 track from
+    `encoder.stream_info()` **before any frame is encoded** — fine for backends whose config
+    record is known from open-time config (Windows/Linux), but `VideoToolbox` only determines
+    SPS/PPS internally, after encoding at least one frame, so `AppleVideoEncoder::stream_info()`
+    reports empty `extra_data` at track-registration time. The muxer's own self-healing
+    extraction (`push_packet` converting each packet's own Annex-B payload) never triggered
+    either, since `VideoToolbox` samples come back already AVCC-framed with no in-band SPS/PPS.
+    Added `Muxer::set_track_extra_data`, backfilling the track's `extra_data` from the encoder's
+    now-current `stream_info()` — called from `EncodeSession::drain` right before each drained
+    packet is pushed, since by then the encoder has necessarily finished producing it. See
+    `mediaway` ADR-0005.
+  - `bindings-tests-linux`'s Node.js round-trip step ran the test files directly after `bun
+    install`, skipping the per-package `tsc` build (`packages/ffi`, `packages/container`) that
+    `bindings/nodejs/package.json`'s own `test` script always runs first — `@mediaway/container`'s
+    `dist/index.js` never existed, failing with `ERR_MODULE_NOT_FOUND` before any Rust/FFI code
+    ran. Added the missing build steps.
 
-### Removed
+## Overview
 
-### Deprecated
+Mediaway is a cross-platform media toolkit built on Zero-Copy paths (GPU
+handles or shared CPU buffers), sans-io cores for mux/demux/bitstream/config,
+and low-level APIs as first-class entry points. The workspace ships 11
+freestanding, independently versioned core crates (`iso-bmff`, `ebml-webm`,
+`flv-core`, `adts-core`, `ogg-core`, `riff-wave-core`, `mpeg-ts-core`,
+`mpeg-audio`, `iso-cenc`, `rtmp`, `rtp-core`) plus one `mediaway` umbrella with
+five capability crates (`container`, `encoder`, `decoder`, `device`, `sw`) and
+a single C ABI (`mediaway-ffi`).
 
-### Breaking
+## Platforms
+
+- Windows (win64): primary target. Media Foundation capture/decode, NVENC,
+  QuickSync (VPL), and Vulkan Video encode/decode verified on an RTX 4090 and
+  Intel UHD 770. `AutoEncoder` now also tries Vulkan Video as a backend
+  option. D3D12 native HEVC/AV1 decode paths exist but are deliberately not
+  hardware-run (known TDR on the existing D3D12 H.264 decode path). Window
+  capture (WGC) confirmed genuinely Zero-Copy end to end; screen capture
+  gained an opt-in true-Zero-Copy `Exclusive` sharing mode.
+- Linux: VA-API gained HEVC/VP9 encode+decode, AV1 keyframe-only decode, and
+  DMA-BUF Zero-Copy for both encode input and decode output; a new AMD AMF
+  encode backend (H.264/HEVC/AV1, x86_64 only). Compile/test-verified on
+  WSL2 — no real VA-API or AMD GPU hardware available to verify this cycle.
+  All 4 non-Rust bindings (C++/C#/Python/Node.js) now **ship an actual
+  Linux native lib in their published package** (ADR-0024), not just a
+  dev-tree compile check — container capability real-verified via WSL2
+  (built `.so`, ran the real round-trip tests, installed the built PyPI
+  wheel into a clean venv); device/pipeline capabilities remain
+  Windows-hardware-verified only.
+- macOS / iOS: first implementation this release — `VideoToolbox` encode
+  (H.264/HEVC/ProRes) and decode (H.264/HEVC/VP9/AV1/ProRes), native
+  AAC-LC/Opus audio via `AudioToolbox`, Zero-Copy Metal GPU paths, and device
+  capture (camera/microphone/screen). **Authored with zero compile
+  verification, then real-CI-verified to actually compile** — `mediaway-
+  encoder`/`mediaway-decoder`/`mediaway-device`'s Apple backends all build
+  clean on a real `macos-14` runner (`native-assets-macos`) as of this note,
+  after fixing 21 real `mediaway-decoder::apple` compile errors this
+  session; this is compile confirmation only, not real-hardware behavior
+  verification (no macOS device runs any actual encode/decode/capture in
+  CI). Every non-Rust binding's published package also ships a macOS
+  (x86_64 + arm64) native lib built from this same code (ADR-0024).
+- Android: first implementation this release — NDK `AMediaCodec` H.264
+  decode and Camera2/AAudio/`MediaProjection` device capture. **Authored
+  with zero compile verification** — no Android NDK/device/emulator in this
+  dev environment; not yet wired into CI.
+- Web (wasm32): `@mediaway/browser` ships `iso-bmff-wasm`; WebCodecs encode
+  and decode now cover Opus audio and HEVC/AV1/VP9 GPU-surface video
+  alongside the existing H.264/AAC paths. `wasm32` compile-verified only, no
+  real browser runtime available in this environment.
+
+## Codecs
+
+- Encode: H.264 — NVENC, Vulkan Video, QuickSync (VPL), VA-API (GOP), AMF,
+  Apple (unverified); HEVC — VA-API (GOP), AMF, Apple (unverified); VP9 —
+  VA-API (narrow real-driver support, untested); AV1 — software (rav1e),
+  AMF (untested), Vulkan (implemented but driver-blocked on this workspace's
+  reference GPU); ProRes — Apple (unverified, ProRes RAW out of scope).
+- Decode: H.264/HEVC — Media Foundation and Vulkan Video (hardware-verified),
+  VA-API (GOP, untested), D3D12 (HEVC, sans-io only), Apple (unverified);
+  VP9 — VA-API (untested), Apple (unverified); AV1 — Vulkan (keyframe-only,
+  hardware-verified), VA-API (keyframe-only, untested), D3D12 (keyframe-only,
+  sans-io only), Apple (unverified); ProRes — Apple (unverified). Auto video
+  decode C ABI (CPU output), reachable from all 4 non-Rust bindings.
+- Audio: Opus — Windows decode via Media Foundation, cross-platform software
+  encode/decode (`unsafe-libopus`), native Apple encode/decode (unverified);
+  AAC — software encode (C# `Mediaway.Pipeline.AudioEncoder`, ABI v2), native
+  Apple encode/decode including this workspace's first AAC decoder
+  (unverified); audio processing module (sonora). Opus decode C ABI
+  reachable from all 4 non-Rust bindings.
+- Containers: ISOBMFF/MP4, WebM, FLV, MPEG-TS, ADTS, Ogg, RIFF/WAVE, MPEG
+  audio — all verified playable in mpv; CENC encryption/decryption; RTMP
+  (proposed, unpublished); `rtp-core` for RTP payloadization (H.264/HEVC).
+
+## Bindings
+
+Every package below now ships native libs for Windows x64, Linux x86_64, and macOS
+(x86_64 + arm64) — see **Multi-platform native binding distribution** above (ADR-0024).
+Linux is real-verified this release; macOS compiles on real CI, full RC-gate confirmation
+still pending as of this note. The new
+Apple/Android/AMF/VA-API/D3D12 codec *paths* from the Platforms/Codecs sections above are
+not yet reachable through any encode/decode C ABI call (enum-level `CodecKind` sync only
+this release).
+
+- C: [`mediaway_ffi.h`](https://github.com/nyxways/mediaway/releases/tag/v0.1.8)
+  + one CMake/CPack archive per platform (GitHub Release assets) —
+  `mediaway_codec_kind_t` gained the six ProRes values.
+- C#: [`Mediaway.*`](https://www.nuget.org/packages/Mediaway.Common) packages
+  on NuGet (Trusted Publishing, OIDC) — `CodecKind` synced with the six ProRes values;
+  each package's `runtimes/` folder now carries every platform's native lib.
+- Python: [`mediaway`](https://pypi.org/project/mediaway/) on PyPI (Trusted
+  Publishing) — `Codec` synced with the six ProRes values; one wheel per platform now
+  instead of a single Windows-only wheel.
+- Node: [`@mediaway/ffi`](https://www.npmjs.com/package/@mediaway/ffi),
+  [`@mediaway/container`](https://www.npmjs.com/package/@mediaway/container),
+  [`@mediaway/device`](https://www.npmjs.com/package/@mediaway/device),
+  [`@mediaway/encoder`](https://www.npmjs.com/package/@mediaway/encoder),
+  [`@mediaway/decoder`](https://www.npmjs.com/package/@mediaway/decoder) on
+  npm (OIDC Trusted Publishing) — `VideoCodec` synced with the six ProRes values;
+  `@mediaway/ffi` now bundles every platform's native lib in the one package.
+- C++: `bindings/cpp/include/mediaway/` — `Codec` is a narrower, deliberately curated subset
+  (already excludes AV1/VP9/WebVTT/Tx3g pre-existing this release) and was not extended here.
+- Browser: [`@mediaway/browser`](https://www.npmjs.com/package/@mediaway/browser)
+  (wasm, wasm-bindgen) — WebCodecs Opus audio and HEVC/AV1/VP9 GPU-surface
+  video are reachable here, compile-verified only.
+
+## Breaking changes
+
+None. APIs are pre-1.0 and may change without a major bump.
+
+## Maturity bar
+
+Not production-ready. This release adds an unusually large amount of
+**authored-but-unverified** surface: the entire Apple (macOS/iOS) and
+Android platforms ship with **zero compile verification** in this dev
+environment (no Apple SDK, no Android NDK), and several Linux VA-API,
+AMD AMF, and Windows D3D12 additions are compile/test-verified only, with
+**zero real-hardware verification** this cycle. Treat every codec/platform
+path in this note without an explicit "hardware-verified" tag as unverified
+until a CI job or a real device confirms it. Previously-shipped
+hardware-verified paths (NVENC, QuickSync, Vulkan Video H.264/HEVC/AV1-decode
+on RTX 4090, WGC window/screen capture) are unaffected by this caveat.
+Costly paths (CPU readback, SW fallbacks) are documented at each API
+(`docs/spec/caveats-and-clarity.md`). See `docs/spec/status.md`. One narrower update since the
+initial v0.1.7 attempt: `mediaway-decoder::apple`'s `VideoToolbox` FFI shape was corrected
+against the real `objc2-core-media`/`objc2-core-video`/`objc2-video-toolbox` 0.3.2 API this
+session (21 real compile errors, all fixed) and **is now confirmed compiling on a real
+`macos-14` CI runner** — this is compile confirmation only, not real-hardware decode
+verification (no macOS device runs any actual decode in CI).
+
+Separately: this release's **binding distribution** itself (which platforms each npm/
+NuGet/PyPI/CPack package's native lib actually covers) is a different maturity axis from
+the codec/platform backend caveat above. Linux binding packaging is real-verified
+(built, packed, installed, and round-trip-tested on real Linux via WSL2 this session — the
+`native-assets-linux` job's `ubuntu-24.04` fix matches that WSL2 environment exactly but has not
+yet been confirmed by an actual CI run of this exact job as of this note). macOS
+`native-assets-macos` (compile) is real-CI-verified; the full `bindings-tests-macos` RC gate
+(container + hardware round-trip) is still being confirmed as of this note.

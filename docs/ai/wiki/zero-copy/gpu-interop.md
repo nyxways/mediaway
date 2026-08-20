@@ -7,20 +7,20 @@ Canonical: [`docs/spec/gpu-interop.md`](../../../spec/gpu-interop.md) · ADR-000
   `create_texture_from_hal` (`unsafe` escape hatches, not a stabilized public
   contract) to recover the native `ID3D12Device`/`ID3D12Resource` `wgpu`'s
   DX12 backend holds, then bridges into `mediaway-encoder::windows`'s existing
-  `D3d12SharedEncodeBridge` (D3D12 shared heap → native D3D11 → WMF). **Path
-  class: `GpuCopy`, not Zero-Copy** — `wgpu` has no D3D11 backend and WMF
-  rejects `D3D11On12`, so one GPU→GPU copy + a CPU↔GPU sync stall per frame is
-  the real cost. `cargo test -p mediaway` passes end-to-end on an
-  RTX 4090 (currently via the graceful-skip path —
-  same pre-existing HW/driver limitation the underlying WMF bridge test
-  already hits on its own). See `crates/mediaway/adr/wgpu/0001-dx12-hal-gpucopy-bridge.md`.
-- `wgpu` bumped 26.x → 30.x (2026-08-18), real-hardware re-verified on the same RTX 4090 —
-  6 breaking API changes fixed (`create_texture_from_hal`'s new `initial_state` param,
-  `PollType::Wait`'s new struct shape, `Instance`/`enumerate_adapters` signature changes). Also
-  resolves, as a side effect, the 26.x-era `windows`-crate 0.58/0.62 straddle bug (`wgpu-hal`
-  26.x pinned its own `windows` dependency to 0.58, incompatible as a Rust *type* with this
-  workspace's ordinary 0.62 even though both wrap the same COM interface) — `wgpu-hal` 30.x now
-  pins `windows = "0.62"`, matching this workspace. See
+  `D3d12SharedEncodeBridge` (D3D12 shared heap → native D3D11 → WMF).
+  `copy_frame`: **`GpuCopy`**, one GPU→GPU copy + CPU↔GPU sync stall/frame
+  (`wgpu` has no D3D11 backend, WMF rejects `D3D11On12`). **`render_target`
+  + `handle` (2026-08-20): genuine `ZeroCopy`** — render directly into the
+  bridge's own shared texture (now `RENDER_ATTACHMENT`-capable) instead of
+  copying a separate one in; only cost left is `handle`'s untargeted
+  `poll(Wait)` stall. **`from_external_shared_resource`**: import a
+  caller-owned already-shared D3D12 resource instead of allocating one
+  (`mediaway-encoder` ADR-0011's `open_with_resource`). All hardware-verified
+  on the reference RTX 4090. See
+  `crates/mediaway/adr/wgpu/0001-dx12-hal-gpucopy-bridge.md`,
+  `0005-render-target-and-external-shared-resource.md`.
+- `wgpu` bumped 26.x → 30.x (2026-08-18), real-hardware re-verified — 6 breaking API changes
+  fixed, plus resolved the 26.x-era `windows`-crate 0.58/0.62 straddle bug as a side effect. See
   `crates/mediaway/adr/wgpu/0004-wgpu-30-upgrade.md`.
 - `mediaway-encoder::vulkan` (2026-07-29) — real, hardware-verified
   `VK_KHR_video_queue` capability probe (`ash`). Confirmed:

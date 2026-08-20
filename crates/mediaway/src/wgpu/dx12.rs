@@ -79,19 +79,52 @@ impl WgpuDx12Bridge {
             return Err(WgpuInteropError::InvalidInput);
         }
 
-        // SAFETY: `as_hal`'s contract only requires the returned resource not
-        // be destroyed while the guard is the last live reference; we only
-        // read the raw pointer through `Interface::as_raw` below and drop the
-        // guard immediately after, never touching the device destructively.
-        let native_device = unsafe { device.as_hal::<wgpu::hal::api::Dx12>() }
-            .ok_or(WgpuInteropError::HalUnavailable)?;
-        let raw_device: &ID3D12Device = native_device.raw_device();
-        let device_handle = NativeHandle::new(Interface::as_raw(raw_device) as usize)
-            .ok_or(WgpuInteropError::InvalidInput)?;
-        drop(native_device);
-
+        let device_handle = extract_d3d12_device_handle(device)?;
         let bridge =
             mediaway_encoder::windows::D3d12SharedEncodeBridge::open(device_handle, width, height)?;
+        let dest = wrap_bridge_resource(device, &bridge, width, height)?;
+
+        Ok(Self {
+            bridge,
+            dest,
+            width,
+            height,
+        })
+    }
+
+    /// Import a caller-owned D3D12 resource — already allocated with
+    /// `D3D12_HEAP_FLAG_SHARED` (+ render-target-allow), [`BRIDGE_FORMAT`],
+    /// `width`x`height`, and already living on the same `ID3D12Device` `device`
+    /// resolves to — instead of letting [`Self::new`] allocate its own shared
+    /// texture.
+    ///
+    /// **Zero-Copy by construction**: no internal texture is allocated, so
+    /// there is nothing for [`Self::copy_frame`] to copy into. Callers using
+    /// this constructor should use [`Self::render_target`] + [`Self::handle`]
+    /// instead. See [ADR-0005](../../adr/wgpu/0005-render-target-and-external-shared-resource.md).
+    ///
+    /// # Errors
+    ///
+    /// Same as [`Self::new`] (`HalUnavailable`/`InvalidInput`/`Bridge`) — plus
+    /// [`WgpuInteropError::InvalidInput`] if `resource` is not a live pointer,
+    /// or [`WgpuInteropError::Bridge`] if it was not actually shared-heap
+    /// allocated (`CreateSharedHandle` fails cleanly for a non-shared
+    /// resource).
+    pub fn from_external_shared_resource(
+        device: &wgpu::Device,
+        resource: NativeHandle,
+        width: u32,
+        height: u32,
+    ) -> Result<Self, WgpuInteropError> {
+        if width == 0 || height == 0 {
+            return Err(WgpuInteropError::InvalidInput);
+        }
+
+        let device_handle = extract_d3d12_device_handle(device)?;
+        let bridge = mediaway_encoder::windows::D3d12SharedEncodeBridge::open_with_resource(
+            device_handle,
+            resource,
+        )?;
         let dest = wrap_bridge_resource(device, &bridge, width, height)?;
 
         Ok(Self {
@@ -182,6 +215,67 @@ impl WgpuDx12Bridge {
 
         Ok(self.bridge.as_dx11_handle()?)
     }
+
+    /// The bridge's own shared texture, as an ordinary `wgpu::Texture` a caller
+    /// can render into directly — the **Zero-Copy** alternative to
+    /// [`Self::copy_frame`]: render into this instead of a separate texture,
+    /// then call [`Self::handle`] (never both in the same frame).
+    ///
+    /// Returns the **same** underlying GPU allocation on every call — reused
+    /// and overwritten each frame, exactly like [`Self::copy_frame`]'s
+    /// destination — single-buffered, not a frame queue. Holding a view
+    /// across the next frame's render observes that next frame's content.
+    #[must_use]
+    pub const fn render_target(&self) -> &wgpu::Texture {
+        &self.dest
+    }
+
+    /// Wait for all of `device`'s outstanding GPU work, then return a
+    /// [`GpuBufferHandle::DirectX11`] for the bridge's shared texture — the
+    /// **Zero-Copy** counterpart of [`Self::copy_frame`] for callers that
+    /// rendered directly into [`Self::render_target`].
+    ///
+    /// **Costly path — one CPU↔GPU sync stall, no payload copy.** Unlike
+    /// `copy_frame`'s targeted `WaitForSubmissionIndex`-shaped wait, this
+    /// waits for *all* of `device`'s outstanding work (the caller's render-pass
+    /// submission index isn't known to the bridge) — a caller with other
+    /// unrelated pending GPU work on the same `device` pays a longer stall.
+    ///
+    /// # Errors
+    ///
+    /// [`WgpuInteropError::Bridge`] on a `poll` failure or a bridge handle
+    /// failure.
+    pub fn handle(&self, device: &wgpu::Device) -> Result<GpuBufferHandle, WgpuInteropError> {
+        device
+            .poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: None,
+            })
+            .map_err(|_| WgpuInteropError::Bridge(EncodeError::Backend))?;
+
+        Ok(self.bridge.as_dx11_handle()?)
+    }
+}
+
+/// Extract the native `ID3D12Device*` behind `device` (must be wgpu's DX12
+/// backend) as a [`NativeHandle`].
+///
+/// # Errors
+///
+/// [`WgpuInteropError::HalUnavailable`] when `device` is not backed by wgpu's
+/// DX12 HAL. [`WgpuInteropError::InvalidInput`] for a null device pointer.
+fn extract_d3d12_device_handle(device: &wgpu::Device) -> Result<NativeHandle, WgpuInteropError> {
+    // SAFETY: `as_hal`'s contract only requires the returned resource not be
+    // destroyed while the guard is the last live reference; we only read the
+    // raw pointer through `Interface::as_raw` below and drop the guard
+    // immediately after, never touching the device destructively.
+    let native_device = unsafe { device.as_hal::<wgpu::hal::api::Dx12>() }
+        .ok_or(WgpuInteropError::HalUnavailable)?;
+    let raw_device: &ID3D12Device = native_device.raw_device();
+    let device_handle = NativeHandle::new(Interface::as_raw(raw_device) as usize)
+        .ok_or(WgpuInteropError::InvalidInput)?;
+    drop(native_device);
+    Ok(device_handle)
 }
 
 /// Re-wrap the bridge's own shared `ID3D12Resource` as a `wgpu::Texture`
@@ -236,7 +330,10 @@ fn wrap_bridge_resource(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: BRIDGE_FORMAT,
-        usage: wgpu::TextureUsages::COPY_DST,
+        // RENDER_ATTACHMENT: the underlying D3D12 resource already allows render-target use
+        // (D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, mediaway-encoder ADR-0006) — this just lets
+        // callers create a render-pass color attachment view via `Self::render_target` (ADR-0005).
+        usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::RENDER_ATTACHMENT,
         view_formats: &[],
     };
     // SAFETY: `hal_texture` was just built from `texture_desc`'s exact

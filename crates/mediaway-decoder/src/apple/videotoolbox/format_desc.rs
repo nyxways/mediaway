@@ -13,6 +13,12 @@
 //! workspace's VA-API/Vulkan/D3D12 decoders, which parse full picture parameters because their
 //! session APIs need them — VideoToolbox is a black box that only needs enough to pick a codec
 //! path).
+//!
+//! `objc2-core-media` exposes these as plain C-style free functions with a `NonNull<*const T>`
+//! out-parameter (the classic Create Rule shape), not associated `CMFormatDescription`/
+//! `CMVideoFormatDescription` constructor methods — `CMVideoFormatDescription` is itself a type
+//! alias for `CMFormatDescription` (`pub type CMVideoFormatDescription = CMFormatDescription;`),
+//! so no cast between the two is ever needed either.
 #![allow(unsafe_code)] // real `objc2-*` FFI calls — see `apple/mod.rs`'s doc comment
 
 use std::ptr::NonNull;
@@ -22,9 +28,11 @@ use bytes::Bytes;
 use crate::DecodeError;
 use mediaway_common::CodecKind;
 
-use objc2_core_foundation::{CFData, CFDictionary, CFPropertyList, CFRetained, CFString, CFType};
+use objc2_core_foundation::{CFData, CFDictionary, CFRetained, CFString, CFType};
 use objc2_core_media::{
     CMFormatDescription, CMVideoCodecType, CMVideoFormatDescription,
+    CMVideoFormatDescriptionCreate, CMVideoFormatDescriptionCreateFromH264ParameterSets,
+    CMVideoFormatDescriptionCreateFromHEVCParameterSets,
     kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms, kCMVideoCodecType_AV1,
     kCMVideoCodecType_AppleProRes422, kCMVideoCodecType_AppleProRes422HQ,
     kCMVideoCodecType_AppleProRes422LT, kCMVideoCodecType_AppleProRes422Proxy,
@@ -53,6 +61,21 @@ pub(super) const fn raw_codec_type(codec: CodecKind) -> Option<CMVideoCodecType>
     }
 }
 
+/// Wraps a just-populated `*const CMFormatDescription` Create-Rule out-parameter into an owned
+/// `CFRetained` — shared by every constructor below. `raw` is null on any path that didn't
+/// actually produce a format description (status was non-zero, or a conforming implementation
+/// still left the out-param untouched); both are reported as [`DecodeError::Backend`] rather than
+/// assumed impossible.
+fn retained_from_create(
+    raw: *const CMFormatDescription,
+) -> Result<CFRetained<CMFormatDescription>, DecodeError> {
+    let ptr = NonNull::new(raw.cast_mut()).ok_or(DecodeError::Backend)?;
+    // SAFETY: `raw` came from a `CMVideoFormatDescriptionCreate*` Create-Rule out-parameter that
+    // just reported success (checked by every caller before this is reached) — the Create Rule
+    // guarantees a +1 retain count the caller now owns.
+    Ok(unsafe { CFRetained::from_raw(ptr) })
+}
+
 /// SPS/PPS → `CMFormatDescription`, via `CMVideoFormatDescriptionCreateFromH264ParameterSets`.
 /// `sps`/`pps` must be raw NAL payload with any emulation prevention bytes needed and no start
 /// code / length prefix — exactly what `iso_bmff::bitstream::avc::AvcDecoderConfig::{sps, pps}`
@@ -79,33 +102,26 @@ pub(super) fn create_h264(
         return Err(DecodeError::Backend);
     };
 
-    let mut format_desc_out: Option<CFRetained<CMFormatDescription>> = None;
+    let mut format_desc_out: *const CMFormatDescription = std::ptr::null();
     // SAFETY: `pointers_ptr`/`sizes_ptr` point at 2-element stack arrays matching
     // `parameter_set_count = 2`; each pointer in `pointers` is valid for the corresponding
     // `sizes` entry's byte length for the duration of this call (borrowed from `sps`/`pps`,
     // both live for this whole function); `4` (`nal_unit_header_length`) matches this backend's
-    // 4-byte AVCC length-prefix scope; `format_desc_out` starts `None`.
+    // 4-byte AVCC length-prefix scope; `format_desc_out` is a valid stack out-pointer.
     let status = unsafe {
-        CMVideoFormatDescription::from_h264_parameter_sets(
+        CMVideoFormatDescriptionCreateFromH264ParameterSets(
             None,
             2,
             pointers_ptr,
             sizes_ptr,
             4,
-            &mut format_desc_out,
+            NonNull::from(&mut format_desc_out),
         )
     };
     if status != NO_ERROR {
         return Err(DecodeError::Backend);
     }
-    let format_desc = format_desc_out.ok_or(DecodeError::Backend)?;
-    // SAFETY: `format_desc` was just created by
-    // `CMVideoFormatDescriptionCreateFromH264ParameterSets`, which per its own doc comment only
-    // ever produces a format description describing H.264 video — casting to the video-specific
-    // view type is exactly this API's documented purpose (`CMVideoFormatDescription` shares
-    // `CMFormatDescription`'s `CFTypeID`; it is not a distinct concrete type with its own
-    // `ConcreteType::type_id`).
-    Ok(unsafe { CFRetained::cast_unchecked::<CMVideoFormatDescription>(format_desc) })
+    retained_from_create(format_desc_out)
 }
 
 /// VPS/SPS/PPS → `CMFormatDescription`, via
@@ -138,30 +154,28 @@ pub(super) fn create_hevc(
         return Err(DecodeError::Backend);
     };
 
-    let mut format_desc_out: Option<CFRetained<CMFormatDescription>> = None;
+    let mut format_desc_out: *const CMFormatDescription = std::ptr::null();
     // SAFETY: `pointers_ptr`/`sizes_ptr` point at 3-element stack arrays matching
     // `parameter_set_count = 3`; each pointer in `pointers` is valid for the corresponding
     // `sizes` entry's byte length for the duration of this call (borrowed from `vps`/`sps`/
     // `pps`, all live for this whole function); `4` (`nal_unit_header_length`) matches this
     // backend's 4-byte `hvcC` length-prefix scope; `extensions: None` (nothing to add beyond
-    // the parameter sets themselves); `format_desc_out` starts `None`.
+    // the parameter sets themselves); `format_desc_out` is a valid stack out-pointer.
     let status = unsafe {
-        CMVideoFormatDescription::from_hevc_parameter_sets(
+        CMVideoFormatDescriptionCreateFromHEVCParameterSets(
             None,
             3,
             pointers_ptr,
             sizes_ptr,
             4,
             None,
-            &mut format_desc_out,
+            NonNull::from(&mut format_desc_out),
         )
     };
     if status != NO_ERROR {
         return Err(DecodeError::Backend);
     }
-    let format_desc = format_desc_out.ok_or(DecodeError::Backend)?;
-    // SAFETY: same reasoning as `create_h264`'s own cast, for HEVC.
-    Ok(unsafe { CFRetained::cast_unchecked::<CMVideoFormatDescription>(format_desc) })
+    retained_from_create(format_desc_out)
 }
 
 /// `width`/`height` + a raw container-supplied codec-config atom (`vpcC` for VP9, `av1C` for
@@ -192,33 +206,32 @@ pub(super) fn create_raw(
     // lifetime — same pattern as this backend's other static CF constant reads.
     let outer_key = unsafe { kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms };
     let outer = CFDictionary::<CFString, CFType>::from_slices(&[outer_key], &[inner_ct]);
-    // SAFETY: `CFDictionary<CFString, CFType>` and `CFDictionary<CFString, CFPropertyList>` are
-    // the identical Core Foundation object at runtime — `CFType`/`CFPropertyList` are both
-    // phantom marker types for "any CF property-list-compatible value" (CFDictionary/CFData/
-    // CFString/CFNumber/… all conform to both), the same toll-free-bridging assumption
-    // `CMVideoFormatDescription::from_hevc_parameter_sets`'s own `extensions` parameter already
-    // makes; only the static phantom type changes here, not the underlying object.
-    let outer: CFRetained<CFDictionary<CFString, CFPropertyList>> =
-        unsafe { CFRetained::cast_unchecked(outer) };
+    // SAFETY: `CFDictionary<CFString, CFType>` and the bare `CFDictionary` (== `CFDictionary<
+    // Opaque, Opaque>`, `CMVideoFormatDescriptionCreate`'s own `extensions` parameter type) are
+    // the identical Core Foundation object at runtime — `CFType`/`Opaque` are both phantom
+    // marker types for "any CF value"; only the static phantom type changes here, not the
+    // underlying object.
+    let outer: CFRetained<CFDictionary> = unsafe { CFRetained::cast_unchecked(outer) };
 
-    let mut format_desc_out: Option<CFRetained<CMVideoFormatDescription>> = None;
+    let mut format_desc_out: *const CMVideoFormatDescription = std::ptr::null();
     // SAFETY: `codec_type` is a real, VideoToolbox-recognized `CMVideoCodecType`; `width`/
     // `height` are positive (checked by this backend's `validate` before this is called);
-    // `outer` is a valid, just-built extensions dictionary; `format_desc_out` starts `None`.
+    // `outer` is a valid, just-built extensions dictionary; `format_desc_out` is a valid stack
+    // out-pointer.
     let status = unsafe {
-        CMVideoFormatDescription::new(
+        CMVideoFormatDescriptionCreate(
             None,
             codec_type,
             width,
             height,
             Some(&outer),
-            &mut format_desc_out,
+            NonNull::from(&mut format_desc_out),
         )
     };
     if status != NO_ERROR {
         return Err(DecodeError::Backend);
     }
-    format_desc_out.ok_or(DecodeError::Backend)
+    retained_from_create(format_desc_out)
 }
 
 /// `width`/`height` → `CMFormatDescription` for a `ProRes` profile, via the generic
@@ -231,16 +244,23 @@ pub(super) fn create_raw_no_extension(
     width: i32,
     height: i32,
 ) -> Result<CFRetained<CMVideoFormatDescription>, DecodeError> {
-    let mut format_desc_out: Option<CFRetained<CMVideoFormatDescription>> = None;
+    let mut format_desc_out: *const CMVideoFormatDescription = std::ptr::null();
     // SAFETY: `codec_type` is a real, VideoToolbox-recognized `CMVideoCodecType`; `width`/
     // `height` are positive (checked by this backend's `validate` before this is called);
     // `extensions: None` (nothing to attach — see this function's doc comment);
-    // `format_desc_out` starts `None`.
+    // `format_desc_out` is a valid stack out-pointer.
     let status = unsafe {
-        CMVideoFormatDescription::new(None, codec_type, width, height, None, &mut format_desc_out)
+        CMVideoFormatDescriptionCreate(
+            None,
+            codec_type,
+            width,
+            height,
+            None,
+            NonNull::from(&mut format_desc_out),
+        )
     };
     if status != NO_ERROR {
         return Err(DecodeError::Backend);
     }
-    format_desc_out.ok_or(DecodeError::Backend)
+    retained_from_create(format_desc_out)
 }

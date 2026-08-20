@@ -208,8 +208,22 @@ jobs:
       # mediaway-device (PipeWire) and mediaway-encoder (cros-libva/VA-API)
       # link against these at build time even though this cdylib doesn't
       # exercise a real device/GPU in this job.
+      #
+      # ubuntu-22.04's stock libspa-0.2-dev is too old: the `libspa` Rust
+      # crate (a `pipewire` dependency) calls `spa_meta_first`/
+      # `spa_meta_region_is_valid`, static-inline helpers that don't exist
+      # in that header version at all (confirmed: a real build failure on
+      # the first real ubuntu-22.04 native-assets-linux run, not a
+      # hypothetical). Both are `static inline` — pulling newer headers from
+      # the pipewire-debian upstream PPA only changes what bindgen sees at
+      # *build* time; it does not raise this crate's *runtime* PipeWire
+      # dependency floor (no new symbol is added to the linked/loaded
+      # PipeWire library at runtime — the function body is compiled in).
       - name: Install system deps (Linux verification builds)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpipewire-0.3-dev libva-dev
+        run: |
+          sudo add-apt-repository -y ppa:pipewire-debian/pipewire-upstream
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libpipewire-0.3-dev libspa-0.2-dev libva-dev
 
       - name: sccache
         uses: mozilla-actions/sccache-action@v0.0.10

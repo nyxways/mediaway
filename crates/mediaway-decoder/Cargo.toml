@@ -90,6 +90,7 @@ ndk = { version = "0.9", features = ["media"] }
 
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+bytes = { workspace = true }
 objc2-video-toolbox = { version = "0.3", default-features = false, features = [
     "VTDecompressionSession",
     "VTDecompressionProperties",
@@ -108,6 +109,7 @@ objc2-core-media = { version = "0.3", default-features = false, features = [
     "CMBlockBuffer",
 ] }
 objc2-core-video = { version = "0.3", default-features = false, features = [
+    "CVBase",
     "CVBuffer",
     "CVImageBuffer",
     "CVPixelBuffer",

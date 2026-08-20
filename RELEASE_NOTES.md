@@ -1,4 +1,4 @@
-# Mediaway v0.1.7
+# Mediaway v0.1.8
 
 ## What's new
 
@@ -112,6 +112,24 @@
   `.dll`, `PATH`-based library resolution, and a `win-x64` native dir default. Generalized to
   detect the host OS and use the right lib filename/extension and runtime search-path variable
   (`LD_LIBRARY_PATH`/`DYLD_LIBRARY_PATH`), real-verified running it on Linux via WSL2
+- **Real bugs caught by v0.1.7's actual first release run** (crates.io v0.1.7 already published
+  with these; both fixed for v0.1.8, no crates.io re-publish possible for 0.1.7 itself):
+  `mediaway-device`'s PipeWire backend failed to build on the pinned `ubuntu-22.04`
+  `native-assets-linux` runner — a `libspa` crate dependency calls `spa_meta_first`/
+  `spa_meta_region_is_valid`, static-inline helpers absent from that Ubuntu release's stock
+  `libspa-0.2-dev` headers. Fixed by pulling newer headers from the `pipewire-debian` upstream
+  PPA at build time only (does not raise the runtime PipeWire dependency floor — both are
+  `static inline`, compiled in, no new runtime symbol). Verified in a real `ubuntu:22.04`
+  container this session, before and after the fix.
+- `mediaway-decoder::apple`'s `VideoToolbox` FFI genuinely did not compile on real macOS — 21
+  errors across `format_desc.rs`/`video.rs`, all the same root cause: the code assumed
+  `objc2-core-media`/`objc2-video-toolbox` expose idiomatic associated constructors
+  (`CMFormatDescription::new`, `VTDecompressionSession::new`, `CVPixelBuffer::lock_base_address`,
+  …), but the real crates expose C-style free functions with `NonNull<*const/mut T>` Create-Rule
+  out-parameters instead (confirmed by reading the actual `objc2-core-media`/`objc2-core-video`/
+  `objc2-video-toolbox` 0.3.2 source; `mediaway-encoder::apple`'s equivalent code already used the
+  correct shape). Rewrote every affected call site to the real API — this is the first time this
+  module has ever actually been compiled by any toolchain.
 
 ## Overview
 
@@ -193,7 +211,7 @@ Apple/Android/AMF/VA-API/D3D12 codec *paths* from the Platforms/Codecs sections 
 not yet reachable through any encode/decode C ABI call (enum-level `CodecKind` sync only
 this release).
 
-- C: [`mediaway_ffi.h`](https://github.com/nyxways/mediaway/releases/tag/v0.1.7)
+- C: [`mediaway_ffi.h`](https://github.com/nyxways/mediaway/releases/tag/v0.1.8)
   + one CMake/CPack archive per platform (GitHub Release assets) —
   `mediaway_codec_kind_t` gained the six ProRes values.
 - C#: [`Mediaway.*`](https://www.nuget.org/packages/Mediaway.Common) packages
@@ -232,7 +250,11 @@ until a CI job or a real device confirms it. Previously-shipped
 hardware-verified paths (NVENC, QuickSync, Vulkan Video H.264/HEVC/AV1-decode
 on RTX 4090, WGC window/screen capture) are unaffected by this caveat.
 Costly paths (CPU readback, SW fallbacks) are documented at each API
-(`docs/spec/caveats-and-clarity.md`). See `docs/spec/status.md`.
+(`docs/spec/caveats-and-clarity.md`). See `docs/spec/status.md`. One narrower update since the
+initial v0.1.7 attempt: `mediaway-decoder::apple`'s `VideoToolbox` FFI shape was corrected
+against the real `objc2-core-media`/`objc2-core-video`/`objc2-video-toolbox` 0.3.2 API this
+session (21 real compile errors, all fixed) — still not confirmed by an actual macOS compiler
+run as of this note, but no longer authored purely on unverified assumptions either.
 
 Separately: this release's **binding distribution** itself (which platforms each npm/
 NuGet/PyPI/CPack package's native lib actually covers) is a different maturity axis from

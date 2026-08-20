@@ -346,7 +346,7 @@ What `mediaway-device` backends target (camera, mic, **screen**, **window**). Sa
 | Camera (video)   | ✅      | 🆗  | 🆗   | 🆗    | 🆗      |
 | Microphone       | ✅      | 🆗  | 🆗   | 🆗    | 🆗      |
 | Screen / display | ✅       | 🆗  | 🆗   | 🆗    | 🆗      |
-| Window           | 🆗      | 🆗  | 🆗   | 🆗    | ❌      |
+| Window           | ⚡      | 🆗  | 🆗   | 🆗    | ❌      |
 
 <!-- ANCHOR_END: device-capture -->
 

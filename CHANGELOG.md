@@ -189,6 +189,13 @@ section below is unchanged content, now actually able to ship.
   every test. Added `libmediaway_ffi.dylib` staging for both `osx-arm64`/`osx-x64` (selected via
   `RuntimeInformation.OSArchitecture`, since `native-assets-macos` stages both architectures side
   by side and a blind `Exists()` check would collide).
+- `bindings-tests-linux` only installed `build-essential` (for the C round-trip test) — every C#
+  test failed with `DllNotFoundException` there too, but for a different reason than macOS's
+  missing-entry bug: `libmediaway_ffi.so` *was* found and `dlopen`'d, but its own transitive
+  dependency `libva.so.2` (VA-API runtime, dynamically linked even though these tests never touch
+  a real GPU) wasn't installed on that job's bare runner — `native-assets-linux` already installs
+  `libpipewire-0.3-dev`/`libva-dev` to *build*, but `bindings-tests-linux` never installed
+  anything to satisfy the same libraries at *load* time. Added.
 
 ### What's new since 0.1.6
 

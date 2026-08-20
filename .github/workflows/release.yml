@@ -439,8 +439,14 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install system deps (C round-trip build)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential
+      # libmediaway_ffi.so dynamically links libpipewire/libva at runtime even
+      # though this job's tests never touch a real device/GPU — omitting them
+      # here (unlike native-assets-linux, which already installs them to
+      # *build*) surfaced a real DllNotFoundException-via-missing-transitive-
+      # dependency failure on the first real run of this job. build-essential
+      # is for the C round-trip test's gcc invocation.
+      - name: Install system deps (C round-trip build + native lib runtime deps)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential libpipewire-0.3-dev libva-dev
 
       - name: C# container round-trip test (no hardware)
         run: dotnet test bindings/csharp/tests/Mediaway.Container.Tests/Mediaway.Container.Tests.csproj

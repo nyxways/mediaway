@@ -192,8 +192,21 @@ jobs:
 
   native-assets-linux:
     name: native assets (linux-x64 .so)
-    runs-on: ubuntu-22.04 # pinned (not ubuntu-latest): fixes the glibc floor
-    # this build ships (ADR-0024) instead of letting the runner image drift it.
+    # Pinned (not ubuntu-latest) so the glibc/PipeWire/VA-API floor this build
+    # ships doesn't silently drift with the runner image. ubuntu-24.04, not
+    # ubuntu-22.04 (ADR-0024's original choice): two real, distinct build
+    # failures on a real ubuntu-22.04 run (not hypothetical) both traced to
+    # that release's stock C library headers being too old for this
+    # workspace's actual dependencies — `libspa` (a `pipewire` dependency)
+    # calls `spa_meta_first`/`spa_meta_region_is_valid`, static-inline
+    # helpers absent from ubuntu-22.04's `libspa-0.2-dev`; separately,
+    # `cros-libva`'s AV1 encode struct bindings (bindgen'd from system
+    # `libva-dev` headers) need fields ubuntu-22.04's libva 2.14 doesn't
+    # have. ubuntu-24.04's stock libpipewire/libspa/libva packages are new
+    # enough for both — real-verified via WSL2 (also Ubuntu 24.04) — with no
+    # PPA/backport needed. glibc floor moves from 2.35 to 2.39 accordingly
+    # (see ADR-0024's Linux glibc baseline section and PyPI's manylinux tag).
+    runs-on: ubuntu-24.04
     needs: [version, crates]
     steps:
       - uses: actions/checkout@v4
@@ -208,22 +221,8 @@ jobs:
       # mediaway-device (PipeWire) and mediaway-encoder (cros-libva/VA-API)
       # link against these at build time even though this cdylib doesn't
       # exercise a real device/GPU in this job.
-      #
-      # ubuntu-22.04's stock libspa-0.2-dev is too old: the `libspa` Rust
-      # crate (a `pipewire` dependency) calls `spa_meta_first`/
-      # `spa_meta_region_is_valid`, static-inline helpers that don't exist
-      # in that header version at all (confirmed: a real build failure on
-      # the first real ubuntu-22.04 native-assets-linux run, not a
-      # hypothetical). Both are `static inline` — pulling newer headers from
-      # the pipewire-debian upstream PPA only changes what bindgen sees at
-      # *build* time; it does not raise this crate's *runtime* PipeWire
-      # dependency floor (no new symbol is added to the linked/loaded
-      # PipeWire library at runtime — the function body is compiled in).
       - name: Install system deps (Linux verification builds)
-        run: |
-          sudo add-apt-repository -y ppa:pipewire-debian/pipewire-upstream
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libpipewire-0.3-dev libspa-0.2-dev libva-dev
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpipewire-0.3-dev libva-dev
 
       - name: sccache
         uses: mozilla-actions/sccache-action@v0.0.10
@@ -407,7 +406,7 @@ jobs:
 
   bindings-tests-linux:
     name: bindings tests (RC gate, linux-x64, container only)
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04 # matches native-assets-linux's runner (ADR-0024)
     needs: [version, native-assets-linux]
     # GitHub-hosted Linux runners have no GPU — this RC gate can only verify
     # the sans-io container capability (mux/demux), not hardware encode/
@@ -420,6 +419,17 @@ jobs:
         with:
           name: native-dlls-linux
           path: bindings
+
+      # native-assets-linux only uploads the merge-safe _native-staging/
+      # linux-x64/ copy of the python native lib (not the real
+      # bindings/python/mediaway/_native/ path directly — that upload is
+      # win-x64-only, see native-assets' own "Stage python lib" step), so
+      # this job must copy it into place itself before any Python-dependent
+      # step runs.
+      - name: Select python native lib (linux-x64)
+        run: |
+          mkdir -p bindings/python/mediaway/_native
+          cp bindings/python/_native-staging/linux-x64/* bindings/python/mediaway/_native/
 
       - uses: oven-sh/setup-bun@v2
       - uses: actions/setup-dotnet@v4
@@ -465,12 +475,19 @@ jobs:
           name: native-dlls-macos
           path: bindings
 
-      # This runner is arm64 — select that arch's staged python lib (the
-      # artifact carries both osx-x64 and osx-arm64; the real
-      # bindings/python/mediaway/_native/ path native-assets-macos left
-      # behind is whichever was staged last, arm64).
-      - name: Confirm python native lib is arm64
-        run: ls -la bindings/python/mediaway/_native
+      # This runner is arm64 — select that arch's staged python lib.
+      # native-assets-macos never uploads the real bindings/python/mediaway/
+      # _native/ path directly (only win-x64's native-assets job does — see
+      # its own "Stage python lib" step); macOS/Linux only upload the
+      # merge-safe _native-staging/<rid>/ copies (avoids the two
+      # architectures colliding on the same filename in one artifact), so
+      # this job must copy the right one into place itself before any
+      # Python-dependent step runs.
+      - name: Select python native lib (osx-arm64)
+        run: |
+          mkdir -p bindings/python/mediaway/_native
+          cp bindings/python/_native-staging/osx-arm64/* bindings/python/mediaway/_native/
+          ls -la bindings/python/mediaway/_native
 
       - uses: oven-sh/setup-bun@v2
       - uses: actions/setup-dotnet@v4

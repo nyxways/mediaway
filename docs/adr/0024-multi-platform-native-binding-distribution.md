@@ -28,6 +28,23 @@ deviations from the design as drafted:
   including installing the built PyPI wheel into a clean venv. This is
   stronger than this ADR's own "compile/lint only" framing assumed Linux
   packaging would ship with.
+- **§ Linux glibc baseline was wrong and has been corrected**: the pinned
+  `ubuntu-22.04` runner this ADR originally chose turned out to be genuinely
+  too old for this workspace's own Linux dependencies, confirmed by two
+  distinct real build failures on the actual first `native-assets-linux` CI
+  run (not caught by this session's own WSL2 testing, which happened to run
+  on Ubuntu 24.04) — `libspa` (a `pipewire` dependency) calls
+  `spa_meta_first`/`spa_meta_region_is_valid`, static-inline helpers absent
+  from ubuntu-22.04's `libspa-0.2-dev`; separately, `cros-libva`'s AV1 encode
+  struct bindings need fields ubuntu-22.04's libva 2.14 doesn't have.
+  `native-assets-linux`/`bindings-tests-linux` now pin **`ubuntu-24.04`**
+  instead (still pinned, not `ubuntu-latest` — the "don't let the runner
+  image silently drift the floor" principle is unchanged, just the specific
+  pin). **glibc floor is now ≥ 2.39, not ≥ 2.35** — the PyPI wheel tag
+  changed to `manylinux_2_39_x86_64` accordingly. The § Linux glibc baseline
+  design section below is left as originally written for the historical
+  record of what was first decided and why; treat this note as the
+  authoritative correction.
 - Android (ADR-0025) remains explicitly out of scope, per this ADR's
   original decision — not touched by the v0.1.7 work.
 

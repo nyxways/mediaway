@@ -12,17 +12,18 @@
   round-trip on Linux; container + real hardware `VideoToolbox` pipeline round-trip on macOS,
   since `macos-14` runners are real Apple Silicon). NuGet gained `runtimes/linux-x64`,
   `osx-x64`, `osx-arm64` alongside `win-x64`; PyPI ships one wheel per platform
-  (`manylinux_2_35_x86_64`, `macosx_11_0_x86_64`, `macosx_11_0_arm64`); CPack produces one
+  (`manylinux_2_39_x86_64`, `macosx_11_0_x86_64`, `macosx_11_0_arm64`); CPack produces one
   archive per platform from a single job (the C++ wrapper is a header-only `INTERFACE` target
   over a prebuilt lib, so no cross-platform runner is needed just to package it).
   `@mediaway/ffi` bundles every platform's lib directly (measured ~1.9-3.1 MB per platform
   release build — small enough that a per-platform `optionalDependencies` split wasn't worth
   the complexity). **Linux real-verified this session** via WSL2: built the release `.so` on
   real Linux, ran the actual C#/Python/Node/C round-trip tests against it, and installed the
-  built PyPI wheel into a clean venv — not just a compile check. **macOS is authored but not
-  yet CI-verified** — the release branch had not been pushed as of this note; treat it as
-  unverified until a real `macos-14` GitHub Actions run confirms it. Android AAR/Maven
-  distribution is a separate, not-yet-implemented design (ADR-0025, Proposed).
+  built PyPI wheel into a clean venv — not just a compile check. **macOS `native-assets-macos`
+  (the actual compile) is now real-CI-verified** — passed on a real `macos-14` runner after the
+  `mediaway-decoder::apple` FFI fixes below; the full `bindings-tests-macos` RC gate (container +
+  hardware round-trip) is still being confirmed as of this note. Android AAR/Maven distribution
+  is a separate, not-yet-implemented design (ADR-0025, Proposed).
 - Apple (macOS/iOS): first full encode/decode backend via `VideoToolbox` — H.264, HEVC, VP9/AV1
   decode, ProRes encode/decode, plus AAC-LC and Opus audio encode/decode via `AudioToolbox`
   (the workspace's first AAC decoder); real Zero-Copy Metal (`CVPixelBuffer`) paths for encode
@@ -112,24 +113,35 @@
   `.dll`, `PATH`-based library resolution, and a `win-x64` native dir default. Generalized to
   detect the host OS and use the right lib filename/extension and runtime search-path variable
   (`LD_LIBRARY_PATH`/`DYLD_LIBRARY_PATH`), real-verified running it on Linux via WSL2
-- **Real bugs caught by v0.1.7's actual first release run** (crates.io v0.1.7 already published
-  with these; both fixed for v0.1.8, no crates.io re-publish possible for 0.1.7 itself):
-  `mediaway-device`'s PipeWire backend failed to build on the pinned `ubuntu-22.04`
-  `native-assets-linux` runner — a `libspa` crate dependency calls `spa_meta_first`/
-  `spa_meta_region_is_valid`, static-inline helpers absent from that Ubuntu release's stock
-  `libspa-0.2-dev` headers. Fixed by pulling newer headers from the `pipewire-debian` upstream
-  PPA at build time only (does not raise the runtime PipeWire dependency floor — both are
-  `static inline`, compiled in, no new runtime symbol). Verified in a real `ubuntu:22.04`
-  container this session, before and after the fix.
-- `mediaway-decoder::apple`'s `VideoToolbox` FFI genuinely did not compile on real macOS — 21
-  errors across `format_desc.rs`/`video.rs`, all the same root cause: the code assumed
-  `objc2-core-media`/`objc2-video-toolbox` expose idiomatic associated constructors
-  (`CMFormatDescription::new`, `VTDecompressionSession::new`, `CVPixelBuffer::lock_base_address`,
-  …), but the real crates expose C-style free functions with `NonNull<*const/mut T>` Create-Rule
-  out-parameters instead (confirmed by reading the actual `objc2-core-media`/`objc2-core-video`/
-  `objc2-video-toolbox` 0.3.2 source; `mediaway-encoder::apple`'s equivalent code already used the
-  correct shape). Rewrote every affected call site to the real API — this is the first time this
-  module has ever actually been compiled by any toolchain.
+- **Real bugs caught while getting v0.1.7/v0.1.8's release run to actually pass** (v0.1.7's
+  crates.io publish is already permanent, and v0.1.8's own crates.io publish already succeeded
+  too — these are `release.yml`/binding-metadata-only fixes, no crate source changed, so no new
+  version bump was needed to retry):
+  - `mediaway-decoder::apple`'s `VideoToolbox` FFI genuinely did not compile on real macOS — 21
+    errors across `format_desc.rs`/`video.rs`, all the same root cause: the code assumed
+    `objc2-core-media`/`objc2-video-toolbox` expose idiomatic associated constructors
+    (`CMFormatDescription::new`, `VTDecompressionSession::new`,
+    `CVPixelBuffer::lock_base_address`, …), but the real crates expose C-style free functions
+    with `NonNull<*const/mut T>` Create-Rule out-parameters instead (confirmed by reading the
+    actual `objc2-core-media`/`objc2-core-video`/`objc2-video-toolbox` 0.3.2 source;
+    `mediaway-encoder::apple`'s equivalent code already used the correct shape). Rewrote every
+    affected call site to the real API — real-CI-verified: `native-assets-macos` now compiles on
+    a real `macos-14` runner.
+  - `native-assets-linux`'s pinned `ubuntu-22.04` runner (ADR-0024's original choice) turned out
+    to be genuinely too old for two of this workspace's real Linux dependencies — `libspa` (a
+    `pipewire` dependency) calls `spa_meta_first`/`spa_meta_region_is_valid`, static-inline
+    helpers absent from that release's `libspa-0.2-dev`; separately, `cros-libva`'s AV1 encode
+    struct bindings need fields that release's libva 2.14 doesn't have. Both are bindgen'd from
+    **system** headers/libraries, not pinned Rust crate versions, so this session's own WSL2
+    testing (Ubuntu 24.04) never hit either gap. Fixed by moving the pin to **`ubuntu-24.04`**
+    instead (glibc floor now ≥ 2.39, PyPI tag `manylinux_2_39_x86_64`) rather than chasing PPA
+    backports package-by-package — see ADR-0024's Implementation note for the full correction.
+  - The `native-assets-linux`/`native-assets-macos` artifacts never uploaded the real
+    `bindings/python/mediaway/_native/` path directly (only the merge-safe `_native-staging/
+    <rid>/` copy, to avoid the two macOS architectures colliding on one filename) — the
+    `bindings-tests-linux`/`bindings-tests-macos` RC-gate jobs assumed it was already there and
+    failed immediately on a missing-directory error before running any real test. Both jobs now
+    copy the right platform's staged lib into place themselves first.
 
 ## Overview
 
@@ -165,11 +177,14 @@ a single C ABI (`mediaway-ffi`).
   (H.264/HEVC/ProRes) and decode (H.264/HEVC/VP9/AV1/ProRes), native
   AAC-LC/Opus audio via `AudioToolbox`, Zero-Copy Metal GPU paths, and device
   capture (camera/microphone/screen). **Authored with zero compile
-  verification** — no macOS/Xcode in this dev environment. Every non-Rust
-  binding's published package is now *wired* to ship a macOS (x86_64 +
-  arm64) native lib too (ADR-0024, `release.yml`'s new
-  `native-assets-macos`/`bindings-tests-macos` jobs), but that path has not
-  yet run on a real macOS CI runner — treat macOS as authored, not verified.
+  verification, then real-CI-verified to actually compile** — `mediaway-
+  encoder`/`mediaway-decoder`/`mediaway-device`'s Apple backends all build
+  clean on a real `macos-14` runner (`native-assets-macos`) as of this note,
+  after fixing 21 real `mediaway-decoder::apple` compile errors this
+  session; this is compile confirmation only, not real-hardware behavior
+  verification (no macOS device runs any actual encode/decode/capture in
+  CI). Every non-Rust binding's published package also ships a macOS
+  (x86_64 + arm64) native lib built from this same code (ADR-0024).
 - Android: first implementation this release — NDK `AMediaCodec` H.264
   decode and Camera2/AAudio/`MediaProjection` device capture. **Authored
   with zero compile verification** — no Android NDK/device/emulator in this
@@ -206,7 +221,8 @@ a single C ABI (`mediaway-ffi`).
 
 Every package below now ships native libs for Windows x64, Linux x86_64, and macOS
 (x86_64 + arm64) — see **Multi-platform native binding distribution** above (ADR-0024).
-Linux is real-verified this release; macOS is authored but not yet CI-run. The new
+Linux is real-verified this release; macOS compiles on real CI, full RC-gate confirmation
+still pending as of this note. The new
 Apple/Android/AMF/VA-API/D3D12 codec *paths* from the Platforms/Codecs sections above are
 not yet reachable through any encode/decode C ABI call (enum-level `CodecKind` sync only
 this release).
@@ -253,13 +269,15 @@ Costly paths (CPU readback, SW fallbacks) are documented at each API
 (`docs/spec/caveats-and-clarity.md`). See `docs/spec/status.md`. One narrower update since the
 initial v0.1.7 attempt: `mediaway-decoder::apple`'s `VideoToolbox` FFI shape was corrected
 against the real `objc2-core-media`/`objc2-core-video`/`objc2-video-toolbox` 0.3.2 API this
-session (21 real compile errors, all fixed) — still not confirmed by an actual macOS compiler
-run as of this note, but no longer authored purely on unverified assumptions either.
+session (21 real compile errors, all fixed) and **is now confirmed compiling on a real
+`macos-14` CI runner** — this is compile confirmation only, not real-hardware decode
+verification (no macOS device runs any actual decode in CI).
 
 Separately: this release's **binding distribution** itself (which platforms each npm/
 NuGet/PyPI/CPack package's native lib actually covers) is a different maturity axis from
 the codec/platform backend caveat above. Linux binding packaging is real-verified
-(built, packed, installed, and round-trip-tested on real Linux via WSL2 this session).
-macOS binding packaging is wired into `release.yml` but has not yet run on a real
-`macos-14` GitHub Actions runner — do not claim macOS binding support as verified until
-that first run succeeds.
+(built, packed, installed, and round-trip-tested on real Linux via WSL2 this session — the
+`native-assets-linux` job's `ubuntu-24.04` fix matches that WSL2 environment exactly but has not
+yet been confirmed by an actual CI run of this exact job as of this note). macOS
+`native-assets-macos` (compile) is real-CI-verified; the full `bindings-tests-macos` RC gate
+(container + hardware round-trip) is still being confirmed as of this note.

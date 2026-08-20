@@ -9,7 +9,10 @@ refuses to serve the wheel to a non-matching interpreter.
 default win-x64 for local/back-compat builds) picks which tag: the Linux and
 macOS tags match the glibc/deployment-target floor decided in ADR-0024 (see
 docs/adr/0024-multi-platform-native-binding-distribution.md) — an honest
-exact-floor tag (PEP 600 `manylinux_2_35`), not a looser
+exact-floor tag (PEP 600 `manylinux_2_39`, Ubuntu 24.04's glibc — not
+ubuntu-22.04's `manylinux_2_35` as ADR-0024 first proposed; that floor
+turned out to be genuinely too old for this workspace's PipeWire/VA-API
+dependencies, not just an untested guess), not a looser
 `manylinux_2_28`/`manylinux2014` claim this build does not actually satisfy.
 """
 
@@ -19,7 +22,7 @@ from setuptools import setup
 
 _PLAT_NAMES = {
     "win-x64": "win_amd64",
-    "linux-x64": "manylinux_2_35_x86_64",
+    "linux-x64": "manylinux_2_39_x86_64",
     "osx-x64": "macosx_11_0_x86_64",
     "osx-arm64": "macosx_11_0_arm64",
 }

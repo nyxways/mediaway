@@ -196,6 +196,17 @@ section below is unchanged content, now actually able to ship.
   a real GPU) wasn't installed on that job's bare runner — `native-assets-linux` already installs
   `libpipewire-0.3-dev`/`libva-dev` to *build*, but `bindings-tests-linux` never installed
   anything to satisfy the same libraries at *load* time. Added.
+- With the staging bugs fixed, `bindings-tests-macos`'s container tests passed for real (11/11)
+  — but `mediaway-ffi::pipeline::audio::open_audio_encoder` (the C ABI's auto-audio-encoder
+  dispatch) had **only ever had a Windows branch**; every other platform, including macOS,
+  unconditionally returned `EncodeError::NoBackend` even though `mediaway-encoder::apple::
+  AppleAudioEncoder` (AAC-LC via `AudioToolbox`) was implemented earlier this same release cycle
+  — the C ABI dispatch layer was simply never updated to call it. Added the missing Apple branch.
+  `mediaway::platform::AutoEncoder::open` (the video path) already routes to `AppleVideoEncoder`
+  correctly, but `bindings-tests-macos`'s hardware `EncodeToMp4Tests`/`DecodeRoundtripTests`
+  still fail with a real `EncoderBackendFailure`/`DecoderBackendFailure` (an actual
+  `VideoToolbox` OS/API failure, not a missing-dispatch bug) — **unresolved as of this note**,
+  under active investigation.
 
 ### What's new since 0.1.6
 

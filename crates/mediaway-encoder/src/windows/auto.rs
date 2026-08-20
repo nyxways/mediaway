@@ -25,6 +25,7 @@ enum EncoderImpl {
     Sw(mediaway_sw::av1::Av1Encoder),
     Nvenc(crate::nvenc::NvencVideoEncoder),
     QuickSync(crate::quicksync::QuickSyncVideoEncoder),
+    Vulkan(crate::vulkan::VulkanVideoEncoder),
 }
 
 /// Maps `mediaway_sw::av1::Av1Error` to `EncodeError`.
@@ -75,9 +76,9 @@ impl AutoVideoEncoder {
     /// Open a session per `config.backend` (see [`BackendSelection`]):
     ///
     /// - [`BackendSelection::Explicit`] short-circuits straight to that one backend —
-    ///   [`Backend::Software`] / [`Backend::Nvenc`] / [`Backend::QuickSync`] fail hard
-    ///   (no fallback) if unavailable; [`Backend::Amf`] always fails with
-    ///   [`EncodeError::NoBackend`] (no implementation yet — see
+    ///   [`Backend::Software`] / [`Backend::Nvenc`] / [`Backend::QuickSync`] /
+    ///   [`Backend::Vulkan`] fail hard (no fallback) if unavailable; [`Backend::Amf`]
+    ///   always fails with [`EncodeError::NoBackend`] (no implementation yet — see
     ///   `mediaway-encoder-amf` adr/0001). [`Backend::Os`] falls through to the chain
     ///   below but stops there — never a vendor SDK, never `Software`.
     /// - [`BackendSelection::Auto`] and [`BackendSelection::AutoHardwareOnly`] both start
@@ -87,11 +88,12 @@ impl AutoVideoEncoder {
     ///   [ADR-0006](../adr/0006-d3d12-shared-to-d3d11.md)), gated by `max_path_class`.
     ///   These always come first — strictly cheaper than any CPU-upload path.
     /// - Before falling back to `Os`'s own CPU upload, `AutoHardwareOnly` ranks the
-    ///   vendor SDKs (NVENC, then `QuickSync`; AMF has no implementation) ahead of it —
-    ///   that ranking is the entire reason this variant exists, letting a caller reach a
-    ///   vendor SDK without naming one explicitly. `Auto` never tries a vendor SDK here,
-    ///   per ADR-0004: same silicon often backs both `Os` and a vendor SDK, so the
-    ///   vendor path is not automatically faster and must be opted into.
+    ///   vendor SDKs (NVENC, then `QuickSync`, then [`Backend::Vulkan`]'s cross-vendor
+    ///   `VK_KHR_video_encode_queue`; AMF has no implementation) ahead of it — that
+    ///   ranking is the entire reason this variant exists, letting a caller reach a
+    ///   hardware-capable non-`Os` backend without naming one explicitly. `Auto` never
+    ///   tries any of them here, per ADR-0004: same silicon often backs both `Os` and
+    ///   these, so a non-`Os` path is not automatically faster and must be opted into.
     /// - `Os` CPU upload (`upload_cpu_nv12` — one CPU→GPU copy per frame) is tried next
     ///   if `max_path_class` allows it.
     /// - `AutoHardwareOnly`/`Explicit(Os)` stop here if nothing worked. Plain `Auto`
@@ -121,6 +123,7 @@ impl AutoVideoEncoder {
             BackendSelection::Explicit(Backend::Software) => return Self::try_software(config),
             BackendSelection::Explicit(Backend::Nvenc) => return Self::try_nvenc(config),
             BackendSelection::Explicit(Backend::QuickSync) => return Self::try_quicksync(config),
+            BackendSelection::Explicit(Backend::Vulkan) => return Self::try_vulkan(config),
             BackendSelection::Explicit(Backend::Amf) => return Err(EncodeError::NoBackend),
             // `Auto`, `AutoHardwareOnly`, `Explicit(Os)`, and any future
             // (`#[non_exhaustive]`) selection or backend all fall through to the `Os`
@@ -170,6 +173,9 @@ impl AutoVideoEncoder {
                 return Ok(enc);
             }
             if let Ok(enc) = Self::try_quicksync(config) {
+                return Ok(enc);
+            }
+            if let Ok(enc) = Self::try_vulkan(config) {
                 return Ok(enc);
             }
         }
@@ -267,6 +273,19 @@ impl AutoVideoEncoder {
             EncodePathClass::CpuUpload,
             Backend::QuickSync,
             EncoderImpl::QuickSync(inner),
+        ))
+    }
+
+    /// Explicit `VK_KHR_video_encode_queue` open — CPU-upload input only (no Zero-Copy input
+    /// path yet, see `mediaway-encoder` ADR-0004's 2026-08-20 addendum). H.264/HEVC only;
+    /// `open` itself reports `EncodeError::Unsupported` for any other codec.
+    fn try_vulkan(config: &AutoVideoEncodeConfig) -> Result<Self, EncodeError> {
+        let low = config.to_low_level(VideoInputPreference::CpuUploadOk, None);
+        let inner = crate::vulkan::VulkanVideoEncoder::open(&low)?;
+        Ok(Self::with_path(
+            EncodePathClass::CpuUpload,
+            Backend::Vulkan,
+            EncoderImpl::Vulkan(inner),
         ))
     }
 
@@ -368,6 +387,7 @@ impl VideoEncoder for AutoVideoEncoder {
             EncoderImpl::Sw(enc) => enc.stream_info(),
             EncoderImpl::Nvenc(enc) => enc.stream_info(),
             EncoderImpl::QuickSync(enc) => enc.stream_info(),
+            EncoderImpl::Vulkan(enc) => enc.stream_info(),
         }
     }
 
@@ -377,6 +397,7 @@ impl VideoEncoder for AutoVideoEncoder {
             EncoderImpl::Sw(enc) => enc.push_frame(frame).map_err(map_av1_error),
             EncoderImpl::Nvenc(enc) => enc.push_frame(frame),
             EncoderImpl::QuickSync(enc) => enc.push_frame(frame),
+            EncoderImpl::Vulkan(enc) => enc.push_frame(frame),
         }
     }
 
@@ -386,6 +407,7 @@ impl VideoEncoder for AutoVideoEncoder {
             EncoderImpl::Sw(enc) => enc.poll_packet().map_err(map_av1_error),
             EncoderImpl::Nvenc(enc) => enc.poll_packet(),
             EncoderImpl::QuickSync(enc) => enc.poll_packet(),
+            EncoderImpl::Vulkan(enc) => enc.poll_packet(),
         }
     }
 
@@ -395,6 +417,7 @@ impl VideoEncoder for AutoVideoEncoder {
             EncoderImpl::Sw(enc) => enc.flush().map_err(map_av1_error),
             EncoderImpl::Nvenc(enc) => enc.flush(),
             EncoderImpl::QuickSync(enc) => enc.flush(),
+            EncoderImpl::Vulkan(enc) => enc.flush(),
         }
     }
 }
@@ -422,6 +445,7 @@ pub fn support(codec: CodecKind) -> Vec<crate::capability::EncoderCapability> {
             Backend::Os,
             Backend::Nvenc,
             Backend::QuickSync,
+            Backend::Vulkan,
             Backend::Software,
         ]
         .map(|backend| {
@@ -453,6 +477,7 @@ pub fn support(codec: CodecKind) -> Vec<crate::capability::EncoderCapability> {
             Backend::Os,
             Backend::Nvenc,
             Backend::QuickSync,
+            Backend::Vulkan,
             Backend::Amf,
             Backend::Software,
         ]

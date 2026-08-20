@@ -180,33 +180,58 @@ fn explicit_software_bypasses_path_class_ceiling() {
     }
 }
 
-/// `AutoHardwareOnly` tries NVENC then `QuickSync` *ahead of* `Os`'s own CPU upload —
-/// real hardware/driver dependent (this workspace's reference machine has both verified
-/// working, see `mediaway-encoder-nvenc`/`mediaway-encoder-quicksync` `docs/roadmap.md`),
-/// so this skips honestly rather than failing on a host without either. Without this
-/// ranking, `AutoHardwareOnly` would be indistinguishable from `Auto` whenever `Os`'s own
-/// CPU upload already succeeds (as it does on this reference machine) — see
-/// `open()`'s doc comment.
+/// `AutoHardwareOnly` tries NVENC, then `QuickSync`, then `Vulkan` — *ahead of* `Os`'s own
+/// CPU upload — real hardware/driver dependent (this workspace's reference machine has all
+/// three verified working, see `mediaway-encoder-nvenc`/`mediaway-encoder-quicksync`/
+/// `mediaway-encoder-vulkan` `docs/roadmap.md`), so this skips honestly rather than failing
+/// on a host without any of them. Without this ranking, `AutoHardwareOnly` would be
+/// indistinguishable from `Auto` whenever `Os`'s own CPU upload already succeeds (as it does
+/// on this reference machine) — see `open()`'s doc comment.
 #[cfg(windows)]
 #[cfg(feature = "video")]
 #[test]
-fn auto_hardware_only_tries_nvenc_then_quicksync_or_skip() {
+fn auto_hardware_only_tries_nvenc_then_quicksync_then_vulkan_or_skip() {
     let mut cfg = tiny_h264();
     cfg.backend = BackendSelection::AutoHardwareOnly;
     let enc = match AutoVideoEncoder::open(&cfg) {
         Ok(e) => e,
         Err(e) => {
-            eprintln!("skip: no NVENC/QuickSync GPU+driver available ({e:?})");
+            eprintln!("skip: no NVENC/QuickSync/Vulkan GPU+driver available ({e:?})");
             return;
         }
     };
     assert_eq!(enc.path_class(), EncodePathClass::CpuUpload);
-    if !matches!(enc.resolved_backend(), Backend::Nvenc | Backend::QuickSync) {
+    if !matches!(
+        enc.resolved_backend(),
+        Backend::Nvenc | Backend::QuickSync | Backend::Vulkan
+    ) {
         eprintln!(
-            "skip: neither NVENC nor QuickSync, AutoHardwareOnly fell back to {:?}",
+            "skip: none of NVENC/QuickSync/Vulkan, AutoHardwareOnly fell back to {:?}",
             enc.resolved_backend()
         );
     }
+}
+
+/// `Explicit(Backend::Vulkan)` opens `mediaway-encoder::vulkan`'s `VK_KHR_video_encode_queue`
+/// backend directly — real hardware/driver dependent, skips honestly. Uses 176x144, not
+/// `tiny_h264()`'s 64x64: this driver's reported `minCodedExtent` for H.264 encode rejects
+/// 64x64 (`EncodeError::InvalidInput`), matching the size `mediaway-encoder::vulkan`'s own
+/// `encoder_tests.rs` already uses for exactly this reason.
+#[cfg(windows)]
+#[cfg(feature = "video")]
+#[test]
+fn explicit_vulkan_opens_or_skip() {
+    let mut cfg = AutoVideoEncodeConfig::new(CodecKind::H264, 176, 144, Rational::new(1, 30));
+    cfg.backend = BackendSelection::Explicit(Backend::Vulkan);
+    let enc = match AutoVideoEncoder::open(&cfg) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("skip: no Vulkan Video encode queue available ({e:?})");
+            return;
+        }
+    };
+    assert_eq!(enc.path_class(), EncodePathClass::CpuUpload);
+    assert_eq!(enc.resolved_backend(), Backend::Vulkan);
 }
 
 /// `Explicit(Backend::Amf)` always fails with `NoBackend` — no AMF implementation
@@ -231,6 +256,7 @@ fn support_probe_lists_every_backend() {
     assert!(backends.contains(&Backend::Os));
     assert!(backends.contains(&Backend::Nvenc));
     assert!(backends.contains(&Backend::QuickSync));
+    assert!(backends.contains(&Backend::Vulkan));
     assert!(backends.contains(&Backend::Amf));
     assert!(backends.contains(&Backend::Software));
 }

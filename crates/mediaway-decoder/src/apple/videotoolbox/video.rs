@@ -55,6 +55,24 @@ use super::format_desc;
 /// same reuse-for-both convention `mediaway-encoder::apple` already established.
 const NO_ERROR: i32 = 0;
 
+/// TEMPORARY diagnostic — remove once the real bindings-tests-macos `DecodeRoundtripTests`
+/// `InvalidInput` root cause is confirmed from CI output. `eprintln!` alone doesn't reach this
+/// job's console log (VSTest's testhost process isolation swallows raw native stderr — same
+/// finding as `mediaway-encoder::apple::videotoolbox::video`'s `debug_log`), so this appends to
+/// the same fixed-path file that CI step already `cat`s — both crates link into the one
+/// `libmediaway_ffi` `cdylib`, so sharing the path keeps every diagnostic in one place.
+fn debug_log(msg: &str) {
+    use std::io::Write as _;
+    eprintln!("mediaway-decode: {msg}");
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/mediaway-videotoolbox-debug.log")
+    {
+        let _ = writeln!(f, "decode: {msg}");
+    }
+}
+
 /// One decoded frame plus, for [`VideoOutputPreference::ZeroCopyGpu`], the real owned
 /// `CVPixelBuffer` reference backing its [`VideoFrameStorage::Gpu`] raw `NativeHandle` bits —
 /// `None` for [`VideoOutputPreference::CpuFramesOk`] frames, which own no backend resource. See
@@ -175,10 +193,35 @@ impl VideoToolboxVideoDecoder {
             // which only ever softens genuine parse failures of otherwise-optional seed data).
             match config.codec {
                 CodecKind::H264 => {
-                    let avcc_config = parse_avc_decoder_config(&config.extra_data)
-                        .ok_or(DecodeError::InvalidInput)?;
-                    validate_parameter_sets(&avcc_config)?;
-                    let fd = format_desc::create_h264(&avcc_config.sps[0], &avcc_config.pps[0])?;
+                    let Some(avcc_config) = parse_avc_decoder_config(&config.extra_data) else {
+                        debug_log(&format!(
+                            "parse_avc_decoder_config failed: len={} first_bytes={:02x?}",
+                            config.extra_data.len(),
+                            &config.extra_data[..config.extra_data.len().min(16)]
+                        ));
+                        return Err(DecodeError::InvalidInput);
+                    };
+                    if let Err(e) = validate_parameter_sets(&avcc_config) {
+                        debug_log(&format!(
+                            "validate_parameter_sets failed: {e:?} nal_length_size={} sps_count={} pps_count={}",
+                            avcc_config.nal_length_size,
+                            avcc_config.sps.len(),
+                            avcc_config.pps.len()
+                        ));
+                        return Err(e);
+                    }
+                    let fd =
+                        match format_desc::create_h264(&avcc_config.sps[0], &avcc_config.pps[0]) {
+                            Ok(fd) => fd,
+                            Err(e) => {
+                                debug_log(&format!(
+                                    "create_h264 failed: {e:?} sps_len={} pps_len={}",
+                                    avcc_config.sps[0].len(),
+                                    avcc_config.pps[0].len()
+                                ));
+                                return Err(e);
+                            }
+                        };
                     decoder.ensure_session(fd)?;
                 }
                 CodecKind::Hevc => {

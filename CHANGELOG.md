@@ -183,6 +183,12 @@ section below is unchanged content, now actually able to ship.
   linux`/`bindings-tests-macos` RC-gate jobs assumed it was already there and failed immediately
   on a missing-directory error before running any real test. Both jobs now copy the right
   platform's staged lib into place themselves first.
+- `Mediaway.Container.Tests.csproj`/`Mediaway.Pipeline.Tests.csproj` (the C# RC-gate tests) only
+  ever knew how to stage `mediaway_ffi.dll`/`libmediaway_ffi.so` for a local `dotnet test` run —
+  no macOS entry existed at all, so `bindings-tests-macos` failed with `DllNotFoundException` on
+  every test. Added `libmediaway_ffi.dylib` staging for both `osx-arm64`/`osx-x64` (selected via
+  `RuntimeInformation.OSArchitecture`, since `native-assets-macos` stages both architectures side
+  by side and a blind `Exists()` check would collide).
 
 ### What's new since 0.1.6
 

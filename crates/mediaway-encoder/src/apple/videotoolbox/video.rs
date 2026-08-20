@@ -137,12 +137,20 @@ impl VideoToolboxVideoEncoder {
             )
         };
         if status != NO_ERROR {
+            // TEMPORARY diagnostic — remove once the real bindings-tests-macos
+            // EncoderBackendFailure root cause is confirmed from CI output.
+            eprintln!(
+                "mediaway: VTCompressionSessionCreate failed: status={status} codec={codec} {width}x{height}"
+            );
             // SAFETY: reclaims the extra strong count taken above; no callback can have fired
             // since the session was never successfully created.
             drop(unsafe { Arc::from_raw(refcon_ptr) });
             return Err(EncodeError::Backend);
         }
         let Some(session_ptr) = NonNull::new(session_ptr) else {
+            eprintln!(
+                "mediaway: VTCompressionSessionCreate reported NO_ERROR but session_ptr is null"
+            );
             // SAFETY: same reasoning as the failure branch above.
             drop(unsafe { Arc::from_raw(refcon_ptr) });
             return Err(EncodeError::Backend);
@@ -642,6 +650,9 @@ unsafe fn set_i32_property(
     if status == NO_ERROR {
         Ok(())
     } else {
+        // TEMPORARY diagnostic — remove once the real bindings-tests-macos
+        // EncoderBackendFailure root cause is confirmed from CI output.
+        eprintln!("mediaway: set_i32_property failed: status={status} value={value}");
         Err(EncodeError::Backend)
     }
 }
@@ -670,6 +681,9 @@ unsafe fn set_bool_property(
     if status == NO_ERROR {
         Ok(())
     } else {
+        // TEMPORARY diagnostic — remove once the real bindings-tests-macos
+        // EncoderBackendFailure root cause is confirmed from CI output.
+        eprintln!("mediaway: set_bool_property failed: status={status} value={value}");
         Err(EncodeError::Backend)
     }
 }
@@ -689,6 +703,9 @@ unsafe fn set_string_property(
     if status == NO_ERROR {
         Ok(())
     } else {
+        // TEMPORARY diagnostic — remove once the real bindings-tests-macos
+        // EncoderBackendFailure root cause is confirmed from CI output.
+        eprintln!("mediaway: set_string_property failed: status={status}");
         Err(EncodeError::Backend)
     }
 }

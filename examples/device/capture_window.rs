@@ -29,7 +29,7 @@
 
 use mediaway_common::Rational;
 use mediaway_device::desktop::{
-    CaptureOutputPreference, DesktopCaptureSource, DesktopVideoCaptureConfig,
+    CaptureOutputPreference, CaptureSharing, DesktopCaptureSource, DesktopVideoCaptureConfig,
 };
 
 fn main() {
@@ -53,5 +53,6 @@ fn main() {
         time_base: Rational::new(1, 30),
         output: CaptureOutputPreference::ZeroCopyGpu,
         gpu_device: None,
+        sharing: CaptureSharing::Shared,
     };
 }

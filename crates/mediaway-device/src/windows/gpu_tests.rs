@@ -8,7 +8,8 @@
 use super::{GpuAdapterSelect, GpuDevice, GpuDeviceOptions, enumerate_gpu_adapters};
 use crate::Select;
 use crate::desktop::{
-    CaptureOutputPreference, DesktopCaptureSource, DesktopVideoCapture, DesktopVideoCaptureConfig,
+    CaptureOutputPreference, CaptureSharing, DesktopCaptureSource, DesktopVideoCapture,
+    DesktopVideoCaptureConfig,
 };
 use crate::windows_desktop::WindowsScreenCapture;
 use mediaway_common::Rational;
@@ -120,6 +121,7 @@ fn created_device_drives_real_screen_capture_or_skip() {
         time_base: Rational::new(1, 30),
         output: CaptureOutputPreference::ZeroCopyGpu,
         gpu_device: Some(device.handle()),
+        sharing: CaptureSharing::Shared,
     };
     let mut cap = match WindowsScreenCapture::open(&cfg) {
         Ok(c) => c,

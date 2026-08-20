@@ -2,16 +2,20 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::print_stderr,
+    clippy::panic,
     reason = "unit tests"
 )]
 
 use super::*;
 use crate::desktop::{
-    CaptureOutputPreference, DesktopAudioCapture, DesktopAudioCaptureConfig, DesktopCaptureSource,
-    DesktopVideoCapture, DesktopVideoCaptureConfig, capture_desktop_video_once,
+    CaptureOutputPreference, CaptureSharing, DesktopAudioCapture, DesktopAudioCaptureConfig,
+    DesktopCaptureSource, DesktopVideoCapture, DesktopVideoCaptureConfig,
+    capture_desktop_video_once,
 };
 use crate::{CaptureError, Select};
-use mediaway_common::{GpuDeviceHandle, NativeHandle, Rational};
+use mediaway_common::{
+    GpuBufferHandle, GpuDeviceHandle, NativeHandle, Rational, VideoFrameStorage,
+};
 use windows::Win32::Foundation::HMODULE;
 use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
 use windows::Win32::Graphics::Direct3D11::{
@@ -51,6 +55,7 @@ fn open_screen_zero_copy_poll_release_or_skip() {
         time_base: Rational::new(1, 30),
         output: CaptureOutputPreference::ZeroCopyGpu,
         gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
+        sharing: CaptureSharing::Shared,
     };
     let mut cap = match WindowsScreenCapture::open(&cfg) {
         Ok(c) => c,
@@ -76,6 +81,231 @@ fn open_screen_zero_copy_poll_release_or_skip() {
         }
     }
     cap.close().expect("close");
+}
+
+/// Real hardware smoke test with a **hard** assertion, not the accept-either-outcome shape
+/// `open_screen_zero_copy_poll_release_or_skip` (above) uses — proves the DDA ring-buffer
+/// path (`adr/windows/0007`) actually delivers a real `GpuBufferHandle::DirectX11` frame, not
+/// just that opening a session works. Closes that ADR's own still-open "not hardware-verified
+/// end-to-end" gap (previously blocked on a locked dev-session desktop, which DDA cannot
+/// capture by design).
+#[test]
+fn screen_capture_delivers_zero_copy_frame_or_skip() {
+    let _guard = crate::windows_desktop::HARDWARE_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut device: Option<ID3D11Device> = None;
+    let hr = unsafe {
+        D3D11CreateDevice(
+            None,
+            D3D_DRIVER_TYPE_HARDWARE,
+            HMODULE::default(),
+            D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
+            None,
+            D3D11_SDK_VERSION,
+            Some(&raw mut device),
+            None,
+            None,
+        )
+    };
+    let Some(device) = device else {
+        eprintln!("skip: D3D11CreateDevice failed ({hr:?})");
+        return;
+    };
+    let device_handle =
+        NativeHandle::new(Interface::as_raw(&device) as usize).expect("device pointer");
+    let cfg = DesktopVideoCaptureConfig {
+        source: DesktopCaptureSource::Screen {
+            select: Select::Default,
+        },
+        time_base: Rational::new(1, 30),
+        output: CaptureOutputPreference::ZeroCopyGpu,
+        gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
+        sharing: CaptureSharing::Shared,
+    };
+    let mut cap = match WindowsScreenCapture::open(&cfg) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("skip: WindowsScreenCapture::open failed ({e:?}) — DDA unavailable?");
+            return;
+        }
+    };
+
+    let mut delivered = None;
+    for _ in 0..50 {
+        match cap.poll_frame() {
+            Ok(Some(frame)) => {
+                delivered = Some(frame);
+                break;
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(20)),
+            Err(e) => {
+                eprintln!("skip: poll_frame failed ({e:?})");
+                return;
+            }
+        }
+    }
+    let Some(frame) = delivered else {
+        eprintln!("skip: no frame delivered within the bounded poll window (locked desktop?)");
+        return;
+    };
+
+    assert!(
+        frame.width > 0 && frame.height > 0,
+        "expected a real frame size"
+    );
+    assert!(
+        matches!(
+            frame.storage,
+            VideoFrameStorage::Gpu(GpuBufferHandle::DirectX11 { .. })
+        ),
+        "expected a Zero-Copy DirectX11 handle, got {:?}",
+        frame.storage
+    );
+    cap.release_frame().expect("release");
+    cap.close().expect("close");
+    eprintln!(
+        "dda screen capture: real Zero-Copy frame delivered ({}x{})",
+        frame.width, frame.height
+    );
+}
+
+/// [`CaptureSharing::Exclusive`] ([ADR-0008](../adr/windows/0008-exclusive-desktop-duplication-zero-copy.md)):
+/// real hardware proof of the true-Zero-Copy, no-driver-thread path — bounded-polls until a
+/// real frame is delivered and hard-asserts a genuine `GpuBufferHandle::DirectX11`, same shape
+/// as `screen_capture_delivers_zero_copy_frame_or_skip` above (which exercises `Shared`).
+#[test]
+fn exclusive_screen_capture_delivers_zero_copy_frame_or_skip() {
+    let _guard = crate::windows_desktop::HARDWARE_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut device: Option<ID3D11Device> = None;
+    let hr = unsafe {
+        D3D11CreateDevice(
+            None,
+            D3D_DRIVER_TYPE_HARDWARE,
+            HMODULE::default(),
+            D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
+            None,
+            D3D11_SDK_VERSION,
+            Some(&raw mut device),
+            None,
+            None,
+        )
+    };
+    let Some(device) = device else {
+        eprintln!("skip: D3D11CreateDevice failed ({hr:?})");
+        return;
+    };
+    let device_handle =
+        NativeHandle::new(Interface::as_raw(&device) as usize).expect("device pointer");
+    let cfg = DesktopVideoCaptureConfig {
+        source: DesktopCaptureSource::Screen {
+            select: Select::Default,
+        },
+        time_base: Rational::new(1, 30),
+        output: CaptureOutputPreference::ZeroCopyGpu,
+        gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
+        sharing: CaptureSharing::Exclusive,
+    };
+    let mut cap = match WindowsScreenCapture::open(&cfg) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("skip: WindowsScreenCapture::open (Exclusive) failed ({e:?})");
+            return;
+        }
+    };
+
+    let mut delivered = None;
+    for _ in 0..50 {
+        match cap.poll_frame() {
+            Ok(Some(frame)) => {
+                delivered = Some(frame);
+                break;
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(20)),
+            Err(e) => {
+                eprintln!("skip: poll_frame failed ({e:?})");
+                return;
+            }
+        }
+    }
+    let Some(frame) = delivered else {
+        eprintln!("skip: no frame delivered within the bounded poll window (locked desktop?)");
+        return;
+    };
+
+    assert!(
+        frame.width > 0 && frame.height > 0,
+        "expected a real frame size"
+    );
+    assert!(
+        matches!(
+            frame.storage,
+            VideoFrameStorage::Gpu(GpuBufferHandle::DirectX11 { .. })
+        ),
+        "expected a Zero-Copy DirectX11 handle, got {:?}",
+        frame.storage
+    );
+    cap.release_frame().expect("release");
+    cap.close().expect("close");
+    eprintln!(
+        "exclusive dda screen capture: real Zero-Copy frame delivered ({}x{}, no copy)",
+        frame.width, frame.height
+    );
+}
+
+/// A second `open()` (either `Shared` or `Exclusive`) for the same output while an `Exclusive`
+/// session is alive must fail — DXGI allows only one live duplication per output per process,
+/// which is the correctness backstop [`CaptureSharing::Exclusive`]'s docs promise (ADR-0008 §
+/// "Why no registry entry for Exclusive" — enforced by DXGI itself, not this crate's
+/// bookkeeping).
+#[test]
+fn exclusive_screen_capture_blocks_second_open_or_skip() {
+    let _guard = crate::windows_desktop::HARDWARE_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut device: Option<ID3D11Device> = None;
+    let hr = unsafe {
+        D3D11CreateDevice(
+            None,
+            D3D_DRIVER_TYPE_HARDWARE,
+            HMODULE::default(),
+            D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
+            None,
+            D3D11_SDK_VERSION,
+            Some(&raw mut device),
+            None,
+            None,
+        )
+    };
+    let Some(device) = device else {
+        eprintln!("skip: D3D11CreateDevice failed ({hr:?})");
+        return;
+    };
+    let device_handle =
+        NativeHandle::new(Interface::as_raw(&device) as usize).expect("device pointer");
+    let cfg = DesktopVideoCaptureConfig {
+        source: DesktopCaptureSource::Screen {
+            select: Select::Default,
+        },
+        time_base: Rational::new(1, 30),
+        output: CaptureOutputPreference::ZeroCopyGpu,
+        gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
+        sharing: CaptureSharing::Exclusive,
+    };
+    let first = match WindowsScreenCapture::open(&cfg) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("skip: first WindowsScreenCapture::open (Exclusive) failed ({e:?})");
+            return;
+        }
+    };
+    match WindowsScreenCapture::open(&cfg) {
+        Ok(_) => panic!("expected a second concurrent Exclusive open to fail"),
+        Err(e) => eprintln!("second open correctly failed: {e:?}"),
+    }
+    drop(first);
 }
 
 /// `mediaway-device-desktop` ADR-0006's facade-level convenience, hardware-verified
@@ -116,6 +346,7 @@ fn capture_video_once_screen_is_unsupported_for_gpu_storage_or_skip() {
         time_base: Rational::new(1, 30),
         output: CaptureOutputPreference::ZeroCopyGpu,
         gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
+        sharing: CaptureSharing::Shared,
     };
     let mut dangling_frame_size = None;
     match capture_desktop_video_once(

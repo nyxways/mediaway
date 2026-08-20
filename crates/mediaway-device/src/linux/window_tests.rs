@@ -8,7 +8,9 @@
 
 use super::*;
 use crate::Select;
-use crate::desktop::{CaptureOutputPreference, DesktopCaptureSource, DesktopVideoCaptureConfig};
+use crate::desktop::{
+    CaptureOutputPreference, CaptureSharing, DesktopCaptureSource, DesktopVideoCaptureConfig,
+};
 use mediaway_common::{NativeHandle, Rational};
 
 #[test]
@@ -20,6 +22,7 @@ fn non_window_source_is_unsupported() {
         time_base: Rational::new(1, 30),
         output: CaptureOutputPreference::CpuFramesOk,
         gpu_device: None,
+        sharing: CaptureSharing::Shared,
     };
     assert!(matches!(
         LinuxWindowCapture::open(&cfg),
@@ -52,6 +55,7 @@ fn open_window_capture_or_skip() {
         time_base: Rational::new(1, 30),
         output: CaptureOutputPreference::CpuFramesOk,
         gpu_device: None,
+        sharing: CaptureSharing::Shared,
     };
     let mut cap = match LinuxWindowCapture::open(&cfg) {
         Ok(c) => c,

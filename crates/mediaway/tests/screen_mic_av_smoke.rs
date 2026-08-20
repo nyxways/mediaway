@@ -39,7 +39,8 @@ use mediaway_container::mp4::Demuxer;
 use mediaway_device::Select;
 use mediaway_device::audio::{AudioCapture, AudioCaptureConfig};
 use mediaway_device::desktop::{
-    CaptureOutputPreference, DesktopCaptureSource, DesktopVideoCapture, DesktopVideoCaptureConfig,
+    CaptureOutputPreference, CaptureSharing, DesktopCaptureSource, DesktopVideoCapture,
+    DesktopVideoCaptureConfig,
 };
 use mediaway_encoder::auto::{AutoVideoEncodeConfig, EncodePathClass};
 use mediaway_encoder::windows::WindowsAudioEncoder;
@@ -70,6 +71,7 @@ fn screen_and_mic_to_fmp4_two_tracks() {
         time_base: Rational::new(1, 30),
         output: CaptureOutputPreference::ZeroCopyGpu,
         gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
+        sharing: CaptureSharing::Shared,
     };
     let mut screen = match platform::ScreenCapture::open(&cap_cfg) {
         Ok(c) => c,

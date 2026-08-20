@@ -29,7 +29,7 @@ use mediaway_common::{GpuDeviceHandle, NativeHandle, Rational, VideoFrameStorage
 use mediaway_container::mp4::Demuxer;
 use mediaway_device::Select;
 use mediaway_device::desktop::{
-    CaptureOutputPreference, DesktopCaptureSource, DesktopVideoCaptureConfig,
+    CaptureOutputPreference, CaptureSharing, DesktopCaptureSource, DesktopVideoCaptureConfig,
 };
 use mediaway_ffi::pipeline::{
     MediawayGpuDeviceHandle, MediawayGpuDeviceKind, MediawayPipelineCodecKind,
@@ -64,6 +64,7 @@ fn gpu_screen_frame_write_frame_roundtrips_to_fmp4() {
         time_base: Rational::new(1, 30),
         output: CaptureOutputPreference::ZeroCopyGpu,
         gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
+        sharing: CaptureSharing::Shared,
     };
     let mut screen = match platform::ScreenCapture::open(&cap_cfg) {
         Ok(c) => c,

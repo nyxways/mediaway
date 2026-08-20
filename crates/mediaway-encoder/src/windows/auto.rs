@@ -25,6 +25,12 @@ enum EncoderImpl {
     Sw(mediaway_sw::av1::Av1Encoder),
     Nvenc(crate::nvenc::NvencVideoEncoder),
     QuickSync(crate::quicksync::QuickSyncVideoEncoder),
+    /// `crate::vulkan` doesn't exist on `wasm32` (`vulkanalia`/`libloading` aren't available
+    /// there — see `Cargo.toml`'s `[target.'cfg(not(target_family = "wasm"))'.dependencies]`
+    /// and `lib.rs`'s `#[cfg(not(target_family = "wasm"))] pub mod vulkan;`), unlike
+    /// Nvenc/QuickSync above, whose types exist unconditionally (stubbed internally on
+    /// non-Windows). This variant must be gated to match.
+    #[cfg(not(target_family = "wasm"))]
     Vulkan(crate::vulkan::VulkanVideoEncoder),
 }
 
@@ -279,6 +285,7 @@ impl AutoVideoEncoder {
     /// Explicit `VK_KHR_video_encode_queue` open — CPU-upload input only (no Zero-Copy input
     /// path yet, see `mediaway-encoder` ADR-0004's 2026-08-20 addendum). H.264/HEVC only;
     /// `open` itself reports `EncodeError::Unsupported` for any other codec.
+    #[cfg(not(target_family = "wasm"))]
     fn try_vulkan(config: &AutoVideoEncodeConfig) -> Result<Self, EncodeError> {
         let low = config.to_low_level(VideoInputPreference::CpuUploadOk, None);
         let inner = crate::vulkan::VulkanVideoEncoder::open(&low)?;
@@ -287,6 +294,12 @@ impl AutoVideoEncoder {
             Backend::Vulkan,
             EncoderImpl::Vulkan(inner),
         ))
+    }
+
+    /// `crate::vulkan` doesn't exist on `wasm32` — see [`EncoderImpl::Vulkan`]'s own doc.
+    #[cfg(target_family = "wasm")]
+    const fn try_vulkan(_config: &AutoVideoEncodeConfig) -> Result<Self, EncodeError> {
+        Err(EncodeError::Unsupported)
     }
 
     /// Bridge `d3d12_device` to a native D3D11 device/texture and open the
@@ -387,6 +400,7 @@ impl VideoEncoder for AutoVideoEncoder {
             EncoderImpl::Sw(enc) => enc.stream_info(),
             EncoderImpl::Nvenc(enc) => enc.stream_info(),
             EncoderImpl::QuickSync(enc) => enc.stream_info(),
+            #[cfg(not(target_family = "wasm"))]
             EncoderImpl::Vulkan(enc) => enc.stream_info(),
         }
     }
@@ -397,6 +411,7 @@ impl VideoEncoder for AutoVideoEncoder {
             EncoderImpl::Sw(enc) => enc.push_frame(frame).map_err(map_av1_error),
             EncoderImpl::Nvenc(enc) => enc.push_frame(frame),
             EncoderImpl::QuickSync(enc) => enc.push_frame(frame),
+            #[cfg(not(target_family = "wasm"))]
             EncoderImpl::Vulkan(enc) => enc.push_frame(frame),
         }
     }
@@ -407,6 +422,7 @@ impl VideoEncoder for AutoVideoEncoder {
             EncoderImpl::Sw(enc) => enc.poll_packet().map_err(map_av1_error),
             EncoderImpl::Nvenc(enc) => enc.poll_packet(),
             EncoderImpl::QuickSync(enc) => enc.poll_packet(),
+            #[cfg(not(target_family = "wasm"))]
             EncoderImpl::Vulkan(enc) => enc.poll_packet(),
         }
     }
@@ -417,6 +433,7 @@ impl VideoEncoder for AutoVideoEncoder {
             EncoderImpl::Sw(enc) => enc.flush().map_err(map_av1_error),
             EncoderImpl::Nvenc(enc) => enc.flush(),
             EncoderImpl::QuickSync(enc) => enc.flush(),
+            #[cfg(not(target_family = "wasm"))]
             EncoderImpl::Vulkan(enc) => enc.flush(),
         }
     }

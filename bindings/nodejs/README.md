@@ -16,12 +16,8 @@ dependencies, memory-safe by construction on the native side. These packages
 are thin `koffi` FFI wrappers, not a reimplementation.
 
 **Platforms**: Windows x64 is the fully hardware-verified platform (device/pipeline
-capture and encode). Linux x64 is container-verified — `test/mux-roundtrip.test.ts`
-and `test/all-formats-smoke.test.ts` (pure CPU, no hardware) both pass against a
-real `libmediaway_ffi.so` build; `@mediaway/ffi` picks the library filename via
-`process.platform`. Device/pipeline capability on Linux is untested here (see
-[`../../docs/ai/wiki/platform/linux-encode.md`](../../docs/ai/wiki/platform/linux-encode.md)
-/ [`linux-decode.md`](../../docs/ai/wiki/platform/linux-decode.md)).
+capture and encode). Linux x64 is container-verified (mux/demux); device/pipeline
+capability on Linux is untested here.
 
 ## What Mediaway is (the capabilities)
 
@@ -114,49 +110,12 @@ aspirational):
 |---|---|---|
 | `container/mux-roundtrip.ts` | mux 90 fake video + audio packets → fMP4 → demux back, count packets | ✅ run verified |
 | `pipeline/encode-to-mp4.ts` | auto H.264 encode of 90 synthetic NV12 frames → `out.mp4` | ✅ run verified |
-| `pipeline/encode-audio.ts` | auto AAC encode of 96 synthetic F32 stereo frames → audio-only fMP4 (ABI v2) | ✅ run verified (96 packets → 27372 bytes fMP4) |
-| `pipeline/decode-roundtrip.ts` | auto H.264 decode (encode→mux→demux→decode) + Opus audio decode round trip | ✅ run verified (10 video frames, 50 Opus frames) |
-| `device/camera-record.ts` | camera + mic → H.264 + AAC → ONE two-track MP4 (remuxed; audio track registered with the encoder's AudioSpecificConfig) | ✅ run verified on real hardware (46 frames + 140 AAC packets → ~264 KB two-track MP4); video-only fallback without mic/audio backend |
+| `pipeline/encode-audio.ts` | auto AAC encode of 96 synthetic F32 stereo frames → audio-only fMP4 (ABI v2) | ✅ run verified |
+| `pipeline/decode-roundtrip.ts` | auto H.264 decode (encode→mux→demux→decode) + Opus audio decode round trip | ✅ run verified |
+| `device/camera-record.ts` | camera + mic → H.264 + AAC → ONE two-track MP4 (remuxed; audio track registered with the encoder's AudioSpecificConfig) | ✅ run verified on real hardware; video-only fallback without mic/audio backend |
 | `device/capture-microphone.ts` | microphone capture, raw PCM | ✅ run verified (real mic) |
-| `pipeline/screen-record.ts` | GPU device factory → screen + mic capture → encode (bridge) → MP4 | ✅ run verified on real hardware (real 1920x1080 screen + mic capture; GPU-input H.264 encode itself gracefully skips on this dev machine's current encoder/driver — same known gap as `gpu_write_frame_smoke.rs`) |
-| `device/capture-screen.ts` | GPU device factory → screen capture only | ✅ run verified on real hardware (5 real 1920x1080 frames polled) |
-
-## Testing
-
-`test/mux-roundtrip.test.ts` is the container round-trip suite — the RC-stage
-binding check. It exercises the **release-built DLL** end to end through the
-public `@mediaway/container` API: mux 90 synthetic H.264 video packets + 90
-synthetic AAC audio packets into a fragmented MP4, demux the bytes back, and
-assert that packet counts, stream metadata (codec / geometry / timebase — the
-MP4 demux ABI does not report audio sample rate / channels yet), timestamps,
-keyframe flags, and payload bytes all survive the round trip. Deterministic
-synthetic payloads only — no randomness, no files, no hardware. Any failed
-assertion exits nonzero.
-
-`test/all-formats-smoke.test.ts` covers the other 7 `mediaway-container`
-formats (WebM/Ogg/ADTS/FLV/MPEG-TS/MP3/WAV) the same way, reusing the
-C++/C#/Python bindings' own verified byte patterns.
-
-The DLL must be staged at `packages/ffi/native/mediaway_ffi.dll` (the release
-workflow stages it there via `tools/scripts/copy-native-dlls.ts`; a stale
-staged copy is a common local-dev trap — re-run that script after any native
-ABI change before testing). Run the suite with one command, from `bindings/nodejs/`:
-
-    bun install && npm test
-
-The `test` script rebuilds every `@mediaway/*` package's dist with `tsc` (no
-cargo — the DLL is already staged), type-checks the suite, and runs the test
-files via `tsx`. `bunfig.toml` pins `bun install` to hoisted workspace linking
-(bun's own default is per-package/isolated, which does not resolve `@mediaway/*`
-from root-level files like `test/*.ts`).
-
-Type-check the suite standalone (requires the dist build above to exist):
-
-    bun node_modules/typescript/bin/tsc --noEmit
-
-(Use the `node_modules/typescript/bin/tsc` path, not `npx tsc`/`bunx tsc` — on
-Windows CI runners without `.bin` shims those can pull the placeholder
-`tsc@2.0.4` package.)
+| `pipeline/screen-record.ts` | GPU device factory → screen + mic capture → encode (bridge) → MP4 | ✅ run verified on real hardware (GPU-input H.264 encode gracefully skips as a known driver/encoder limitation, not a bug) |
+| `device/capture-screen.ts` | GPU device factory → screen capture only | ✅ run verified on real hardware |
 
 ## Rules
 

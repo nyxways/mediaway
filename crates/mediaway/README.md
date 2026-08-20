@@ -49,10 +49,9 @@ Status marks: ✅ first-class (tests for claimed scope) · ⚡ Zero-Copy path (n
 
 ### `platform` auto-dispatch by OS
 
-`platform::AutoEncoder` / `AutoDecoder` / `ScreenCapture` / `Microphone` are marker types
-whose `open` resolves per-OS via `#[cfg]`; the table is exactly what each OS resolves to
-today. `❌ NoBackend` means the backend module exists but is **not** wired into the
-platform layer — reach it directly (e.g. `mediaway_encoder::web`) instead.
+`platform::AutoEncoder` / `AutoDecoder` / `ScreenCapture` / `Microphone` auto-select the
+best backend per OS. `❌ NoBackend` means the capability isn't wired into `platform` yet —
+reach the backend module directly (e.g. `mediaway_encoder::web`) instead.
 
 | Capability | Windows | Linux | Web (wasm) | Other (macOS / Android) |
 | ---------- | ------- | ----- | ---------- | ------------------------ |

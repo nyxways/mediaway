@@ -15,12 +15,8 @@ dependencies, memory-safe by construction on the native side. This header is a
 thin RAII wrapper, not a reimplementation.
 
 **Platforms**: Windows x64 is the fully hardware-verified platform (device/pipeline
-capture and encode). Linux x64 is container-verified — `all_formats_smoke.cpp` and
-`mux_roundtrip.cpp` both compile with plain g++ (no `_WIN32`/`windows.h` anywhere in
-these headers) and run clean against a real `libmediaway_ffi.so`. Device/pipeline
-capability on Linux is untested here (see
-[`../../docs/ai/wiki/platform/linux-encode.md`](../../docs/ai/wiki/platform/linux-encode.md)
-/ [`linux-decode.md`](../../docs/ai/wiki/platform/linux-decode.md)).
+capture and encode). Linux x64 is container-verified (mux/demux); device/pipeline
+capability on Linux is untested here.
 
 ## What Mediaway is (the capabilities)
 
@@ -113,12 +109,12 @@ aspirational):
 | `container/mux_roundtrip.cpp` | mux 90 fake video + audio packets → fMP4 → demux back, count packets | ✅ link+run verified |
 | `container/all_formats_smoke.cpp` | round-trip all 7 non-MP4 formats (WebM, Ogg, ADTS, FLV, MPEG-TS incl. `finish()`, MP3, WAV incl. `wavParse()`) | ✅ link+run verified |
 | `pipeline/encode_to_mp4.cpp` | auto H.264 encode of 90 synthetic NV12 frames → `out.mp4` | ✅ link+run verified |
-| `pipeline/encode_audio.cpp` | auto AAC encode of 96 synthetic F32 stereo frames → audio-only fMP4 (ABI v2) | ✅ link+run verified (96 packets → 27385 bytes fMP4) |
-| `pipeline/decode_roundtrip.cpp` | auto H.264 decode (encode→mux→demux→decode) + Opus audio decode round trip | ✅ link+run verified (10 video frames, 50 Opus frames) |
-| `device/camera_record.cpp` | camera + mic → H.264 + AAC → ONE two-track MP4 (remuxed; audio track registered with the encoder's AudioSpecificConfig) | ✅ link+run verified on real hardware (46 frames + 140 AAC packets → ~256 KB two-track MP4); video-only fallback without mic/audio backend |
+| `pipeline/encode_audio.cpp` | auto AAC encode of 96 synthetic F32 stereo frames → audio-only fMP4 (ABI v2) | ✅ link+run verified |
+| `pipeline/decode_roundtrip.cpp` | auto H.264 decode (encode→mux→demux→decode) + Opus audio decode round trip | ✅ link+run verified |
+| `device/camera_record.cpp` | camera + mic → H.264 + AAC → ONE two-track MP4 (remuxed; audio track registered with the encoder's AudioSpecificConfig) | ✅ link+run verified on real hardware; video-only fallback without mic/audio backend |
 | `device/capture_microphone.cpp` | microphone capture, raw PCM | ✅ link+run verified (real mic) |
-| `pipeline/screen_record.cpp` | screen + mic → encode → MP4, via `GpuDevice` + the capture-to-encode bridge | ✅ link+run verified on real hardware (real 2560x1440 GPU-backed frames bridged; GPU-input encode itself gracefully skips as `Unsupported` on this dev machine's current encoder/driver — same pre-existing limitation the Rust/C/Node.js/C#/Python siblings hit, not introduced here); mic PCM drained, not muxed (see `camera_record.cpp` for two-track remux) |
-| `device/capture_screen.cpp` | screen capture only, via `GpuDevice` | ✅ link+run verified on real hardware (5 real 2560x1440 GPU-backed frames polled) |
+| `pipeline/screen_record.cpp` | screen + mic → encode → MP4, via `GpuDevice` + the capture-to-encode bridge | ✅ link+run verified on real hardware (GPU-input encode gracefully skips as a known driver/encoder limitation, not a bug); mic PCM drained, not muxed — see `camera_record.cpp` for two-track remux |
+| `device/capture_screen.cpp` | screen capture only, via `GpuDevice` | ✅ link+run verified on real hardware |
 
 ## Rules
 

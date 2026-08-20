@@ -205,12 +205,8 @@ For decode on its own, see [`examples/decode/decode_h264.rs`](examples/decode/de
 
 Rust is the primary, always-first-class native API. Bindings for the supported
 host languages are **real, verified code** under [`bindings/`](bindings/) — not
-aspirational sketches. Multi-language bindings and engine wrappers are
-architected with **selective linking**:
-
-- **Per-Capability C ABI (`mediaway-*-ffi`)**: Non-Rust applications link only the specific C ABI crates or features they need (e.g. `mediaway-container-ffi` for standalone MP4/WebM muxing, or `mediaway-encoder-ffi` for hardware encoding). This ensures host applications in C, C++, C#, Python, and Node.js keep their own binary sizes minimal without linking unused codecs or capture drivers.
-- **Seamless Engine & Graphics Wrappers (`wgpu`, Three.js, Unity, Godot)**: High-level binding wrappers designed to hand off native GPU texture pointers (`GpuBufferHandle` / D3D11, D3D12, Vulkan, Metal) between real-time game engines or renderers and Mediaway's hardware pipeline with zero CPU copy overhead.
-- **Browser WebAssembly (WASM)**: Web hosts target WASM (`wasm-bindgen`) directly integrated with native browser WebCodecs and WebGPU APIs — bypassing the C ABI entirely for zero-overhead browser execution.
+aspirational sketches. Each language links only the capabilities it needs
+(container, encoder, device, …), so app binaries don't pull in unused codecs.
 
 | Language / Host | Interop Path | Status | Target Ergonomics & Use Cases | Examples |
 |-----------------|--------------|--------|-------------------------------|----------|
@@ -225,10 +221,8 @@ architected with **selective linking**:
 
 Status legend: ✅ verified = real binding source built and run against the native
 libraries; 📐 design = README brief + example code only (nothing compiles/ships
-yet). Per-language detail lives in [`bindings/README.md`](bindings/README.md)
-and each folder's own README.
-
-Node.js (C ABI FFI) and the Browser (WASM + WebCodecs) are two distinct JS/TS environments with distinct interop paths — see [`docs/spec/c-ffi.md`](docs/spec/c-ffi.md) § Tier C.
+yet). Per-language detail: [`bindings/README.md`](bindings/README.md) and each
+folder's own README.
 
 ---
 
@@ -246,15 +240,11 @@ Node.js (C ABI FFI) and the Browser (WASM + WebCodecs) are two distinct JS/TS en
 | 👻   | Not exercisable yet — **license/patent blocked**, no target hardware, out of scope, or no device/daemon/session available to run otherwise-tested code against |
 
 
-Cell = **encode/decode**. One mark means both; `A/B` means encode / decode.  
-Platform build-out order is **Windows → Web → Linux → other**; Apple/Android/Metal/Qualcomm cells
-are 👻 except where a specific backend has actually landed (see each table's own notes).
-
-**Zero-Copy honesty:** ⚡ means no payload copy — a GPU handle **or** a shared CPU buffer, not "GPU only." Allocating a new `Vec` and copying into it is 🆗, not ⚡.
+Cell = **encode/decode**. One mark means both; `A/B` means encode / decode.
 
 ### OS · CPU
 
-OS codec APIs (WMF, WebCodecs, VA-API, …) fed with CPU buffers (upload may apply); ⚡ here means a shared/borrowed buffer, not software encode.
+OS codec APIs (WMF, WebCodecs, VA-API, …) fed with CPU buffers.
 
 
 | Codec        | Windows  | Web      | Linux   | Apple   | Android |
@@ -267,11 +257,9 @@ OS codec APIs (WMF, WebCodecs, VA-API, …) fed with CPU buffers (upload may app
 | AAC          | 🆗 / 👻 | 🆗       | 🛠️   | 🆗 / 🆗 | 👻      |
 | Opus         | ✅ / ✅ | 🆗      | 🛠️   | 🆗 / 🆗 | 👻      |
 
-Detail: backends live as `#[cfg]`-gated modules — `mediaway-decoder::{windows, web, linux}`, `mediaway-encoder::{windows, web, linux}`.
-
 ### OS · GPU
 
-Same OS APIs with GPU surfaces (`GpuBufferHandle`, DXGI, …). Video only — audio Zero-Copy lives under OS · CPU.
+Same OS APIs with GPU surfaces (`GpuBufferHandle`, DXGI, …). Video only.
 
 
 | Codec        | Windows | Web | Linux | Apple | Android |
@@ -282,14 +270,11 @@ Same OS APIs with GPU surfaces (`GpuBufferHandle`, DXGI, …). Video only — au
 | VP9          | 🆗 / 🆗  | 🆗 / 🛠️ | 🛠️   | ❌ / 🆗 | 👻      |
 | ProRes       | 👻      | 👻  | 👻    | 🆗 / 🆗 | 👻      |
 
-
-Detail: `mediaway-encoder::{windows, web, apple}` (`windows` = WMF + DX11 Zero-Copy; `web` = WebCodecs + WebGPU; `apple` = VideoToolbox + `CVPixelBuffer` Zero-Copy).
-
 ### GPU — by API
 
-**Graphics interop** (D3D11, Vulkan, Metal, …) — which API your textures use. Orthogonal to OS · CPU/GPU. **Video only.**
+**Graphics interop** (D3D11, Vulkan, Metal, …) — which API your textures use. **Video only.**
 
-Adapters: [`mediaway`](crates/mediaway/README.md) `wgpu` module 🆗 (DX12 ↔ WMF `GpuCopy` bridges).
+Adapters: [`mediaway`](crates/mediaway/README.md) `wgpu` module.
 
 
 | Codec        | D3D11  | D3D12 | Vulkan | Metal |
@@ -300,16 +285,10 @@ Adapters: [`mediaway`](crates/mediaway/README.md) `wgpu` module 🆗 (DX12 ↔ W
 | VP9          | 🆗 / 🆗 | 👻    | 👻     | ❌ / 🆗 |
 | ProRes       | 👻     | 👻    | 👻     | 🆗 / 🆗 |
 
-
-Detail: [`mediaway`](crates/mediaway/README.md) `wgpu` module · `mediaway-encoder::{windows, vulkan, apple}` · `mediaway-decoder::{windows, vulkan, apple}`.
-
 ### GPU — by vendor
 
-**Vendor SDKs** (NVENC, AMF, …) — separate from OS + graphics interop. Not the default Auto path. **Video only.**
-
-- **NVIDIA** — `mediaway-encoder::nvenc` ([`mediaway-encoder`](crates/mediaway-encoder/README.md)), **hardware-verified** H.264/HEVC/AV1 CPU-upload encode.
-- **Intel** — `mediaway-encoder::quicksync` ([`mediaway-encoder`](crates/mediaway-encoder/README.md)), **hardware-verified** H.264/HEVC encode; AV1 is ❌ (no hardware support on this iGPU generation).
-- **AMD** — `mediaway-encoder::amf` ([`mediaway-encoder`](crates/mediaway-encoder/README.md)), `shiguredo_amf`-backed H.264 CPU-upload encode, Linux `x86_64` only — 🆗 compiles / compile-verified (WSL2 Linux `x86_64`), **zero real AMD GPU/driver hardware verification** (none available in this workspace).
+**Vendor SDKs** (NVENC, AMF, QuickSync, …) — separate from OS + graphics interop. **Video only.**
+See [`mediaway-encoder`](crates/mediaway-encoder/README.md) for NVIDIA/AMD/Intel backends.
 
 | Codec        | NVIDIA | AMD | Intel | Qualcomm |
 | ------------ | ------ | --- | ----- | -------- |

@@ -8,13 +8,7 @@ captured audio frames. See
 for why this lives in a separate package instead of inside `Mediaway.Device`
 itself.
 
-**Status: real, hand-written source — unverified.** No Unity Editor is
-available in the environment this was written in, so nothing under
-`Runtime/` has been compiled or run against actual Unity APIs. Treat this the
-same way `bindings/csharp/examples/ScreenRecord.cs` is treated elsewhere in
-this repo: real code written against the documented API surface, not yet
-exercised. First real verification is a follow-up task once a Unity Editor
-is available (tracked in ADR-0018's Deferred section).
+**Status: real, hand-written source — not yet verified in a Unity Editor.**
 
 ## Setup
 
@@ -28,23 +22,18 @@ is available (tracked in ADR-0018's Deferred section).
 2. Add this package via Unity's Package Manager (`Add package from disk...`,
    pointing at this folder's `package.json`, or a Git URL once this repo is
    public).
-3. Only `win-x64` native assets are hardware-verified today (ADR-0017 §2) —
-   Editor/Standalone builds on Windows are the only currently-supported
-   Unity target.
+3. Only `win-x64` native assets are hardware-verified today — Editor/Standalone
+   builds on Windows are the only currently-supported Unity target.
 
 ## What's here
 
 - `Runtime/MediawayTextureConverter.cs` — `VideoFrame` → `Texture2D`.
   `Bgra8`/`Rgba8` upload directly (matching `TextureFormat.BGRA32`/`RGBA32`,
-  no conversion). `Nv12`/`I420` go through a **CPU/software** YUV→RGBA32
-  conversion — no GPU shader path ships yet, so this is a real, documented
-  cost (per the workspace's costly-path-honesty rule, ADR-0006), not a
-  Zero-Copy path. A shader-based conversion is a reasonable follow-up once
-  this ships and is measured in a real Unity project.
+  no conversion). `Nv12`/`I420` go through a CPU YUV→RGBA32 conversion (no
+  GPU shader path yet).
 - `Runtime/MediawayStreamingAudioSource.cs` — a `MonoBehaviour` that polls an
-  `IAudioCapture` via `TryPollFrame` (the low-level primitive ADR-0018 added
-  to `Mediaway.Device`, available on netstandard2.0) and feeds interleaved
-  float PCM into a streaming `AudioClip`/`AudioSource`.
+  `IAudioCapture` via `TryPollFrame` and feeds interleaved float PCM into a
+  streaming `AudioClip`/`AudioSource`.
 - `Samples~/CameraToTexture/` — a minimal `MonoBehaviour` sample wiring
   `Mediaway.Device.Camera` into `MediawayTextureConverter` inside `Update()`.
   Unity-convention `~` suffix keeps it out of the default package import;
@@ -52,11 +41,6 @@ is available (tracked in ADR-0018's Deferred section).
 
 ## Why `TryPollFrame`, not `ReadFramesAsync`
 
-`Mediaway.Device`'s `IVideoCapture`/`IAudioCapture` expose an async,
-`IAsyncEnumerable`-based `ReadFramesAsync` on `net8.0` — but that is
-`net8.0`-only (ADR-0018 deliberately did not add
-`Microsoft.Bcl.AsyncInterfaces`/`System.Threading.Channels` to the
-`netstandard2.0` build). The synchronous `TryPollFrame` primitive is on both
-target frameworks, and is also a more natural fit for Unity's own
-`Update()`-loop model than `await foreach` would be — this package always
-uses `TryPollFrame`.
+`Mediaway.Device`'s async `ReadFramesAsync` API is `net8.0`-only, so this
+package uses the synchronous `TryPollFrame` primitive instead — it works on
+`netstandard2.0` and fits Unity's `Update()`-loop model naturally.

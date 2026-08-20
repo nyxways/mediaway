@@ -193,6 +193,11 @@ impl VideoToolboxVideoDecoder {
             // which only ever softens genuine parse failures of otherwise-optional seed data).
             match config.codec {
                 CodecKind::H264 => {
+                    debug_log(&format!(
+                        "H264 extra_data: len={} bytes={:02x?}",
+                        config.extra_data.len(),
+                        &config.extra_data[..config.extra_data.len().min(64)]
+                    ));
                     let Some(avcc_config) = parse_avc_decoder_config(&config.extra_data) else {
                         debug_log(&format!(
                             "parse_avc_decoder_config failed: len={} first_bytes={:02x?}",

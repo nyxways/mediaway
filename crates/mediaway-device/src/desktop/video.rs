@@ -21,6 +21,30 @@ pub enum CaptureOutputPreference {
     CpuFramesOk,
 }
 
+/// Whether a [`DesktopCaptureSource::Screen`] session may be joined by a later, independent
+/// `open()` for the same output.
+///
+/// Only meaningful for `Screen` on Windows today — see
+/// [ADR-0008](https://github.com/nyxways/mediaway/blob/main/crates/mediaway-device/adr/windows/0008-exclusive-desktop-duplication-zero-copy.md).
+/// `Window` never shares (each session is already per-`HWND`); other platforms ignore this
+/// field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
+pub enum CaptureSharing {
+    /// Discoverable/joinable by a later `open()` for the same output — the default. Costs one
+    /// mandatory GPU→GPU copy per frame (Windows: DDA→ring-slot `CopyResource`) so any number
+    /// of independent consumers can share the same underlying capture session safely.
+    #[default]
+    Shared,
+    /// Caller asserts it is (and will remain) the only consumer for this output — true
+    /// Zero-Copy, no copy at all. A concurrent `open()` for the same output — `Shared` or
+    /// `Exclusive` — while this session is alive fails (backend-specific error; on Windows,
+    /// `CaptureError::AccessDenied`, since DXGI allows only one live duplication per output per
+    /// process). No live upgrade to `Shared` if a second consumer turns out to be needed later
+    /// — close and reopen as `Shared` instead.
+    Exclusive,
+}
+
 /// Desktop capture source selection.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -54,6 +78,11 @@ pub struct DesktopVideoCaptureConfig {
     ///
     /// Must own the adapter that serves the chosen output (`None` = unset → Zero-Copy open fails).
     pub gpu_device: Option<GpuDeviceHandle>,
+    /// Whether a [`DesktopCaptureSource::Screen`] session may be joined by another `open()` for
+    /// the same output. Defaults to [`CaptureSharing::Shared`] via [`Self::screen`]/
+    /// [`Self::window`] — set [`CaptureSharing::Exclusive`] explicitly for true Zero-Copy when
+    /// the caller knows it is the only consumer. See [`CaptureSharing`]'s own docs.
+    pub sharing: CaptureSharing,
 }
 
 impl DesktopVideoCaptureConfig {
@@ -66,6 +95,7 @@ impl DesktopVideoCaptureConfig {
             time_base,
             output: CaptureOutputPreference::ZeroCopyGpu,
             gpu_device: None,
+            sharing: CaptureSharing::Shared,
         }
     }
 
@@ -77,6 +107,7 @@ impl DesktopVideoCaptureConfig {
             time_base,
             output: CaptureOutputPreference::ZeroCopyGpu,
             gpu_device: None,
+            sharing: CaptureSharing::Shared,
         }
     }
 }

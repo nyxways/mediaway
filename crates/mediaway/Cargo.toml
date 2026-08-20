@@ -93,3 +93,7 @@ path = "tests/wgpu/dx12_encode_smoke.rs"
 [[test]]
 name = "dx12_decode_pixel_roundtrip"
 path = "tests/wgpu/dx12_decode_pixel_roundtrip.rs"
+
+[[test]]
+name = "dx12_render_target_smoke"
+path = "tests/wgpu/dx12_render_target_smoke.rs"

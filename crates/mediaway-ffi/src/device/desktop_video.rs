@@ -17,7 +17,8 @@ use std::time::Duration;
 
 use mediaway_common::VideoFrameStorage;
 use mediaway_device::desktop::{
-    CaptureOutputPreference, DesktopCaptureSource, DesktopVideoCapture, DesktopVideoCaptureConfig,
+    CaptureOutputPreference, CaptureSharing, DesktopCaptureSource, DesktopVideoCapture,
+    DesktopVideoCaptureConfig,
 };
 use mediaway_device::{CaptureError, Select};
 
@@ -141,6 +142,9 @@ fn open_desktop_capture(
                 time_base: config.time_base.into(),
                 output: CaptureOutputPreference::ZeroCopyGpu,
                 gpu_device: config.gpu_device.to_common(),
+                // No C ABI knob for this yet — keep today's shareable-by-default behavior
+                // unchanged; see `mediaway-device` ADR-0008.
+                sharing: CaptureSharing::Shared,
             };
             open_screen_capture(&rust_config)
         }

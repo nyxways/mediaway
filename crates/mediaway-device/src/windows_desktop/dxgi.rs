@@ -3,8 +3,10 @@
 #![allow(unsafe_code)]
 
 use crate::desktop::{
-    CaptureOutputPreference, DesktopCaptureSource, DesktopVideoCapture, DesktopVideoCaptureConfig,
+    CaptureOutputPreference, CaptureSharing, DesktopCaptureSource, DesktopVideoCapture,
+    DesktopVideoCaptureConfig,
 };
+use crate::windows_desktop::dxgi_exclusive::ExclusiveDuplication;
 use crate::windows_desktop::dxgi_shared::{self, SharedDuplication};
 use crate::{CaptureError, DeviceId, DeviceInfo, DeviceKind, Select};
 use mediaway_common::{Bytes, CodecKind, GpuDeviceHandle, StreamInfo, VideoFrame, VideoGeometry};
@@ -23,29 +25,54 @@ struct Session {
     next_pts: i64,
 }
 
+struct ExclusiveSession {
+    inner: ExclusiveDuplication,
+    stream_info: StreamInfo,
+    next_pts: i64,
+}
+
+/// Which mode `WindowsScreenCapture` is backed by — dispatches on
+/// [`CaptureSharing`] at `open()` time; never changes for a session's lifetime
+/// (see [ADR-0008](../adr/windows/0008-exclusive-desktop-duplication-zero-copy.md)
+/// § Alternatives for why there is no live upgrade/downgrade path).
+enum Backing {
+    /// [`CaptureSharing::Shared`] (default) — served by `dxgi_shared`'s driver
+    /// thread + ring; one mandatory `CopyResource`/frame, but joinable by
+    /// another `open()` for the same output.
+    Shared(Session),
+    /// [`CaptureSharing::Exclusive`] — no driver thread, no copy; see
+    /// `dxgi_exclusive`.
+    Exclusive(ExclusiveSession),
+}
+
 /// Windows screen capture via DXGI Desktop Duplication.
 ///
-/// **Not Zero-Copy as of [ADR-0006](../adr/0006-shared-desktop-duplication.md):**
+/// **`CaptureSharing::Shared`** (default, [ADR-0006](../adr/0006-shared-desktop-duplication.md)):
 /// every session — including a lone consumer — is served by a shared driver
 /// thread and pays one `CopyResource` per frame into its own dedicated
-/// texture. This trades ADR-0001's original per-session zero-copy property
-/// for universal in-process shareability of the same output (DXGI allows
-/// only one live duplication per output per process; a second
-/// [`WindowsScreenCapture::open`] on the same output now succeeds instead of
-/// failing with [`CaptureError::AccessDenied`]). See ADR-0006 § Deferred for
-/// the named, not-yet-implemented solo-consumer copy-skip optimization.
+/// texture, in exchange for universal in-process shareability of the same
+/// output (DXGI allows only one live duplication per output per process; a
+/// second [`WindowsScreenCapture::open`] on the same output succeeds instead
+/// of failing with [`CaptureError::AccessDenied`]).
+///
+/// **`CaptureSharing::Exclusive`** ([ADR-0008](../adr/windows/0008-exclusive-desktop-duplication-zero-copy.md)):
+/// true Zero-Copy, no copy at all — opt-in, for a caller that knows it is the
+/// only consumer for this output.
 pub struct WindowsScreenCapture {
-    inner: Option<Session>,
+    inner: Option<Backing>,
 }
 
 impl WindowsScreenCapture {
-    /// Open a (possibly shared) DXGI Desktop Duplication session for `config`.
+    /// Open a DXGI Desktop Duplication session for `config` — `Shared` (joinable, one copy
+    /// per frame) or `Exclusive` (true Zero-Copy, opt-in) per `config.sharing`.
     ///
     /// # Errors
     ///
     /// Returns [`CaptureError::Unsupported`] for non-screen sources or CPU output preference.
     /// Returns [`CaptureError::InvalidInput`] when `gpu_device` is unset, or when an existing
     /// shared session for this output was opened against a different `ID3D11Device` instance.
+    /// Returns [`CaptureError::AccessDenied`] for `Exclusive` when another duplication (`Shared`
+    /// or `Exclusive`) is already live for this output.
     pub fn open(config: &DesktopVideoCaptureConfig) -> Result<Self, CaptureError> {
         let DesktopCaptureSource::Screen { select } = &config.source else {
             return Err(CaptureError::Unsupported);
@@ -60,8 +87,8 @@ impl WindowsScreenCapture {
         let raw = handle.get() as *mut std::ffi::c_void;
         // SAFETY: caller guarantees `gpu_device` is a live `ID3D11Device*` for the session;
         // only used here, on the calling thread, for read-only enumeration (adapter/output
-        // resolution) — never retained. The driver thread (`dxgi_shared`) reconstructs its
-        // own owned reference from the same raw pointer independently.
+        // resolution) — never retained. The driver thread (`dxgi_shared`) / `dxgi_exclusive`
+        // reconstruct their own owned reference from the same raw pointer independently.
         let device_ref =
             unsafe { ID3D11Device::from_raw_borrowed(&raw) }.ok_or(CaptureError::InvalidInput)?;
 
@@ -69,61 +96,94 @@ impl WindowsScreenCapture {
         // SAFETY: GetAdapter is a proven, compiling precedent, read-only query.
         let adapter = unsafe { dxgi_device.GetAdapter() }.map_err(|_| CaptureError::Backend)?;
         let output_index = resolve_output_index(&adapter, select)?;
-        let output = enum_output(&adapter, output_index)?;
-        // SAFETY: GetDesc reads a fixed-size struct with no retained pointers.
-        let desc = unsafe { output.GetDesc() }.map_err(|_| CaptureError::Backend)?;
-        let key = DeviceId::from_dxgi_output_device_name(output_device_name(&desc));
-
         let device_raw = handle.get();
-        let (shared, consumer_id, mut stream_info) =
-            dxgi_shared::attach(key, device_raw, output_index)?;
 
-        // The shared session's geometry comes from the real DXGI query; the
-        // timebase is purely caller config, substituted here rather than
-        // threaded through the driver-thread spawn args.
-        if let StreamInfo::Video { time_base, .. } = &mut stream_info {
-            *time_base = config.time_base;
+        match config.sharing {
+            CaptureSharing::Exclusive => {
+                let (excl, mut stream_info) = ExclusiveDuplication::open(device_raw, output_index)?;
+                if let StreamInfo::Video { time_base, .. } = &mut stream_info {
+                    *time_base = config.time_base;
+                }
+                Ok(Self {
+                    inner: Some(Backing::Exclusive(ExclusiveSession {
+                        inner: excl,
+                        stream_info,
+                        next_pts: 0,
+                    })),
+                })
+            }
+            CaptureSharing::Shared => {
+                let output = enum_output(&adapter, output_index)?;
+                // SAFETY: GetDesc reads a fixed-size struct with no retained pointers.
+                let desc = unsafe { output.GetDesc() }.map_err(|_| CaptureError::Backend)?;
+                let key = DeviceId::from_dxgi_output_device_name(output_device_name(&desc));
+
+                let (shared, consumer_id, mut stream_info) =
+                    dxgi_shared::attach(key, device_raw, output_index)?;
+
+                // The shared session's geometry comes from the real DXGI query; the
+                // timebase is purely caller config, substituted here rather than
+                // threaded through the driver-thread spawn args.
+                if let StreamInfo::Video { time_base, .. } = &mut stream_info {
+                    *time_base = config.time_base;
+                }
+
+                Ok(Self {
+                    inner: Some(Backing::Shared(Session {
+                        shared,
+                        consumer_id,
+                        stream_info,
+                        next_pts: 0,
+                    })),
+                })
+            }
         }
-
-        Ok(Self {
-            inner: Some(Session {
-                shared,
-                consumer_id,
-                stream_info,
-                next_pts: 0,
-            }),
-        })
     }
 }
 
 impl DesktopVideoCapture for WindowsScreenCapture {
     fn stream_info(&self) -> &StreamInfo {
-        #[allow(
-            clippy::option_if_let_else,
-            reason = "map_or_else forces 'static vs 'self lifetime clash"
-        )]
-        if let Some(inner) = self.inner.as_ref() {
-            &inner.stream_info
-        } else {
-            closed_stream_info()
+        match self.inner.as_ref() {
+            Some(Backing::Shared(inner)) => &inner.stream_info,
+            Some(Backing::Exclusive(inner)) => &inner.stream_info,
+            None => closed_stream_info(),
         }
     }
 
     fn poll_frame(&mut self) -> Result<Option<VideoFrame>, CaptureError> {
-        let inner = self.inner.as_mut().ok_or(CaptureError::Closed)?;
-        dxgi_shared::poll_shared_frame(&inner.shared, inner.consumer_id, &mut inner.next_pts)
+        match self.inner.as_mut().ok_or(CaptureError::Closed)? {
+            Backing::Shared(inner) => dxgi_shared::poll_shared_frame(
+                &inner.shared,
+                inner.consumer_id,
+                &mut inner.next_pts,
+            ),
+            Backing::Exclusive(inner) => {
+                let geometry = inner.stream_info.geometry().unwrap_or(VideoGeometry {
+                    width: 0,
+                    height: 0,
+                });
+                inner.inner.poll_frame(geometry, &mut inner.next_pts)
+            }
+        }
     }
 
     fn release_frame(&mut self) -> Result<(), CaptureError> {
-        let inner = self.inner.as_ref().ok_or(CaptureError::Closed)?;
-        dxgi_shared::release_shared_frame(&inner.shared, inner.consumer_id)
+        match self.inner.as_mut().ok_or(CaptureError::Closed)? {
+            Backing::Shared(inner) => {
+                dxgi_shared::release_shared_frame(&inner.shared, inner.consumer_id)
+            }
+            Backing::Exclusive(inner) => inner.inner.release_frame(),
+        }
     }
 
     fn close(&mut self) -> Result<(), CaptureError> {
         let Some(inner) = self.inner.take() else {
             return Err(CaptureError::Closed);
         };
-        dxgi_shared::detach(&inner.shared, inner.consumer_id);
+        match inner {
+            Backing::Shared(inner) => dxgi_shared::detach(&inner.shared, inner.consumer_id),
+            Backing::Exclusive(_) => {} // Drop (ExclusiveDuplication::drop) releases/closes it.
+        }
         Ok(())
     }
 }

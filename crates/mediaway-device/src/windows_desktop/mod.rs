@@ -16,6 +16,8 @@ mod desktop_audio;
 #[cfg(windows)]
 mod dxgi;
 #[cfg(windows)]
+mod dxgi_exclusive;
+#[cfg(windows)]
 mod dxgi_shared;
 #[cfg(windows)]
 mod wgc;

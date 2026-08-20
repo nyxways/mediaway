@@ -10,8 +10,8 @@ use crate::camera::{
     CameraCapture, CameraCaptureConfig, CaptureOutputPreference as CameraOutputPreference,
 };
 use crate::desktop::{
-    CaptureOutputPreference as DesktopOutputPreference, DesktopCaptureSource, DesktopVideoCapture,
-    DesktopVideoCaptureConfig,
+    CaptureOutputPreference as DesktopOutputPreference, CaptureSharing, DesktopCaptureSource,
+    DesktopVideoCapture, DesktopVideoCaptureConfig,
 };
 use crate::{CaptureError, DeviceKind, PermissionState, Select, Support, Unavailable};
 use mediaway_common::{NativeHandle, Rational};
@@ -128,6 +128,7 @@ fn probe_screen_permission() -> Result<PermissionState, CaptureError> {
         time_base: Rational::new(1, 30),
         output: DesktopOutputPreference::CpuFramesOk,
         gpu_device: None,
+        sharing: CaptureSharing::Shared,
     };
     match LinuxScreenCapture::open(&cfg) {
         Ok(mut cap) => {
@@ -150,6 +151,7 @@ fn probe_window_permission() -> Result<PermissionState, CaptureError> {
         time_base: Rational::new(1, 30),
         output: DesktopOutputPreference::CpuFramesOk,
         gpu_device: None,
+        sharing: CaptureSharing::Shared,
     };
     match LinuxWindowCapture::open(&cfg) {
         Ok(mut cap) => {

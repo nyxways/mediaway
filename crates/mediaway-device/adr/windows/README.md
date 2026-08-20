@@ -9,6 +9,7 @@
 | [0005](0005-wasapi-playback.md) | WASAPI shared-mode render playback | Proposed |
 | [0006](0006-shared-desktop-duplication.md) | Shared, refcounted DXGI Desktop Duplication sessions | Accepted |
 | [0007](0007-ring-buffer-shared-desktop-duplication.md) | Ring-buffered frame fan-out for shared DXGI Desktop Duplication | Accepted |
+| [0008](0008-exclusive-desktop-duplication-zero-copy.md) | Opt-in exclusive DXGI Desktop Duplication — true Zero-Copy | Accepted |
 
 Template: copy from [`mediaway-device/adr/template.md`](../../mediaway-device/adr/template.md).
 

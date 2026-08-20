@@ -93,6 +93,49 @@ BackendSelection: Auto | AutoHardwareOnly | Explicit(Backend)
   `mediaway::platform` yet), so adding `Backend` variants there would be an
   empty abstraction with nothing to select among.
 
+## `Backend::Vulkan` resolves the taxonomy gap (2026-08-20)
+
+`mediaway-encoder::vulkan`'s `VulkanVideoEncoder` (H.264/HEVC, CPU-upload, hardware-verified)
+had no home in `Backend` — this crate's own `docs/ai/wiki/encode/backend-preference.md` flagged
+it as "doesn't fit `GraphicsApi` or `VendorHw` cleanly: cross-vendor (unlike `VendorHw`) but
+packaged like a vendor crate," left unresolved rather than guessed.
+
+**Resolution**: add `Backend::Vulkan` and rank it in the **same tier as the vendor SDKs** —
+`AutoHardwareOnly` tries it (after `Nvenc`/`QuickSync`, same CPU-upload cost class), and
+`Explicit(Backend::Vulkan)` opens it directly. Plain `Auto` never resolves to it, same reasoning
+already applied to `Nvenc`/`QuickSync`: the same silicon usually backs `Os`'s own path too, so
+picking a non-`Os` backend by default would be a surprise.
+
+Rationale for "packaging beats semantics" here: `BackendSelection`'s whole job is *ranking*, not
+taxonomizing graphics APIs — from a caller's perspective, "one more hardware-capable backend to
+try before giving up on GPU-only" is exactly what `AutoHardwareOnly` already models for
+`Nvenc`/`QuickSync`, and Vulkan Video fits that role even though it isn't vendor-specific. A
+`GraphicsApi`-shaped variant (alongside `Os`) was considered and rejected — see § Alternatives.
+
+Windows-only wiring for now (`windows::auto::AutoVideoEncoder`'s `hardware_only` ranking and its
+`Explicit(Backend::Vulkan)` match arm) — same scope Nvenc/QuickSync already have; Linux Vulkan
+wiring is future work, not blocked by this decision.
+
+### Alternatives Considered (2026-08-20 addendum)
+
+| Alternative | Why not |
+|---|---|
+| New `GraphicsApi`-shaped enum axis (`Os` vs `GraphicsApi` vs `VendorHw`) | A real taxonomy fix, but a much larger, cross-cutting change to `Backend`'s whole shape for one crate's one backend — the wiki itself deferred this as "not resolved by this doc either," and no second cross-vendor graphics-API backend exists yet to justify a 3-way split over a 1-more-tier addition. |
+| Leave Vulkan unreachable through `Backend`/`BackendSelection`, keep it callable only by naming `mediaway_encoder::vulkan::VulkanVideoEncoder` directly | Already true today and remains true regardless — this ADR is about giving the *auto-selection* facade a path to it, not about whether direct low-level access exists (it always has, per `docs/spec/api-layers.md`). |
+
+### Implementation + hardware verification (2026-08-20)
+
+`windows::auto::AutoVideoEncoder` gained `EncoderImpl::Vulkan`, `try_vulkan` (CPU-upload only,
+mirrors `try_nvenc`/`try_quicksync`), an `Explicit(Backend::Vulkan)` match arm, and a spot in
+`AutoHardwareOnly`'s ranking (`Nvenc` → `QuickSync` → `Vulkan`). Hardware-verified on the
+reference RTX 4090: `explicit_vulkan_opens_or_skip` and `auto_hardware_only_tries_nvenc_then_
+quicksync_then_vulkan_or_skip` (new) both resolve successfully — real finding along the way,
+not a wiring bug: `VulkanVideoEncoder::open` rejects 64x64 (`EncodeError::InvalidInput`, this
+driver's reported `minCodedExtent` for H.264 encode), so the new tests use 176x144, matching
+the size `mediaway-encoder::vulkan`'s own `encoder_tests.rs` already uses for the same reason.
+`cargo check`/`clippy --all-targets --all-features -- -D warnings`/`fmt --check` clean across
+the whole workspace.
+
 ## References
 
 - Root README § Codec support · [ADR-0003](0003-auto-encode.md) · wiki [backend-preference](../../../docs/ai/wiki/encode/backend-preference.md)

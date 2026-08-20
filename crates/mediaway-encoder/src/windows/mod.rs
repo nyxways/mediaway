@@ -657,6 +657,114 @@ mod tests {
         }
     }
 
+    /// [`D3d12SharedEncodeBridge::open_with_resource`] (ADR-0011) — a caller-allocated
+    /// `D3D12_HEAP_FLAG_SHARED` texture shared without the bridge's own
+    /// `CreateCommittedResource` step.
+    #[test]
+    fn d3d12_shared_bridge_open_with_resource_or_skip() {
+        use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
+        use windows::Win32::Graphics::Direct3D12::{
+            D3D12_CPU_PAGE_PROPERTY_UNKNOWN, D3D12_HEAP_FLAG_SHARED, D3D12_HEAP_PROPERTIES,
+            D3D12_HEAP_TYPE_DEFAULT, D3D12_MEMORY_POOL_UNKNOWN, D3D12_RESOURCE_DESC,
+            D3D12_RESOURCE_DIMENSION_TEXTURE2D, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
+            D3D12_RESOURCE_STATE_COMMON, D3D12_TEXTURE_LAYOUT_UNKNOWN, D3D12CreateDevice,
+            ID3D12Device, ID3D12Resource,
+        };
+        use windows::Win32::Graphics::Dxgi::Common::{
+            DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC,
+        };
+        use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIAdapter1, IDXGIFactory1};
+        use windows::core::Interface;
+
+        let factory: IDXGIFactory1 = match unsafe { CreateDXGIFactory1() } {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("skip: CreateDXGIFactory1 ({e:?})");
+                return;
+            }
+        };
+        let adapter: IDXGIAdapter1 = match unsafe { factory.EnumAdapters1(0) } {
+            Ok(a) => a,
+            Err(e) => {
+                eprintln!("skip: EnumAdapters1 ({e:?})");
+                return;
+            }
+        };
+        let mut device: Option<ID3D12Device> = None;
+        if unsafe { D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_11_0, &raw mut device) }.is_err()
+        {
+            eprintln!("skip: D3D12CreateDevice failed");
+            return;
+        }
+        let Some(device) = device else {
+            eprintln!("skip: null D3D12 device");
+            return;
+        };
+        let Some(device_handle) = NativeHandle::new(Interface::as_raw(&device) as usize) else {
+            eprintln!("skip: null D3D12 device pointer");
+            return;
+        };
+
+        // Caller-owned shared resource — mirrors D3d12SharedEncodeBridge::open's own allocation
+        // shape exactly (same heap/resource flags), standing in for "an app's own pre-existing
+        // shared texture" that `open_with_resource` is designed to accept.
+        let heap_props = D3D12_HEAP_PROPERTIES {
+            Type: D3D12_HEAP_TYPE_DEFAULT,
+            CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+            MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
+            CreationNodeMask: 1,
+            VisibleNodeMask: 1,
+        };
+        let desc = D3D12_RESOURCE_DESC {
+            Dimension: D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+            Alignment: 0,
+            Width: 64,
+            Height: 64,
+            DepthOrArraySize: 1,
+            MipLevels: 1,
+            Format: DXGI_FORMAT_B8G8R8A8_UNORM,
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
+            Layout: D3D12_TEXTURE_LAYOUT_UNKNOWN,
+            Flags: D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
+        };
+        let mut resource: Option<ID3D12Resource> = None;
+        if unsafe {
+            device.CreateCommittedResource(
+                &raw const heap_props,
+                D3D12_HEAP_FLAG_SHARED,
+                &raw const desc,
+                D3D12_RESOURCE_STATE_COMMON,
+                None,
+                &raw mut resource,
+            )
+        }
+        .is_err()
+        {
+            eprintln!("skip: CreateCommittedResource failed");
+            return;
+        }
+        let Some(resource) = resource else {
+            eprintln!("skip: null D3D12 resource");
+            return;
+        };
+        let Some(resource_handle) = NativeHandle::new(Interface::as_raw(&resource) as usize) else {
+            eprintln!("skip: null D3D12 resource pointer");
+            return;
+        };
+
+        match D3d12SharedEncodeBridge::open_with_resource(device_handle, resource_handle) {
+            Ok(bridge) => {
+                assert!(bridge.d3d11_texture_handle().is_ok());
+                assert!(bridge.d3d12_resource_handle().is_ok());
+                eprintln!("d3d12 shared bridge (open_with_resource) ok");
+            }
+            Err(e) => eprintln!("skip: D3d12SharedEncodeBridge::open_with_resource ({e:?})"),
+        }
+    }
+
     /// End-to-end `GpuCopy`: a real `ID3D12Device` bridged to native D3D11 via
     /// [`D3d12SharedEncodeBridge`], then opened through
     /// [`auto::AutoVideoEncoder::open`]. Skip gracefully on any missing

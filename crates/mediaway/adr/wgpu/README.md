@@ -6,6 +6,7 @@
 | [0002](0002-decode-to-wgpu-texture-bridge.md) | Windows decode-output → `wgpu::Texture` import bridge (`WgpuDx12DecodeBridge`) | Proposed — design only |
 | [0003](0003-dx12-native-zero-copy-bridge.md) | `WgpuDx12NativeBridge`: same-device D3D12 native encode input, true Zero-Copy | Proposed — design only |
 | [0004](0004-wgpu-30-upgrade.md) | Upgrade `wgpu` from 26.x to 30.x | Accepted — hardware-verified |
+| [0005](0005-render-target-and-external-shared-resource.md) | `WgpuDx12Bridge`: render-direct Zero-Copy + external shared resource import | Accepted — hardware-verified |
 
 Template: [`template.md`](template.md)
 

@@ -268,6 +268,33 @@
   this environment; HEVC's Annex-B-vs-length-prefixed NAL framing for `iso-bmff`'s `hvc1`
   sample entry is explicitly unverified. See
   `crates/mediaway-encoder/adr/web/0001-webgpu-multi-codec-video-encode.md`.
+- `mediaway::wgpu::WgpuDx12Bridge`: two new Zero-Copy paths alongside the existing `GpuCopy`
+  `copy_frame`. `render_target()` + `handle()` let a caller render directly into the bridge's own
+  shared D3D12 texture (now `RENDER_ATTACHMENT`-capable) instead of copying a separately-owned
+  texture into it — no GPU→GPU copy, only a CPU↔GPU sync stall remains.
+  `from_external_shared_resource()` imports a caller-owned, already-`D3D12_HEAP_FLAG_SHARED`
+  resource instead of allocating one (new `mediaway-encoder::windows::D3d12SharedEncodeBridge::
+  open_with_resource`). Hardware-verified on an RTX 4090. See
+  `crates/mediaway/adr/wgpu/0005-render-target-and-external-shared-resource.md` and
+  `crates/mediaway-encoder/adr/windows/0011-shared-encode-bridge-external-resource.md`.
+- `mediaway_encoder::auto::Backend`: new `Vulkan` variant, resolving the taxonomy gap flagged in
+  `docs/ai/wiki/encode/backend-preference.md` (Vulkan Video didn't fit the `Os`/vendor-SDK split
+  cleanly). Windows `AutoVideoEncoder`'s `AutoHardwareOnly` ranking now tries it after
+  NVENC/QuickSync, and `Explicit(Backend::Vulkan)` opens it directly — both hardware-verified on
+  an RTX 4090. See `crates/mediaway-encoder/adr/0004-backend-preference.md`'s 2026-08-20 addendum.
+- Windows **window capture** (`WindowsWindowCapture`/WGC) real-hardware-verified as genuinely
+  Zero-Copy end to end: a new smoke test creates a real win32 window and D3D11 device, opens a
+  real WGC session, and confirms a real `GpuBufferHandle::DirectX11` frame is delivered — no
+  `CopyResource`/`memcpy` anywhere in the path. Closes the "prove capture" gap
+  `crates/mediaway-device/adr/windows/0004-wgc-window-capture.md` left open. README Window/
+  Windows cell is now **⚡** — the first Zero-Copy mark in the codec/device support tables.
+- `mediaway-device::windows_desktop`: new opt-in `CaptureSharing::Exclusive` mode for Windows
+  screen capture (`DesktopVideoCaptureConfig::sharing`) — true Zero-Copy, no `CopyResource` at
+  all, no driver thread, no ring. The caller asserts it is the only consumer for the output; a
+  concurrent second `open()` fails with `CaptureError::AccessDenied` (enforced by DXGI itself).
+  Default stays `CaptureSharing::Shared` (unchanged behavior, one mandatory copy, joinable by
+  other consumers). Hardware-verified on an RTX 4090. See
+  `crates/mediaway-device/adr/windows/0008-exclusive-desktop-duplication-zero-copy.md`.
 
 ### Changed
 
@@ -335,6 +362,13 @@
   under `MFT_ENUM_FLAG_HARDWARE`, but not reachable through either the CPU-upload or DX11
   Zero-Copy path yet on that host (see `crates/mediaway-encoder/docs/roadmap.md`). See
   `crates/mediaway-encoder/adr/windows/0010-wmf-av1-encode-config-record-and-mft-probe.md`.
+- `mediaway::platform::AutoEncoder::open`: Linux and Apple branches were hardcoding
+  `VideoInputPreference::CpuUploadOk`, ignoring `config.gpu_device` even though both backends
+  already implement a real Zero-Copy GPU path (`mediaway-encoder::linux`'s VA-API DMA-BUF import,
+  `mediaway-encoder::apple`'s `VideoToolbox` `CVPixelBuffer` borrow). Now tries `ZeroCopyGpu`
+  first when `gpu_device` is `Some(_)`, falling back to `CpuUploadOk` — matching the Windows
+  chain's existing ZC-before-CPU ordering. See
+  `crates/mediaway/adr/0004-autoencoder-zerocopy-linux-apple.md`.
 
 ### Removed
 

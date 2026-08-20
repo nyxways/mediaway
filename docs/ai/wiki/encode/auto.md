@@ -31,5 +31,10 @@ allowed (neither has a backend: no DX11 readback exists yet; `mediaway-sw` is
 still an empty placeholder). A foreign GPU device kind this crate can't bridge
 records `Unsupported` and still tries CPU upload if allowed.
 
+`mediaway::platform::AutoEncoder::open` (cross-platform facade, 2026-08-20): Linux/Apple now
+also try `ZeroCopyGpu` first when `gpu_device` is `Some(_)`, falling back to `CpuUploadOk` — no
+`GpuCopy` middle tier on either (neither backend has one). See
+`crates/mediaway/adr/0004-autoencoder-zerocopy-linux-apple.md`.
+
 Planned: preference types fully wired; DX11 readback backend; `mediaway-sw`
 encoder; `mediaway-codec` re-exports.

@@ -91,10 +91,10 @@ shape was replaced (capability probe, `AutoHardwareOnly`, ceiling-not-bitflags).
   `Send + 'static`, callback on `shiguredo_amf`'s own worker thread), `alloc_surface`-then-
   `encode`. `x86_64`-Linux-only; `amf-rs` is the unrelated GPL-3.0 decoy. Compile-verified via
   WSL2; not wired into `auto`. No AMD GPU — 🆗, not ✅.
-- **Vulkan Video** doesn't fit `GraphicsApi` or `VendorHw` cleanly — it's
-  cross-vendor (unlike `VendorHw`) but packaged like a vendor crate
-  (`mediaway-encoder::vulkan`, cross-OS unlike `GraphicsApi`'s current
-  OS-crate-1:1 assumption). Taxonomy gap flagged, not resolved, by its own
-  ADR-0001 — not decided by this doc either. H.264 + HEVC `VideoEncoder`
-  (CPU-upload, all-intra) is real + hardware-verified (2026-07-29) — see
-  [gpu-interop](../zero-copy/gpu-interop.md).
+- **Vulkan Video** — taxonomy gap resolved (2026-08-20): `Backend::Vulkan` added, ranked in the
+  same `AutoHardwareOnly` tier as the vendor SDKs (after NVENC/QuickSync) even though it's
+  cross-vendor, since `BackendSelection`'s job is ranking, not taxonomizing graphics APIs. Wired
+  into Windows `AutoVideoEncoder` only so far (`try_vulkan`, `Explicit(Backend::Vulkan)`),
+  hardware-verified on an RTX 4090. H.264 + HEVC `VideoEncoder` (CPU-upload, all-intra) itself
+  hardware-verified since 2026-07-29 — see [gpu-interop](../zero-copy/gpu-interop.md) and
+  `crates/mediaway-encoder/adr/0004-backend-preference.md`'s 2026-08-20 addendum.

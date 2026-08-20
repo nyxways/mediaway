@@ -66,6 +66,11 @@ pub enum Backend {
     QuickSync,
     /// AMD Advanced Media Framework.
     Amf,
+    /// `VK_KHR_video_encode_queue` (`mediaway-encoder::vulkan`) — cross-vendor, packaged like a
+    /// vendor SDK for selection purposes even though it isn't tied to one GPU vendor (see
+    /// [ADR-0004](../../adr/0004-backend-preference.md)'s 2026-08-20 addendum). CPU-upload
+    /// input only today.
+    Vulkan,
     /// Pure-Rust software encoder (`mediaway-sw`).
     Software,
 }
@@ -90,8 +95,8 @@ pub enum BackendSelection {
     #[default]
     Auto,
     /// Resolve to whichever hardware-capable backend is best on this machine —
-    /// [`Backend::Os`] or a vendor SDK — but never [`Backend::Software`], regardless of
-    /// `max_path_class`. Distinct from `Auto` (stays within `Os`) and from `Explicit`
+    /// [`Backend::Os`], a vendor SDK, or [`Backend::Vulkan`] — but never [`Backend::Software`],
+    /// regardless of `max_path_class`. Distinct from `Auto` (stays within `Os`) and from `Explicit`
     /// (pins one named backend, no ranking). Intended for a "performance" preset or
     /// benchmarking.
     AutoHardwareOnly,

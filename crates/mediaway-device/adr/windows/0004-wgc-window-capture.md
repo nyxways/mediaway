@@ -22,7 +22,11 @@ App / window recording must not be a crop of DXGI Desktop Duplication. WinRT **G
 
 ## Consequences
 
-- README Window cell can move toward 🆗/⚡ once CI machines prove capture.
+- README Window cell can move toward 🆗/⚡ once CI machines prove capture. **Resolved
+  2026-08-20**: `wgc_tests.rs::hardware::wgc_window_capture_delivers_zero_copy_frame_or_skip`
+  creates a real win32 window, a real D3D11 device, and a real WGC session, then bounded-polls
+  until a real `GpuBufferHandle::DirectX11` frame is delivered — hardware-verified on the
+  reference RTX 4090. README Window/Windows cell is now **⚡**.
 - Content-size changes: [`WindowsWindowCapture::poll_frame`](../src/wgc.rs) now detects a
   `Frame.ContentSize` mismatch against the pool's last-known geometry and calls
   `Direct3D11CaptureFramePool::Recreate` at the new size before delivering the frame

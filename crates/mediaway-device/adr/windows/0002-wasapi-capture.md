@@ -52,6 +52,19 @@ What did change: [`copy_pcm_buffer`](../src/wasapi.rs) replaced a `vec![0u8; len
 single write into an uninitialized allocation. Still one logical copy — required by the
 `GetBuffer`/`ReleaseBuffer` lifetime rule above — but half the write traffic for it.
 
+### Re-confirmed (2026-08-20): current state accepted, not revisited
+
+Re-examined per a request to minimize mic/speaker copies further. Both directions are at
+the practical floor already: one copy per period, symmetric with
+[`WindowsWasapiPlayback`](0005-wasapi-playback.md)'s own confirmed floor, and the
+`AudioCapture`/`AudioPlayback` facade traits (`mediaway-device/src/audio/{capture,playback}.rs`)
+still have no `release_frame`-equivalent lifetime hook — this Stage-2 evaluation's premise is
+unchanged. Going lower would mean the same cross-cutting facade change (affecting every
+platform audio backend: Windows/Apple/Linux/Android), traded against collapsing the capture
+queue to depth 1 and real audio-engine overrun risk for a slow consumer. Decision: **accept
+the current one-copy-per-period floor**, do not pursue the trait change. Revisit only if a real
+caller reports the current queue-based copy as an actual measured bottleneck.
+
 ## References
 
 - Facade ADR-0001 · live-recorder / sound_capture (reference only)

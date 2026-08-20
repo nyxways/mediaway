@@ -171,7 +171,20 @@
     never allocates a session for it. Switched to plain `kVTProfileLevel_H264_Baseline_AutoLevel`,
     which keeps the same practical bitstream shape (`AllowFrameReordering: false` already forbids
     B-frames, and Baseline's own CAVLC-only constraint matches) while actually working on real
-    hardware — see `mediaway-encoder` ADR-0001's 2026-08-20 addendum.
+    hardware — see `mediaway-encoder` ADR-0001's 2026-08-20 addendum. With H.264 encode fixed,
+    `DecodeRoundtripTests` got one step further and failed differently:
+    `DecodeSession.Open()` threw `InvalidInput` on a structurally valid but hollow `avcC`
+    (zero-length SPS/PPS). Root cause: `EncodeSession::open` registers the MP4 track from
+    `encoder.stream_info()` **before any frame is encoded** — fine for backends whose config
+    record is known from open-time config (Windows/Linux), but `VideoToolbox` only determines
+    SPS/PPS internally, after encoding at least one frame, so `AppleVideoEncoder::stream_info()`
+    reports empty `extra_data` at track-registration time. The muxer's own self-healing
+    extraction (`push_packet` converting each packet's own Annex-B payload) never triggered
+    either, since `VideoToolbox` samples come back already AVCC-framed with no in-band SPS/PPS.
+    Added `Muxer::set_track_extra_data`, backfilling the track's `extra_data` from the encoder's
+    now-current `stream_info()` — called from `EncodeSession::drain` right before each drained
+    packet is pushed, since by then the encoder has necessarily finished producing it. See
+    `mediaway` ADR-0005.
   - `bindings-tests-linux`'s Node.js round-trip step ran the test files directly after `bun
     install`, skipping the per-package `tsc` build (`packages/ffi`, `packages/container`) that
     `bindings/nodejs/package.json`'s own `test` script always runs first — `@mediaway/container`'s

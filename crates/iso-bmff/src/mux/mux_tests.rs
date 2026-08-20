@@ -126,6 +126,61 @@ fn non_monotonic_dts_clamps_to_one_tick() {
 }
 
 #[test]
+fn set_track_extra_data_backfills_before_header_written() {
+    // A real avcC — distinct from write_avc1's placeholder, so its presence in the
+    // output is unambiguous.
+    let real_avcc = Bytes::from_static(&[1, 0x64, 0, 0x1f, 0xff, 0xe1, 0, 4, 9, 9, 9, 9, 1, 0, 0]);
+    let mut m = Muxer::new();
+    m.add_track(track(0)).unwrap();
+    let mut live = m.begin();
+
+    live.set_track_extra_data(0, real_avcc.clone());
+    assert_eq!(live.tracks()[0].extra_data, real_avcc);
+
+    live.push_packet(&sample(0, 0, 30, true)).unwrap();
+    live.flush();
+    let mut out = Vec::new();
+    live.poll_bytes(&mut out);
+
+    let mut needle = Vec::new();
+    needle.extend_from_slice(&real_avcc);
+    assert!(
+        out.windows(needle.len()).any(|w| w == needle.as_slice()),
+        "expected the backfilled avcC bytes in the muxed output, not the placeholder"
+    );
+}
+
+#[test]
+fn set_track_extra_data_never_overwrites_a_real_value() {
+    let first = Bytes::from_static(&[1, 0x64, 0, 0x1f, 0xff, 0xe1, 0, 1, 0xaa, 1, 0, 0]);
+    let second = Bytes::from_static(&[1, 0x64, 0, 0x1f, 0xff, 0xe1, 0, 1, 0xbb, 1, 0, 0]);
+    let mut m = Muxer::new();
+    m.add_track(track(0)).unwrap();
+    let mut live = m.begin();
+
+    live.set_track_extra_data(0, first.clone());
+    live.set_track_extra_data(0, second);
+    assert_eq!(live.tracks()[0].extra_data, first, "first write wins");
+}
+
+#[test]
+fn set_track_extra_data_is_a_noop_after_header_written() {
+    let real_avcc = Bytes::from_static(&[1, 0x64, 0, 0x1f, 0xff, 0xe1, 0, 1, 0xcc, 1, 0, 0]);
+    let mut m = Muxer::new();
+    m.add_track(track(0)).unwrap();
+    let mut live = m.begin();
+
+    // First packet, with an empty extra_data track, writes the moov header using
+    // write_avc1's placeholder (no in-band Annex-B SPS/PPS in `sample`'s payload).
+    live.push_packet(&sample(0, 0, 30, true)).unwrap();
+    live.set_track_extra_data(0, real_avcc);
+    assert!(
+        live.tracks()[0].extra_data.is_empty(),
+        "too late to matter — the moov header is already written"
+    );
+}
+
+#[test]
 fn fragment_bases_advance_with_dts() {
     // Keyframes force fragment flushes; each fragment's tfdt is its first
     // sample's dts, and every duration stays 30 ticks.

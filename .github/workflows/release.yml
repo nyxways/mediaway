@@ -511,16 +511,6 @@ jobs:
       - name: C# round-trip test (Pipeline, real VideoToolbox hardware)
         run: dotnet test bindings/csharp/tests/Mediaway.Pipeline.Tests/Mediaway.Pipeline.Tests.csproj
 
-      # TEMPORARY — remove alongside the debug_log() helper in
-      # crates/mediaway-encoder/src/apple/videotoolbox/video.rs once the real
-      # EncoderBackendFailure root cause is confirmed. eprintln! alone doesn't reach this
-      # job's console log (VSTest's testhost process isolation swallows raw native stderr),
-      # so the diagnostic writes to a fixed-path file instead; dump it regardless of whether
-      # the Pipeline test step above passed or failed.
-      - name: Dump VideoToolbox debug log (temporary diagnostic)
-        if: always()
-        run: cat /tmp/mediaway-videotoolbox-debug.log || echo "(no debug log written)"
-
       - name: Python container round-trip test
         working-directory: bindings/python
         run: python tests/test_mux_roundtrip.py

@@ -15,63 +15,9 @@
  */
 
 import koffi, { type TypeObject } from "koffi";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { findLibrary, containerLib, pipelineLib, deviceLib } from "./loader.js";
 
-// ── Library discovery ──────────────────────────────────────────────────────────
-// The cdylibs are Rust build artifacts, not installed system libraries. Search:
-//   1. $MEDIAWAY_FFI_DIR
-//   2. <this package>/native        (DLLs bundled at pack time — the npm distribution)
-//   3. <repo root>/target/x86_64-pc-windows-gnu/debug   (GNU toolchain, dev runs)
-//   4. <repo root>/target/debug                          (host/MSVC toolchain)
-//   5. cwd
-const here = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(here, "..", "..", "..", "..", "..");
-const searchDirs = [
-  process.env.MEDIAWAY_FFI_DIR ?? "",
-  path.resolve(here, "..", "native"),
-  path.join(repoRoot, "target", "x86_64-pc-windows-gnu", "debug"),
-  path.join(repoRoot, "target", "debug"),
-  process.cwd(),
-];
-
-export function findLibrary(name: string): string {
-  for (const dir of searchDirs) {
-    if (!dir) continue;
-    const candidate = path.join(dir, name);
-    if (fs.existsSync(candidate)) return candidate;
-  }
-  throw new Error(
-    `cannot find ${name}; set $MEDIAWAY_FFI_DIR or build the -ffi crates`
-  );
-}
-
-/**
- * cdylib filename Cargo produces for this platform. Windows and Linux only —
- * the workspace's own hardware/CI coverage is limited to those two (see
- * docs/ai/wiki/platform/order.md); macOS support is not claimed here since
- * it has never been built or run.
- */
-function libraryFilename(): string {
-  switch (process.platform) {
-    case "win32":
-      return "mediaway_ffi.dll";
-    case "linux":
-      return "libmediaway_ffi.so";
-    default:
-      throw new Error(`mediaway: unsupported platform ${process.platform} (Windows and Linux only)`);
-  }
-}
-
-function load(name: string) {
-  return koffi.load(findLibrary(name));
-}
-
-const libraryName = libraryFilename();
-export const containerLib = load(libraryName);
-export const pipelineLib = load(libraryName);
-export const deviceLib = load(libraryName);
+export { findLibrary, containerLib, pipelineLib, deviceLib };
 
 // ── Structs (layouts mirror the headers exactly) ───────────────────────────────
 

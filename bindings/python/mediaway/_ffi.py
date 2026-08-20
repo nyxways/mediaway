@@ -66,16 +66,15 @@ _SEARCH_DIRS = [
 
 
 def _library_filename() -> str:
-    """cdylib filename Cargo produces for this platform. Windows and Linux
-    only — the workspace's own hardware/CI coverage is limited to those two
-    (see docs/ai/wiki/platform/order.md); macOS support is not claimed here
-    since it has never been built or run."""
+    """cdylib filename Cargo produces for this platform."""
     system = platform.system()
     if system == "Windows":
         return "mediaway_ffi.dll"
     if system == "Linux":
         return "libmediaway_ffi.so"
-    raise OSError(f"mediaway: unsupported platform {system!r} (Windows and Linux only)")
+    if system == "Darwin":
+        return "libmediaway_ffi.dylib"
+    raise OSError(f"mediaway: unsupported platform {system!r}")
 
 
 _LIBRARY_FILENAME = _library_filename()

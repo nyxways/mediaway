@@ -164,22 +164,150 @@ jobs:
           prefix-key: mediaway-release-v1
           key: native-win64
 
-      - name: Build + stage cdylibs
+      - name: Build + stage cdylib
         shell: bash
-        run: bun tools/scripts/copy-native-dlls.ts --release
+        run: bun tools/scripts/copy-native-dlls.ts --release --target x86_64-pc-windows-gnu
 
-      - name: Upload native DLLs
+      # PyPI builds one wheel per platform from a shared bindings/python/
+      # mediaway/_native/ dir (see the pypi job) — stage a per-RID copy
+      # alongside the real one so that job can select win-x64's lib without
+      # colliding with the linux-x64/osx-* copies the other native-assets-*
+      # jobs stage the same way.
+      - name: Stage python lib for cross-platform artifact merge
+        shell: bash
+        run: |
+          mkdir -p bindings/python/_native-staging/win-x64
+          cp bindings/python/mediaway/_native/* bindings/python/_native-staging/win-x64/
+
+      - name: Upload native assets (win-x64)
         uses: actions/upload-artifact@v4
         with:
           name: native-dlls
           path: |
             bindings/nodejs/packages/ffi/native
             bindings/python/mediaway/_native
+            bindings/python/_native-staging
             bindings/csharp/runtime/win-x64/native
             bindings/native/runtime/win-x64
 
+  native-assets-linux:
+    name: native assets (linux-x64 .so)
+    runs-on: ubuntu-22.04 # pinned (not ubuntu-latest): fixes the glibc floor
+    # this build ships (ADR-0024) instead of letting the runner image drift it.
+    needs: [version, crates]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - uses: oven-sh/setup-bun@v2
+
+      # Same packages ci.yml's Linux verification builds already install —
+      # mediaway-device (PipeWire) and mediaway-encoder (cros-libva/VA-API)
+      # link against these at build time even though this cdylib doesn't
+      # exercise a real device/GPU in this job.
+      - name: Install system deps (Linux verification builds)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpipewire-0.3-dev libva-dev
+
+      - name: sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Enable sccache (release namespace)
+        shell: bash
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_GHA_VERSION=mediaway-release-v1" >> "$GITHUB_ENV"
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: mediaway-release-v1
+          key: native-linux-x64
+
+      - name: Build + stage cdylib
+        run: bun tools/scripts/copy-native-dlls.ts --release --target x86_64-unknown-linux-gnu
+
+      - name: Stage python lib for cross-platform artifact merge
+        run: |
+          mkdir -p bindings/python/_native-staging/linux-x64
+          cp bindings/python/mediaway/_native/* bindings/python/_native-staging/linux-x64/
+
+      - name: Upload native assets (linux-x64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-dlls-linux
+          path: |
+            bindings/nodejs/packages/ffi/native
+            bindings/python/_native-staging
+            bindings/csharp/runtime/linux-x64/native
+            bindings/native/runtime/linux-x64
+
+  native-assets-macos:
+    name: native assets (macOS x86_64 + arm64 .dylib)
+    runs-on: macos-14
+    needs: [version, crates]
+    env:
+      # Uniform floor across both architectures (ADR-0024) — Big Sur is the
+      # first release with native Apple Silicon support.
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Enable sccache (release namespace)
+        shell: bash
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_GHA_VERSION=mediaway-release-v1" >> "$GITHUB_ENV"
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: mediaway-release-v1
+          key: native-macos
+
+      - name: Build + stage cdylib (x86_64)
+        run: bun tools/scripts/copy-native-dlls.ts --release --target x86_64-apple-darwin
+
+      - name: Stage python lib (osx-x64)
+        run: |
+          mkdir -p bindings/python/_native-staging/osx-x64
+          cp bindings/python/mediaway/_native/* bindings/python/_native-staging/osx-x64/
+
+      - name: Build + stage cdylib (arm64)
+        run: bun tools/scripts/copy-native-dlls.ts --release --target aarch64-apple-darwin
+
+      - name: Stage python lib (osx-arm64)
+        run: |
+          mkdir -p bindings/python/_native-staging/osx-arm64
+          cp bindings/python/mediaway/_native/* bindings/python/_native-staging/osx-arm64/
+
+      - name: Upload native assets (macOS)
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-dlls-macos
+          path: |
+            bindings/nodejs/packages/ffi/native
+            bindings/python/_native-staging
+            bindings/csharp/runtime/osx-x64/native
+            bindings/csharp/runtime/osx-arm64/native
+            bindings/native/runtime/osx-x64
+            bindings/native/runtime/osx-arm64
+
   bindings-tests:
-    name: bindings tests (RC gate)
+    name: bindings tests (RC gate, win-x64)
     runs-on: windows-latest
     needs: [version, native-assets]
     # RC stage: validate the release-built native DLL through every binding
@@ -263,10 +391,108 @@ jobs:
           bun install
           npm test
 
+  bindings-tests-linux:
+    name: bindings tests (RC gate, linux-x64, container only)
+    runs-on: ubuntu-22.04
+    needs: [version, native-assets-linux]
+    # GitHub-hosted Linux runners have no GPU — this RC gate can only verify
+    # the sans-io container capability (mux/demux), not hardware encode/
+    # decode/device-capture (ADR-0024 § CI/CD shape; docs/roadmap.md's
+    # "Linux Hardware Verification" gap is unresolved by this change).
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-dlls-linux
+          path: bindings
+
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system deps (C round-trip build)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential
+
+      - name: C# container round-trip test (no hardware)
+        run: dotnet test bindings/csharp/tests/Mediaway.Container.Tests/Mediaway.Container.Tests.csproj
+
+      - name: Python container round-trip test
+        working-directory: bindings/python
+        run: python tests/test_mux_roundtrip.py
+
+      - name: Node container round-trip test
+        working-directory: bindings/nodejs
+        run: |
+          bun install
+          node node_modules/tsx/dist/cli.mjs test/mux-roundtrip.test.ts
+          node node_modules/tsx/dist/cli.mjs test/all-formats-smoke.test.ts
+
+      - name: C round-trip test
+        run: bash bindings/c/tests/run-roundtrip.sh
+
+  bindings-tests-macos:
+    name: bindings tests (RC gate, macOS, container + hardware pipeline)
+    runs-on: macos-14
+    needs: [version, native-assets-macos]
+    # macos-14 is real Apple Silicon hardware with a VideoToolbox backend —
+    # unlike bindings-tests-linux, this RC gate also exercises the same
+    # hardware-backed AutoEncoder/AutoDecoder round trip
+    # bindings-tests (win-x64) already runs for WMF/Opus (ADR-0024).
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-dlls-macos
+          path: bindings
+
+      # This runner is arm64 — select that arch's staged python lib (the
+      # artifact carries both osx-x64 and osx-arm64; the real
+      # bindings/python/mediaway/_native/ path native-assets-macos left
+      # behind is whichever was staged last, arm64).
+      - name: Confirm python native lib is arm64
+        run: ls -la bindings/python/mediaway/_native
+
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: C# container round-trip test (no hardware)
+        run: dotnet test bindings/csharp/tests/Mediaway.Container.Tests/Mediaway.Container.Tests.csproj
+
+      - name: C# round-trip test (Pipeline, real VideoToolbox hardware)
+        run: dotnet test bindings/csharp/tests/Mediaway.Pipeline.Tests/Mediaway.Pipeline.Tests.csproj
+
+      - name: Python container round-trip test
+        working-directory: bindings/python
+        run: python tests/test_mux_roundtrip.py
+
+      - name: Python round-trip test (decode, real hardware)
+        working-directory: bindings/python
+        run: python tests/test_decode_roundtrip.py
+
+      - name: Node round-trip test
+        working-directory: bindings/nodejs
+        run: |
+          bun install
+          npm test
+
+      - name: C round-trip test
+        run: bash bindings/c/tests/run-roundtrip.sh
+
   npm:
     name: npm (@mediaway/*)
     runs-on: windows-latest
-    needs: [version, native-assets, bindings-tests]
+    needs: [version, native-assets, native-assets-linux, native-assets-macos, bindings-tests, bindings-tests-linux, bindings-tests-macos]
     environment: release
     env:
       MEDIAWAY_SKIP_CARGO_BUILD: "1"
@@ -293,6 +519,16 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: native-dlls
+          path: bindings
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-dlls-linux
+          path: bindings
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-dlls-macos
           path: bindings
 
       - name: Install node deps (workspace root)
@@ -373,7 +609,7 @@ jobs:
   nuget:
     name: nuget (Mediaway.*)
     runs-on: windows-latest
-    needs: [version, native-assets, bindings-tests]
+    needs: [version, native-assets, native-assets-linux, native-assets-macos, bindings-tests, bindings-tests-linux, bindings-tests-macos]
     environment: release
     env:
       MEDIAWAY_SKIP_CARGO_BUILD: "1"
@@ -389,6 +625,16 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: native-dlls
+          path: bindings
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-dlls-linux
+          path: bindings
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-dlls-macos
           path: bindings
 
       - name: Stamp NuGet version
@@ -428,7 +674,7 @@ jobs:
   pypi:
     name: pypi (mediaway)
     runs-on: windows-latest
-    needs: [version, native-assets, bindings-tests]
+    needs: [version, native-assets, native-assets-linux, native-assets-macos, bindings-tests, bindings-tests-linux, bindings-tests-macos]
     env:
       MEDIAWAY_SKIP_CARGO_BUILD: "1"
     steps:
@@ -448,6 +694,16 @@ jobs:
           name: native-dlls
           path: bindings
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-dlls-linux
+          path: bindings
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-dlls-macos
+          path: bindings
+
       - name: Stamp PyPI version
         shell: bash
         env:
@@ -456,11 +712,20 @@ jobs:
           sed -i "s|^version[[:space:]]*=[[:space:]]*\"[^\"]*\"|version = \"$VERSION\"|" bindings/python/pyproject.toml
           grep -n "^version" bindings/python/pyproject.toml
 
-      - name: Build wheel
+      # One wheel per (OS, arch) — ADR-0024. build-python-package.ts cleans
+      # bindings/python/mediaway/_native/ and re-stages it from
+      # _native-staging/<rid> (populated by every native-assets-* job) before
+      # each build, so no platform's lib leaks into another's wheel.
+      - name: Build wheels (one per platform)
         shell: bash
-        run: bun tools/scripts/build-python-package.ts --release
+        run: |
+          for rid in win-x64 linux-x64 osx-x64 osx-arm64; do
+            rm -f bindings/python/mediaway/_native/*
+            cp "bindings/python/_native-staging/$rid"/* bindings/python/mediaway/_native/
+            bun tools/scripts/build-python-package.ts --release --target "$rid"
+          done
 
-      - name: Upload wheel
+      - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
           name: pypi-dist
@@ -537,9 +802,9 @@ jobs:
           fi
 
   native:
-    name: cpp (CPack win64)
+    name: cpp (CPack, every platform)
     runs-on: windows-latest
-    needs: [version, native-assets, bindings-tests]
+    needs: [version, native-assets, native-assets-linux, native-assets-macos, bindings-tests, bindings-tests-linux, bindings-tests-macos]
     environment: release
     steps:
       - uses: actions/checkout@v4
@@ -547,6 +812,16 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: native-dlls
+          path: bindings
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-dlls-linux
+          path: bindings
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-dlls-macos
           path: bindings
 
       - name: Stamp CPack version
@@ -557,21 +832,40 @@ jobs:
           sed -i "s|project(mediaway-bindings VERSION [^ ]*|project(mediaway-bindings VERSION $VERSION|" bindings/cpp/CMakeLists.txt
           grep -n "project(mediaway-bindings" bindings/cpp/CMakeLists.txt
 
-      - name: Configure + package
+      # No actual compilation happens here — `mediaway` is a header-only
+      # INTERFACE target over a prebuilt native lib (see
+      # bindings/cpp/CMakeLists.txt), so a fresh configure+build+cpack per
+      # platform tag can all run on this one Windows runner, pointed at each
+      # platform's already-downloaded native dir. Four archives out of one
+      # job, no Linux/macOS runner needed for packaging itself.
+      - name: Configure + package (every platform)
         shell: bash
         run: |
-          cmake -S bindings/cpp -B build
-          cmake --build build --config Release
-          # Run cpack from the build dir: its staging dir (_CPack_Packages)
-          # follows the invoking cwd, and the outputs go to build/dist
-          # (CPACK_OUTPUT_FILE_PREFIX in CMakeLists.txt).
-          cd build && cpack --config CPackConfig.cmake
+          mkdir -p dist-all
+          for tag in win64 linux-x64 macos-x64 macos-arm64; do
+            case "$tag" in
+              win64) native_dir="bindings/native/runtime/win-x64" ;;
+              linux-x64) native_dir="bindings/native/runtime/linux-x64" ;;
+              macos-x64) native_dir="bindings/native/runtime/osx-x64" ;;
+              macos-arm64) native_dir="bindings/native/runtime/osx-arm64" ;;
+            esac
+            rm -rf build
+            cmake -S bindings/cpp -B build \
+              -DMEDIAWAY_PLATFORM_TAG="$tag" \
+              -DMEDIAWAY_NATIVE_DIR_OVERRIDE="$PWD/$native_dir"
+            cmake --build build --config Release
+            # Run cpack from the build dir: its staging dir (_CPack_Packages)
+            # follows the invoking cwd, and the outputs go to build/dist
+            # (CPACK_OUTPUT_FILE_PREFIX in CMakeLists.txt).
+            (cd build && cpack --config CPackConfig.cmake)
+            cp build/dist/Mediaway-*.zip build/dist/Mediaway-*.tar.gz dist-all/
+          done
 
       - name: Upload CPack archives
         uses: actions/upload-artifact@v4
         with:
           name: cpack-archives
-          path: build/dist/Mediaway-*
+          path: dist-all/Mediaway-*
 
   release:
     name: GitHub release

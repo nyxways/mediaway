@@ -53,6 +53,12 @@ class Codec(enum.IntEnum):
     RAW_VIDEO = 10
     RAW_AUDIO = 11
     VP8 = 12
+    PRORES_422_PROXY = 13
+    PRORES_422_LT = 14
+    PRORES_422 = 15
+    PRORES_422_HQ = 16
+    PRORES_4444 = 17
+    PRORES_4444_XQ = 18
 
 
 class ContainerFormat(enum.IntEnum):

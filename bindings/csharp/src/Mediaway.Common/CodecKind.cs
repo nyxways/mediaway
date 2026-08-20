@@ -45,4 +45,22 @@ public enum CodecKind
 
     /// <summary>VP8 video.</summary>
     Vp8 = 12,
+
+    /// <summary>Apple ProRes 422 Proxy video.</summary>
+    ProRes422Proxy = 13,
+
+    /// <summary>Apple ProRes 422 LT video.</summary>
+    ProRes422Lt = 14,
+
+    /// <summary>Apple ProRes 422 video.</summary>
+    ProRes422 = 15,
+
+    /// <summary>Apple ProRes 422 HQ video.</summary>
+    ProRes422Hq = 16,
+
+    /// <summary>Apple ProRes 4444 video.</summary>
+    ProRes4444 = 17,
+
+    /// <summary>Apple ProRes 4444 XQ video.</summary>
+    ProRes4444Xq = 18,
 }

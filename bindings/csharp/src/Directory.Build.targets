@@ -1,25 +1,31 @@
 <Project>
   <!--
     Native runtime bundling for packages that P/Invoke the C ABI (ADR-0017:
-    NuGet packaging, deferred until now).
+    NuGet packaging; ADR-0024: extended from win-x64-only to every RID this
+    workspace ships a prebuilt native library for).
 
-    Packages set <NeedsNativeRuntime>true</NeedsNativeRuntime> to opt in. When
-    MediawayNativeDir points at staged DLLs (default: bindings/csharp/runtime/
-    win-x64/native, populated by tools/scripts/copy-native-dlls.ts), the nupkg
-    carries:
-      - runtimes/win-x64/native/*.dll   (standard RID-resolvable layout)
-      - build/<AssemblyName>.targets    (copies the DLLs to the consumer's
-        output dir so plain `dotnet run` works too, not just RID-published apps)
-
-    The condition keeps plain `dotnet build`/`dotnet pack` working with no
-    native artifacts present (CI, non-Windows hosts).
+    Packages set <NeedsNativeRuntime>true</NeedsNativeRuntime> to opt in. Each
+    RID's native lib is staged at bindings/csharp/runtime/<rid>/native by
+    tools/scripts/copy-native-dlls.ts (one invocation per platform, run once
+    per native-assets-* CI job — see .github/workflows/release.yml). Any RID
+    directory that doesn't exist (e.g. building locally with only win-x64
+    staged) is skipped, not an error — that's how plain `dotnet build`/`dotnet
+    pack` keeps working on a dev machine with only one platform's lib present.
+    The nupkg ends up carrying, for every RID actually staged:
+      - runtimes/<rid>/native/*        (standard RID-resolvable layout)
+      - build/<AssemblyName>.targets   (copies the current RID's lib to the
+        consumer's output dir so plain `dotnet run` works too, not just
+        RID-published apps)
   -->
   <PropertyGroup>
-    <MediawayNativeDir Condition="'$(MediawayNativeDir)' == ''">$(MSBuildThisFileDirectory)..\runtime\win-x64\native</MediawayNativeDir>
+    <MediawayRuntimesDir Condition="'$(MediawayRuntimesDir)' == ''">$(MSBuildThisFileDirectory)..\runtime</MediawayRuntimesDir>
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(NeedsNativeRuntime)' == 'true' and Exists('$(MediawayNativeDir)')">
-    <None Include="$(MediawayNativeDir)\**\*.dll" Pack="true" PackagePath="runtimes/win-x64/native" />
+  <ItemGroup Condition="'$(NeedsNativeRuntime)' == 'true'">
+    <None Condition="Exists('$(MediawayRuntimesDir)\win-x64\native')" Include="$(MediawayRuntimesDir)\win-x64\native\*.dll" Pack="true" PackagePath="runtimes/win-x64/native" />
+    <None Condition="Exists('$(MediawayRuntimesDir)\linux-x64\native')" Include="$(MediawayRuntimesDir)\linux-x64\native\*.so" Pack="true" PackagePath="runtimes/linux-x64/native" />
+    <None Condition="Exists('$(MediawayRuntimesDir)\osx-x64\native')" Include="$(MediawayRuntimesDir)\osx-x64\native\*.dylib" Pack="true" PackagePath="runtimes/osx-x64/native" />
+    <None Condition="Exists('$(MediawayRuntimesDir)\osx-arm64\native')" Include="$(MediawayRuntimesDir)\osx-arm64\native\*.dylib" Pack="true" PackagePath="runtimes/osx-arm64/native" />
     <None Include="$(MSBuildThisFileDirectory)build\Mediaway.Native.targets" Pack="true" PackagePath="build/$(AssemblyName).targets" />
   </ItemGroup>
 </Project>

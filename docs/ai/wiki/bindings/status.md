@@ -6,14 +6,13 @@ Package versions (v0.1.2, 2026-08-04): npm `@mediaway/*` 0.1.2 · NuGet `Mediawa
 0.1.2 · PyPI `mediaway` 0.1.2 · crates.io `mediaway-*` family 0.1.2,
 freestanding cores 0.1.1 (`ebml-webm` 0.2.1) · CPack `Mediaway-0.1.2-win64`.
 
-
 | Language | Mechanism | Status |
 |---|---|---|
 | C | the C ABI itself | ✅ verified — 7 examples link+run; real camera (1920×1080) + mic capture → two-track MP4 (H.264 + AAC); all 8 container formats are in `container.h` (source of the other bindings' wiring) but C has no `all_formats_smoke.c` of its own yet — README fixed 2026-08-08, example still open |
 | C++ | `bindings/cpp/include/mediaway/{core,container,pipeline,device}.hpp` RAII wrapper | ✅ verified — 9 examples compile+run (incl. all 8 container formats); two-track camera_record + GPU device factory/Screen capture/capture-encode bridge on real hardware ([cpp-gpu-device](../meta/cpp-gpu-device.md)); Linux container-verified ([linux-support](linux-support.md)) |
-| Python | `bindings/python/mediaway/` ctypes package | ✅ verified — 7 examples run; encode output byte-identical to C/C++/Node (6253 B video; 27372 B audio); all 8 container formats wired; Linux container-verified |
-| Node.js | `bindings/nodejs/packages/@mediaway/*` koffi FFI | ✅ verified — 7 examples run; napi-rs is the eventual official path; all 8 container formats wired; Linux container-verified |
-| C# | `bindings/csharp/src/` P/Invoke | ✅ verified (xUnit against native libs; ADR-0017/0018); 6 examples under `Container/`/`Device/`/`Pipeline/`, mirroring Node's layout; all 8 container formats wired; Linux container-verified |
+| Python | `bindings/python/mediaway/` ctypes package | ✅ verified — 7 examples run; encode output byte-identical to C/C++/Node (6253 B video; 27372 B audio); all 8 container formats wired; Linux container-verified (WSL2, incl. an installed-wheel smoke test) |
+| Node.js | `bindings/nodejs/packages/@mediaway/*` koffi FFI | ✅ verified — 7 examples run; napi-rs is the eventual official path; all 8 container formats wired; Linux container-verified (WSL2) |
+| C# | `bindings/csharp/src/` P/Invoke | ✅ verified (xUnit against native libs; ADR-0017/0018); 6 examples under `Container/`/`Device/`/`Pipeline/`, mirroring Node's layout; all 8 container formats wired; Linux container-verified (WSL2, real `dotnet test`) |
 | Browser | WASM (`iso-bmff-wasm` + WebCodecs) | ✅ verified — `@mediaway/browser` (ADR-0020 + ADR-0022): wasm mux/demux + WebCodecs H.264/AAC encode to fMP4 AND `DecodeSession` decode back (video + audio), E2E-verified in Chromium + real Edge (`tools/e2e-web`, `browser-package.spec.ts`) |
 
 ## DX-driven example flow
@@ -32,55 +31,24 @@ bindings were then implemented to satisfy those examples. Examples mirror the Ru
   handle, no consumption trap); `push_pcm`/`poll_packet` stream AAC; `stream_info` exposes the
   AudioSpecificConfig (materialized after the first pushed frame — the muxer track needs it).
   camera_record now produces ONE two-track MP4 (H.264 + AAC, remuxed) on real hardware.
-  C# gained its own `Mediaway.Pipeline.AudioEncoder` wrapper this pass (previously Node-only)
-  — hardware-verified: 96 synthetic PCM frames → 96 AAC packets → 27376-byte audio-only fMP4,
-  matching Node's own `encode-audio.ts` output (27372 B) to within container-padding noise.
+  C# gained its own `Mediaway.Pipeline.AudioEncoder` wrapper (previously Node-only) —
+  hardware-verified, matching Node's own output to within container-padding noise.
 - **Screen capture not from C**: needs a live `ID3D11Device*`, no CPU fallback; Screen + `NONE` gpu → `INVALID_INPUT`, Window → `UNSUPPORTED`. Browser host: `getDisplayMedia` is native and real.
 - **C# Screen capture hardware-verified** — `CaptureTests` gained a test-only raw
   `D3D11CreateDevice` P/Invoke polling real GPU-backed 2560×1440 frames end to end.
 
-## Audio encode learnings
+## FFI learnings (accumulated)
 
-- **WMF AAC MFT rejects hand-built output types** (`MF_E_ATTRIBUTENOTFOUND`) — negotiate
-  via `GetOutputAvailableType`, matched on sample rate + channels, bitrate overridden on
-  a copy. F32 input must be `MFAudioFormat_Float`, not `MFAudioFormat_PCM` + 32 bits/sample.
-- **The ASC arrives late**: `MF_MT_USER_DATA` populates only after the first input
-  sample; the blob is a 14-byte WAVEFORMATEX-ish prefix whose trailing 2 bytes are
-  the AudioSpecificConfig. Call order: push → stream_info → mux.
-
-## FFI learnings (repo fixes this pass)
-
-- **`include/mediaway/device.h` was stale**: it still declared the pre-split
-  `mediaway_video_capture_*` surface while the crate shipped
-  `mediaway_camera_capture_*`/`_desktop_capture_*`/`_audio_capture_*`
-  (ADR-0004 domain-feature-split). Rewritten to the real ABI.
-- **Header co-inclusion**: the three `*-ffi` headers each define
-  `mediaway_rational_t`/`mediaway_pixel_format_t`/gpu handle types; the shared
-  typedefs got `MEDIAWAY_*_T_DEFINED` include guards so multi-header TUs compile.
-- Handle-consumption traps verified across wrappers: `mediaway_encode_session_open` /
-  `_finish` consume their handle unconditionally (even on failure) — wrappers must
-  release, never close, on the failure path (C++ `finish()` and the Node `finish()`
-  both had release-after-consume bugs this pass; fixed).
-
-## FFI packaging fix
-
-`docs/spec/c-ffi.md` (ADR-0004) documents the current single-crate,
-feature-gated `mediaway-ffi` module layout (post ADR-0021 merge); `pipeline`
-and `container`'s `mux`/`demux`/`audio`/`video` are each their own Cargo
-feature, unified from this crate's own.
-
-## Container format wiring (all 8 formats — C++, C#, Python, Node.js)
-
-Wiring WebM + 6 dedicated-handle formats surfaced real bugs only caught by
-linking+running against the real dylib, never syntax/compile checks:
-`mediaway_common::CodecKind` had no `#[repr(u8)]` (Rust); WebM's TrackNumber
-must not be `0` (C++/Python/Node's auto ids now start at `1`, Python/Node's
-fixed proactively); the Python/C#/Node mirror codec enums were each missing
-at least one variant (`VP8` in Python/C#; `vp8`/`hevc`/`mp3`/`raw_audio` in
-Node); `@mediaway/ffi`'s `RawPacket` type was missing `dts` outright. Every
-language but C++ also hit a stale gitignored native DLL shadowing the fresh
-dev build — always delete/rebuild before trusting a missing-symbol error.
-This closes the C++→C#→Python→Node sequence; Linux support is next.
+- WMF AAC MFT rejects hand-built output types — negotiate via `GetOutputAvailableType`;
+  the ASC (`MF_MT_USER_DATA`) only populates after the first pushed input sample.
+- Handle-consumption traps recur across wrappers: `_open`/`_finish`-style calls consume
+  their handle unconditionally (even on failure) — wrappers must release, never close,
+  on the failure path.
+- Wiring a new container format or codec variant always surfaces the same bug class:
+  a mirror enum (`CodecKind` et al.) missing a variant in one of C#/Python/Node/C++, or
+  a stale gitignored native lib shadowing a fresh dev build. Check both first.
+- `docs/spec/c-ffi.md` (ADR-0004) documents the current single-crate, feature-gated
+  `mediaway-ffi` module layout (post ADR-0021 merge).
 
 ## Open items
 
@@ -92,9 +60,17 @@ This closes the C++→C#→Python→Node sequence; Linux support is next.
 - Official package-layout ADRs for the C++/Python/Node bindings (mirror ADR-0017/0018)
   before shipping — packaging is set up (`tools/scripts/*-package*.ts`, see
   `bindings/README.md` § Publishing), the ADRs are the remaining formality.
-- Multi-platform native assets: all language packages ship Windows x64 GNU DLLs
-  today; macOS/Linux native packages need per-platform builds in CI.
+- Multi-platform native assets: ADR-0024 (Accepted) implemented for v0.1.7 —
+  `release.yml` gained `native-assets-linux`/`native-assets-macos` + matching RC-gate
+  jobs; every package (npm/NuGet/PyPI/CPack) now ships win-x64 + linux-x64 + osx-x64 +
+  osx-arm64. `@mediaway/ffi` bundles all platforms directly (measured too small —
+  ~1.9-3.1 MB each release build — to justify the `optionalDependencies` split the ADR
+  first proposed). Linux real-verified via WSL2 (built `.so`, ran the real per-binding
+  round-trip tests, installed the built wheel into a clean venv); macOS not yet CI-run
+  (branch unpushed) — treat as authored, not verified.
 - Screen capture from C (the raw C ABI end-to-end example) remains the only hardware gap;
   C# is covered now (Capability truth) — the C gap still needs the live GPU-device-handle ADR.
 - GOP/CBR/`set_bitrate` reach the C ABI + C# now (ABI v6), no-op through auto-select
   until Vulkan joins it — [gop-cbr-set-bitrate](gop-cbr-set-bitrate.md).
+- Android AAR/Maven Central distribution: ADR-0025 (Proposed) — design-only,
+  no code yet — [android-status](android-status.md).

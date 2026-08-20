@@ -49,12 +49,7 @@ impl D3d12SharedEncodeBridge {
         if width == 0 || height == 0 {
             return Err(EncodeError::InvalidInput);
         }
-        let raw = d3d12_device.get() as *mut std::ffi::c_void;
-        // SAFETY: caller guarantees a live ID3D12Device* for the session.
-        let borrowed =
-            unsafe { ID3D12Device::from_raw_borrowed(&raw) }.ok_or(EncodeError::InvalidInput)?;
-        // clone: COM AddRef so we own the device for CreateCommittedResource
-        let d3d12: ID3D12Device = borrowed.clone();
+        let d3d12 = device_from_handle(d3d12_device)?;
 
         let heap_props = D3D12_HEAP_PROPERTIES {
             Type: D3D12_HEAP_TYPE_DEFAULT,
@@ -95,6 +90,39 @@ impl D3d12SharedEncodeBridge {
         }
         let resource = resource.ok_or(EncodeError::Backend)?;
 
+        Self::from_resource(&d3d12, resource)
+    }
+
+    /// Share a caller-owned `ID3D12Resource*` instead of allocating one — `resource` must
+    /// already be `D3D12_HEAP_FLAG_SHARED`-allocated (`ALLOW_RENDER_TARGET` recommended for
+    /// render-target use) on `d3d12_device`. No `width`/`height` parameter: unlike [`Self::open`],
+    /// this does not allocate, so the resource's own dimensions apply.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EncodeError::InvalidInput`] for a null device/resource pointer, or
+    /// [`EncodeError::Backend`] on D3D / DXGI failure — including a `resource` that was not
+    /// actually shared-heap-allocated (`CreateSharedHandle` itself fails for a non-shared
+    /// resource).
+    pub fn open_with_resource(
+        d3d12_device: NativeHandle,
+        d3d12_resource: NativeHandle,
+    ) -> Result<Self, EncodeError> {
+        let d3d12 = device_from_handle(d3d12_device)?;
+        let raw = d3d12_resource.get() as *mut std::ffi::c_void;
+        // SAFETY: caller guarantees a live, D3D12_HEAP_FLAG_SHARED-allocated ID3D12Resource*.
+        let borrowed =
+            unsafe { ID3D12Resource::from_raw_borrowed(&raw) }.ok_or(EncodeError::InvalidInput)?;
+        // clone: COM AddRef so we own a reference for CreateSharedHandle/the struct's lifetime
+        let resource: ID3D12Resource = borrowed.clone();
+
+        Self::from_resource(&d3d12, resource)
+    }
+
+    /// Shared tail of [`Self::open`]/[`Self::open_with_resource`]: `CreateSharedHandle` on
+    /// `resource`, then open it on a **native** same-adapter D3D11 device via
+    /// `OpenSharedResource1`.
+    fn from_resource(d3d12: &ID3D12Device, resource: ID3D12Resource) -> Result<Self, EncodeError> {
         // SAFETY: CreateSharedHandle for NT handle open on D3D11.
         let shared_handle: HANDLE = unsafe {
             d3d12
@@ -194,6 +222,15 @@ impl D3d12SharedEncodeBridge {
             subresource: 0,
         })
     }
+}
+
+/// Borrow + clone (COM `AddRef`) a caller-supplied `ID3D12Device*` handle.
+fn device_from_handle(d3d12_device: NativeHandle) -> Result<ID3D12Device, EncodeError> {
+    let raw = d3d12_device.get() as *mut std::ffi::c_void;
+    // SAFETY: caller guarantees a live ID3D12Device* for the session.
+    let borrowed =
+        unsafe { ID3D12Device::from_raw_borrowed(&raw) }.ok_or(EncodeError::InvalidInput)?;
+    Ok(borrowed.clone()) // clone: COM AddRef so we own the device for this call's lifetime
 }
 
 /// Wrap a live COM interface's raw pointer as a [`NativeHandle`].

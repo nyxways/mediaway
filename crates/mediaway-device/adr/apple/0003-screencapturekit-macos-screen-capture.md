@@ -193,6 +193,8 @@ macOS-only, so no iOS cross-compile step is meaningful for it; `apple-ios`'s exi
 5. **Window-level capture** (`DesktopCaptureSource::Window`) via `SCContentFilter::
    initWithDesktopIndependentWindow` (confirmed real, § Research above) — in scope alongside
    `Screen`, or deferred to a follow-up ADR? Not decided in this pass; the API clearly supports it.
+   **Resolved 2026-08-19: implemented in this ADR, not deferred** — see § Implementation notes
+   (2026-08-19).
 
 ## Decisions confirmed with the user (2026-08-12)
 
@@ -224,6 +226,37 @@ macOS-only, so no iOS cross-compile step is meaningful for it; `apple-ios`'s exi
   wiring calls that take ownership or cross a delegate-protocol boundary.
 - Reuses `apple::pixel::extract_nv12` (shared with `apple::camera`) verbatim for `SCStreamOutput`
   frame delivery — no duplicated `CVPixelBuffer` extraction code.
+
+## Implementation notes (2026-08-19, window capture)
+
+- Resolves § Open questions #5: `DesktopCaptureSource::Window` is now implemented, via a new
+  `AppleWindowCapture` type (same module) rather than folded into `AppleScreenCapture::open`'s own
+  match on `config.source` — this mirrors `mediaway-device::linux`'s `LinuxScreenCapture`/
+  `LinuxWindowCapture` split (two public types, one shared internal `Session`/`open_session`), the
+  established shape for "one platform API, two `DesktopCaptureSource` variants" in this crate,
+  rather than inventing a new one.
+- The internal `ScreenSession` struct (queue/delegates/dispatch-queue/`SCStream` handle) was
+  renamed `Session` and factored into a shared `open_stream(filter, config)` function — both
+  `AppleScreenCapture::open` and `AppleWindowCapture::open` build their own `SCContentFilter`
+  (`initWithDisplay_excludingWindows` vs. `initWithDesktopIndependentWindow`) and hand it to
+  `open_stream`, which owns everything downstream (stream config, both delegates,
+  `addStreamOutput`, `startCaptureWithCompletionHandler`). No behavior change for
+  `AppleScreenCapture`.
+- Window selection: the `DesktopCaptureSource::Window` handle's bits are read as a `u32` and
+  matched against `SCWindow::windowID()` (a real `CGWindowID`, confirmed via
+  `SCShareableContent::windows()` in the local `objc2-screen-capture-kit` source) — unlike the
+  Linux portal backend (§ `adr/0003-portal-window-capture.md`, whose picker UI chooses the window
+  interactively and ignores the handle entirely), `ScreenCaptureKit` can target a specific window
+  programmatically, the same capability `WGC`'s `CreateForWindow(HWND)` gives Windows. An unmatched
+  or out-of-`u32`-range handle returns `CaptureError::InvalidInput`, not a silent fallback.
+- `AppleWindowCapture` has no iOS counterpart and no non-Apple host stub gap: it is genuinely
+  macOS-only (`ReplayKit` has no other-window capture concept — a single foreground app has no
+  "other window" to select), so `apple/mod.rs` only exports it under
+  `#[cfg(target_os = "macos")]` plus the usual off-Apple `host_stub` (a same-shaped
+  `Err(CaptureError::Unsupported)` stub, cheap to write unlike `AppleBroadcastExtensionCapture`'s
+  genuinely stub-incompatible `&CMSampleBuffer` parameter).
+- **Zero compile verification, same as every other change in this ADR** — no macOS/Xcode in this
+  dev environment.
 
 ## Consequences
 

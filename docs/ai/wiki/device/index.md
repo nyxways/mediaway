@@ -14,8 +14,8 @@
 | [linux-camera](linux-camera.md) | V4L2 camera capture (`v4l` crate, no `unsafe`, unverified this session) |
 | [linux-window](linux-window.md) | Portal `SourceType::Window` capture (shares screen-capture plumbing, unverified) |
 | [linux-mic](linux-mic.md) | Direct PipeWire microphone capture (no portal, unverified this session) |
-| [android-capture](android-capture.md) | Camera (Camera2 NDK) + mic (AAudio) + screen (`MediaProjection` + JNI) — implemented, zero compile verification until CI |
-| [apple-capture](apple-capture.md) | Camera (`AVCaptureSession`) + mic (`AVAudioEngine`) + screen (`ScreenCaptureKit`/`ReplayKit`, incl. iOS Broadcast Extension sink) — implemented, zero compile verification until CI |
+| [android-capture](android-capture.md) | Camera (Camera2 NDK) + mic (AAudio) + screen (`MediaProjection` + JNI) — implemented, zero compile verification until CI; window capture genuinely blocked (no OS API) |
+| [apple-capture](apple-capture.md) | Camera (`AVCaptureSession`) + mic (`AVAudioEngine`) + screen (`ScreenCaptureKit`/`ReplayKit`, incl. iOS Broadcast Extension sink) + macOS window (`ScreenCaptureKit`) — implemented, zero compile verification until CI |
 | [capabilities](capabilities.md) | `DeviceKind`/`Support`/`PermissionState` — live capability + OS permission probe, separate from opening a session |
 | [ffi-c-abi](ffi-c-abi.md) | `mediaway-ffi` — C ABI over Camera + Screen (GPU handle, ADR-0003) video + Microphone/Loopback/ProcessLoopback audio; Window deferred |
 | [gpu-device-factory-ffi](gpu-device-factory-ffi.md) | `mediaway-ffi` — GPU adapter enumeration + device create/close C ABI (ADR-0007); closes the "no C caller can reach Screen capture" gap |

@@ -1,4 +1,4 @@
-//! macOS screen capture via `ScreenCaptureKit`. See
+//! macOS screen **and window** capture via `ScreenCaptureKit`. See
 //! [ADR-0003](adr/apple/0003-screencapturekit-macos-screen-capture.md).
 //!
 //! Genuinely macOS-only — `objc2-screen-capture-kit` does not exist on iOS (see
@@ -7,6 +7,14 @@
 //! `SCStream::startCaptureWithCompletionHandler` are both real completion-handler-based async
 //! calls (`block2`), bridged to a synchronous return via a bounded channel — not a `block_on`
 //! wrapper over a sync-shaped protocol the way Linux portal's D-Bus round trip is.
+//!
+//! [`AppleScreenCapture`] ([`DesktopCaptureSource::Screen`]) and [`AppleWindowCapture`]
+//! ([`DesktopCaptureSource::Window`]) share one `SCStream` session recipe (`open_stream`) — only
+//! `SCContentFilter` construction differs (`initWithDisplay_excludingWindows` vs.
+//! `initWithDesktopIndependentWindow`, the latter resolving a native-handle window token's bits
+//! against `SCShareableContent::windows()`'s `CGWindowID`s) — the same shared-session shape
+//! `mediaway-device::linux`'s `LinuxWindowCapture`/`LinuxScreenCapture` use over one portal
+//! `Session`, mirrored here rather than re-derived.
 //!
 //! **Zero compile verification** — this dev environment cannot cross-compile Apple code at all
 //! outside macOS/Xcode; see the crate's `apple-macos` CI job.
@@ -128,7 +136,10 @@ impl StreamDelegate {
     }
 }
 
-struct ScreenSession {
+/// Shared session state for both [`AppleScreenCapture`] and [`AppleWindowCapture`] — the
+/// `SCStream`/delegate/dispatch-queue plumbing is identical once a `SCContentFilter` exists; only
+/// filter construction differs (see [`open_stream`]).
+struct Session {
     stream_info: StreamInfo,
     queue: Arc<FrameQueue>,
     stopped: Arc<AtomicBool>,
@@ -138,10 +149,120 @@ struct ScreenSession {
     _dispatch_queue: DispatchRetained<DispatchQueue>,
 }
 
+impl Session {
+    fn poll_frame(&self) -> Result<Option<VideoFrame>, CaptureError> {
+        if self.stopped.load(Ordering::Relaxed) {
+            return Err(CaptureError::DeviceLost);
+        }
+        let mut q = self
+            .queue
+            .frames
+            .lock()
+            .map_err(|_| CaptureError::Backend)?;
+        Ok(q.pop_front())
+    }
+
+    fn close(&self) -> Result<(), CaptureError> {
+        stop_capture(&self.stream)
+    }
+}
+
+/// Builds the `SCStream` session common to screen and window capture from an already-constructed
+/// `filter` — stream configuration, frame queue, both delegates, `addStreamOutput`, and
+/// `startCaptureWithCompletionHandler`. Callers validate their own [`DesktopCaptureSource`]
+/// variant and build `filter` before calling this (this function itself only validates
+/// [`CaptureOutputPreference`]).
+///
+/// # Errors
+///
+/// Returns [`CaptureError::Unsupported`] for [`CaptureOutputPreference::ZeroCopyGpu`] (this
+/// backend is CPU-frame-only this slice). Returns [`CaptureError::Backend`] on `ScreenCaptureKit`
+/// failure or completion-handler timeout.
+fn open_stream(
+    filter: &SCContentFilter,
+    config: &DesktopVideoCaptureConfig,
+) -> Result<Session, CaptureError> {
+    if config.output != CaptureOutputPreference::CpuFramesOk {
+        return Err(CaptureError::Unsupported);
+    }
+
+    // SAFETY: plain, always-safe-to-call constructor.
+    let stream_config = unsafe { SCStreamConfiguration::new() };
+    // SAFETY: `stream_config` is a valid, freshly created configuration object; these are
+    // plain property setters with no additional preconditions.
+    unsafe {
+        stream_config.setWidth(CAPTURE_WIDTH);
+        stream_config.setHeight(CAPTURE_HEIGHT);
+        stream_config.setPixelFormat(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange);
+        stream_config.setShowsCursor(true);
+    }
+
+    let queue = Arc::new(FrameQueue {
+        frames: Mutex::new(VecDeque::new()),
+    });
+    // clone: output delegate ivar needs its own strong ref to push frames
+    let output = StreamOutput::new(Arc::clone(&queue));
+    let stopped = Arc::new(AtomicBool::new(false));
+    // clone: delegate ivar needs its own strong ref
+    let delegate = StreamDelegate::new(Arc::clone(&stopped));
+
+    let stream = SCStream::alloc();
+    let delegate_protocol = ProtocolObject::from_ref(&*delegate);
+    // SAFETY: `filter`/`stream_config` are both valid, fully configured; `delegate_protocol`
+    // is kept alive by this session's own `_delegate` field.
+    let stream = unsafe {
+        SCStream::initWithFilter_configuration_delegate(
+            stream,
+            filter,
+            &stream_config,
+            Some(delegate_protocol),
+        )
+    };
+
+    // `DispatchQueue::new` takes a plain `&str` label (not `Option<&CStr>`) and is a safe,
+    // always-safe-to-call constructor — no `unsafe` needed.
+    let dispatch_queue =
+        DispatchQueue::new("dev.mediaway.screencapturekit", DispatchQueueAttr::SERIAL);
+    let output_protocol = ProtocolObject::from_ref(&*output);
+    // SAFETY: `stream` is valid; `output_protocol`/`dispatch_queue` are kept alive by this
+    // session's own fields.
+    unsafe {
+        stream.addStreamOutput_type_sampleHandlerQueue_error(
+            output_protocol,
+            SCStreamOutputType::Screen,
+            Some(&dispatch_queue),
+        )
+    }
+    .map_err(|_| CaptureError::Backend)?;
+
+    start_capture(&stream)?;
+
+    let info = StreamInfo::Video {
+        id: 0,
+        codec: CodecKind::RawVideo,
+        time_base: config.time_base,
+        geometry: VideoGeometry {
+            width: CAPTURE_WIDTH.try_into().unwrap_or(0),
+            height: CAPTURE_HEIGHT.try_into().unwrap_or(0),
+        },
+        extra_data: Bytes::new(),
+    };
+
+    Ok(Session {
+        stream_info: info,
+        queue,
+        stopped,
+        stream,
+        _output: output,
+        _delegate: delegate,
+        _dispatch_queue: dispatch_queue,
+    })
+}
+
 /// macOS screen capture session (`SCStream`, CPU NV12 frames, primary display only this slice).
 /// See module docs for the async `open()` design.
 pub struct AppleScreenCapture {
-    inner: Option<ScreenSession>,
+    inner: Option<Session>,
 }
 
 impl AppleScreenCapture {
@@ -149,10 +270,9 @@ impl AppleScreenCapture {
     ///
     /// # Errors
     ///
-    /// Returns [`CaptureError::Unsupported`] for a non-[`Select::Default`] selection, a
-    /// [`DesktopCaptureSource::Window`] source (not implemented this slice — see ADR-0003 § Open
-    /// questions #5), or the [`CaptureOutputPreference::ZeroCopyGpu`] preference. Returns
-    /// [`CaptureError::InvalidInput`] when no display is reported. Returns
+    /// Returns [`CaptureError::Unsupported`] for a non-[`DesktopCaptureSource::Screen`] source, a
+    /// non-[`Select::Default`] selection, or the [`CaptureOutputPreference::ZeroCopyGpu`]
+    /// preference. Returns [`CaptureError::InvalidInput`] when no display is reported. Returns
     /// [`CaptureError::Backend`] on `ScreenCaptureKit` failure or completion-handler timeout.
     pub fn open(config: &DesktopVideoCaptureConfig) -> Result<Self, CaptureError> {
         let DesktopCaptureSource::Screen { select } = &config.source else {
@@ -161,15 +281,11 @@ impl AppleScreenCapture {
         if *select != Select::Default {
             return Err(CaptureError::Unsupported);
         }
-        if config.output != CaptureOutputPreference::CpuFramesOk {
-            return Err(CaptureError::Unsupported);
-        }
 
         let content = fetch_shareable_content()?;
         // SAFETY: `content` is a valid, just-fetched `SCShareableContent`.
         let displays = unsafe { content.displays() };
         let display = displays.firstObject().ok_or(CaptureError::InvalidInput)?;
-
         let excluded = NSArray::<SCWindow>::new();
         let filter = SCContentFilter::alloc();
         // SAFETY: `display` is a valid display from `content`; `excluded` is a valid, empty
@@ -178,78 +294,8 @@ impl AppleScreenCapture {
             SCContentFilter::initWithDisplay_excludingWindows(filter, &display, &excluded)
         };
 
-        // SAFETY: plain, always-safe-to-call constructor.
-        let stream_config = unsafe { SCStreamConfiguration::new() };
-        // SAFETY: `stream_config` is a valid, freshly created configuration object; these are
-        // plain property setters with no additional preconditions.
-        unsafe {
-            stream_config.setWidth(CAPTURE_WIDTH);
-            stream_config.setHeight(CAPTURE_HEIGHT);
-            stream_config.setPixelFormat(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange);
-            stream_config.setShowsCursor(true);
-        }
-
-        let queue = Arc::new(FrameQueue {
-            frames: Mutex::new(VecDeque::new()),
-        });
-        // clone: output delegate ivar needs its own strong ref to push frames
-        let output = StreamOutput::new(Arc::clone(&queue));
-        let stopped = Arc::new(AtomicBool::new(false));
-        // clone: delegate ivar needs its own strong ref
-        let delegate = StreamDelegate::new(Arc::clone(&stopped));
-
-        let stream = SCStream::alloc();
-        let delegate_protocol = ProtocolObject::from_ref(&*delegate);
-        // SAFETY: `filter`/`stream_config` are both valid, fully configured; `delegate_protocol`
-        // is kept alive by this session's own `_delegate` field.
-        let stream = unsafe {
-            SCStream::initWithFilter_configuration_delegate(
-                stream,
-                &filter,
-                &stream_config,
-                Some(delegate_protocol),
-            )
-        };
-
-        // `DispatchQueue::new` takes a plain `&str` label (not `Option<&CStr>`) and is a safe,
-        // always-safe-to-call constructor — no `unsafe` needed.
-        let dispatch_queue =
-            DispatchQueue::new("dev.mediaway.screencapturekit", DispatchQueueAttr::SERIAL);
-        let output_protocol = ProtocolObject::from_ref(&*output);
-        // SAFETY: `stream` is valid; `output_protocol`/`dispatch_queue` are kept alive by this
-        // session's own fields.
-        unsafe {
-            stream.addStreamOutput_type_sampleHandlerQueue_error(
-                output_protocol,
-                SCStreamOutputType::Screen,
-                Some(&dispatch_queue),
-            )
-        }
-        .map_err(|_| CaptureError::Backend)?;
-
-        start_capture(&stream)?;
-
-        let info = StreamInfo::Video {
-            id: 0,
-            codec: CodecKind::RawVideo,
-            time_base: config.time_base,
-            geometry: VideoGeometry {
-                width: CAPTURE_WIDTH.try_into().unwrap_or(0),
-                height: CAPTURE_HEIGHT.try_into().unwrap_or(0),
-            },
-            extra_data: Bytes::new(),
-        };
-
         Ok(Self {
-            inner: Some(ScreenSession {
-                stream_info: info,
-                queue,
-                stopped,
-                stream,
-                _output: output,
-                _delegate: delegate,
-                _dispatch_queue: dispatch_queue,
-            }),
+            inner: Some(open_stream(&filter, config)?),
         })
     }
 }
@@ -268,18 +314,10 @@ impl DesktopVideoCapture for AppleScreenCapture {
     }
 
     fn poll_frame(&mut self) -> Result<Option<VideoFrame>, CaptureError> {
-        let Some(session) = self.inner.as_ref() else {
-            return Err(CaptureError::Closed);
-        };
-        if session.stopped.load(Ordering::Relaxed) {
-            return Err(CaptureError::DeviceLost);
-        }
-        let mut q = session
-            .queue
-            .frames
-            .lock()
-            .map_err(|_| CaptureError::Backend)?;
-        Ok(q.pop_front())
+        self.inner
+            .as_ref()
+            .ok_or(CaptureError::Closed)?
+            .poll_frame()
     }
 
     fn release_frame(&mut self) -> Result<(), CaptureError> {
@@ -294,13 +332,108 @@ impl DesktopVideoCapture for AppleScreenCapture {
         let Some(session) = self.inner.take() else {
             return Ok(());
         };
-        let _ = stop_capture(&session.stream);
+        let _ = session.close();
         // `session`'s `Drop` releases every Objective-C object it holds.
         Ok(())
     }
 }
 
 impl Drop for AppleScreenCapture {
+    fn drop(&mut self) {
+        let _ = self.close();
+    }
+}
+
+/// macOS window capture session.
+///
+/// The same `SCStream` recipe as [`AppleScreenCapture`], filtered to one `SCWindow`
+/// (`SCContentFilter::initWithDesktopIndependentWindow`) instead of a display. See
+/// [ADR-0003](adr/apple/0003-screencapturekit-macos-screen-capture.md) § Open questions #5.
+pub struct AppleWindowCapture {
+    inner: Option<Session>,
+}
+
+impl AppleWindowCapture {
+    /// Open `ScreenCaptureKit` window capture for `config`.
+    ///
+    /// The [`DesktopCaptureSource::Window`] handle's bits must equal a `CGWindowID` currently
+    /// reported by `SCShareableContent::windows()` — unlike the Linux portal backend (whose
+    /// picker UI chooses the window interactively, ignoring the handle), `ScreenCaptureKit` can
+    /// target a specific window programmatically, the same capability `WGC`'s
+    /// `CreateForWindow(HWND)` gives Windows.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CaptureError::Unsupported`] for a non-[`DesktopCaptureSource::Window`] source or
+    /// the [`CaptureOutputPreference::ZeroCopyGpu`] preference. Returns
+    /// [`CaptureError::InvalidInput`] when the handle's bits do not fit a `u32` `CGWindowID`, or
+    /// match none of `SCShareableContent`'s currently reported windows. Returns
+    /// [`CaptureError::Backend`] on `ScreenCaptureKit` failure or completion-handler timeout.
+    pub fn open(config: &DesktopVideoCaptureConfig) -> Result<Self, CaptureError> {
+        let DesktopCaptureSource::Window { window } = &config.source else {
+            return Err(CaptureError::Unsupported);
+        };
+        let window_id = u32::try_from(window.get()).map_err(|_| CaptureError::InvalidInput)?;
+
+        let content = fetch_shareable_content()?;
+        // SAFETY: `content` is a valid, just-fetched `SCShareableContent`.
+        let windows = unsafe { content.windows() };
+        let target = windows
+            .iter()
+            .find(|w| {
+                // SAFETY: `w` is a valid `SCWindow` yielded from `content.windows()`.
+                unsafe { w.windowID() == window_id }
+            })
+            .ok_or(CaptureError::InvalidInput)?;
+        let filter = SCContentFilter::alloc();
+        // SAFETY: `target` is a valid `SCWindow` found in `content.windows()`.
+        let filter = unsafe { SCContentFilter::initWithDesktopIndependentWindow(filter, &target) };
+
+        Ok(Self {
+            inner: Some(open_stream(&filter, config)?),
+        })
+    }
+}
+
+impl DesktopVideoCapture for AppleWindowCapture {
+    fn stream_info(&self) -> &StreamInfo {
+        #[allow(
+            clippy::option_if_let_else,
+            reason = "map_or_else forces 'static vs 'self lifetime clash"
+        )]
+        if let Some(s) = self.inner.as_ref() {
+            &s.stream_info
+        } else {
+            closed_video_info()
+        }
+    }
+
+    fn poll_frame(&mut self) -> Result<Option<VideoFrame>, CaptureError> {
+        self.inner
+            .as_ref()
+            .ok_or(CaptureError::Closed)?
+            .poll_frame()
+    }
+
+    fn release_frame(&mut self) -> Result<(), CaptureError> {
+        if self.inner.is_none() {
+            return Err(CaptureError::Closed);
+        }
+        // CPU-owned frames hold no backend resource to release.
+        Ok(())
+    }
+
+    fn close(&mut self) -> Result<(), CaptureError> {
+        let Some(session) = self.inner.take() else {
+            return Ok(());
+        };
+        let _ = session.close();
+        // `session`'s `Drop` releases every Objective-C object it holds.
+        Ok(())
+    }
+}
+
+impl Drop for AppleWindowCapture {
     fn drop(&mut self) {
         let _ = self.close();
     }

@@ -10,6 +10,10 @@
 //!   [ADR-0002](adr/apple/0002-avaudioengine-microphone-capture.md).
 //! - macOS [`AppleScreenCapture::open`] (`screencapturekit` module) — `ScreenCaptureKit`
 //!   `SCStream`. See [ADR-0003](adr/apple/0003-screencapturekit-macos-screen-capture.md).
+//! - macOS [`AppleWindowCapture::open`] (`screencapturekit` module) — same `SCStream` recipe,
+//!   filtered to one `SCWindow` via `SCContentFilter::initWithDesktopIndependentWindow`. No iOS
+//!   equivalent: `ReplayKit` has no other-window capture concept (single foreground app). See
+//!   ADR-0003 § Open questions #5 / § Decisions confirmed with the user.
 //! - iOS [`AppleScreenCapture::open`] (`replaykit` module) — `RPScreenRecorder` in-app capture,
 //!   **plus** [`AppleBroadcastExtensionCapture`] (a Broadcast Upload Extension push-sink — needs
 //!   a real host-project `.appex` extension target this crate cannot build itself). See
@@ -48,15 +52,20 @@ pub use mic::AppleMicrophoneCapture;
 #[cfg(target_os = "ios")]
 pub use replaykit::{AppleBroadcastExtensionCapture, AppleScreenCapture};
 #[cfg(target_os = "macos")]
-pub use screencapturekit::AppleScreenCapture;
+pub use screencapturekit::{AppleScreenCapture, AppleWindowCapture};
 
 // `AppleBroadcastExtensionCapture` has no non-Apple stub — its only real method,
 // `push_sample_buffer`, takes a `&CMSampleBuffer`, an Apple-only type with no meaningful
 // off-Apple stand-in; unlike every other type here, there is no honest way to expose a
 // same-shaped stub. It is iOS-only even among real Apple targets (see `replaykit` module docs).
+//
+// `AppleWindowCapture` has no iOS stub either — genuinely macOS-only (see module docs above),
+// unlike `AppleScreenCapture`/`AppleCameraCapture`/`AppleMicrophoneCapture`, which are real on
+// both Apple sub-platforms and so need one shared stub shape off-Apple.
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
 mod host_stub;
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
 pub use host_stub::{
-    AppleCameraCapture, AppleMicrophoneCapture, AppleScreenCapture, request_permission, support,
+    AppleCameraCapture, AppleMicrophoneCapture, AppleScreenCapture, AppleWindowCapture,
+    request_permission, support,
 };

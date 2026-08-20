@@ -64,6 +64,17 @@ strings (`createVirtualDisplay`'s 8-parameter signature, `stop()`'s `()V`) are c
 signature is a runtime `NoSuchMethodError`, not a compile error, and no Android
 emulator/device exists in this workspace to catch that.
 
+## Window (genuinely blocked, confirmed 2026-08-19 — not attempted, not planned)
+
+`DesktopCaptureSource::Window` has **no Android backend and no path to one**: `MediaProjection`
+only creates a `VirtualDisplay` mirroring an entire physical display (§ Screen above) — there is
+no public API to target one other app's window, unlike `WGC`'s `CreateForWindow(HWND)` on Windows
+or `ScreenCaptureKit`'s `SCContentFilter::initWithDesktopIndependentWindow` on macOS (see
+[`apple-capture`](apple-capture.md) § Window). This is Android's own app-sandboxing model, not a
+missing wrapper — general Android platform knowledge, not verified from a local SDK source (no
+Android SDK docs cached in this workspace). README `## Device` marks this ❌ (genuinely blocked),
+not 👻 (not yet attempted).
+
 ## Capabilities
 
 `support(Camera)` does a real, cheap `ACameraManager_getCameraIdList` count (no device opened).

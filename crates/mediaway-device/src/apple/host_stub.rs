@@ -97,6 +97,36 @@ impl DesktopVideoCapture for AppleScreenCapture {
     }
 }
 
+/// Apple window capture stub (macOS-only real backend — see `mod.rs` module docs).
+pub struct AppleWindowCapture {
+    _priv: (),
+}
+
+impl AppleWindowCapture {
+    /// Unavailable off macOS.
+    pub const fn open(_config: &DesktopVideoCaptureConfig) -> Result<Self, CaptureError> {
+        Err(CaptureError::Unsupported)
+    }
+}
+
+impl DesktopVideoCapture for AppleWindowCapture {
+    fn stream_info(&self) -> &StreamInfo {
+        closed_video_info()
+    }
+
+    fn poll_frame(&mut self) -> Result<Option<mediaway_common::VideoFrame>, CaptureError> {
+        Err(CaptureError::Unsupported)
+    }
+
+    fn release_frame(&mut self) -> Result<(), CaptureError> {
+        Err(CaptureError::Unsupported)
+    }
+
+    fn close(&mut self) -> Result<(), CaptureError> {
+        Err(CaptureError::Unsupported)
+    }
+}
+
 /// No Apple backend is compiled into this binary at all off Apple platforms.
 #[must_use]
 pub const fn support(_kind: DeviceKind) -> Support {

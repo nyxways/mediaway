@@ -1,4 +1,4 @@
-# Apple capture (camera + mic + screen) — implemented, zero compile verification until CI
+# Apple capture (camera + mic + screen + macOS window) — implemented, zero compile verification until CI
 
 - Module: `mediaway-device::apple`, `cfg(any(target_os = "macos", target_os = "ios"))` for
   camera/mic, split further by OS for screen capture (`cfg(target_os = "macos")` /
@@ -63,6 +63,20 @@ crate — a correction against this workspace's own C-FFI rule), named as future
 Audio extraction (`extract_pcm`, `CMBlockBuffer` + `CMAudioFormatDescription`/
 `AudioStreamBasicDescription`) is shared by both iOS entry points via one dispatch helper,
 `classify_and_queue_sample_buffer`.
+
+## Window (`AppleWindowCapture`, macOS only)
+
+Added 2026-08-19, resolving ADR-0003 § Open questions #5. Shares `screencapturekit.rs`'s
+`SCStream` session recipe with `AppleScreenCapture` via one internal `Session`/`open_stream` (the
+same shared-session shape `mediaway-device::linux`'s `LinuxScreenCapture`/`LinuxWindowCapture` use)
+— only `SCContentFilter` construction differs:
+`SCContentFilter::initWithDesktopIndependentWindow` instead of
+`initWithDisplay_excludingWindows`. The `DesktopCaptureSource::Window` handle's bits are read as a
+`CGWindowID` and matched against `SCShareableContent::windows()` — a real, programmatic
+window-target capability (unlike the Linux portal backend, whose picker UI ignores the handle and
+lets the user choose interactively). No iOS equivalent: `ReplayKit` has no other-window capture
+concept, so `AppleWindowCapture` is `#[cfg(target_os = "macos")]`-only (plus the usual off-Apple
+`host_stub`).
 
 ## Cross-cutting
 

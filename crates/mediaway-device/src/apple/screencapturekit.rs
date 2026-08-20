@@ -344,9 +344,11 @@ impl Drop for AppleScreenCapture {
     }
 }
 
-/// macOS window capture session — the same `SCStream` recipe as [`AppleScreenCapture`], filtered
-/// to one `SCWindow` (`SCContentFilter::initWithDesktopIndependentWindow`) instead of a display.
-/// See [ADR-0003](adr/apple/0003-screencapturekit-macos-screen-capture.md) § Open questions #5.
+/// macOS window capture session.
+///
+/// The same `SCStream` recipe as [`AppleScreenCapture`], filtered to one `SCWindow`
+/// (`SCContentFilter::initWithDesktopIndependentWindow`) instead of a display. See
+/// [ADR-0003](adr/apple/0003-screencapturekit-macos-screen-capture.md) § Open questions #5.
 pub struct AppleWindowCapture {
     inner: Option<Session>,
 }

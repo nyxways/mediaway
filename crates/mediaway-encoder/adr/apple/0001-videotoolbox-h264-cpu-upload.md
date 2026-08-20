@@ -434,6 +434,34 @@ workspace's sessions, this increment is unverified even at the compile level.
 - Two real, undecided product questions (color range, `CFBoolean` feature name) block a clean
   implementation start until resolved.
 
+## Addendum (2026-08-20) — `ProfileLevel` corrected: `ConstrainedBaseline` → `Baseline`
+
+The Decisions section above resolved `kVTCompressionPropertyKey_ProfileLevel` to
+`kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel` from local grounding alone (the constant is
+real in `VTCompressionProperties.rs`, matching Linux/Android's Constrained-Baseline-first choice)
+— but that grounding could only confirm the constant *exists*, not that VideoToolbox's hardware
+encoder actually *accepts* it. This crate's first real run on Apple hardware (`bindings-tests-macos`,
+`macos-14` GitHub-hosted runner, real Apple Silicon) surfaced a genuine `VTSessionSetProperty`
+failure — `kVTParameterErr` (`OSStatus -12902`) — on every H.264 `AutoVideoEncoder::open()` call,
+traced via a temporary file-based diagnostic (`eprintln!` alone never reached the CI log; VSTest's
+testhost process isolation swallows raw native stderr writes from the C# RC-gate tests).
+
+Root cause, corroborated by a real-world report
+([livekit/client-sdk-swift#1002](https://github.com/livekit/client-sdk-swift/issues/1002)):
+VideoToolbox's **hardware** H.264 encoder rejects `ConstrainedBaseline` outright — Constrained
+Baseline drops B-frames and CABAC entirely, and Apple's hardware encoder does not allocate a
+session for that "degraded" profile at all, only for plain `Baseline`/`Main`/`High`/`ConstrainedHigh`.
+Software-only VideoToolbox sessions may tolerate it, but this backend never requests one
+(`encoderSpecification: None` still resolves to hardware first on real Apple Silicon).
+
+Fix: use `kVTProfileLevel_H264_Baseline_AutoLevel` instead. This keeps the same practical
+bitstream shape the "Constrained-Baseline-class" scope always meant — `AllowFrameReordering` is
+already `false` (no B-frames) and Baseline profile itself never allows CABAC (CAVLC-only by
+spec) — so the only actual difference from true Constrained Baseline is a profile_idc/constraint-flag
+detail no consumer of this crate depends on, while gaining real hardware-encoder support. Pending
+re-confirmation from the next `bindings-tests-macos` run. HEVC's `kVTProfileLevel_HEVC_Main_AutoLevel`
+(ADR-0002) is unaffected — Main is not a constrained profile and was never implicated by this failure.
+
 ## References
 
 - [`docs/conventions/deps-policy.md`](../../../../docs/conventions/deps-policy.md)

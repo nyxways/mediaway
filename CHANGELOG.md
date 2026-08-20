@@ -204,9 +204,20 @@ section below is unchanged content, now actually able to ship.
   — the C ABI dispatch layer was simply never updated to call it. Added the missing Apple branch.
   `mediaway::platform::AutoEncoder::open` (the video path) already routes to `AppleVideoEncoder`
   correctly, but `bindings-tests-macos`'s hardware `EncodeToMp4Tests`/`DecodeRoundtripTests`
-  still fail with a real `EncoderBackendFailure`/`DecoderBackendFailure` (an actual
-  `VideoToolbox` OS/API failure, not a missing-dispatch bug) — **unresolved as of this note**,
-  under active investigation.
+  still failed with a real `EncoderBackendFailure`/`DecoderBackendFailure` (an actual
+  `VideoToolbox` OS/API failure, not a missing-dispatch bug). Root cause: this crate's H.264
+  `ProfileLevel` was set to `kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel`, which
+  VideoToolbox's **hardware** encoder rejects outright (`VTSessionSetProperty` returns
+  `kVTParameterErr`) — Constrained Baseline drops B-frames/CABAC and Apple's hardware encoder
+  never allocates a session for it. Switched to plain `kVTProfileLevel_H264_Baseline_AutoLevel`,
+  which keeps the same practical bitstream shape (`AllowFrameReordering: false` already forbids
+  B-frames, and Baseline's own CAVLC-only constraint matches) while actually working on real
+  hardware — see `mediaway-encoder` ADR-0001's 2026-08-20 addendum.
+- `bindings-tests-linux`'s Node.js round-trip step ran the test files directly after `bun
+  install`, skipping the per-package `tsc` build (`packages/ffi`, `packages/container`) that
+  `bindings/nodejs/package.json`'s own `test` script always runs first — `@mediaway/container`'s
+  `dist/index.js` never existed, failing with `ERR_MODULE_NOT_FOUND` before any Rust/FFI code ran.
+  Added the missing build steps.
 
 ### What's new since 0.1.6
 

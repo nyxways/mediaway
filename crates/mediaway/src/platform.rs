@@ -252,11 +252,27 @@ impl AutoDecoder {
 pub fn decoder_support(codec: CodecKind) -> DecodeSupport {
     #[cfg(windows)]
     {
-        use mediaway_decoder::windows::{OpusDecoderConfig, WindowsVideoDecoder, WmfOpusDecoder};
+        use mediaway_decoder::windows::{
+            AacDecoderConfig, OpusDecoderConfig, WindowsVideoDecoder, WmfAacDecoder, WmfOpusDecoder,
+        };
         if codec == CodecKind::Opus {
             // Inbox WMF Opus decoder MFT (CMSOpusDecMFT) — probe with a real
             // session, same cost trade-off as the video probes.
             return match WmfOpusDecoder::open(&OpusDecoderConfig::new(48_000, 2)) {
+                Ok(_) => DecodeSupport::Supported,
+                Err(_) => DecodeSupport::Unavailable(DecodeUnavailable::NoDevice),
+            };
+        }
+        if codec == CodecKind::Aac {
+            // Inbox WMF AAC decoder MFT (CMSAACDecMFT). Unlike Opus, it cannot be opened
+            // without an `AudioSpecificConfig`, so the probe supplies the canonical
+            // AAC-LC 44.1 kHz stereo one (`0x12 0x10`) — the same two bytes `iso-bmff`'s
+            // `write_mp4a` writes as its `esds` default. A real stream's own ASC may
+            // differ (SBR/PS), but availability of the MFT does not.
+            const PROBE_ASC: [u8; 2] = [0x12, 0x10];
+            let cfg =
+                AacDecoderConfig::new(44_100, 2, mediaway_common::Bytes::from(PROBE_ASC.to_vec()));
+            return match WmfAacDecoder::open(&cfg) {
                 Ok(_) => DecodeSupport::Supported,
                 Err(_) => DecodeSupport::Unavailable(DecodeUnavailable::NoDevice),
             };
@@ -301,6 +317,24 @@ pub fn decoder_support(codec: CodecKind) -> DecodeSupport {
             use mediaway_decoder::apple::{OpusDecoder, OpusDecoderConfig};
             let cfg = OpusDecoderConfig::new(48_000, 2, mediaway_common::Rational::new(1, 50));
             return match OpusDecoder::open(&cfg) {
+                Ok(_) => DecodeSupport::Supported,
+                Err(_) => DecodeSupport::Unavailable(DecodeUnavailable::NoDevice),
+            };
+        }
+        if codec == CodecKind::Aac {
+            // `AudioConverter` AAC-LC decoder (apple ADR-0004). Like the WMF arm above it
+            // cannot open without an `AudioSpecificConfig` — apple ADR-0004 and the Windows
+            // ADR reached that constraint independently — so the probe supplies the same
+            // canonical AAC-LC 44.1 kHz stereo ASC.
+            use mediaway_decoder::apple::{AacDecoder, AacDecoderConfig};
+            const PROBE_ASC: [u8; 2] = [0x12, 0x10];
+            let cfg = AacDecoderConfig::new(
+                44_100,
+                2,
+                mediaway_common::Rational::new(1, 44_100),
+                mediaway_common::Bytes::from(PROBE_ASC.to_vec()),
+            );
+            return match AacDecoder::open(&cfg) {
                 Ok(_) => DecodeSupport::Supported,
                 Err(_) => DecodeSupport::Unavailable(DecodeUnavailable::NoDevice),
             };

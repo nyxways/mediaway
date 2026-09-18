@@ -37,6 +37,14 @@ pub use d3d11_shared_decode_bridge::D3d11SharedDecodeBridge;
 #[cfg(all(windows, feature = "audio"))]
 pub use wmf::opus::{OpusDecoderConfig, WmfOpusDecoder};
 
+/// Public WMF AAC decode session (inbox `CMSAACDecMFT`, Float32 PCM out).
+/// Reachable as `mediaway_decoder::windows::WmfAacDecoder`; implements
+/// [`crate::AudioDecoder`] (ADR-0003) and stays usable standalone. Requires the
+/// stream's `AudioSpecificConfig` at open time — see the module docs
+/// (`adr/windows/0006-wmf-aac-decode.md`).
+#[cfg(all(windows, feature = "audio"))]
+pub use wmf::aac::{AacDecoderConfig, WmfAacDecoder};
+
 #[cfg(all(windows, any(feature = "video", feature = "audio")))]
 mod wmf;
 

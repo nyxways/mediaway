@@ -39,7 +39,7 @@ workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dev-dependencies]
-mediaway-encoder = { workspace = true, features = ["video"] }
+mediaway-encoder = { workspace = true, features = ["video", "audio"] }
 criterion = { workspace = true }
 
 # Round-trip hardware test only (tests/hardware_hevc_decode.rs): produces a

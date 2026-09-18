@@ -14,18 +14,23 @@
 //! before Zero-Copy):
 //! - H.264 Main / HEVC Main / AV1 Main profile, CPU-upload NV12 input (one CPU→GPU upload
 //!   copy per frame).
-//! - Every pushed frame is an **independent IDR** — no GOP, no P/B-frames, no reference
-//!   picture management (`GOPLength = 1`, zero reference frames in the picture control).
-//! - Fixed CQP rate control (`bitrate_bps` is not honored yet — rate control tuning is
-//!   deferred, see the ADR).
+//! - **H.264** has real GOP / P-frame support (single forward reference — no B-frames, no
+//!   multi-reference, no long-term references), see [`gop`] and ADR-0007's 2026-08-06
+//!   addendum. **HEVC and AV1 are still all-intra**: every pushed frame is an independent
+//!   IDR (`GOPLength = 1`, zero reference frames in the picture control). All-intra makes
+//!   those two codecs impractical for continuous recording — see issue #85.
+//! - Capability-gated **CBR** rate control plus live [`VideoEncoder::set_bitrate`] on
+//!   H.264 and HEVC, falling back to fixed CQP when the driver rejects CBR for the
+//!   winning tier (ADR-0007's 2026-08-07 addendum). AV1 is CQP-only.
 //! - This module hand-writes its own Annex-B parameter sets — H.264 SPS/PPS ([`bitstream`])
 //!   or HEVC VPS/SPS/PPS ([`bitstream_hevc`]) — and prepends them to every packet; the
 //!   D3D12 API only ever emits the slice NAL, not parameter sets. AV1 ([`bitstream_av1`])
 //!   hand-writes OBUs (temporal delimiter + sequence header + frame header) the same way,
 //!   but wraps the driver's per-frame compressed tile bytes in an `OBU_FRAME` with a
 //!   per-frame `leb128` size field — see [`ops_av1`].
-//! - Zero-Copy GPU input and reference-frame/GOP support remain deferred for all three
-//!   codecs.
+//! - Zero-Copy GPU input remains deferred for all three codecs (ADR-0008, Proposed), as
+//!   does reference-frame/GOP support for HEVC and AV1. AV1's output is additionally not
+//!   decodable by `libdav1d` today, root cause unfound — all tracked in issue #85.
 //!
 //! Split across sibling files to stay under the 1000-line source limit: [`setup`]/[`hevc`]/
 //! [`av1`] (`open`-time D3D12 object creation per codec), [`ops`]/[`ops_hevc`]/[`ops_av1`]

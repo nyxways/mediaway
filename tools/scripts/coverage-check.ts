@@ -168,9 +168,12 @@ function main(): void {
   //   "Summary: N tests passed, M tests failed, K tests skipped"    (cargo test)
   // Groups: 1 = nextest total, 2 = nextest passed, 3 = cargo-test passed,
   //         4 = failed, 5 = skipped.
+  // CI sets CARGO_TERM_COLOR=always, which puts ANSI color codes inside the
+  // summary line, so strip them before matching.
   const sumRe =
     /(?:Summary\s*\[[^\]]*\]\s*(\d+)\s+tests?\s+run:\s*(\d+)\s+passed|Summary:\s*(\d+)\s+tests?\s+passed)(?:,\s*(\d+)\s+failed)?(?:,\s*(\d+)\s+skipped)?/i;
-  const sumM = sumRe.exec(run.stderr) ?? sumRe.exec(run.stdout);
+  const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+  const sumM = sumRe.exec(stripAnsi(run.stderr)) ?? sumRe.exec(stripAnsi(run.stdout));
   const tests = sumM
     ? { passed: Number(sumM[2] ?? sumM[3] ?? 0), failed: Number(sumM[4] ?? 0), skipped: Number(sumM[5] ?? 0) }
     : { passed: 0, failed: 0, skipped: 0 };

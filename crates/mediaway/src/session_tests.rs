@@ -367,3 +367,155 @@ fn write_audio_render_frame_without_audio_track_is_no_audio_track_error() {
     let result = session.write_audio_render_frame(&audio_frame(0, &[0.0; AUDIO_BLOCK]));
     assert!(matches!(result, Err(PipelineError::NoAudioTrack)));
 }
+
+/// Minimal [`VideoEncoder`] that emits one packet per pushed frame.
+///
+/// [`MockEncoder`] never emits any, so nothing reaches the muxer through it and there are
+/// no container bytes to poll — which is exactly what the byte-output tests below need to
+/// observe. Payloads are deterministic (derived from `pts`) so two sessions fed the same
+/// frames produce byte-identical output, which is what
+/// [`finish_into`](EncodeSession::finish_into)'s "only what was not polled" contract is
+/// checked against.
+struct PacketEmittingEncoder {
+    info: StreamInfo,
+    queued: VecDeque<Packet>,
+}
+
+impl PacketEmittingEncoder {
+    fn new() -> Self {
+        Self {
+            info: StreamInfo::Video {
+                id: 0,
+                codec: CodecKind::H264,
+                time_base: Rational::new(1, 30),
+                geometry: VideoGeometry {
+                    width: 4,
+                    height: 4,
+                },
+                extra_data: Bytes::from_static(&[0x01, 0x64, 0x00, 0x1f]),
+            },
+            queued: VecDeque::new(),
+        }
+    }
+}
+
+impl VideoEncoder for PacketEmittingEncoder {
+    fn stream_info(&self) -> &StreamInfo {
+        &self.info
+    }
+
+    fn push_frame(&mut self, frame: &VideoFrame) -> Result<(), EncodeError> {
+        let byte = u8::try_from(frame.pts.rem_euclid(256)).unwrap_or(0);
+        self.queued.push_back(Packet {
+            stream_id: 0,
+            pts: frame.pts,
+            dts: frame.pts,
+            duration: 1,
+            is_keyframe: frame.pts == 0,
+            is_discard: false,
+            payload: Bytes::from(vec![byte; 32]),
+        });
+        Ok(())
+    }
+
+    fn poll_packet(&mut self) -> Result<Option<Packet>, EncodeError> {
+        Ok(self.queued.pop_front())
+    }
+
+    fn flush(&mut self) -> Result<(), EncodeError> {
+        Ok(())
+    }
+}
+
+/// Enough frames to cross `iso_bmff::DEFAULT_FRAGMENT_BATCH` (30) so the muxer emits a
+/// complete fragment mid-session, not just the init segment.
+const FRAMES_PAST_ONE_FRAGMENT: i64 = 35;
+
+#[test]
+fn poll_bytes_yields_nothing_before_any_frame_is_written() {
+    let mut session = EncodeSession::open(PacketEmittingEncoder::new()).expect("open session");
+
+    let mut out = Vec::new();
+    assert_eq!(session.poll_bytes(&mut out), 0);
+    assert!(out.is_empty());
+}
+
+#[test]
+fn poll_bytes_streams_container_bytes_before_finish() {
+    let mut session = EncodeSession::open(PacketEmittingEncoder::new()).expect("open session");
+
+    for pts in 0..FRAMES_PAST_ONE_FRAGMENT {
+        session.write_frame(&cpu_frame(pts)).expect("write frame");
+    }
+
+    let mut out = Vec::new();
+    let written = session.poll_bytes(&mut out);
+    assert!(
+        written > 0,
+        "a fragment's worth of frames must be readable without finishing the session"
+    );
+    assert_eq!(written, out.len(), "poll_bytes returns what it appended");
+}
+
+#[test]
+fn poll_bytes_appends_rather_than_overwriting() {
+    let mut session = EncodeSession::open(PacketEmittingEncoder::new()).expect("open session");
+    for pts in 0..FRAMES_PAST_ONE_FRAGMENT {
+        session.write_frame(&cpu_frame(pts)).expect("write frame");
+    }
+
+    let mut out = vec![0xAB, 0xCD];
+    let written = session.poll_bytes(&mut out);
+
+    assert_eq!(&out[..2], &[0xAB, 0xCD], "existing content is preserved");
+    assert_eq!(out.len(), 2 + written);
+}
+
+#[test]
+fn polling_then_finishing_produces_the_same_stream_as_finishing_alone() {
+    let mut streamed = Vec::new();
+    let mut session = EncodeSession::open(PacketEmittingEncoder::new()).expect("open session");
+    for pts in 0..FRAMES_PAST_ONE_FRAGMENT {
+        session.write_frame(&cpu_frame(pts)).expect("write frame");
+        session.poll_bytes(&mut streamed);
+    }
+    let tail = session
+        .finish_into(&mut streamed)
+        .expect("finish into the same buffer");
+    assert!(tail > 0, "the trailing fragment only appears at finish");
+
+    let mut whole = EncodeSession::open(PacketEmittingEncoder::new()).expect("open session");
+    for pts in 0..FRAMES_PAST_ONE_FRAGMENT {
+        whole.write_frame(&cpu_frame(pts)).expect("write frame");
+    }
+    let whole = whole.finish().expect("finish");
+
+    assert_eq!(
+        streamed, whole,
+        "incremental polling must not change the bytes, only when they arrive"
+    );
+}
+
+#[test]
+fn finish_after_polling_returns_only_the_unpolled_tail() {
+    let mut session = EncodeSession::open(PacketEmittingEncoder::new()).expect("open session");
+    for pts in 0..FRAMES_PAST_ONE_FRAGMENT {
+        session.write_frame(&cpu_frame(pts)).expect("write frame");
+    }
+    let mut polled = Vec::new();
+    session.poll_bytes(&mut polled);
+    assert!(!polled.is_empty(), "the first fragment was drained");
+
+    let tail = session.finish().expect("finish");
+
+    assert!(!tail.is_empty(), "the flushed remainder is still returned");
+    assert_eq!(
+        &polled[4..8],
+        b"ftyp",
+        "the init segment went to the caller that polled for it"
+    );
+    assert!(
+        !tail.windows(4).any(|w| w == b"ftyp"),
+        "finish() returns the tail, not a second copy of the whole stream — see ADR-0006"
+    );
+}

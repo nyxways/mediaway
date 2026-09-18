@@ -73,3 +73,15 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
       signatures unchanged; v1 is CPU-frame-only, `Gpu`-backed frames + a non-empty
       chain fail loudly with `FilterError::GpuFrameUnsupported` (see
       [ADR-0001](../adr/0001-frame-filter-hook.md))
+
+### 7 — Streaming byte output — done (2026-09-18)
+
+- [x] `EncodeSession::poll_bytes` / `finish_into`, with `finish()` demoted to a
+      convenience wrapper — [ADR-0006](../adr/0006-encode-session-streaming-bytes.md).
+      `EncodeSession` was the only non-streaming element in a streaming stack: the muxer
+      underneath already exposed `Mux::poll_bytes`, which is why
+      `examples/pipeline/screen_record.rs` had to drive `mp4::Muxer` directly. A long
+      session's memory is now bounded by poll cadence, not by recording length.
+- [ ] Migrate `examples/pipeline/screen_record.rs` onto `EncodeSession` now that the
+      reason it bypassed the facade is gone (it also predates `open_with_audio`, so this
+      is one migration, not two)

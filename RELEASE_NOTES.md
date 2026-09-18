@@ -10,7 +10,16 @@
   delegate at a documented default
   (`crates/mediaway-encoder/adr/0005-resolution-aware-capability-probe.md`).
 
+- `EncodeSession::poll_bytes` and `EncodeSession::finish_into` — drain fMP4 bytes
+  incrementally during a session instead of holding the whole recording in RAM until
+  `finish()`. A long capture's memory is now bounded by poll cadence rather than by
+  duration (`crates/mediaway/adr/0006-encode-session-streaming-bytes.md`).
+
 ### Changed
+
+- `EncodeSession::finish` is now a convenience wrapper over `finish_into`. Its signature
+  and its behaviour for a session that was never polled are unchanged; a session drained
+  with `poll_bytes` receives only the unpolled tail, as documented on both methods.
 
 ### Fixed
 

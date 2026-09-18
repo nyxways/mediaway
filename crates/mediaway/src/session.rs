@@ -277,7 +277,37 @@ impl<E: VideoEncoder> EncodeSession<E> {
         self.audio.as_mut()?.vad_scores.pop_front()
     }
 
-    /// Flush the encoder(s) and muxer, returning the complete fMP4 byte stream.
+    /// Append whatever fMP4 bytes are ready to `out`, returning how many were written.
+    ///
+    /// The streaming exit. Call it as often as you like during a session — after every
+    /// [`write_frame`](Self::write_frame), on a timer, or not at all — and the session's
+    /// memory stays bounded by the poll cadence instead of growing with the recording's
+    /// length. A one-hour capture that is never polled holds the entire file in RAM until
+    /// [`finish`](Self::finish); the same capture polled into a `File` holds a fragment.
+    ///
+    /// Returns `0` when nothing is ready. That is indistinguishable from "already fully
+    /// drained" — a caller that needs the difference must track its own running total
+    /// (`adr/0006-encode-session-streaming-bytes.md` § Negative).
+    ///
+    /// Bytes are appended, never overwritten, so one buffer can be reused across the
+    /// whole session: poll, write it out, `clear()`, repeat.
+    ///
+    /// Polling alone never finishes the stream — the last fragments only appear after
+    /// [`finish_into`](Self::finish_into) or [`finish`](Self::finish) flushes the
+    /// encoders and muxer.
+    pub fn poll_bytes(&mut self, out: &mut Vec<u8>) -> usize {
+        self.muxer.poll_bytes(out)
+    }
+
+    /// Flush the encoder(s) and muxer, then append the remaining fMP4 bytes to `out` and
+    /// return how many were written.
+    ///
+    /// **This returns what has not been polled yet, not the whole stream.** A session
+    /// that was drained with [`poll_bytes`](Self::poll_bytes) along the way ends here
+    /// with only its tail; a session that was never polled ends with the complete
+    /// recording. Consuming `self` is what makes "write a frame after flushing"
+    /// unrepresentable rather than merely wrong
+    /// (`adr/0006-encode-session-streaming-bytes.md`).
     ///
     /// **Known gap, inherited from `mediaway-audio-apm`, not fixed here**: a trailing
     /// audio block shorter than 10ms sitting in an attached [`AudioProcessor`]'s
@@ -287,7 +317,7 @@ impl<E: VideoEncoder> EncodeSession<E> {
     /// # Errors
     ///
     /// Returns [`PipelineError`] on encoder or mux failure.
-    pub fn finish(mut self) -> Result<Vec<u8>, PipelineError> {
+    pub fn finish_into(mut self, out: &mut Vec<u8>) -> Result<usize, PipelineError> {
         self.encoder.flush()?;
         self.drain()?;
         if let Some(mut audio) = self.audio.take() {
@@ -295,8 +325,26 @@ impl<E: VideoEncoder> EncodeSession<E> {
             Self::drain_audio(&mut audio, &mut self.muxer)?;
         }
         self.muxer.flush();
+        Ok(self.muxer.poll_bytes(out))
+    }
+
+    /// Flush the encoder(s) and muxer, returning the fMP4 bytes as one buffer.
+    ///
+    /// The whole-buffer convenience over [`finish_into`](Self::finish_into), which is the
+    /// streaming exit. For a session that was never polled this is the complete
+    /// recording — the original and still most common use. For a session drained with
+    /// [`poll_bytes`](Self::poll_bytes) it is only the tail; prefer `finish_into` there,
+    /// so the tail lands in the same buffer as everything else rather than in a fresh
+    /// allocation.
+    ///
+    /// Carries [`finish_into`](Self::finish_into)'s trailing-partial-audio-block gap.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PipelineError`] on encoder or mux failure.
+    pub fn finish(self) -> Result<Vec<u8>, PipelineError> {
         let mut bytes = Vec::new();
-        self.muxer.poll_bytes(&mut bytes);
+        self.finish_into(&mut bytes)?;
         Ok(bytes)
     }
 

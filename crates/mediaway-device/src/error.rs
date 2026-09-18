@@ -37,6 +37,27 @@ pub enum CaptureError {
         /// (`HRESULT` is already `i32`; other platforms sign-extend into one).
         code: i32,
     },
+    /// The requested [`crate::desktop::CaptureRegion`] does not fit the captured surface —
+    /// at open, or later because the source shrank. Never padded instead: a padded frame
+    /// holds pixels the source did not draw.
+    #[error(
+        "capture region {width}x{height} at ({x}, {y}) does not fit a \
+         {surface_width}x{surface_height} surface"
+    )]
+    RegionOutOfBounds {
+        /// Region left edge.
+        x: u32,
+        /// Region top edge.
+        y: u32,
+        /// Region width.
+        width: u32,
+        /// Region height.
+        height: u32,
+        /// Width of the surface it had to fit.
+        surface_width: u32,
+        /// Height of the surface it had to fit.
+        surface_height: u32,
+    },
     /// Session already finished or not open.
     #[error("capture session closed")]
     Closed,

@@ -423,7 +423,9 @@ impl ScreenCapture {
             // `mediaway-device` adr/apple/0004.
             use mediaway_device::apple::AppleScreenCapture;
             // No pointer on iOS to composite: refuse rather than record without it.
-            if config.cursor == mediaway_device::desktop::CursorCapture::Included {
+            if config.cursor == mediaway_device::desktop::CursorCapture::Included
+                || config.region.is_some()
+            {
                 return Err(CaptureError::Unsupported);
             }
             let cap = AppleScreenCapture::open()?;

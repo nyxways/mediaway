@@ -9,7 +9,7 @@ use mediaway_common::{
 };
 
 use super::{
-    CaptureError, CaptureOutputPreference, CursorCapture, DesktopVideoCapture,
+    CaptureError, CaptureOutputPreference, CaptureRegion, CursorCapture, DesktopVideoCapture,
     DesktopVideoCaptureConfig, capture_desktop_video_once,
 };
 use crate::Select;
@@ -135,4 +135,71 @@ fn the_cursor_is_left_out_unless_asked_for() {
     );
     assert_eq!(screen.cursor, CursorCapture::Excluded);
     assert_eq!(window.cursor, CursorCapture::Excluded);
+}
+
+const fn region(x: u32, y: u32, width: u32, height: u32) -> CaptureRegion {
+    CaptureRegion {
+        x,
+        y,
+        width,
+        height,
+    }
+}
+
+#[test]
+fn no_region_is_asked_for_by_default() {
+    let time_base = Rational::new(1, 30);
+    assert_eq!(
+        DesktopVideoCaptureConfig::screen(Select::Default, time_base).region,
+        None
+    );
+    let window = NativeHandle::new(1).expect("non-zero placeholder");
+    assert_eq!(
+        DesktopVideoCaptureConfig::window(window, time_base).region,
+        None
+    );
+}
+
+#[test]
+fn a_region_fits_only_when_it_lies_entirely_inside() {
+    assert!(
+        region(0, 0, 640, 480).fits_within(640, 480),
+        "exactly the surface"
+    );
+    assert!(
+        region(100, 50, 540, 430).fits_within(640, 480),
+        "touching the far corner"
+    );
+    assert!(
+        !region(101, 50, 540, 430).fits_within(640, 480),
+        "one column past the edge"
+    );
+    assert!(
+        !region(100, 51, 540, 430).fits_within(640, 480),
+        "one row past the edge"
+    );
+    assert!(
+        !region(0, 0, 641, 480).fits_within(640, 480),
+        "wider than the surface"
+    );
+}
+
+#[test]
+fn an_empty_region_never_fits() {
+    assert!(!region(0, 0, 0, 480).fits_within(640, 480));
+    assert!(!region(0, 0, 640, 0).fits_within(640, 480));
+}
+
+#[test]
+fn a_region_whose_edge_overflows_u32_does_not_fit_rather_than_wrapping() {
+    // `x + width` wraps to 99 in u32 arithmetic, which would "fit" a 640-wide surface.
+    assert!(!region(u32::MAX - 100, 0, 200, 10).fits_within(640, 480));
+    assert!(!region(0, u32::MAX, 10, 2).fits_within(640, 480));
+}
+
+#[test]
+fn only_a_region_at_the_top_left_is_at_the_origin() {
+    assert!(region(0, 0, 10, 10).is_at_origin());
+    assert!(!region(1, 0, 10, 10).is_at_origin());
+    assert!(!region(0, 1, 10, 10).is_at_origin());
 }

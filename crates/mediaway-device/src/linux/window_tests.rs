@@ -24,6 +24,7 @@ fn non_window_source_is_unsupported() {
         gpu_device: None,
         sharing: CaptureSharing::Shared,
         cursor: crate::desktop::CursorCapture::Excluded,
+        region: None,
     };
     assert!(matches!(
         LinuxWindowCapture::open(&cfg),
@@ -58,6 +59,7 @@ fn open_window_capture_or_skip() {
         gpu_device: None,
         sharing: CaptureSharing::Shared,
         cursor: crate::desktop::CursorCapture::Excluded,
+        region: None,
     };
     let mut cap = match LinuxWindowCapture::open(&cfg) {
         Ok(c) => c,

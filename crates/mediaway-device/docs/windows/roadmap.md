@@ -42,8 +42,9 @@ Platform order: **Windows first**. Workspace index: [`docs/roadmap.md`](../../..
       read back into `border_hidden()` — ADR-0008 (crate level)
 - [x] Even-cropped frames for hardware encoders (`FrameDimensions::EvenCropped`) — free,
       via the frame-pool size; see ADR-0008 § Even-cropped frames
-- [ ] Arbitrary-rectangle crop of a window (needs a GPU copy; the pool trick only trims
-      right/bottom edges)
+- [x] Arbitrary-rectangle crop of a window — `DesktopVideoCaptureConfig::region`; free at the
+      origin, one GPU region copy elsewhere (ADR-0009)
+- [ ] DXGI: honour `region` in the shared path's existing ring copy (free there)
 - [ ] DXGI: composite the Desktop Duplication pointer shape so screen capture can honour
       `CursorCapture::Included` (currently rejected)
 - [x] Frame-pool recreate on content-size change

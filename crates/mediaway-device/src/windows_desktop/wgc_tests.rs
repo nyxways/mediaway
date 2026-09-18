@@ -6,7 +6,10 @@
     reason = "unit tests"
 )]
 
-use super::resized_geometry;
+use super::{Crop, plan_crop, resized_geometry};
+use crate::CaptureError;
+use crate::desktop::CaptureRegion;
+use crate::windows_desktop::FrameDimensions;
 use mediaway_common::VideoGeometry;
 
 #[cfg(windows)]
@@ -360,4 +363,102 @@ fn resized_geometry_some_on_first_frame_from_zero_geometry() {
             height: 600,
         })
     );
+}
+
+const fn region(x: u32, y: u32, width: u32, height: u32) -> CaptureRegion {
+    CaptureRegion {
+        x,
+        y,
+        width,
+        height,
+    }
+}
+
+#[test]
+fn without_a_region_the_pool_follows_the_window() {
+    let plan = plan_crop(None, FrameDimensions::Native, 1137, 636).expect("plan");
+    assert!(matches!(plan.crop, Crop::None));
+    assert_eq!((plan.frame, plan.pool), ((1137, 636), (1137, 636)));
+    let plan = plan_crop(None, FrameDimensions::EvenCropped, 1137, 636).expect("plan");
+    assert_eq!((plan.frame, plan.pool), ((1136, 636), (1136, 636)));
+}
+
+#[test]
+fn a_region_at_the_origin_is_cropped_by_the_pool_alone() {
+    let plan = plan_crop(
+        Some(region(0, 0, 800, 600)),
+        FrameDimensions::Native,
+        1920,
+        1080,
+    )
+    .expect("plan");
+    assert!(
+        matches!(plan.crop, Crop::Pool { .. }),
+        "no copy at the origin"
+    );
+    assert_eq!((plan.frame, plan.pool), ((800, 600), (800, 600)));
+}
+
+#[test]
+fn a_region_elsewhere_copies_and_the_pool_stops_at_its_far_corner() {
+    let plan = plan_crop(
+        Some(region(100, 50, 800, 600)),
+        FrameDimensions::Native,
+        1920,
+        1080,
+    )
+    .expect("plan");
+    assert!(matches!(plan.crop, Crop::Copy { .. }));
+    assert_eq!(plan.frame, (800, 600));
+    // Not the whole window: WGC clips from the top-left, so nothing past (900, 650) is needed.
+    assert_eq!(plan.pool, (900, 650));
+}
+
+#[test]
+fn even_cropping_applies_to_the_region_not_the_window() {
+    let plan = plan_crop(
+        Some(region(10, 10, 801, 601)),
+        FrameDimensions::EvenCropped,
+        1137,
+        636,
+    )
+    .expect("plan");
+    assert_eq!(plan.frame, (800, 600));
+    assert_eq!(plan.pool, (810, 610));
+}
+
+#[test]
+fn a_region_past_the_window_is_refused_with_its_numbers() {
+    let err = plan_crop(
+        Some(region(1000, 0, 200, 100)),
+        FrameDimensions::Native,
+        1137,
+        636,
+    )
+    .err()
+    .expect("out of bounds");
+    assert_eq!(
+        err,
+        CaptureError::RegionOutOfBounds {
+            x: 1000,
+            y: 0,
+            width: 200,
+            height: 100,
+            surface_width: 1137,
+            surface_height: 636,
+        }
+    );
+}
+
+#[test]
+fn a_region_that_even_crops_to_nothing_is_invalid_input() {
+    let err = plan_crop(
+        Some(region(0, 0, 1, 100)),
+        FrameDimensions::EvenCropped,
+        640,
+        480,
+    )
+    .err()
+    .expect("empty after cropping");
+    assert_eq!(err, CaptureError::InvalidInput);
 }

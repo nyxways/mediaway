@@ -186,6 +186,11 @@ fn open_stream(
     if config.output != CaptureOutputPreference::CpuFramesOk {
         return Err(CaptureError::Unsupported);
     }
+    // `SCStreamConfiguration::sourceRect` could crop natively; not wired yet, so refuse
+    // rather than record the whole surface.
+    if config.region.is_some() {
+        return Err(CaptureError::Unsupported);
+    }
 
     // SAFETY: plain, always-safe-to-call constructor.
     let stream_config = unsafe { SCStreamConfiguration::new() };

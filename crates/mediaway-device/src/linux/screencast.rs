@@ -113,6 +113,10 @@ pub(crate) fn open_session(
     if config.output != CaptureOutputPreference::CpuFramesOk {
         return Err(CaptureError::Unsupported);
     }
+    // Not implemented for the portal: refuse rather than record the whole surface.
+    if config.region.is_some() {
+        return Err(CaptureError::Unsupported);
+    }
 
     // `Embedded` draws the pointer into the stream's frames. The portal also offers
     // `Metadata` (pointer position sent alongside), which would need compositing here, so it

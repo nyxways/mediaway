@@ -98,6 +98,13 @@
   (`PlatformWindowCapture`, `PlatformDesktopAudioCapture`) rather than a box, per
   `crates/mediaway/adr/0002-platform-dispatch-avoid-box-dyn.md`.
 
+- **Capture a region of a window** — `DesktopVideoCaptureConfig::region: Option<CaptureRegion>`.
+  WGC honours it: a region at the origin is cropped by sizing the frame pool (no copy), any
+  other region by one GPU `CopySubresourceRegion` per frame. A window that shrinks below the
+  region is `CaptureError::RegionOutOfBounds`, never padded. DXGI, Linux, macOS and iOS refuse a
+  region with `Unsupported` rather than record the whole surface.
+  (`crates/mediaway-device/adr/0009-capture-region.md`)
+
 - **Windows AAC decode** — `mediaway_decoder::windows::WmfAacDecoder` (+ `AacDecoderConfig`)
   over the inbox `CMSAACDecMFT`, Float32 PCM out, wired into
   `mediaway::platform::decoder_support(Aac)`. Closes a gap where this workspace could
@@ -196,6 +203,10 @@
 ### Deprecated
 
 ### Breaking
+
+- **`DesktopVideoCaptureConfig` gains `region: Option<CaptureRegion>`**; struct literals add
+  `region: None` (the constructors set it). `CaptureError` gains `RegionOutOfBounds`
+  (the enum is `#[non_exhaustive]`).
 
 - **`DesktopVideoCaptureConfig` gains `cursor: CursorCapture`** (`Excluded` by default,
   `Included` on request). Struct-literal constructions must add it; `::screen` / `::window`

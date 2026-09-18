@@ -23,6 +23,10 @@
 
 ### Fixed
 
+- `cargo nextest run --workspace` no longer moves the developer's mouse cursor. The two
+  desktop-capture smoke tests nudge the pointer to make DXGI Desktop Duplication produce
+  frames on an idle desktop; they are now `#[ignore]`d and opt-in via `--run-ignored all`.
+
 - **DX11 Zero-Copy encode now works on NVIDIA hardware.** Three async-MFT sequencing bugs
   made `VideoInputPreference::ZeroCopyGpu` fail on every machine that selected an async
   encoder MFT — which is every NVIDIA machine, since Intel QuickSync's MFTs are sync and

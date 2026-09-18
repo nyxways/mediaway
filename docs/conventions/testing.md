@@ -132,6 +132,36 @@ User-Agent is `Mediaway-fate-fetch` for **this script only** (not `Mediaway-stan
 | Keep default suite hermetic (no network, no required FFmpeg) | Fail CI solely because `ffmpeg` is missing |
 | File-level `unwrap`/`expect` allows on `*_tests.rs` / `tests/*.rs` | Scatter `#[allow]` on production modules for tests |
 | Prefer `cargo nextest run` when installed | Rely on flaky shared global state |
+| Keep the default suite hermetic **and non-intrusive** (see below) | Move the cursor / steal focus in a test that runs by default |
+
+## Tests that manipulate the desktop
+
+**A test that moves the mouse pointer, steals window focus, or otherwise takes over the
+machine's input or display must be `#[ignore]`d**, with the reason in the attribute and a
+comment saying how to run it.
+
+`cargo nextest run --workspace` is something a developer types while working. It must never
+hijack the desktop they are working on. This is not a hypothetical: DXGI Desktop Duplication
+only yields a frame when the desktop image *or* the pointer position changes, so a capture
+test on an idle desktop has a real incentive to nudge the cursor — and two of ours did, by
+default, on every full-suite run.
+
+```rust
+#[ignore = "moves the mouse cursor; run explicitly with --run-ignored all"]
+#[test]
+fn screen_and_mic_to_fmp4_two_tracks() { /* ... */ }
+```
+
+Run them deliberately:
+
+```bash
+cargo nextest run -p mediaway --run-ignored all -E 'test(screen_and_mic_to_fmp4_two_tracks)'
+```
+
+This costs nothing on CI, where these tests skip for lack of a GPU and a desktop session
+anyway. Needing real hardware is **not** by itself a reason to `#[ignore]` — hardware tests
+that only open a device and encode are fine in the default suite, because they skip honestly
+and leave the machine alone. The line is *does it touch input or the screen*.
 
 ## Runners
 

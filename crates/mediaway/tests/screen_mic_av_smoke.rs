@@ -58,6 +58,16 @@ const CAPTURE_SECS: u64 = 5;
 /// ~30fps pacing to match the configured encoder time base.
 const TICK: Duration = Duration::from_millis(33);
 
+// Moves the developer's mouse pointer: DXGI Desktop Duplication only produces a frame
+// when the desktop image *or* the pointer position changes, so this nudges the cursor
+// each poll tick to keep frames flowing (restoring it afterwards). That is fine on a
+// dedicated machine and hostile on the one someone is working at -- `cargo nextest run`
+// must never take over a developer's desktop. Opt in explicitly:
+//
+//     cargo nextest run -p mediaway --run-ignored all -E 'test(screen_and_mic_to_fmp4_two_tracks)'
+//
+// See docs/conventions/testing.md "Tests that manipulate the desktop".
+#[ignore = "moves the mouse cursor; run explicitly with --run-ignored all"]
 #[test]
 fn screen_and_mic_to_fmp4_two_tracks() {
     let Some((_device, device_handle)) = open_shared_d3d11_device() else {

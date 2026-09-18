@@ -48,11 +48,17 @@ pub(crate) struct PortalStream {
 ///
 /// Returns the raw [`ashpd::Error`] — map with [`map_ashpd_error`] at the
 /// `CaptureError` boundary.
-pub(crate) fn open_portal_stream(source_type: SourceType) -> Result<PortalStream, ashpd::Error> {
-    block_on(open_portal_stream_async(source_type))
+pub(crate) fn open_portal_stream(
+    source_type: SourceType,
+    cursor_mode: CursorMode,
+) -> Result<PortalStream, ashpd::Error> {
+    block_on(open_portal_stream_async(source_type, cursor_mode))
 }
 
-async fn open_portal_stream_async(source_type: SourceType) -> ashpd::Result<PortalStream> {
+async fn open_portal_stream_async(
+    source_type: SourceType,
+    cursor_mode: CursorMode,
+) -> ashpd::Result<PortalStream> {
     let proxy = Screencast::new().await?;
     let session = proxy
         .create_session(CreateSessionOptions::default())
@@ -61,7 +67,7 @@ async fn open_portal_stream_async(source_type: SourceType) -> ashpd::Result<Port
         .select_sources(
             &session,
             SelectSourcesOptions::default()
-                .set_cursor_mode(CursorMode::Hidden)
+                .set_cursor_mode(cursor_mode)
                 .set_sources(Some(source_type.into()))
                 .set_multiple(false)
                 .set_persist_mode(PersistMode::DoNot),

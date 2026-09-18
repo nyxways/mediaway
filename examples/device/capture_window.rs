@@ -54,5 +54,6 @@ fn main() {
         output: CaptureOutputPreference::ZeroCopyGpu,
         gpu_device: None,
         sharing: CaptureSharing::Shared,
+        cursor: mediaway_device::desktop::CursorCapture::Excluded,
     };
 }

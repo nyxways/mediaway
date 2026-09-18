@@ -3,8 +3,8 @@
 #![allow(unsafe_code)]
 
 use crate::desktop::{
-    CaptureOutputPreference, CaptureSharing, DesktopCaptureSource, DesktopVideoCapture,
-    DesktopVideoCaptureConfig,
+    CaptureOutputPreference, CaptureSharing, CursorCapture, DesktopCaptureSource,
+    DesktopVideoCapture, DesktopVideoCaptureConfig,
 };
 use crate::windows_desktop::dxgi_exclusive::ExclusiveDuplication;
 use crate::windows_desktop::dxgi_shared::{self, SharedDuplication};
@@ -68,7 +68,9 @@ impl WindowsScreenCapture {
     ///
     /// # Errors
     ///
-    /// Returns [`CaptureError::Unsupported`] for non-screen sources or CPU output preference.
+    /// Returns [`CaptureError::Unsupported`] for non-screen sources, CPU output preference, or
+    /// [`CursorCapture::Included`]: Desktop Duplication reports the pointer separately from the
+    /// frame, and this backend does not composite it.
     /// Returns [`CaptureError::InvalidInput`] when `gpu_device` is unset, or when an existing
     /// shared session for this output was opened against a different `ID3D11Device` instance.
     /// Returns [`CaptureError::AccessDenied`] for `Exclusive` when another duplication (`Shared`
@@ -78,6 +80,9 @@ impl WindowsScreenCapture {
             return Err(CaptureError::Unsupported);
         };
         if config.output != CaptureOutputPreference::ZeroCopyGpu {
+            return Err(CaptureError::Unsupported);
+        }
+        if config.cursor == CursorCapture::Included {
             return Err(CaptureError::Unsupported);
         }
         let Some(GpuDeviceHandle::DirectX11(handle)) = config.gpu_device else {

@@ -122,6 +122,7 @@ fn created_device_drives_real_screen_capture_or_skip() {
         output: CaptureOutputPreference::ZeroCopyGpu,
         gpu_device: Some(device.handle()),
         sharing: CaptureSharing::Shared,
+        cursor: crate::desktop::CursorCapture::Excluded,
     };
     let mut cap = match WindowsScreenCapture::open(&cfg) {
         Ok(c) => c,

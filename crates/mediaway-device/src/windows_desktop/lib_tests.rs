@@ -8,9 +8,9 @@
 
 use super::*;
 use crate::desktop::{
-    CaptureOutputPreference, CaptureSharing, DesktopAudioCapture, DesktopAudioCaptureConfig,
-    DesktopCaptureSource, DesktopVideoCapture, DesktopVideoCaptureConfig,
-    capture_desktop_video_once,
+    CaptureOutputPreference, CaptureSharing, CursorCapture, DesktopAudioCapture,
+    DesktopAudioCaptureConfig, DesktopCaptureSource, DesktopVideoCapture,
+    DesktopVideoCaptureConfig, capture_desktop_video_once,
 };
 use crate::{CaptureError, Select};
 use mediaway_common::{
@@ -59,6 +59,7 @@ fn open_screen_zero_copy_poll_release_or_skip() {
         output: CaptureOutputPreference::ZeroCopyGpu,
         gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
         sharing: CaptureSharing::Shared,
+        cursor: crate::desktop::CursorCapture::Excluded,
     };
     let mut cap = match WindowsScreenCapture::open(&cfg) {
         Ok(c) => c,
@@ -125,6 +126,7 @@ fn screen_capture_delivers_zero_copy_frame_or_skip() {
         output: CaptureOutputPreference::ZeroCopyGpu,
         gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
         sharing: CaptureSharing::Shared,
+        cursor: crate::desktop::CursorCapture::Excluded,
     };
     let mut cap = match WindowsScreenCapture::open(&cfg) {
         Ok(c) => c,
@@ -210,6 +212,7 @@ fn exclusive_screen_capture_delivers_zero_copy_frame_or_skip() {
         output: CaptureOutputPreference::ZeroCopyGpu,
         gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
         sharing: CaptureSharing::Exclusive,
+        cursor: crate::desktop::CursorCapture::Excluded,
     };
     let mut cap = match WindowsScreenCapture::open(&cfg) {
         Ok(c) => c,
@@ -296,6 +299,7 @@ fn exclusive_screen_capture_blocks_second_open_or_skip() {
         output: CaptureOutputPreference::ZeroCopyGpu,
         gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
         sharing: CaptureSharing::Exclusive,
+        cursor: crate::desktop::CursorCapture::Excluded,
     };
     let first = match WindowsScreenCapture::open(&cfg) {
         Ok(c) => c,
@@ -350,6 +354,7 @@ fn capture_video_once_screen_is_unsupported_for_gpu_storage_or_skip() {
         output: CaptureOutputPreference::ZeroCopyGpu,
         gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
         sharing: CaptureSharing::Shared,
+        cursor: crate::desktop::CursorCapture::Excluded,
     };
     let mut dangling_frame_size = None;
     match capture_desktop_video_once(
@@ -483,4 +488,17 @@ fn open_window_capture_foreground_or_skip() {
         Err(e) => eprintln!("skip: wgc poll ({e:?})"),
     }
     cap.close().expect("close");
+}
+
+/// Desktop Duplication hands the pointer back separately from the frame, and this backend does
+/// not composite it — so asking for it must fail rather than record a frame without it.
+/// Checked before the device is, so no GPU is needed and nothing on screen is touched.
+#[test]
+fn screen_capture_refuses_to_include_the_cursor() {
+    let mut cfg = DesktopVideoCaptureConfig::screen(Select::Default, Rational::new(1, 30));
+    cfg.cursor = CursorCapture::Included;
+    assert!(matches!(
+        WindowsScreenCapture::open(&cfg),
+        Err(CaptureError::Unsupported)
+    ));
 }

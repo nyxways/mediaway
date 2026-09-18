@@ -253,10 +253,7 @@ impl WmfVideoEncoder {
         if frame.width != self.width || frame.height != self.height {
             return Err(EncodeError::InvalidInput);
         }
-        if let Some(session) = self.dx11.as_mut() {
-            dx11::drain_events_nonblocking(session)?;
-            dx11::wait_need_input(session)?;
-        }
+        self.await_need_input()?;
         let sample = dx11::sample_from_dx11_texture(
             *texture,
             *subresource,
@@ -274,6 +271,38 @@ impl WmfVideoEncoder {
         Ok(())
     }
 
+    /// Block until the MFT asks for another input frame, **servicing output while
+    /// waiting**.
+    ///
+    /// An async MFT stops requesting input until the output it has already produced is
+    /// collected, so a wait loop that only polls for `METransformNeedInput` deadlocks
+    /// after the first frame: the encoder is waiting for us, and we are waiting for it.
+    /// Draining output here is what breaks that, not an optimization.
+    fn await_need_input(&mut self) -> Result<(), EncodeError> {
+        if self.dx11.is_none() {
+            return Ok(());
+        }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+        loop {
+            if let Some(session) = self.dx11.as_mut() {
+                dx11::drain_events_nonblocking(session)?;
+                if dx11::has_need_input(session) {
+                    return Ok(());
+                }
+            }
+            self.drain_output()?;
+            if let Some(session) = self.dx11.as_mut()
+                && dx11::has_need_input(session)
+            {
+                return Ok(());
+            }
+            if std::time::Instant::now() > deadline {
+                return Err(EncodeError::Backend);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+    }
+
     fn drain_output(&mut self) -> Result<(), EncodeError> {
         let provides = self
             .dx11
@@ -282,6 +311,11 @@ impl WmfVideoEncoder {
         loop {
             if let Some(session) = self.dx11.as_mut() {
                 dx11::drain_events_nonblocking(session)?;
+                // Async MFTs must not be polled for output they have not announced —
+                // see `dx11::take_have_output`.
+                if !dx11::take_have_output(session) {
+                    break;
+                }
             }
             match process_one_output(&self.transform, self.output_buf_size, provides, &self.info)? {
                 // The MFT emits B-frame streams in decode order while each

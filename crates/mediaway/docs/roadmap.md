@@ -11,6 +11,10 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 - [x] Crate + `docs/` / `adr/`
 - [x] Workspace ADR-0014: crate exists, `EncodeSession` shape, platform dispatch migration
 - [x] `EncodeSession<E: VideoEncoder>` — open / write_frame / finish
+- [x] `WindowCapture` + `DesktopAudio` markers (2026-09-19) — the two capabilities a
+      single-app recorder is built on were reachable only by naming backend types. First
+      entry points shaped per ADR-0002 (concrete per-target type, `Infallible` where there
+      is no backend); the older markers still box.
 - [x] `platform` module — `AutoEncoder`/`AutoDecoder`/`ScreenCapture`/`Microphone`
       marker types, each with an `open` associated function (migrated from
       `examples/platform.rs`; renamed from free functions 2026-07-31, see ADR-0014's

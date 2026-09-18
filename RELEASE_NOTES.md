@@ -91,6 +91,13 @@
 
 ### Added
 
+- **`mediaway::platform::WindowCapture` and `platform::DesktopAudio`** — single-window capture
+  (WGC / portal / ScreenCaptureKit) and desktop audio (Windows system or per-process loopback)
+  through the auto-dispatch facade. Recording one application's picture and sound had been
+  possible only by naming backend types directly. Both return the concrete per-target type
+  (`PlatformWindowCapture`, `PlatformDesktopAudioCapture`) rather than a box, per
+  `crates/mediaway/adr/0002-platform-dispatch-avoid-box-dyn.md`.
+
 - **Windows AAC decode** — `mediaway_decoder::windows::WmfAacDecoder` (+ `AacDecoderConfig`)
   over the inbox `CMSAACDecMFT`, Float32 PCM out, wired into
   `mediaway::platform::decoder_support(Aac)`. Closes a gap where this workspace could

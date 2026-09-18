@@ -1,8 +1,10 @@
 //! Platform dispatch — the **only** module in this crate allowed to contain
 //! `#[cfg(target_os = …)]` / `#[cfg(windows)]`.
 //!
-//! All public functions return `Box<dyn Trait>` so callers stay
-//! platform-agnostic. On an unsupported platform every open returns
+//! The older entry points return `Box<dyn Trait>`. [`WindowCapture`] and [`DesktopAudio`]
+//! return concrete per-target type aliases instead, per
+//! [ADR-0002](../adr/0002-platform-dispatch-avoid-box-dyn.md), which the older ones have not
+//! been migrated to yet. On an unsupported platform every open returns
 //! `Err(…::NoBackend)`. Migrated from the former `examples/platform.rs`
 //! (see [ADR-0014](../../../docs/adr/0014-pipeline-convenience-crate.md)).
 
@@ -10,7 +12,9 @@ use mediaway_common::CodecKind;
 use mediaway_decoder::capability::{DecodeSupport, DecodeUnavailable};
 use mediaway_decoder::{DecodeError, VideoDecoder, VideoDecoderConfig};
 use mediaway_device::audio::{AudioCapture, AudioCaptureConfig};
-use mediaway_device::desktop::{DesktopVideoCapture, DesktopVideoCaptureConfig};
+use mediaway_device::desktop::{
+    DesktopAudioCaptureConfig, DesktopVideoCapture, DesktopVideoCaptureConfig,
+};
 use mediaway_device::{CaptureError, DeviceKind, PermissionState, Support};
 use mediaway_encoder::auto::AutoVideoEncodeConfig;
 use mediaway_encoder::capability::EncoderCapability;
@@ -434,6 +438,114 @@ impl ScreenCapture {
     }
 }
 
+// ── Window capture ────────────────────────────────────────────────────────────
+
+/// The window-capture backend compiled into this target.
+///
+/// A concrete type rather than `Box<dyn DesktopVideoCapture>`, per
+/// [ADR-0002](../adr/0002-platform-dispatch-avoid-box-dyn.md): the choice is made by `#[cfg]`
+/// at compile time, so there is never more than one candidate to erase. Callers that want
+/// erasure still get it by coercing `&mut PlatformWindowCapture` to
+/// `&mut dyn DesktopVideoCapture`. The older entry points in this module predate that ADR
+/// and still box.
+///
+/// [`core::convert::Infallible`] on a target with no backend: [`WindowCapture::open`] can
+/// only return `Err` there, and the type says so.
+#[cfg(windows)]
+pub type PlatformWindowCapture = mediaway_device::windows_desktop::WindowsWindowCapture;
+/// See the Windows definition.
+#[cfg(target_os = "linux")]
+pub type PlatformWindowCapture = mediaway_device::linux::LinuxWindowCapture;
+/// See the Windows definition.
+#[cfg(target_os = "macos")]
+pub type PlatformWindowCapture = mediaway_device::apple::AppleWindowCapture;
+/// See the Windows definition.
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+pub type PlatformWindowCapture = core::convert::Infallible;
+
+/// Opens a single-window capture session on the current platform.
+///
+/// A zero-sized marker type, like [`ScreenCapture`]. Use
+/// [`mediaway_device::desktop::DesktopVideoCaptureConfig::window`] to build the config.
+///
+/// Opens with each backend's defaults. Platform-specific options stay on the backend type,
+/// where they belong — on Windows, `WindowsWindowCapture::open_with` for the capture border
+/// and even-dimension cropping.
+pub struct WindowCapture;
+
+impl WindowCapture {
+    /// Open a window capture session for the given config on the current platform.
+    ///
+    /// # Errors
+    ///
+    /// [`CaptureError::NoBackend`] on a target with no window-capture backend (iOS, Android,
+    /// web). Otherwise propagates the backend's open error.
+    pub fn open(config: &DesktopVideoCaptureConfig) -> Result<PlatformWindowCapture, CaptureError> {
+        #[cfg(windows)]
+        {
+            mediaway_device::windows_desktop::WindowsWindowCapture::open(config)
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            mediaway_device::linux::LinuxWindowCapture::open(config)
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            mediaway_device::apple::AppleWindowCapture::open(config)
+        }
+
+        #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+        {
+            let _ = config;
+            Err(CaptureError::NoBackend)
+        }
+    }
+}
+
+// ── Desktop audio capture (system or per-process loopback) ────────────────────
+
+/// The desktop-audio backend compiled into this target. Concrete, not boxed — see
+/// [`PlatformWindowCapture`]. [`core::convert::Infallible`] where there is no backend.
+#[cfg(windows)]
+pub type PlatformDesktopAudioCapture = mediaway_device::windows_desktop::WindowsDesktopAudioCapture;
+/// See the Windows definition.
+#[cfg(not(windows))]
+pub type PlatformDesktopAudioCapture = core::convert::Infallible;
+
+/// Opens a desktop-audio capture session on the current platform: the whole system mix, or
+/// one process's audio, per the config's source.
+///
+/// A zero-sized marker type, like [`Microphone`]. Build the config with
+/// [`mediaway_device::desktop::DesktopAudioCaptureConfig::loopback`] or
+/// [`mediaway_device::desktop::DesktopAudioCaptureConfig::process_loopback`]. The second is
+/// how one application's picture and sound get recorded together, with [`WindowCapture`].
+pub struct DesktopAudio;
+
+impl DesktopAudio {
+    /// Open a desktop-audio capture session for the given config on the current platform.
+    ///
+    /// # Errors
+    ///
+    /// [`CaptureError::NoBackend`] on every target except Windows, which is the only one
+    /// with a desktop-audio backend today. Otherwise propagates the backend's open error.
+    pub fn open(
+        config: &DesktopAudioCaptureConfig,
+    ) -> Result<PlatformDesktopAudioCapture, CaptureError> {
+        #[cfg(windows)]
+        {
+            mediaway_device::windows_desktop::WindowsDesktopAudioCapture::open(config)
+        }
+
+        #[cfg(not(windows))]
+        {
+            let _ = config;
+            Err(CaptureError::NoBackend)
+        }
+    }
+}
+
 // ── Microphone capture ────────────────────────────────────────────────────────
 
 /// Opens the default microphone on the current platform.
@@ -531,3 +643,7 @@ pub fn request_device_permission(kind: DeviceKind) -> Result<PermissionState, Ca
         Ok(PermissionState::NotSupported)
     }
 }
+
+#[cfg(test)]
+#[path = "platform_tests.rs"]
+mod tests;

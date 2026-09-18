@@ -5,9 +5,26 @@
 //! *is* the decoder, same shape as [`crate::pipeline::decoder`]'s video surface),
 //! `poisoned`-guarded (`push_packet`/`poll_frame` are repeated-call APIs). Wraps the
 //! concrete `mediaway_sw::opus::OpusDecoder` directly rather than a `Box<dyn
-//! AudioDecoder>` — no `AudioDecoder` trait exists yet in `mediaway-decoder`
-//! (`mediaway-sw`'s own opus module docs), so a trait object here would abstract
-//! over a backend set of exactly one. An empty `payload` in
+//! AudioDecoder>`.
+//!
+//! **That choice's original reason is no longer true.** ADR-0006 recorded it as "no
+//! `AudioDecoder` trait exists yet in `mediaway-decoder`, so a trait object here would
+//! abstract over a backend set of exactly one". The trait landed in `mediaway-decoder`
+//! ADR-0003 and now has several implementors — `windows::WmfOpusDecoder`,
+//! `windows::WmfAacDecoder`, `apple::OpusDecoder`, `apple::AacDecoder`, and
+//! `SwOpusAudioDecoder`.
+//!
+//! The concrete wrap is still what ships, on a different and narrower justification: this
+//! entry point is *defined* as the software Opus decoder, so a C caller gets byte-identical
+//! behaviour on every platform with no OS codec dependency. Dispatching over the trait would
+//! make the backend — and therefore the output — depend on the host.
+//!
+//! The real limitation this leaves is **not** the concrete type but the surface: there is no
+//! C entry point for any audio codec other than Opus, so AAC decode is unreachable from C
+//! even though the trait now covers it on two platforms. Widening that is an ABI change and
+//! wants its own ADR.
+//!
+//! An empty `payload` in
 //! [`mediaway_audio_decode_session_push_packet`] is Opus's packet-loss-concealment
 //! hint, passed straight through — the same contract
 //! `mediaway_sw::opus::OpusDecoder::push_packet` already documents.

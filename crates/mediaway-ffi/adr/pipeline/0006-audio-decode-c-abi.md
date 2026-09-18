@@ -171,6 +171,34 @@ stability promise).
   voice client still needs to build or bring its own on top of this session, same as
   it already needs its own network transport.
 
+## Addendum (2026-09-18): §2's precondition has fired; the decision stands on a new reason
+
+§2 justified the concrete `OpusDecoder` with "no `AudioDecoder` trait exists in
+`mediaway-decoder` … an abstraction over a backend set of exactly one", and named the
+trigger for revisiting: *"If/when a second real audio-decode backend appears (e.g. the
+already-real-but-unwired `WmfOpusDecoder`, or a future AAC decoder)."*
+
+Both have happened. `mediaway-decoder` ADR-0003 introduced the `AudioDecoder` trait, and it
+now has five implementors: `windows::WmfOpusDecoder`, `windows::WmfAacDecoder`
+(`adr/windows/0006`), `apple::OpusDecoder`, `apple::AacDecoder`, and `SwOpusAudioDecoder`.
+**The reason recorded in §2 is therefore stale, and the module doc that repeated it has been
+corrected.**
+
+The handle still wraps a concrete decoder, but on a narrower justification that §2 did not
+state: this entry point is *defined* as the software Opus decoder, so a C caller gets
+byte-identical output on every platform with no OS codec dependency. Swapping in
+`Box<dyn AudioDecoder>` would make the backend — and the decoded output — depend on the host,
+which is a behaviour change for existing C callers, not the mechanical no-op §2 predicted.
+
+What §2 did **not** anticipate is the surface limit: there is no C entry point for any audio
+codec other than Opus, so AAC decode stays unreachable from C even though the trait now
+covers it on Windows and Apple. That is the real gap, it is an ABI addition rather than a
+substitution, and it wants its own ADR.
+
+Consequently `mediaway-ffi`'s `From<ContainerError> for MediawayPipelineStatus` maps non-MP4
+mux errors to `UnknownError` and `MediawayPipelineStatus` has no AAC-decode variants — both
+are honest today and both are things that ADR must revisit.
+
 ## References
 
 - [`crates/mediaway-sw/adr/opus/0001-unsafe-libopus-encode-decode.md`](../../../mediaway-sw/adr/opus/0001-unsafe-libopus-encode-decode.md) — `OpusEncoder`/`OpusDecoder`

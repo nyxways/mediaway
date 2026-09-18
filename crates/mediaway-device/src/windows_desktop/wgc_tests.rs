@@ -20,7 +20,9 @@ mod hardware {
         CaptureOutputPreference, CursorCapture, DesktopVideoCapture, DesktopVideoCaptureConfig,
     };
     use crate::windows::{GpuDevice, GpuDeviceOptions};
-    use crate::windows_desktop::{CaptureBorder, WindowsWindowCapture};
+    use crate::windows_desktop::{
+        CaptureBorder, FrameDimensions, WindowCaptureOptions, WindowsWindowCapture,
+    };
     use mediaway_common::{GpuBufferHandle, NativeHandle, Rational, VideoFrameStorage};
     use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
     use windows::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -51,7 +53,7 @@ mod hardware {
     }
 
     impl TestWindow {
-        fn create() -> Option<Self> {
+        fn create(width: i32, height: i32) -> Option<Self> {
             let class_name: Vec<u16> = "MediawayWgcSmokeTestWindow\0".encode_utf16().collect();
             let instance = unsafe { GetModuleHandleW(None) }.ok()?;
             let class = WNDCLASSW {
@@ -75,8 +77,8 @@ mod hardware {
                     WS_OVERLAPPEDWINDOW,
                     CW_USEDEFAULT,
                     CW_USEDEFAULT,
-                    320,
-                    240,
+                    width,
+                    height,
                     None,
                     None,
                     Some(instance.into()),
@@ -134,7 +136,7 @@ mod hardware {
         let _guard = crate::windows_desktop::HARDWARE_TEST_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let Some(window) = TestWindow::create() else {
+        let Some(window) = TestWindow::create(320, 240) else {
             eprintln!("skip: could not create a real test window");
             return;
         };
@@ -202,12 +204,13 @@ mod hardware {
         );
     }
 
-    /// The cursor and border settings, applied to a real WGC session.
+    /// The cursor, border and even-crop options, applied to a real WGC session.
     ///
     /// Opening with [`CursorCapture::Included`] succeeding is the cursor check: `open` fails
     /// when `SetIsCursorCaptureEnabled` does, in either direction. The border is read back from
     /// the session. **Needs Windows 11 (build 22000+)**, where borderless capture exists, and
     /// asserts it rather than skipping, because a skip is how the border went unhidden before.
+    /// The delivered frame must be even on both axes whatever size the test window came up at.
     ///
     /// `#[ignore]`d for the same reason as the test above: it shows a real window.
     ///
@@ -216,11 +219,16 @@ mod hardware {
     /// ```
     #[test]
     #[ignore = "opens a visible window on the desktop; run explicitly with --run-ignored all"]
-    fn wgc_window_capture_includes_cursor_and_hides_border() {
+    fn wgc_window_capture_applies_cursor_border_and_even_crop() {
         let _guard = crate::windows_desktop::HARDWARE_TEST_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let Some(window) = TestWindow::create() else {
+        // Chosen so WGC's capture size comes out odd on both axes. WGC captures the window
+        // without its invisible resize borders, which on Windows 11 at 100% scale is 14 px
+        // narrower and 7 px shorter than the window rect, so 335x250 captures as 321x243. The
+        // assertion below checks that rather than trusting it, since the offset depends on
+        // scale and theme.
+        let Some(window) = TestWindow::create(335, 250) else {
             eprintln!("skip: could not create a real test window");
             return;
         };
@@ -232,12 +240,54 @@ mod hardware {
         cfg.gpu_device = Some(device.handle());
         cfg.cursor = CursorCapture::Included;
 
-        let hidden = WindowsWindowCapture::open_with_border(&cfg, CaptureBorder::Hidden)
+        // The size WGC would deliver uncropped, from a plain session.
+        let native = WindowsWindowCapture::open(&cfg)
+            .expect("WGC open")
+            .stream_info()
+            .geometry()
+            .expect("video geometry");
+        assert!(
+            native.width % 2 == 1 || native.height % 2 == 1,
+            "the test window captured at {}x{}, even on both axes, so this run proves nothing \
+             about cropping; change the window size in this test",
+            native.width,
+            native.height
+        );
+
+        let options = WindowCaptureOptions {
+            border: CaptureBorder::Hidden,
+            dimensions: FrameDimensions::EvenCropped,
+        };
+        let mut hidden = WindowsWindowCapture::open_with(&cfg, options)
             .expect("WGC open with the cursor included");
         assert!(
             hidden.border_hidden(),
             "Windows 11 grants an unpackaged process borderless capture; the border is still on"
         );
+        let mut frame = None;
+        for _ in 0..50 {
+            if let Some(f) = hidden.poll_frame().expect("poll") {
+                frame = Some(f);
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let frame = frame.expect("a frame within one second");
+        // Spelled out rather than taken from `FrameDimensions::pool_size`: an expectation
+        // computed by the code under test passes however that code is broken. (Measured —
+        // that version survived `pool_size` being turned into a no-op.)
+        let expected = (
+            native.width - native.width % 2,
+            native.height - native.height % 2,
+        );
+        assert_eq!(
+            (frame.width, frame.height),
+            expected,
+            "a {}x{} window should even-crop to {expected:?}",
+            native.width,
+            native.height
+        );
+        let _ = hidden.release_frame();
         drop(hidden);
 
         let shown = WindowsWindowCapture::open(&cfg).expect("WGC open with the default border");

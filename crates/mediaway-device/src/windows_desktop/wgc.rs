@@ -2,7 +2,7 @@
 
 #![allow(unsafe_code)]
 
-use super::CaptureBorder;
+use super::{CaptureBorder, FrameDimensions, WindowCaptureOptions};
 use crate::CaptureError;
 use crate::desktop::{
     CaptureOutputPreference, CursorCapture, DesktopCaptureSource, DesktopVideoCapture,
@@ -18,9 +18,10 @@ use windows::Graphics::Capture::{
 };
 use windows::Graphics::DirectX::Direct3D11::IDirect3DDevice;
 use windows::Graphics::DirectX::DirectXPixelFormat;
+use windows::Graphics::SizeInt32;
 use windows::Security::Authorization::AppCapabilityAccess::AppCapabilityAccessStatus;
 use windows::Win32::Foundation::HWND;
-use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11Texture2D};
+use windows::Win32::Graphics::Direct3D11::{D3D11_TEXTURE2D_DESC, ID3D11Device, ID3D11Texture2D};
 use windows::Win32::Graphics::Dxgi::IDXGIDevice;
 use windows::Win32::System::WinRT::Direct3D11::{
     CreateDirect3D11DeviceFromDXGIDevice, IDirect3DDxgiInterfaceAccess,
@@ -46,6 +47,7 @@ struct CaptureSession {
     held: Option<HeldFrame>,
     next_pts: i64,
     border_hidden: bool,
+    dimensions: FrameDimensions,
 }
 
 /// Windows **window** capture via `WinRT` Graphics Capture (not DXGI Desktop Duplication).
@@ -72,22 +74,24 @@ impl WindowsWindowCapture {
     /// the pointer. So on a build without that call, even an `Excluded` request would otherwise
     /// record a pointer nobody asked for.
     ///
-    /// Leaves the yellow capture border at the OS default (shown); use
-    /// [`Self::open_with_border`] to ask for it to be hidden.
+    /// Uses [`WindowCaptureOptions::default`]: the border is left shown and frames are the
+    /// window's exact size. See [`Self::open_with`].
     pub fn open(config: &DesktopVideoCaptureConfig) -> Result<Self, CaptureError> {
-        Self::open_with_border(config, CaptureBorder::Shown)
+        Self::open_with(config, WindowCaptureOptions::default())
     }
 
-    /// [`Self::open`], also choosing whether Windows draws its capture border.
+    /// [`Self::open`] with Windows-specific options: the capture border, and whether frames
+    /// are cropped to even dimensions for a hardware encoder.
     ///
     /// # Errors
     ///
-    /// As [`Self::open`]. A [`CaptureBorder::Hidden`] request the OS refuses is **not** an
-    /// error — see [`CaptureBorder`] — and shows up as [`Self::border_hidden`] returning
-    /// `false`.
-    pub fn open_with_border(
+    /// As [`Self::open`], plus [`CaptureError::Backend`] when
+    /// [`FrameDimensions::EvenCropped`] would leave a zero axis (a 1-pixel window). A
+    /// [`CaptureBorder::Hidden`] request the OS refuses is **not** an error — see
+    /// [`CaptureBorder`] — and shows up as [`Self::border_hidden`] returning `false`.
+    pub fn open_with(
         config: &DesktopVideoCaptureConfig,
-        border: CaptureBorder,
+        options: WindowCaptureOptions,
     ) -> Result<Self, CaptureError> {
         let DesktopCaptureSource::Window { window } = config.source else {
             return Err(CaptureError::Unsupported);
@@ -126,18 +130,21 @@ impl WindowsWindowCapture {
         let item: GraphicsCaptureItem =
             unsafe { interop.CreateForWindow(hwnd) }.map_err(|_| CaptureError::AccessDenied)?;
 
-        let size = item.Size().map_err(|_| CaptureError::Backend)?;
-        if size.Width <= 0 || size.Height <= 0 {
-            return Err(CaptureError::Backend);
-        }
-        let width = u32::try_from(size.Width).map_err(|_| CaptureError::Backend)?;
-        let height = u32::try_from(size.Height).map_err(|_| CaptureError::Backend)?;
+        let item_size = item.Size().map_err(|_| CaptureError::Backend)?;
+        let content_w = u32::try_from(item_size.Width).map_err(|_| CaptureError::Backend)?;
+        let content_h = u32::try_from(item_size.Height).map_err(|_| CaptureError::Backend)?;
+        // The pool size *is* the crop: WGC clips content to the pool rather than scaling it
+        // (measured — see `FrameDimensions`).
+        let (width, height) = options
+            .dimensions
+            .pool_size(content_w, content_h)
+            .ok_or(CaptureError::Backend)?;
 
         let frame_pool = Direct3D11CaptureFramePool::CreateFreeThreaded(
             &winrt_device,
             DirectXPixelFormat::B8G8R8A8UIntNormalized,
             2,
-            size,
+            size_int32(width, height)?,
         )
         .map_err(|_| CaptureError::Backend)?;
 
@@ -147,7 +154,7 @@ impl WindowsWindowCapture {
         session
             .SetIsCursorCaptureEnabled(config.cursor == CursorCapture::Included)
             .map_err(|_| CaptureError::Unsupported)?;
-        let border_hidden = border == CaptureBorder::Hidden && hide_border(&session);
+        let border_hidden = options.border == CaptureBorder::Hidden && hide_border(&session);
         session
             .StartCapture()
             .map_err(|_| CaptureError::AccessDenied)?;
@@ -171,6 +178,7 @@ impl WindowsWindowCapture {
                 held: None,
                 next_pts: 0,
                 border_hidden,
+                dimensions: options.dimensions,
             }),
         })
     }
@@ -247,36 +255,38 @@ impl DesktopVideoCapture for WindowsWindowCapture {
             width: 0,
             height: 0,
         });
-        let geometry =
-            if let Some(new_geometry) = resized_geometry(current_geometry, content_w, content_h) {
-                // Captured content size changed (window resized, or the captured monitor's
-                // mode changed) — WGC requires recreating the frame pool at the new size so
-                // subsequent buffers come back correctly sized; see
-                // `IDirect3D11CaptureFramePool::Recreate` in Microsoft's WGC samples. The
-                // frame already in hand is still delivered below, sized to its own
-                // `ContentSize` (not the stale, pre-resize geometry) — Stage 1 used to skip
-                // it forever instead, permanently stalling capture after a resize.
-                session
-                    .frame_pool
-                    .Recreate(
-                        &session.winrt_device,
-                        DirectXPixelFormat::B8G8R8A8UIntNormalized,
-                        2,
-                        content,
-                    )
-                    .map_err(|_| CaptureError::Backend)?;
-                let time_base = session.stream_info.time_base();
-                session.stream_info = StreamInfo::Video {
-                    id: 0,
-                    codec: CodecKind::RawVideo,
-                    time_base,
-                    geometry: new_geometry,
-                    extra_data: Bytes::new(),
-                };
-                new_geometry
-            } else {
-                current_geometry
+        // Compared against the pool size the content *should* have, not the content size
+        // itself. With `EvenCropped` an odd window never matches its own pool, so comparing
+        // `ContentSize` directly would recreate the pool on every frame. (`ContentSize` keeps
+        // reporting the full window when the pool is smaller — measured.)
+        let Some((target_w, target_h)) = session.dimensions.pool_size(content_w, content_h) else {
+            return Ok(None);
+        };
+        if let Some(new_geometry) = resized_geometry(current_geometry, target_w, target_h) {
+            // Captured content size changed (window resized, or the captured monitor's mode
+            // changed) — WGC requires recreating the frame pool at the new size so subsequent
+            // buffers come back correctly sized; see `IDirect3D11CaptureFramePool::Recreate` in
+            // Microsoft's WGC samples. The frame already in hand is still delivered below —
+            // Stage 1 used to skip it forever instead, permanently stalling capture after a
+            // resize. It came out of the *old* pool, so its size is read from its own texture.
+            session
+                .frame_pool
+                .Recreate(
+                    &session.winrt_device,
+                    DirectXPixelFormat::B8G8R8A8UIntNormalized,
+                    2,
+                    size_int32(target_w, target_h)?,
+                )
+                .map_err(|_| CaptureError::Backend)?;
+            let time_base = session.stream_info.time_base();
+            session.stream_info = StreamInfo::Video {
+                id: 0,
+                codec: CodecKind::RawVideo,
+                time_base,
+                geometry: new_geometry,
+                extra_data: Bytes::new(),
             };
+        }
 
         let surface = frame.Surface().map_err(|_| CaptureError::Backend)?;
         let access: IDirect3DDxgiInterfaceAccess =
@@ -284,6 +294,12 @@ impl DesktopVideoCapture for WindowsWindowCapture {
         // SAFETY: WGC surface → ID3D11Texture2D via DXGI interop.
         let texture: ID3D11Texture2D =
             unsafe { access.GetInterface() }.map_err(|_| CaptureError::Backend)?;
+        // The texture's own size, not the stream geometry: after a resize the frame in hand
+        // is from the previous pool. This used to report the *new* geometry for it — a frame
+        // whose stated size did not match its texture.
+        let mut desc = D3D11_TEXTURE2D_DESC::default();
+        // SAFETY: `texture` is a live ID3D11Texture2D; GetDesc only writes the out-param.
+        unsafe { texture.GetDesc(&raw mut desc) };
         let texture_handle =
             NativeHandle::new(Interface::as_raw(&texture) as usize).ok_or(CaptureError::Backend)?;
         let pts = session.next_pts;
@@ -296,8 +312,8 @@ impl DesktopVideoCapture for WindowsWindowCapture {
         Ok(Some(VideoFrame {
             pts,
             duration: 1,
-            width: geometry.width,
-            height: geometry.height,
+            width: desc.Width,
+            height: desc.Height,
             format: PixelFormat::Bgra8,
             storage: VideoFrameStorage::Gpu(GpuBufferHandle::DirectX11 {
                 texture: texture_handle,
@@ -327,6 +343,15 @@ impl Drop for WindowsWindowCapture {
     fn drop(&mut self) {
         let _ = self.close();
     }
+}
+
+/// A frame-pool size as `WinRT` wants it. The inputs came from `i32`s `WinRT` gave us, so
+/// this only fails if a caller hands in something `WinRT` never could have.
+fn size_int32(width: u32, height: u32) -> Result<SizeInt32, CaptureError> {
+    Ok(SizeInt32 {
+        Width: i32::try_from(width).map_err(|_| CaptureError::Backend)?,
+        Height: i32::try_from(height).map_err(|_| CaptureError::Backend)?,
+    })
 }
 
 fn closed_video_info() -> &'static StreamInfo {

@@ -40,7 +40,7 @@ only evidence of the feature, and it was wrong.
 > `CaptureError::Unsupported`. It never ignores it.
 >
 > **Border:** `windows_desktop::CaptureBorder { Shown (default), Hidden }`, passed to
-> `WindowsWindowCapture::open_with_border`. A refused `Hidden` does not fail the open;
+> `WindowsWindowCapture::open_with`. A refused `Hidden` does not fail the open;
 > `WindowsWindowCapture::border_hidden()` reports what the OS actually did.
 
 ### Why the two are handled differently
@@ -79,6 +79,34 @@ unaffected.
 Two steps, either of which can refuse. First, `GraphicsCaptureAccess::RequestAccessAsync(
 Borderless)` must return `Allowed`. Then the session must accept `SetIsBorderRequired(false)`.
 The result is read back from `IsBorderRequired` rather than inferred from the request.
+
+### Even-cropped frames (added with the options struct)
+
+`WindowCaptureOptions::dimensions: FrameDimensions { Native (default), EvenCropped }`. With
+`EvenCropped`, each odd axis loses its last column or row, so frames always suit a hardware
+encoder: 4:2:0 has no half chroma sample, and a live Unity window at 1137×636 could not be
+encoded at all.
+
+It costs nothing, because **WGC crops to its frame pool rather than scaling** — measured
+2026-09-19 against a 2560×1392 window: a 2459×1341 pool produced a 2459×1341 texture whose
+3 297 519 pixels all matched the full capture's top-left region. So the pool is simply
+created one pixel smaller on an odd axis.
+
+Two things had to change for that to be safe:
+
+- **Resize detection compares against the target pool size, not `ContentSize`.**
+  `ContentSize` keeps reporting the full window when the pool is smaller (measured), so
+  comparing it directly would recreate the pool on every frame.
+- **A delivered frame's size is read from its texture.** After a resize, the frame in hand
+  came out of the *old* pool, and the code reported the *new* geometry for it. That was
+  wrong before this change too, but it only became visible once pool and content sizes could
+  legitimately differ.
+
+Cropping rather than padding: a padded frame contains pixels the source never drew, which
+in a recording used as evidence can be mistaken for a rendering bug.
+
+Arbitrary-rectangle crop — recording a region of a window — is **not** this. It needs a GPU
+copy (the pool trick only removes right/bottom edges) and remains open.
 
 ## Alternatives Considered
 
@@ -120,9 +148,22 @@ The result is read back from `IsBorderRequired` rather than inferred from the re
   desktop process, Windows 11 Pro 26100, no prompt (2026-09-18).
 - Default-suite tests: the default is `Excluded` for both constructors; DXGI rejects
   `Included` before touching a device.
-- `wgc_window_capture_includes_cursor_and_hides_border` (`#[ignore]`d — it shows a window)
-  opens a real WGC session with `Included` + `Hidden`, and asserts `border_hidden()`, then
-  that plain `open` leaves the border shown.
+- `wgc_window_capture_applies_cursor_border_and_even_crop` (`#[ignore]`d — it shows a
+  window) opens a real WGC session with `Included` + `Hidden` + `EvenCropped`. It asserts
+  `border_hidden()`, that a 321×243 capture is delivered at exactly 320×242, and that plain
+  `open` leaves the border shown. It also asserts the uncropped size really was odd, so it
+  cannot pass without exercising the crop. **Run 2026-09-19 on Windows 11 Pro 26100:
+  passes.** It was also shown to *fail* with `EvenCropped` turned into a no-op. An earlier
+  version computed its expectation with the function under test and passed that mutant.
+- Through qarec, on a live Unity editor (2026-09-19):
+  - **Cursor:** the pointer was moved over the window during a 2560×1392 recording and
+    appears in the frames. A frame diff found a 20–40 px region moving in 361 of 479
+    frames, and a zoomed crop shows it.
+  - **Border:** no border-refused warning was logged.
+  - **Even crop:** the window was resized so WGC captured 1187×695. The recording came out
+    1186×694 HEVC, with all 86 frames decoded, distinct presentation timestamps, and no
+    ffmpeg warnings. At that size the hardware encoder had refused to open before this
+    change.
 
 ## References
 

@@ -48,9 +48,9 @@ impl WindowsWindowCapture {
     }
 
     /// Unavailable off Windows.
-    pub const fn open_with_border(
+    pub const fn open_with(
         _config: &DesktopVideoCaptureConfig,
-        _border: super::CaptureBorder,
+        _options: super::WindowCaptureOptions,
     ) -> Result<Self, CaptureError> {
         Err(CaptureError::Unsupported)
     }

@@ -57,3 +57,8 @@ CI test jobs — see `docs/ai/wiki/meta/language-bindings.md`.
 - **coverage-daily never passed before this**: it invoked
   `tools/scripts/node_modules/.bin/bun`, which does not exist (bun is not an npm
   dep); it now calls the `setup-bun` binary directly.
+- **Apple / Android lint runs locally on Windows**: `cargo clippy --target
+  aarch64-apple-darwin|aarch64-apple-ios|aarch64-linux-android -p mediaway-encoder
+  -p mediaway-decoder -p mediaway-device --all-features --all-targets -- -D warnings`
+  works without an Apple SDK or the NDK (check-only, no link). Run it before a
+  toolchain bump instead of waiting for the macOS / NDK CI jobs.

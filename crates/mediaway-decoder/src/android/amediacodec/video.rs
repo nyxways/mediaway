@@ -46,7 +46,7 @@ const MAX_OPPORTUNISTIC_OUTPUT_DRAIN: usize = 4;
 /// the end-of-stream buffer (≈2s worst case).
 const MAX_FLUSH_DRAIN_RETRIES: usize = 400;
 
-/// Output ByteBuffer layout, cached from `output_format()` on the first `OutputFormatChanged`
+/// Output `ByteBuffer` layout, cached from `output_format()` on the first `OutputFormatChanged`
 /// event. `crop` is `(left, top, right, bottom)`, per ADR android/0001's ZCA shape.
 #[derive(Debug, Clone, Copy)]
 struct OutputLayout {

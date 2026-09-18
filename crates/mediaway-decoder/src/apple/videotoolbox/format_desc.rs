@@ -1,9 +1,9 @@
 //! Per-codec `CMFormatDescription` construction for `VTDecompressionSession`.
 //!
 //! H.264/HEVC build via their dedicated `CMVideoFormatDescriptionCreateFrom{H264,HEVC}
-//! ParameterSets` entry points — VideoToolbox parses geometry out of the parameter sets itself,
+//! ParameterSets` entry points — `VideoToolbox` parses geometry out of the parameter sets itself,
 //! same lazy-first-packet-discovery shape [`super::video`] already used for H.264 alone. VP9/AV1
-//! have no such entry point: VideoToolbox only exposes the generic
+//! have no such entry point: `VideoToolbox` only exposes the generic
 //! `CMVideoFormatDescriptionCreate(codecType, width, height, extensions)` for them, so this
 //! backend requires the container to supply a `vpcC`/`av1C` config record up front
 //! ([`super::codec::requires_extra_data_at_open`]) and wraps it verbatim as a
@@ -11,7 +11,7 @@
 //! discover from either codec's bitstream the way H.264/HEVC's VPS/SPS/PPS can be, and this
 //! backend does not carry a VP9/AV1 bitstream parser of its own to synthesize one (unlike this
 //! workspace's VA-API/Vulkan/D3D12 decoders, which parse full picture parameters because their
-//! session APIs need them — VideoToolbox is a black box that only needs enough to pick a codec
+//! session APIs need them — `VideoToolbox` is a black box that only needs enough to pick a codec
 //! path).
 //!
 //! `objc2-core-media` exposes these as plain C-style free functions with a `NonNull<*const T>`
@@ -180,7 +180,7 @@ pub(super) fn create_hevc(
 
 /// `width`/`height` + a raw container-supplied codec-config atom (`vpcC` for VP9, `av1C` for
 /// AV1) → `CMFormatDescription`, via the generic `CMVideoFormatDescriptionCreate` plus a
-/// `SampleDescriptionExtensionAtoms` extension dictionary — VideoToolbox's only construction
+/// `SampleDescriptionExtensionAtoms` extension dictionary — `VideoToolbox`'s only construction
 /// path for either codec (see this module's doc comment). `atom_payload` is wrapped byte-for-
 /// byte, unparsed — this backend trusts the container's config record rather than re-deriving it
 /// from the bitstream.

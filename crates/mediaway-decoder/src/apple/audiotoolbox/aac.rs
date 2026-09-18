@@ -30,9 +30,11 @@ const STARVATION_STATUS: i32 = 1;
 /// `AAC_FRAME_SAMPLES`.
 const AAC_FRAME_SAMPLES: u32 = 1024;
 
-/// Parameters for opening an [`AacDecoder`] session — this crate has no shared audio-decode
-/// config type (every existing backend defines its own, see ADR-0004 § Context), matching
-/// `mediaway_decoder::windows::OpusDecoderConfig`'s identical precedent.
+/// Parameters for opening an [`AacDecoder`] session.
+///
+/// This crate has no shared audio-decode config type (every existing backend defines its own,
+/// see ADR-0004 § Context), matching `mediaway_decoder::windows::OpusDecoderConfig`'s
+/// identical precedent.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AacDecoderConfig {
     /// Sample rate (Hz).
@@ -424,7 +426,7 @@ fn duration_ticks(frames: u32, sample_rate: u32, time_base: Rational) -> u64 {
     u64::try_from(numerator / denominator).unwrap_or(u64::MAX)
 }
 
-fn validate(config: &AacDecoderConfig) -> Result<(), DecodeError> {
+const fn validate(config: &AacDecoderConfig) -> Result<(), DecodeError> {
     if config.sample_rate == 0 || config.channels == 0 || config.time_base.den == 0 {
         return Err(DecodeError::InvalidInput);
     }

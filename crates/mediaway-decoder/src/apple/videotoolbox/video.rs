@@ -120,6 +120,11 @@ impl VideoToolboxVideoDecoder {
     pub(crate) fn open(config: &VideoDecoderConfig) -> Result<Self, DecodeError> {
         validate(config)?;
 
+        #[allow(
+            clippy::arc_with_non_send_sync,
+            reason = "shared with the VTDecompressionOutputCallback thread via refcon, so Rc is \
+                      wrong; thread safety is argued in the SAFETY comment on `unsafe impl Send`"
+        )]
         let shared = Arc::new(SharedState {
             pending: Mutex::new(VecDeque::new()),
             time_base: config.time_base,
@@ -536,7 +541,7 @@ unsafe extern "C-unwind" fn decompression_output_callback(
     pending.push_back(pending_frame);
 }
 
-/// Build a Zero-Copy [`PendingFrame`] from a `CVPixelBuffer` VideoToolbox still owns (borrowed
+/// Build a Zero-Copy [`PendingFrame`] from a `CVPixelBuffer` `VideoToolbox` still owns (borrowed
 /// for this callback's duration) — takes a **new**, independent owned reference via
 /// `CFRetained::retain` (never `lock_base_address`/reads no bytes), so the buffer stays valid
 /// past the callback's return. See
@@ -696,7 +701,7 @@ fn build_timing_info(packet: &Packet, time_base: Rational) -> CMSampleTimingInfo
 /// `CMBlockBuffer`-compatible, so a second copy is unavoidable here; flagged by the ADR as an
 /// implementation-pass question, resolved by taking the straightforward owned-copy path rather
 /// than an unproven raw-`Bytes`-pointer handoff) — freed exactly once by `free_avcc_block` when
-/// VideoToolbox releases the block buffer.
+/// `VideoToolbox` releases the block buffer.
 fn create_block_buffer(payload: &Bytes) -> Result<CFRetained<CMBlockBuffer>, DecodeError> {
     // clone: `payload` is a shared `Bytes`; `CMBlockBuffer` needs a distinctly heap-owned,
     // exclusively-VideoToolbox-managed allocation it frees itself via `custom_block_source`'s

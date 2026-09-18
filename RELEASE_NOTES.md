@@ -4,6 +4,24 @@
 
 ### Added
 
+- `mediaway_container::MuxOpen` and `mediaway_container::ContainerError`. `MuxOpen` names
+  the track-registration phase every muxer already had (`add_track` → `begin`), plus a
+  `FIRST_TRACK_ID` const for the container's own track-numbering floor — Matroska reserves
+  `TrackNumber` 0, ISOBMFF does not.
+
+- `EncodeSession::open_in` / `open_in_with_audio` — open a session against a
+  caller-supplied muxer. This is what makes non-MP4 containers reachable through the facade
+  (`EncodeSession::open_in(webm::Muxer::new(), encoder)`), and it is also the only way to
+  reach muxer options the facade does not mirror — `mp4::Muxer::with_fragment_batch` was
+  previously unreachable, pinning fragment cadence at the default 30
+  (`crates/mediaway/adr/0007-encode-session-generic-muxer.md`).
+
+- `Mux::set_track_extra_data`, defaulted to a no-op. Moves ADR-0005's late-known
+  extra-data backfill onto the trait. **Containers that commit their track header at
+  `begin()` cannot honour it and drop it silently** — `webm::Muxer` is that case, so a
+  late-config encoder backend (e.g. `VideoToolbox`) paired with WebM produces a file with
+  no codec configuration record. Pair those backends with `mp4::Muxer`.
+
 - `mediaway_encoder::windows::auto::support_at` and `mediaway::platform::encoder_support_at`
   — probe encoder availability at a caller-supplied resolution. Encoder support is
   resolution-dependent; the resolution-free `support`/`encoder_support` forms remain and now
@@ -16,6 +34,11 @@
   duration (`crates/mediaway/adr/0006-encode-session-streaming-bytes.md`).
 
 ### Changed
+
+- `EncodeSession` is now generic over its muxer:
+  `EncodeSession<E: VideoEncoder, M: MuxOpen = mp4::Muxer<mp4::Open>>`. `open` and
+  `open_with_audio` keep their exact signatures and still produce fragmented MP4, so no
+  existing call site changed.
 
 - `EncodeSession::finish` is now a convenience wrapper over `finish_into`. Its signature
   and its behaviour for a session that was never polled are unchanged; a session drained
@@ -49,3 +72,10 @@
 ### Deprecated
 
 ### Breaking
+
+- `PipelineError::Mux` now wraps `mediaway_container::ContainerError` instead of
+  `mediaway_container::mp4::Error`. `EncodeSession` is generic over its container, so the
+  variant could not keep naming one container's error type without making `PipelineError`
+  itself generic. Matching on a specific container's error still works, one level deeper:
+  `PipelineError::Mux(ContainerError::Mp4(mp4::Error::InvalidTrack))`.
+

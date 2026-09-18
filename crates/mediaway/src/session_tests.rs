@@ -383,16 +383,25 @@ struct PacketEmittingEncoder {
 
 impl PacketEmittingEncoder {
     fn new() -> Self {
+        Self::with_codec(
+            CodecKind::H264,
+            Bytes::from_static(&[0x01, 0x64, 0x00, 0x1f]),
+        )
+    }
+
+    /// [`Self::new`] for a chosen codec — `WebM` has no `CodecID` for H.264, so a
+    /// container-choice test needs a stream the other container can actually carry.
+    fn with_codec(codec: CodecKind, extra_data: Bytes) -> Self {
         Self {
             info: StreamInfo::Video {
                 id: 0,
-                codec: CodecKind::H264,
+                codec,
                 time_base: Rational::new(1, 30),
                 geometry: VideoGeometry {
                     width: 4,
                     height: 4,
                 },
-                extra_data: Bytes::from_static(&[0x01, 0x64, 0x00, 0x1f]),
+                extra_data,
             },
             queued: VecDeque::new(),
         }
@@ -518,4 +527,172 @@ fn finish_after_polling_returns_only_the_unpolled_tail() {
         !tail.windows(4).any(|w| w == b"ftyp"),
         "finish() returns the tail, not a second copy of the whole stream — see ADR-0006"
     );
+}
+
+/// `EncodeSession` is generic over its muxer (`adr/0007-encode-session-generic-muxer.md`).
+/// These are the tests that would fail if it compiled but still wrote MP4 regardless of the
+/// muxer handed to it — the failure mode a type-level change like this invites.
+mod container_choice {
+    use super::{FRAMES_PAST_ONE_FRAGMENT, MockAudioEncoder, PacketEmittingEncoder, cpu_frame};
+    use crate::{EncodeSession, PipelineError};
+    use mediaway_common::{Bytes, CodecKind, StreamInfo};
+    use mediaway_container::{ContainerError, MuxOpen, mp4, webm};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    fn vp9_encoder() -> PacketEmittingEncoder {
+        // VP9 carries no out-of-band configuration record, so an empty `extra_data` here
+        // is correct rather than a shortcut — it also keeps `drain`'s late-`extra_data`
+        // backfill out of the picture, which WebM could not honour anyway.
+        PacketEmittingEncoder::with_codec(CodecKind::Vp9, Bytes::new())
+    }
+
+    fn encode_all<M>(mut session: EncodeSession<PacketEmittingEncoder, M>) -> Vec<u8>
+    where
+        M: MuxOpen,
+        M::Error: Into<ContainerError>,
+    {
+        for pts in 0..FRAMES_PAST_ONE_FRAGMENT {
+            session.write_frame(&cpu_frame(pts)).expect("write frame");
+        }
+        session.finish().expect("finish session")
+    }
+
+    #[test]
+    fn a_webm_session_produces_bytes_the_webm_demuxer_can_read_back() {
+        let session =
+            EncodeSession::open_in(webm::Muxer::new(), vp9_encoder()).expect("open webm session");
+        let bytes = encode_all(session);
+
+        // Round-tripping through the real demuxer, rather than sniffing the EBML magic,
+        // is what actually proves the packets went into *this* container: a byte-prefix
+        // check would still pass on a file whose header is WebM and whose body is empty.
+        let mut demuxer = webm::Demuxer::new();
+        demuxer.push_bytes(&bytes);
+        let mut packets = 0;
+        while demuxer.poll_packet().is_some() {
+            packets += 1;
+        }
+
+        let streams = demuxer.streams();
+        assert_eq!(streams.len(), 1, "expected exactly one muxed track");
+        assert!(
+            matches!(
+                streams[0],
+                StreamInfo::Video {
+                    codec: CodecKind::Vp9,
+                    ..
+                }
+            ),
+            "expected a VP9 video track, got {:?}",
+            streams[0]
+        );
+        assert_eq!(
+            i64::from(packets),
+            FRAMES_PAST_ONE_FRAGMENT,
+            "every encoded packet should survive the round trip"
+        );
+    }
+
+    #[test]
+    fn the_default_session_still_produces_mp4() {
+        // The regression guard for the default type parameter: `open` must keep meaning
+        // fragmented MP4 for every caller that never asked for anything else.
+        let session = EncodeSession::open(PacketEmittingEncoder::new()).expect("open session");
+        let bytes = encode_all(session);
+
+        let mut demuxer = mp4::Demuxer::new();
+        demuxer.push_bytes(&bytes);
+        assert_eq!(demuxer.streams().len(), 1, "expected one MP4 track");
+        assert!(
+            matches!(
+                demuxer.streams()[0],
+                StreamInfo::Video {
+                    codec: CodecKind::H264,
+                    ..
+                }
+            ),
+            "expected an H.264 video track"
+        );
+    }
+
+    #[test]
+    fn opening_a_webm_session_rejects_a_codec_webm_cannot_carry() {
+        // H.264 has no WebM `CodecID`. The mismatch has to surface at `open_in`, because
+        // the alternative — accepting the track and writing a file no player can decode —
+        // is the failure this whole seam is supposed to make impossible.
+        let err = EncodeSession::open_in(webm::Muxer::new(), PacketEmittingEncoder::new())
+            .err()
+            .expect("H.264 in WebM must be rejected");
+
+        assert!(
+            matches!(
+                err,
+                PipelineError::Mux(ContainerError::Webm(webm::Error::UnsupportedCodec(
+                    CodecKind::H264
+                )))
+            ),
+            "expected an UnsupportedCodec mux error, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn a_two_track_webm_session_numbers_tracks_from_the_containers_first_id() {
+        // `open_with_audio` used to hardcode video `0` / audio `1`. On WebM that is an
+        // immediate `InvalidTrackNumber`, so the pair has to start at the container's own
+        // floor — this is the test that pins `MuxOpen::FIRST_TRACK_ID` to real behaviour
+        // rather than leaving it a constant nothing reads.
+        let session = EncodeSession::open_in_with_audio(
+            webm::Muxer::new(),
+            vp9_encoder(),
+            MockAudioEncoder::new(Rc::new(RefCell::new(Vec::new()))),
+        )
+        .expect("open two-track webm session");
+
+        let bytes = encode_all(session);
+        let mut demuxer = webm::Demuxer::new();
+        demuxer.push_bytes(&bytes);
+
+        let ids: Vec<u32> = demuxer.streams().iter().map(StreamInfo::id).collect();
+        assert_eq!(
+            ids,
+            vec![
+                <webm::Muxer as MuxOpen>::FIRST_TRACK_ID,
+                <webm::Muxer as MuxOpen>::FIRST_TRACK_ID + 1
+            ],
+            "WebM tracks must start at 1, not at the encoders' default 0"
+        );
+    }
+
+    #[test]
+    fn open_in_reaches_muxer_options_the_facade_does_not_mirror() {
+        // `mp4::Muxer::with_fragment_batch` was unreachable through `EncodeSession` before
+        // `open_in` existed. A batch of 2 must emit a complete fragment well before the
+        // default batch of 30 does; without that difference, `open_in` is taking the
+        // caller's muxer and throwing its configuration away.
+        const FRAMES: i64 = 6;
+
+        let mut small = EncodeSession::open_in(
+            mp4::Muxer::with_fragment_batch(2),
+            PacketEmittingEncoder::new(),
+        )
+        .expect("open small-batch session");
+        let mut default = EncodeSession::open(PacketEmittingEncoder::new()).expect("open session");
+
+        let (mut small_bytes, mut default_bytes) = (Vec::new(), Vec::new());
+        for pts in 0..FRAMES {
+            small.write_frame(&cpu_frame(pts)).expect("write frame");
+            default.write_frame(&cpu_frame(pts)).expect("write frame");
+        }
+        small.poll_bytes(&mut small_bytes);
+        default.poll_bytes(&mut default_bytes);
+
+        assert!(
+            small_bytes.len() > default_bytes.len(),
+            "a 2-frame fragment batch should have flushed more than the 30-frame default \
+             after {FRAMES} frames, got {} vs {}",
+            small_bytes.len(),
+            default_bytes.len()
+        );
+    }
 }

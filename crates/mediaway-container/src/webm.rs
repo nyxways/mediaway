@@ -12,7 +12,7 @@
 #[cfg(feature = "demux")]
 use crate::Demux;
 #[cfg(feature = "mux")]
-use crate::Mux;
+use crate::{Mux, MuxOpen};
 #[cfg(feature = "demux")]
 use ebml_webm::Demuxer as CoreDemuxer;
 use ebml_webm::TrackInfo as CoreTrackInfo;
@@ -428,6 +428,28 @@ impl Mux for Muxer<Live> {
 
     fn poll_bytes(&mut self, out: &mut Vec<u8>) -> usize {
         Muxer::<Live>::poll_bytes(self, out)
+    }
+
+    // `set_track_extra_data` is deliberately left at its no-op default: `CodecPrivate`
+    // is written into `Tracks` in the EBML header at `begin()`, so there is nothing to
+    // revise afterwards. See the trait method's own note.
+}
+
+#[cfg(feature = "mux")]
+#[allow(clippy::use_self)]
+impl MuxOpen for Muxer<Open> {
+    type Live = Muxer<Live>;
+    type Error = Error;
+
+    /// Matroska reserves `TrackNumber` `0` — see [`ebml_webm::MuxError::InvalidTrackNumber`].
+    const FIRST_TRACK_ID: u32 = 1;
+
+    fn add_track(&mut self, track: StreamInfo) -> Result<u32, Self::Error> {
+        Muxer::<Open>::add_track(self, track)
+    }
+
+    fn begin(self) -> Self::Live {
+        Muxer::<Open>::begin(self)
     }
 }
 

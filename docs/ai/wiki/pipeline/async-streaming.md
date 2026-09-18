@@ -8,3 +8,5 @@ Canonical: [`docs/spec/async-and-streaming.md`](../../../spec/async-and-streamin
 
 `EncodeSession` was the one facade that broke the first rule (whole-buffer `finish()`
 only) until ADR-0006 — see [encode-session-byte-output](encode-session-byte-output.md).
+It was also welded to one container until ADR-0007 —
+[encode-session-container-choice](encode-session-container-choice.md).

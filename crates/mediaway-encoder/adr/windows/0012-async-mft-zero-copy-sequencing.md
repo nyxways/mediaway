@@ -108,6 +108,33 @@ untouched — `has_need_input`/`take_have_output` both short-circuit to "proceed
   `push_frame`, so no contract changes — but the timing is less obvious than it was.
 - Verified on one vendor's async MFT. AMD's is also async and is untested here.
 
+## Addendum (2026-09-19): a fourth violation, releasing too early (mediaway#106)
+
+Releasing the MFT immediately after its last use raced work it still had in flight.
+`STATUS_ACCESS_VIOLATION` on a Media Foundation work-queue (`RTWorkQ`) thread inside
+`nvEncMFTH264x.dll` / `nvEncMFThevcx.dll`, entering a critical section of an object that was
+already gone. It surfaced 23–131 µs after the release, usually while the next encoder was
+opening. Dropping an encoder that had not been flushed crashed on about **3%** of drops. After
+a flush, about 0.2%.
+
+It was found by chasing a "flaky" workspace test. nextest reports a crashed test as `ABORT`,
+and output that had been filtered for `FAIL` hid it twice.
+
+**Decision:** `WmfVideoEncoder`'s `Drop` waits `ASYNC_MFT_RELEASE_GRACE` (50 ms) before the
+last reference to an *async* MFT goes. Sync MFTs are released at once. The attempts that did
+not work, and why, are recorded with the constant in `wmf/dx11.rs`:
+
+- `IMFShutdown::Shutdown` made it worse.
+- Waiting for `METransformDrainComplete` did not help.
+- Waiting for the D3D11 context to go idle helped only partly.
+
+Nothing the MFT exposes marks the in-flight work as finished, so this is a measured margin,
+about 50× the widest window observed, and not a proof. With it: 0 crashes in 8 000 flushed
+drops and 0 in 8 000 unflushed drops.
+
+`dropping_encoders_back_to_back_does_not_crash` is an `#[ignore]`d stress test. It survives
+the fix, and without the grace period it died with `0xc0000005` in 1.3 s.
+
 ## References
 
 - [ADR-0003](0003-dx11-zero-copy.md) — the Zero-Copy DX11 path this repairs

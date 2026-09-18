@@ -190,6 +190,46 @@ pub(super) const fn take_have_output(session: &mut Dx11Session) -> bool {
     true
 }
 
+/// How long an asynchronous hardware MFT is kept alive after its last use.
+///
+/// # Why this exists (mediaway#106)
+///
+/// Releasing NVIDIA's encoder MFT right after its last output crashed about once in 500
+/// drops: `STATUS_ACCESS_VIOLATION` on a Media Foundation work-queue (`RTWorkQ`) thread inside
+/// `nvEncMFTH264x.dll` / `nvEncMFThevcx.dll`, entering a critical section of an object that
+/// was gone. Timed over 12 crashes, it happened 23–131 µs after the release and 0.45–1.03 ms
+/// after the flush finished. Right after its last output the MFT still has asynchronous work
+/// in flight, and releasing it then races that work. No event reports that work finishing.
+///
+/// Measured 2026-09-19 on an RTX 4090. One "drop" is: open, encode 5 frames, optionally flush,
+/// drop. Each row is 4 000–8 000 drops across separate processes:
+///
+/// | before the release | flushed first | not flushed |
+/// |---|---|---|
+/// | nothing (as shipped) | ≈0.2% of drops crash | **≈3%** (138 of 200 processes died) |
+/// | `IMFShutdown::Shutdown` | worse | — |
+/// | wait for `METransformDrainComplete` | no change | — |
+/// | skip `MFT_MESSAGE_NOTIFY_END_STREAMING` | worse | — |
+/// | wait for the D3D11 immediate context to go idle | ≈3× fewer, not zero | — |
+/// | **this grace period** | **0 / 8 000** | **0 / 8 000** |
+///
+/// Unflushed is the case that matters most: a recorder that stops, or restarts on a window
+/// resize, drops its encoder with frames still inside.
+///
+/// The failed attempts narrow down what is being waited for. It is not output the MFT still
+/// has to report, because drain-complete does not help. It is not only GPU work on the device's
+/// own context, because NVENC runs on a separate engine. The 50 ms figure is about 50× the
+/// widest crash window observed. It is a measured margin, not a guarantee, because nothing
+/// observable marks the work finished. The cost: dropping an async hardware encoder blocks for
+/// 50 ms.
+pub(super) const ASYNC_MFT_RELEASE_GRACE: std::time::Duration =
+    std::time::Duration::from_millis(50);
+
+/// Whether this session drives an asynchronous MFT (one that signals through events).
+pub(super) const fn is_async(session: &Dx11Session) -> bool {
+    session.events.is_some()
+}
+
 pub(super) fn drain_events_nonblocking(session: &mut Dx11Session) -> Result<(), EncodeError> {
     if session.events.is_some() {
         drain_events(session)?;

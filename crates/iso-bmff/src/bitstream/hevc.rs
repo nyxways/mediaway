@@ -65,7 +65,7 @@ const PPS_NUT: u8 = 34;
 
 /// `nal_unit_type` from a 2-byte HEVC NAL header: bits 1..6 of the first byte
 /// (`forbidden_zero_bit`(1) + `nal_unit_type`(6) + `nuh_layer_id` high bit(1)).
-fn nal_unit_type(nal: &[u8]) -> u8 {
+const fn nal_unit_type(nal: &[u8]) -> u8 {
     (nal[0] >> 1) & 0x3f
 }
 

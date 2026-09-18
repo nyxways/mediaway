@@ -314,8 +314,8 @@ fn pcm_bytes(frame: &AudioFrame, bytes_per_sample: u16) -> Result<Vec<u8>, Encod
                 return Err(EncodeError::InvalidInput);
             }
             let mut out = Vec::with_capacity(frame.data.len() / 2);
-            for chunk in frame.data.chunks_exact(4) {
-                let f = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+            for chunk in frame.data.as_chunks::<4>().0 {
+                let f = f32::from_le_bytes(*chunk);
                 let clamped = f.clamp(-1.0, 1.0);
                 let scaled = (f64::from(clamped) * 32_767.0).round();
                 let s = if scaled >= f64::from(i16::MAX) {

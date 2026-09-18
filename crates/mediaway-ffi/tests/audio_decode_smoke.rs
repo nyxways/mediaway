@@ -194,9 +194,11 @@ fn opus_encode_decode_round_trips_through_ffi() {
         // `Box<[u8]>`-derived allocation with no `f32` alignment guarantee.
         let bytes = unsafe { std::slice::from_raw_parts(frame.data, frame.data_len) };
         let energy: f64 = bytes
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|b| {
-                let v = f64::from(f32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+                let v = f64::from(f32::from_le_bytes(*b));
                 v * v
             })
             .sum();

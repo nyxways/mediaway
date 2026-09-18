@@ -104,14 +104,14 @@ pub(crate) fn read_u24_be(buf: &[u8]) -> u32 {
 }
 
 /// Read a 32-bit big-endian value from `buf[0..4]`.
-pub(crate) fn read_u32_be(buf: &[u8]) -> u32 {
+pub(crate) const fn read_u32_be(buf: &[u8]) -> u32 {
     u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]])
 }
 
 /// Read a 32-bit **little-endian** value from `buf[0..4]` — RTMP's `MessageStreamID` field
 /// in a type-0 chunk message header is little-endian, an established spec quirk (unlike
 /// every other multi-byte field in the chunk header, which is big-endian).
-pub(crate) fn read_u32_le(buf: &[u8]) -> u32 {
+pub(crate) const fn read_u32_le(buf: &[u8]) -> u32 {
     u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]])
 }
 

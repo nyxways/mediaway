@@ -69,7 +69,7 @@ jobs:
 
       - name: Install Rust toolchain
         if: steps.gate.outputs.should_run == 'true'
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.98.0
 
       - name: Cache cargo
         if: steps.gate.outputs.should_run == 'true'
@@ -126,7 +126,7 @@ jobs:
         run: |
           cd tools/scripts && bun install --frozen-lockfile
           cd ../..
-          tools/scripts/node_modules/.bin/bun run tools/scripts/coverage-check.ts \
+          bun run tools/scripts/coverage-check.ts \
             --baseline local/.cache/coverage/baseline.json \
             --output local/.cache/coverage/report.md
           cat local/.cache/coverage/report.md >> "$GITHUB_STEP_SUMMARY"

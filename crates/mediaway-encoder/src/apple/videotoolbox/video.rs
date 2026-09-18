@@ -2,7 +2,7 @@
 //!
 //! See [ADR-0001](../../adr/apple/0001-videotoolbox-h264-cpu-upload.md) for the original H.264
 //! scope (Baseline-class / CPU NV12 upload only / best-effort key-frame-interval — plain
-//! `Baseline`, not `ConstrainedBaseline`: VideoToolbox's hardware encoder rejects the latter
+//! `Baseline`, not `ConstrainedBaseline`: `VideoToolbox`'s hardware encoder rejects the latter
 //! outright, see the ADR's 2026-08-20 addendum; `AllowFrameReordering: false` and Baseline's own
 //! CAVLC-only constraint already keep the practical bitstream Constrained-Baseline-class),
 //! [ADR-0002](../../adr/apple/0002-videotoolbox-hevc-encode.md) for the HEVC addition (Main-

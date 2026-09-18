@@ -28,9 +28,10 @@ const STARVATION_STATUS: i32 = 1;
 /// encoder's fixed `OUTPUT_BUF_CAP` reasoning (Opus packets/frames are small).
 const MAX_FRAME_SAMPLES_GUESS: u32 = 5760; // 120 ms @ 48 kHz — Opus's own documented max frame size
 
-/// Parameters for opening an [`OpusDecoder`] session — matches
-/// `mediaway_decoder::windows::wmf::opus::OpusDecoderConfig`'s exact shape (no `extra_data`
-/// field: Opus is self-describing per-packet, see ADR-0005 § Context).
+/// Parameters for opening an [`OpusDecoder`] session.
+///
+/// Matches `mediaway_decoder::windows::wmf::opus::OpusDecoderConfig`'s exact shape (no
+/// `extra_data` field: Opus is self-describing per-packet, see ADR-0005 § Context).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpusDecoderConfig {
     /// Sample rate (Hz).
@@ -405,7 +406,7 @@ fn duration_ticks(frames: u32, sample_rate: u32, time_base: Rational) -> u64 {
     u64::try_from(numerator / denominator).unwrap_or(u64::MAX)
 }
 
-fn validate(config: &OpusDecoderConfig) -> Result<(), DecodeError> {
+const fn validate(config: &OpusDecoderConfig) -> Result<(), DecodeError> {
     if config.sample_rate == 0 || config.channels == 0 || config.time_base.den == 0 {
         return Err(DecodeError::InvalidInput);
     }

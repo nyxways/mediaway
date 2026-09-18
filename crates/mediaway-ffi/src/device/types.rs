@@ -339,11 +339,15 @@ pub struct MediawayDesktopAudioCaptureConfig {
     pub source_kind: MediawayDesktopAudioSourceKind,
     /// Loopback endpoint ordinal; ignored for `ProcessLoopback`.
     pub device_index: u32,
-    /// `ProcessLoopback` only: target process id.
+    /// `ProcessLoopback` only: the process the mode below applies to.
     pub process_id: u32,
-    /// `ProcessLoopback` only: whether descendant processes are included
-    /// (`INCLUDE_TARGET_PROCESS_TREE`); ignored otherwise.
-    pub include_child_processes: bool,
+    /// `ProcessLoopback` only, ignored otherwise. `true` =
+    /// `INCLUDE_TARGET_PROCESS_TREE` (record `process_id` and its descendants);
+    /// `false` = `EXCLUDE_TARGET_PROCESS_TREE` (record everything the desktop renders
+    /// **except** that tree). Windows has no "target process alone" mode — `false` is
+    /// not a narrower `true`, it is the complement. Renamed from
+    /// `include_child_processes`, which mis-implied one.
+    pub include_target_process_tree: bool,
     /// Timestamp timebase for polled frames.
     pub time_base: MediawayRational,
     /// Preferred PCM format. Only `F32` is accepted by the real Windows backend today.

@@ -21,7 +21,9 @@ use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
 };
 
-use crate::windows_audio::{ComGuard, WindowsWasapiCapture, open_process_loopback_client};
+use crate::windows_audio::{
+    ComGuard, WasapiProcessTreeScope, WindowsWasapiCapture, open_process_loopback_client,
+};
 
 /// Live support probe for `kind` on this machine (see module docs).
 #[must_use]
@@ -113,7 +115,10 @@ fn process_loopback_support() -> Support {
         return Support::Unavailable(Unavailable::OsVersionTooOld);
     }
     let _com = ComGuard;
-    match open_process_loopback_client(std::process::id(), false) {
+    // Probe the mode callers actually ask for (`IncludeChildren`); both modes go through
+    // the same activation + `Initialize` path, so one is a sufficient support signal.
+    match open_process_loopback_client(std::process::id(), WasapiProcessTreeScope::IncludeChildren)
+    {
         Ok((client, _capture, _rate, _channels)) => {
             // SAFETY: Stop mirrors the Start already issued by activation.
             let _ = unsafe { client.Stop() };

@@ -951,7 +951,7 @@ class DesktopAudioCaptureConfig(Structure):
         ("source_kind", c_int32),
         ("device_index", c_uint32),
         ("process_id", c_uint32),
-        ("include_child_processes", c_bool),
+        ("include_target_process_tree", c_bool),
         ("time_base", Rational),
         ("sample_format", c_int32),
     ]

@@ -11,8 +11,7 @@ use crate::{CaptureError, Select};
 use mediaway_common::{AudioFrame, Bytes, CodecKind, SampleFormat, StreamInfo};
 
 use crate::windows_audio::wasapi_config::{
-    WasapiCaptureConfig as AudioCaptureConfig, WasapiProcessTreeScope as ProcessTreeScope,
-    WasapiSource as AudioCaptureSource,
+    WasapiCaptureConfig as AudioCaptureConfig, WasapiSource as AudioCaptureSource,
 };
 use windows::Win32::Devices::FunctionDiscovery::{
     PKEY_Device_FriendlyName, PKEY_DeviceInterface_FriendlyName,
@@ -298,8 +297,7 @@ fn open_wasapi_client(
             process_id,
             tree_scope,
         } => {
-            let include_tree = matches!(tree_scope, ProcessTreeScope::IncludeChildren);
-            return wasapi_process::open_process_loopback_client(process_id, include_tree)
+            return wasapi_process::open_process_loopback_client(process_id, tree_scope)
                 .map_err(|e| notify_err(tx_info, e));
         }
     };

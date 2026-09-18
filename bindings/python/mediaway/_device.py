@@ -304,7 +304,12 @@ class VideoCapture:
 class AudioCapture:
     """An audio capture session. `source="microphone"` opens the Microphone
     ABI; `"loopback"`/`"process_loopback"` open the Desktop-audio ABI (capture
-    of what the desktop is rendering)."""
+    of what the desktop is rendering).
+
+    For `"process_loopback"`, `include_target_process_tree=True` captures
+    `process_id` and its descendants; `False` captures everything the desktop
+    renders *except* that process tree. Windows has no "target process alone"
+    mode, so `False` is the complement of `True`, not a narrowing of it."""
 
     def __init__(self, handle: int):
         self._handle = handle
@@ -318,7 +323,7 @@ class AudioCapture:
         source: str = "microphone",
         sample_rate: int = 48000,
         process_id: int | None = None,
-        include_child_processes: bool = False,
+        include_target_process_tree: bool = False,
     ) -> "AudioCapture":
         dll = _ffi.device.dll
         tb = _ffi.Rational(1, sample_rate)
@@ -333,7 +338,7 @@ class AudioCapture:
             if process_id is None:
                 raise ValueError("process_loopback requires process_id")
             config = dll.mediaway_desktop_audio_capture_config_process_loopback(
-                process_id, include_child_processes, tb
+                process_id, include_target_process_tree, tb
             )
             _check_device(dll.mediaway_desktop_audio_capture_open(byref(config), byref(out)))
         else:

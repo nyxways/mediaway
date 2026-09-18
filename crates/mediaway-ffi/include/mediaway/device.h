@@ -333,8 +333,12 @@ typedef enum mediaway_desktop_audio_source_kind {
 typedef struct mediaway_desktop_audio_capture_config {
     mediaway_desktop_audio_source_kind_t source_kind;
     uint32_t device_index;        /* loopback endpoint ordinal; ignored for ProcessLoopback */
-    uint32_t process_id;          /* ProcessLoopback only */
-    bool include_child_processes; /* ProcessLoopback tree_scope; ignored otherwise */
+    uint32_t process_id;               /* ProcessLoopback only */
+    /* ProcessLoopback only; ignored otherwise. true = INCLUDE_TARGET_PROCESS_TREE (record
+     * process_id and its descendants); false = EXCLUDE_TARGET_PROCESS_TREE (record
+     * everything the desktop renders EXCEPT that tree). Windows has no
+     * "target process alone" mode, so false is the complement of true, not a narrowing. */
+    bool include_target_process_tree;
     mediaway_rational_t time_base;
     mediaway_sample_format_t sample_format;
 } mediaway_desktop_audio_capture_config_t;
@@ -354,7 +358,7 @@ typedef struct mediaway_desktop_audio_frame {
 mediaway_desktop_audio_capture_config_t mediaway_desktop_audio_capture_config_loopback(
     mediaway_rational_t time_base);
 mediaway_desktop_audio_capture_config_t mediaway_desktop_audio_capture_config_process_loopback(
-    uint32_t process_id, bool include_child_processes, mediaway_rational_t time_base);
+    uint32_t process_id, bool include_target_process_tree, mediaway_rational_t time_base);
 
 mediaway_device_status_t mediaway_desktop_audio_capture_open(
     const mediaway_desktop_audio_capture_config_t *config, mediaway_desktop_audio_capture_t **out_capture);

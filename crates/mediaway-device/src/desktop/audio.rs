@@ -26,21 +26,38 @@ pub enum DesktopAudioSource {
     /// Windows 10 2004+; capture is IEEE float at a fixed 48 kHz stereo layout on
     /// the Windows backend (mix-format queries are unsupported for this mode).
     ProcessLoopback {
-        /// Target process id.
+        /// The process `tree_scope` is applied to — captured under
+        /// [`ProcessTreeScope::IncludeChildren`], excluded under
+        /// [`ProcessTreeScope::ExcludeProcessTree`].
         process_id: u32,
-        /// Whether descendant processes are included (`INCLUDE_TARGET_PROCESS_TREE`).
+        /// Which of the two process-loopback modes to use.
         tree_scope: ProcessTreeScope,
     },
 }
 
-/// Whether a [`DesktopAudioSource::ProcessLoopback`] capture includes child processes.
+/// Which process tree a [`DesktopAudioSource::ProcessLoopback`] capture records.
+///
+/// Windows offers exactly two process-loopback modes, and this enum is a 1:1 image of
+/// them — **there is no "the target process but not its children" mode**, so this enum
+/// deliberately has no variant for one. A variant that claimed to be that mode existed
+/// until 2026-09-18 (`ProcessOnly`); it selected
+/// `PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE`, the exact inverse of its own
+/// documentation, and recorded everything *but* the target without failing. See
+/// `mediaway-device/adr/windows/0002-wasapi-capture.md` § Correction (2026-09-18).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum ProcessTreeScope {
-    /// Only audio rendered directly by the target process.
-    ProcessOnly,
-    /// Audio rendered by the target process and its descendants.
+    /// Audio rendered by the target process and its descendants
+    /// (`PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE`).
     IncludeChildren,
+    /// Everything the desktop renders **except** the target process and its descendants
+    /// (`PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE`).
+    ///
+    /// This is a "record everything else" mode, not a narrowing of
+    /// [`Self::IncludeChildren`]: the target process is the one thing it leaves out. Its
+    /// use case is a recorder capturing system audio without its own playback feeding
+    /// back into the capture.
+    ExcludeProcessTree,
 }
 
 /// Parameters for opening a desktop audio capture session.

@@ -30,8 +30,8 @@ fn to_wasapi_source(source: &DesktopAudioSource) -> WasapiSource {
             tree_scope,
         } => {
             let tree_scope = match tree_scope {
-                ProcessTreeScope::ProcessOnly => WasapiProcessTreeScope::ProcessOnly,
                 ProcessTreeScope::IncludeChildren => WasapiProcessTreeScope::IncludeChildren,
+                ProcessTreeScope::ExcludeProcessTree => WasapiProcessTreeScope::ExcludeProcessTree,
             };
             WasapiSource::ProcessLoopback {
                 process_id: *process_id,
@@ -74,3 +74,7 @@ impl DesktopAudioCapture for WindowsDesktopAudioCapture {
         self.0.close()
     }
 }
+
+#[cfg(test)]
+#[path = "desktop_audio_tests.rs"]
+mod tests;

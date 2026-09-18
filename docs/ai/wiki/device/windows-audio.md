@@ -6,6 +6,20 @@
 - Sources: mic · system loopback · process loopback
 - Format: IEEE float (process loopback fixed 48 kHz stereo)
 - Mark today: **🆗** (PCM copied into queue — not CPU ⚡ yet)
+- **Process loopback (`wasapi_process.rs`) — read before touching it:**
+  - `Initialize` takes `AUDCLNT_STREAMFLAGS_LOOPBACK` and **only** that. The
+    sample-rate-conversion flags (`AUTOCONVERTPCM`/`SRC_DEFAULT_QUALITY`) make it fail with
+    `AUDCLNT_E_INVALID_STREAM_FLAG` (`0x88890021`) — there is no mix format to convert from.
+    Shipped wrong from the start; fixed 2026-09-18.
+  - Windows has **two** modes and no third: `INCLUDE_TARGET_PROCESS_TREE` (the target + its
+    children) and `EXCLUDE_TARGET_PROCESS_TREE` (**everything else**). There is no "this
+    process but not its children" — `ProcessTreeScope::ProcessOnly` claimed to be that and
+    selected the exclude mode, recording the inverse silently until it was renamed
+    `ExcludeProcessTree`. Both mappings are pinned by `wasapi_process_tests.rs`.
+  - Failures carry the `HRESULT` via `CaptureError::BackendCode { code }`. Do not go back to
+    a bare `CaptureError::Backend` here — the discarded code is exactly what hid the flag bug
+    from every caller and test for the module's whole life.
+  - Both defects: [ADR-0002 § Correction (2026-09-18)](../../../../crates/mediaway-device/adr/windows/0002-wasapi-capture.md).
 - Evaluated shared-buffer CPU ⚡: not achievable under the current `AudioCapture` contract
   (no frame-release hook) + WASAPI's `GetBuffer`/`ReleaseBuffer` lifetime rule — see the
   ADR addendum below. Collapsed the per-period copy from zero-init + memcpy to one write.

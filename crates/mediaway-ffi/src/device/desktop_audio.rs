@@ -49,24 +49,29 @@ pub const extern "C" fn mediaway_desktop_audio_capture_config_loopback(
         source_kind: MediawayDesktopAudioSourceKind::Loopback,
         device_index: 0,
         process_id: 0,
-        include_child_processes: false,
+        include_target_process_tree: false,
         time_base,
         sample_format: MediawaySampleFormat::F32,
     }
 }
 
 /// Build a per-process loopback capture config for `process_id`.
+///
+/// `include_target_process_tree == false` selects `EXCLUDE_TARGET_PROCESS_TREE`: everything
+/// the desktop renders **except** `process_id` and its descendants. It is not "that process
+/// alone" — Windows has no such mode. See
+/// [`MediawayDesktopAudioCaptureConfig::include_target_process_tree`].
 #[unsafe(no_mangle)]
 pub const extern "C" fn mediaway_desktop_audio_capture_config_process_loopback(
     process_id: u32,
-    include_child_processes: bool,
+    include_target_process_tree: bool,
     time_base: MediawayRational,
 ) -> MediawayDesktopAudioCaptureConfig {
     MediawayDesktopAudioCaptureConfig {
         source_kind: MediawayDesktopAudioSourceKind::ProcessLoopback,
         device_index: 0,
         process_id,
-        include_child_processes,
+        include_target_process_tree,
         time_base,
         sample_format: MediawaySampleFormat::F32,
     }
@@ -114,10 +119,10 @@ pub unsafe extern "C" fn mediaway_desktop_audio_capture_open(
             MediawayDesktopAudioSourceKind::ProcessLoopback => {
                 DesktopAudioSource::ProcessLoopback {
                     process_id: config.process_id,
-                    tree_scope: if config.include_child_processes {
+                    tree_scope: if config.include_target_process_tree {
                         ProcessTreeScope::IncludeChildren
                     } else {
-                        ProcessTreeScope::ProcessOnly
+                        ProcessTreeScope::ExcludeProcessTree
                     },
                 }
             }

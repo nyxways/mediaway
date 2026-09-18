@@ -90,6 +90,27 @@ fn screen_and_window_permission_are_unknown_when_supported() {
     }
 }
 
+/// This probe *is* `open_process_loopback_client` (see `process_loopback_support`), so while
+/// that path could not `Initialize` at all it answered `Unavailable(OsVersionTooOld)` on every
+/// machine including Windows 11 ones — a support probe that was structurally incapable of
+/// saying "supported". Shaped like `screen_support_or_skip`: a genuinely old Windows build
+/// still reports unavailable honestly, and this test does not turn that into a failure.
+#[test]
+fn process_loopback_support_or_skip() {
+    let _guard = crate::windows::HARDWARE_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    match support(DeviceKind::ProcessLoopback) {
+        Support::Supported => {}
+        other => eprintln!("skip: process_loopback_support returned {other:?} (pre-2004 build?)"),
+    }
+    assert_ne!(
+        support(DeviceKind::ProcessLoopback),
+        Support::Unavailable(Unavailable::NotImplemented),
+        "a probe exists for ProcessLoopback"
+    );
+}
+
 /// Exercises the real `WASAPI` open/close probe on this machine's default
 /// microphone endpoint. Skips (prints and returns) rather than failing when no
 /// endpoint is present — same convention as `lib_tests.rs`'s `_or_skip` tests.

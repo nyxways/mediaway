@@ -49,7 +49,8 @@ Status marks: ✅ first-class (tests for claimed scope) · ⚡ Zero-Copy path (n
 
 ### `platform` auto-dispatch by OS
 
-`platform::AutoEncoder` / `AutoDecoder` / `ScreenCapture` / `Microphone` auto-select the
+`platform::AutoEncoder` / `AutoDecoder` / `ScreenCapture` / `WindowCapture` / `Microphone` /
+`DesktopAudio` auto-select the
 best backend per OS. `❌ NoBackend` means the capability isn't wired into `platform` yet —
 reach the backend module directly (e.g. `mediaway_encoder::web`) instead.
 
@@ -58,6 +59,8 @@ reach the backend module directly (e.g. `mediaway_encoder::web`) instead.
 | `AutoEncoder::open` | ✅ `windows::auto` (path selection: Zero-Copy → CPU upload; WMF H.264/AAC, NVENC, QuickSync, Vulkan) | 🆗 `linux::LinuxVideoEncoder` (VA-API, CPU upload only; zero real-hardware verification) | ❌ `NoBackend` (`mediaway_encoder::web` WebCodecs exists, not wired) | ❌ `NoBackend` |
 | `AutoDecoder::open` | ✅ `windows::WindowsVideoDecoder` (WMF HW decode, DX11 Zero-Copy out) | 🆗 `linux::LinuxVideoDecoder` (VA-API CPU output; unverified) | ❌ `NoBackend` (`mediaway_decoder::web` planned) | ❌ `NoBackend` |
 | `ScreenCapture::open` | ✅ ⚡ DXGI Desktop Duplication (Zero-Copy out) | 🆗 `linux::LinuxScreenCapture` (portal + PipeWire, CPU copy; unverified) | ❌ `NoBackend` (`getDisplayMedia` not wired) | ❌ `NoBackend` |
+| `WindowCapture::open` → `PlatformWindowCapture` (concrete, not boxed — ADR-0002) | ✅ ⚡ WGC (Zero-Copy out; border / even-crop options on `WindowsWindowCapture::open_with`) | 🆗 `linux::LinuxWindowCapture` (portal + PipeWire) | ❌ `NoBackend` | macOS 🆗 `apple::AppleWindowCapture` (ScreenCaptureKit); Android ❌ `NoBackend` |
+| `DesktopAudio::open` → `PlatformDesktopAudioCapture` (concrete) | ✅ WASAPI system loopback or per-process loopback | ❌ `NoBackend` | ❌ `NoBackend` | ❌ `NoBackend` |
 | `Microphone::open` | ✅ WASAPI | ❌ `NoBackend` (Linux mic module exists, not wired) | ❌ `NoBackend` | ❌ `NoBackend` |
 | `encoder_support(codec)` | ✅ live probe (incl. Opus via `mediaway-sw` software path) | empty | empty | empty |
 | `decoder_support(codec)` | ✅ live probe (incl. inbox WMF Opus decoder) | ✅ live probe (VA-API) | `NotImplemented` | `NotImplemented` |

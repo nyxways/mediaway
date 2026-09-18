@@ -202,28 +202,45 @@ fn read_nal_length(len_bytes: &[u8]) -> Option<usize> {
 
 /// Build an `HEVCDecoderConfigurationRecord` (`hvcC`) from one VPS/SPS/PPS NAL each.
 ///
+/// # The SPS must be unescaped first, and that is not a detail
+///
 /// `general_profile_space`/`tier`/`profile_idc`/`profile_compatibility_flags`/
-/// `constraint_indicator_flags`/`level_idc` are copied verbatim from the SPS's
-/// `profile_tier_level()` general fields — byte-aligned at a fixed offset right after the SPS's
-/// 2-byte NAL header + 1-byte `sps_video_parameter_set_id`/`sps_max_sub_layers_minus1`/
-/// `sps_temporal_id_nesting_flag` byte (ITU-T H.265 § 7.3.3), so no exp-golomb parsing is needed
-/// for these fields — the same "copy the known fixed-position bytes" approach [`super::avc::
-/// build_avcc`] already uses for H.264's `profile_idc`/`constraint_flags`/`level_idc`.
+/// `constraint_indicator_flags`/`level_idc` are copied from the SPS's `profile_tier_level()`
+/// general fields, which are byte-aligned at a fixed offset right after the SPS's 2-byte NAL
+/// header + 1-byte `sps_video_parameter_set_id`/`sps_max_sub_layers_minus1`/
+/// `sps_temporal_id_nesting_flag` byte (ITU-T H.265 § 7.3.3) — so no exp-golomb parsing is
+/// needed for them.
+///
+/// They are **not** at a fixed offset in the NAL as transmitted. `profile_tier_level()` spans
+/// RBSP bytes 3..15 and is zero-heavy — a Main-profile SPS routinely carries several
+/// `00 00 03` emulation-prevention escapes inside exactly that range — so every byte after the
+/// first escape is shifted. [`super::avc::build_avcc`] gets away with fixed offsets because
+/// H.264's `profile_idc`/`constraint_flags`/`level_idc` sit at RBSP bytes 1..4, where an
+/// escape cannot occur: it needs two preceding zero bytes, and byte 0 is the non-zero NAL
+/// header. Reasoning by analogy from that function is what produced the bug this fixes —
+/// measured against a real NVIDIA HEVC MFT sequence header, **6 of the 23 header bytes were
+/// wrong**, `general_level_idc` among them, reading `0` instead of `0x5a` (level 3.0).
+///
+/// `numTemporalLayers` and `temporalIdNested` come from the SPS byte *before* that range,
+/// which no escape can reach, so they are read rather than defaulted.
+///
 /// `min_spatial_segmentation_idc`/`parallelismType`/`chroma_format_idc`/`bit_depth_*`/
-/// `avgFrameRate`/`numTemporalLayers` sit past exp-golomb-coded fields in the SPS RBSP and are
-/// left at safe defaults (4:2:0, 8-bit, one temporal layer) rather than parsed — mirrors
-/// [`super::av1::to_av1c`]'s identical "informational fields default until verified against a
-/// real encoder" precedent. `lengthSizeMinusOne` is always 3 (4-byte), matching this crate's
-/// `to_hvcc` output framing.
+/// `avgFrameRate` sit past exp-golomb-coded fields in the SPS RBSP and are left at safe
+/// defaults (4:2:0, 8-bit) rather than parsed — mirrors [`super::av1::to_av1c`]'s identical
+/// "informational fields default until verified against a real encoder" precedent.
+/// `lengthSizeMinusOne` is always 3 (4-byte), matching this crate's `to_hvcc` output framing.
 fn build_hvcc(vps: &[u8], sps: &[u8], pps: &[u8]) -> Bytes {
     let mut v = Vec::with_capacity(23 + 3 * 5 + vps.len() + sps.len() + pps.len());
     v.push(1); // configurationVersion
 
-    if sps.len() >= 15 {
-        v.push(sps[3]); // general_profile_space(2) + general_tier_flag(1) + general_profile_idc(5)
-        v.extend_from_slice(&sps[4..8]); // general_profile_compatibility_flags(32)
-        v.extend_from_slice(&sps[8..14]); // general_constraint_indicator_flags(48)
-        v.push(sps[14]); // general_level_idc
+    // Only the fields lifted *out* of the SPS need the RBSP. The parameter-set arrays further
+    // down store the NALs as transmitted, which is what the record is specified to carry.
+    let rbsp = unescape_rbsp(sps);
+    if rbsp.len() >= 15 {
+        v.push(rbsp[3]); // general_profile_space(2) + general_tier_flag(1) + general_profile_idc(5)
+        v.extend_from_slice(&rbsp[4..8]); // general_profile_compatibility_flags(32)
+        v.extend_from_slice(&rbsp[8..14]); // general_constraint_indicator_flags(48)
+        v.push(rbsp[14]); // general_level_idc
     } else {
         v.extend_from_slice(&[0u8; 12]);
     }
@@ -234,8 +251,7 @@ fn build_hvcc(vps: &[u8], sps: &[u8], pps: &[u8]) -> Bytes {
     v.push(0xf8); // reserved(5)='11111' + bit_depth_luma_minus8(3)=0 (8-bit)
     v.push(0xf8); // reserved(5)='11111' + bit_depth_chroma_minus8(3)=0 (8-bit)
     v.extend_from_slice(&[0, 0]); // avgFrameRate(16)=0 (unknown)
-    // constantFrameRate(2)=0 | numTemporalLayers(3)=1 | temporalIdNested(1)=0 | lengthSizeMinusOne(2)=3
-    v.push(0x0b);
+    v.push(temporal_layer_byte(&rbsp));
 
     v.push(3); // numOfArrays: VPS, SPS, PPS
 
@@ -247,6 +263,53 @@ fn build_hvcc(vps: &[u8], sps: &[u8], pps: &[u8]) -> Bytes {
     }
 
     Bytes::from(v)
+}
+
+/// `constantFrameRate(2) | numTemporalLayers(3) | temporalIdNested(1) | lengthSizeMinusOne(2)`.
+///
+/// `sps_max_sub_layers_minus1` and `sps_temporal_id_nesting_flag` share RBSP byte 2 with
+/// `sps_video_parameter_set_id` (ITU-T H.265 s 7.3.2.2). That byte sits before
+/// `profile_tier_level()`, so it reads the same escaped or not — it is taken from the
+/// unescaped RBSP regardless, because a caller reading "byte 2" out of a different buffer
+/// depending on which field it wants is how the escaping bug gets reintroduced.
+///
+/// `constantFrameRate` stays `0`, meaning "unknown". Claiming a constant frame rate would be a
+/// statement about the stream that this function has no way to check.
+fn temporal_layer_byte(rbsp: &[u8]) -> u8 {
+    // `(1, 0)` when there is nothing to read: one layer, not nested — the same minimum the
+    // record would carry for a stream with no temporal sub-layers at all.
+    let (num_temporal_layers, temporal_id_nested) = rbsp
+        .get(2)
+        .map_or((1, 0), |byte| (((byte >> 1) & 0x07) + 1, byte & 0x01));
+    ((num_temporal_layers & 0x07) << 3) | ((temporal_id_nested & 0x01) << 2) | 0x03
+}
+
+/// Strip emulation-prevention bytes, turning an EBSP (a NAL as transmitted) into its RBSP.
+///
+/// An encoder inserts `0x03` after any `00 00` that would otherwise be followed by a byte in
+/// `0x00..=0x03`, so a start code can never appear inside a NAL. Undoing that is required
+/// before reading anything at a byte offset past the first such escape — see [`build_hvcc`].
+///
+/// The escaped form is what belongs in the `hvcC` parameter-set arrays and in a length-prefixed
+/// sample; this output exists only to read fields out of.
+fn unescape_rbsp(ebsp: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(ebsp.len());
+    let mut zeros = 0u8;
+    for &byte in ebsp {
+        if zeros >= 2 && byte == 0x03 {
+            // The escape itself: dropped, and it cannot combine with the zeros before it to
+            // form another one.
+            zeros = 0;
+            continue;
+        }
+        zeros = if byte == 0 {
+            zeros.saturating_add(1)
+        } else {
+            0
+        };
+        out.push(byte);
+    }
+    out
 }
 
 /// Next Annex-B start code: `(offset, code_len)` with `code_len` in `{3, 4}`.

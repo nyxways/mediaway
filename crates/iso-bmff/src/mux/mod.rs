@@ -5,7 +5,7 @@
 #[cfg(feature = "audio")]
 use crate::bitstream::strip_adts;
 #[cfg(feature = "video")]
-use crate::bitstream::to_avcc;
+use crate::bitstream::{to_avcc, to_hvcc};
 use crate::codec_features::check_codec;
 use crate::error::Error;
 use crate::isobmff::{write_fragment, write_ftyp, write_moov};
@@ -147,7 +147,21 @@ impl Muxer<Live> {
         }
     }
 
-    /// Push a compressed Sample (H.264 Annex-B auto-converted to AVCC).
+    /// Push a compressed Sample (H.264 and HEVC Annex-B auto-converted to length-prefixed).
+    ///
+    /// # Annex-B conversion is not optional for H.264/HEVC
+    ///
+    /// `avcC`/`hvcC` both declare `lengthSizeMinusOne = 3`, so a sample in those tracks
+    /// **is** a sequence of 4-byte-length-prefixed NALs. Handing the caller's bytes through
+    /// unchanged produces a file whose sample entry and whose `mdat` disagree, and a decoder
+    /// reads the first four bytes of a start code as a length: `00 00 00 01` becomes a
+    /// one-byte NAL, and everything after it is garbage. That was HEVC's behaviour until
+    /// 2026-09-18 — see `adr/0006-hevc-in-mp4.md`.
+    ///
+    /// Both codecs also **backfill their configuration record** from the parameter sets in the
+    /// first packet, for the encoder backends that never publish one out of band. The backfill
+    /// only fires while `extra_data` is still empty, so a real record supplied at
+    /// registration always wins.
     ///
     /// Sample durations are computed from consecutive `dts` deltas inside each
     /// fragment (standard muxer convention), so `Sample::duration` is optional:
@@ -171,6 +185,11 @@ impl Muxer<Live> {
             Codec::H264 => {
                 let o = to_avcc(&sample.payload);
                 (o.payload, o.avcc)
+            }
+            #[cfg(feature = "video")]
+            Codec::Hevc => {
+                let o = to_hvcc(&sample.payload);
+                (o.payload, o.hvcc)
             }
             #[cfg(feature = "audio")]
             Codec::Aac => strip_adts(&sample.payload),

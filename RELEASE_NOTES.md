@@ -2,6 +2,42 @@
 
 <!-- Accumulate development changes under ## Unreleased
 
+### Fixed
+
+- **HEVC in MP4 decoded zero frames. It now decodes every frame.** Not a regression — no
+  HEVC MP4 this workspace ever wrote was playable, on any platform. Three defects had to
+  line up, and each had been deferred as somebody else's job
+  (`crates/iso-bmff/adr/0006-hevc-in-mp4.md`):
+
+  - `iso_bmff::bitstream::hevc::build_hvcc` read `profile_tier_level()` at fixed byte
+    offsets into the NAL **as transmitted**, by analogy to `build_avcc`. The analogy does
+    not hold: H.264's profile/level sit where an emulation-prevention escape cannot occur,
+    HEVC's span RBSP bytes 3..15, and a Main-profile SPS carries three escapes inside
+    exactly that range. Measured against ffmpeg's `hvcC` for the same encoder, **6 of 23
+    header bytes were wrong**, `general_level_idc` among them — `0x00` instead of `0x5a`.
+    **This also corrupted every HEVC file produced on macOS**, which shares `to_hvcc`.
+  - `iso_bmff::Muxer::push_packet` did not convert HEVC Annex-B to length-prefixed samples,
+    while `hvcC` declares `lengthSizeMinusOne = 3`. A `00 00 00 01` start code read as a
+    length gives `Invalid NAL unit size (17564159 > 22953)`, which is what ffmpeg reported
+    for every sample. HEVC now gets the same automatic conversion and configuration-record
+    backfill H.264 has always had.
+  - `mediaway_encoder`'s WMF path never built an `hvcC` at all, passing Media Foundation's
+    raw sequence header through as `extra_data` — the follow-up `mediaway-encoder`'s
+    ADR-0010 named and deferred. Worse, the inbox `HEVCVideoExtensionEncoder` MFT never
+    publishes that attribute, so `extra_data` was *empty* and the muxer wrote
+    `HVCC_PLACEHOLDER`, a record whose `numOfArrays` is 0.
+
+  **Verified end to end, as a test rather than a claim:**
+  `crates/iso-bmff/tests/conformance_hevc.rs` encodes real HEVC with ffmpeg, strips it to
+  Annex-B, muxes it through this crate with an *empty* configuration record, and asserts
+  ffprobe decodes all 30 frames. Both container-side defects were confirmed to fail it
+  individually before the fix. It skips loudly without ffmpeg/ffprobe.
+
+  **Why this survived seven weeks:** the HEVC mux test fed the muxer six hand-written bytes,
+  `build_hvcc`'s unit test used an SPS fixture containing no escape sequence, and the only
+  encode→mux→demux integration tests were H.264-only *and* orphaned (no `[[test]]` entry in
+  `Cargo.toml`, importing a crate that no longer exists, so cargo never built them).
+
 ### Added
 
 - **Windows AAC decode** — `mediaway_decoder::windows::WmfAacDecoder` (+ `AacDecoderConfig`)
@@ -86,6 +122,11 @@
   (`crates/mediaway-encoder/adr/windows/0012-async-mft-zero-copy-sequencing.md`).
   This was previously recorded in the wiki as an unexplained "environment gap"; that
   diagnosis is retired.
+
+  **That verification is encoder-level.** It asserts the MFT produces packets, and says
+  nothing about whether those packets mux into a playable file. For HEVC they did not, until
+  the container fix under **Fixed** above — wording it as a bare "verified" is part of how
+  that stayed invisible.
 
 - Encoder capability probe no longer reports `NoDevice` for backends that work. It opened
   every probe session at 64×64, below NVENC's minimum dimensions, so `encoder_support`

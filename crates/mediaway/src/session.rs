@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 use crate::error::PipelineError;
 use crate::filter::{FilterError, FrameFilter};
 use mediaway_common::{AudioFrame, StreamInfo, VideoFrame, VideoFrameStorage};
-use mediaway_container::mp4;
+use mediaway_container::{ContainerError, Mux, MuxOpen, mp4};
 use mediaway_encoder::{AudioEncoder, VideoEncoder};
 use mediaway_sw::apm::{AudioProcessor, VoiceActivityDetector};
 use smallvec::SmallVec;
@@ -27,13 +27,32 @@ struct AudioTrack {
     vad_scores: VecDeque<f32>,
 }
 
-/// Encode frames straight to fragmented MP4 bytes.
+/// Encode frames straight to container bytes.
 ///
-/// Wraps one [`VideoEncoder`] + an [`mp4::Muxer`] (single-track, or two-track when
-/// opened via [`open_with_audio`](Self::open_with_audio)), draining `poll_packet` into
-/// the muxer on every [`write_frame`](Self::write_frame)/
-/// [`write_audio_frame`](Self::write_audio_frame) call instead of making callers write
-/// that loop themselves.
+/// Wraps one [`VideoEncoder`] + a muxer (single-track, or two-track when opened via
+/// [`open_with_audio`](Self::open_with_audio)), draining `poll_packet` into the muxer on
+/// every [`write_frame`](Self::write_frame)/[`write_audio_frame`](Self::write_audio_frame)
+/// call instead of making callers write that loop themselves.
+///
+/// # Choosing a container
+///
+/// `M` is the muxer's track-registration phase and defaults to [`mp4::Muxer`], so
+/// `EncodeSession::open(encoder)` still produces fragmented MP4 exactly as before. Name a
+/// different [`MuxOpen`] to get a different container:
+///
+/// ```ignore
+/// use mediaway_container::webm;
+/// let session = EncodeSession::<_, webm::Muxer<webm::Open>>::open(encoder)?;
+/// ```
+///
+/// Or hand over a pre-configured muxer with [`open_in`](Self::open_in), which is the only
+/// way to reach options the muxer's own constructor exposes —
+/// `mp4::Muxer::with_fragment_batch` was unreachable through this facade before.
+///
+/// Not every encoder pairs with every container: `add_track` is what rejects a codec the
+/// container has no mapping for (`WebM` has no `CodecID` for H.264, for instance), so the
+/// mismatch surfaces at [`open`](Self::open) rather than silently producing an unplayable
+/// file.
 ///
 /// Generic over `E` — works with a concrete unboxed encoder (e.g. Windows
 /// `AutoVideoEncoder`) or `Box<dyn VideoEncoder>` (cross-platform dispatch via
@@ -41,15 +60,28 @@ struct AudioTrack {
 /// caller doesn't already have one. The audio encoder is always `Box<dyn AudioEncoder>`
 /// internally, regardless of `E` — see `adr/0003-audio-track-and-apm-integration.md`
 /// § Struct shape for why this does not become a second generic parameter.
-pub struct EncodeSession<E: VideoEncoder> {
+pub struct EncodeSession<E: VideoEncoder, M: MuxOpen = mp4::Muxer<mp4::Open>> {
     encoder: E,
-    muxer: mp4::Muxer<mp4::Live>,
+    muxer: M::Live,
     track_id: u32,
     filters: SmallVec<[Box<dyn FrameFilter>; 4]>,
     audio: Option<AudioTrack>,
 }
 
-impl<E: VideoEncoder> EncodeSession<E> {
+/// Fragmented-MP4 constructors.
+///
+/// These live on the concrete MP4 session rather than alongside
+/// [`open_in`](EncodeSession::open_in) on the generic one, and that is deliberate: a
+/// struct's default type parameter is *not* consulted when inferring an associated
+/// function call, so a generic `EncodeSession::open` would force every existing caller to
+/// write `EncodeSession::<_, mp4::Muxer<mp4::Open>>::open(..)`. Pinning `M` in the impl
+/// header lets inference resolve it from the impl, so `EncodeSession::open(encoder)` keeps
+/// meaning what it always meant.
+///
+/// Other containers go through [`open_in`](EncodeSession::open_in), which names the muxer
+/// explicitly — `EncodeSession::open_in(webm::Muxer::new(), encoder)` reads better than the
+/// turbofish would anyway.
+impl<E: VideoEncoder> EncodeSession<E, mp4::Muxer<mp4::Open>> {
     /// Register `encoder`'s stream as an MP4 track and begin streaming. Video-only —
     /// see [`open_with_audio`](Self::open_with_audio) for a session with an audio track.
     ///
@@ -57,31 +89,24 @@ impl<E: VideoEncoder> EncodeSession<E> {
     ///
     /// Returns [`PipelineError`] if the muxer rejects the encoder's stream info.
     pub fn open(encoder: E) -> Result<Self, PipelineError> {
-        let mut open = mp4::Muxer::new();
-        let track_id = open.add_track(encoder.stream_info().clone())?;
-        Ok(Self {
-            encoder,
-            muxer: open.begin(),
-            track_id,
-            filters: SmallVec::new(),
-            audio: None,
-        })
+        Self::open_in(mp4::Muxer::new(), encoder)
     }
 
-    /// Register `encoder`'s and `audio_encoder`'s streams as MP4 tracks (video first,
-    /// then audio) and begin streaming.
+    /// Register `encoder`'s and `audio_encoder`'s streams as tracks (video first, then
+    /// audio) and begin streaming.
     ///
     /// Both tracks must be known before this call: [`mp4::Muxer`] is typestate — tracks
-    /// can only be added before `begin()`, so there is no way to add an audio track to
-    /// a session already opened via [`open`](Self::open)
+    /// can only be added before `begin()`, so there is no way to add an audio track to a
+    /// session already opened via [`open`](Self::open)
     /// (`adr/0003-audio-track-and-apm-integration.md` § Context).
     ///
-    /// `mp4::Muxer::add_track` requires unique track ids and rejects a duplicate with
-    /// [`mediaway_container::mp4::Error::InvalidTrack`] — two independently constructed
-    /// encoders both typically report `id: 0` by default (unlike
+    /// `add_track` requires unique track ids and rejects a duplicate — two independently
+    /// constructed encoders both typically report `id: 0` by default (unlike
     /// [`open`](Self::open)'s single-track case, where that default is never a
-    /// conflict). This renumbers explicitly (video `0`, audio `1`) rather than trusting
-    /// each encoder's own default — the same renumbering `tests/screen_mic_av_smoke.rs`
+    /// conflict). This renumbers explicitly, from
+    /// [`MuxOpen::FIRST_TRACK_ID`] upward (video first, then audio — `0`/`1` on MP4,
+    /// `1`/`2` on `WebM`, which reserves `0`), rather than trusting each encoder's own
+    /// default — the same renumbering `tests/screen_mic_av_smoke.rs`
     /// used to do by hand via `StreamInfo::with_id` before migrating onto this
     /// constructor.
     ///
@@ -92,12 +117,67 @@ impl<E: VideoEncoder> EncodeSession<E> {
         encoder: E,
         audio_encoder: impl AudioEncoder + 'static,
     ) -> Result<Self, PipelineError> {
-        let mut open = mp4::Muxer::new();
-        let track_id = open.add_track(encoder.stream_info().clone().with_id(0))?;
-        let audio_track_id = open.add_track(audio_encoder.stream_info().clone().with_id(1))?;
+        Self::open_in_with_audio(mp4::Muxer::new(), encoder, audio_encoder)
+    }
+}
+
+impl<E: VideoEncoder, M: MuxOpen> EncodeSession<E, M>
+where
+    M::Error: Into<ContainerError>,
+{
+    /// [`open`](Self::open), with a caller-supplied muxer.
+    ///
+    /// Takes the muxer in its registration phase and consumes it: the session owns the live
+    /// muxer from here on. This is how a caller reaches muxer options this facade does not
+    /// mirror — `mp4::Muxer::with_fragment_batch` being the motivating one.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PipelineError`] if the muxer rejects the encoder's stream info.
+    pub fn open_in(mut muxer: M, encoder: E) -> Result<Self, PipelineError> {
+        let info = encoder.stream_info().clone();
+        // Raise the encoder's own track id only if the container forbids it. Encoders
+        // default to `id: 0`, which ISOBMFF accepts and Matroska rejects outright, so
+        // leaving it alone would make a WebM session fail on a stream the caller never
+        // chose an id for. Clamping upward rather than overwriting keeps an encoder that
+        // *did* pick an id in charge of it.
+        let info = if info.id() < M::FIRST_TRACK_ID {
+            info.with_id(M::FIRST_TRACK_ID)
+        } else {
+            info
+        };
+        let track_id = muxer.add_track(info).map_err(Into::into)?;
         Ok(Self {
             encoder,
-            muxer: open.begin(),
+            muxer: muxer.begin(),
+            track_id,
+            filters: SmallVec::new(),
+            audio: None,
+        })
+    }
+
+    /// [`open_with_audio`](Self::open_with_audio), with a caller-supplied muxer. See
+    /// [`open_in`](Self::open_in).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PipelineError`] if the muxer rejects either encoder's stream info.
+    pub fn open_in_with_audio(
+        mut muxer: M,
+        encoder: E,
+        audio_encoder: impl AudioEncoder + 'static,
+    ) -> Result<Self, PipelineError> {
+        let video_id = M::FIRST_TRACK_ID;
+        let audio_id = M::FIRST_TRACK_ID + 1;
+        let track_id = muxer
+            .add_track(encoder.stream_info().clone().with_id(video_id))
+            .map_err(Into::into)?;
+        let audio_track_id = muxer
+            .add_track(audio_encoder.stream_info().clone().with_id(audio_id))
+            .map_err(Into::into)?;
+        Ok(Self {
+            encoder,
+            muxer: muxer.begin(),
             track_id,
             filters: SmallVec::new(),
             audio: Some(AudioTrack {
@@ -368,18 +448,15 @@ impl<E: VideoEncoder> EncodeSession<E> {
                     .set_track_extra_data(self.track_id, extra_data.clone());
             }
             pkt.stream_id = self.track_id;
-            self.muxer.push_packet(&pkt)?;
+            self.muxer.push_packet(&pkt).map_err(Into::into)?;
         }
         Ok(())
     }
 
-    fn drain_audio(
-        audio: &mut AudioTrack,
-        muxer: &mut mp4::Muxer<mp4::Live>,
-    ) -> Result<(), PipelineError> {
+    fn drain_audio(audio: &mut AudioTrack, muxer: &mut M::Live) -> Result<(), PipelineError> {
         while let Some(mut pkt) = audio.encoder.poll_packet()? {
             pkt.stream_id = audio.track_id;
-            muxer.push_packet(&pkt)?;
+            muxer.push_packet(&pkt).map_err(Into::into)?;
         }
         Ok(())
     }

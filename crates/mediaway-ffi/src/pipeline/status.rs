@@ -5,7 +5,7 @@
 //! `adr/0001-auto-encode-c-abi.md` §2 for why.
 
 use mediaway::PipelineError;
-use mediaway_container::mp4;
+use mediaway_container::{ContainerError, mp4};
 use mediaway_decoder::DecodeError;
 use mediaway_device::CaptureError;
 use mediaway_encoder::EncodeError;
@@ -42,8 +42,9 @@ pub enum MediawayPipelineStatus {
     MuxInvalidPacket = 9,
     /// [`mp4::Error::InvalidData`], via [`PipelineError::Mux`].
     MuxInvalidData = 10,
-    /// A future `#[non_exhaustive]` variant on `EncodeError`, `mp4::Error`, or
-    /// `PipelineError` itself.
+    /// A future `#[non_exhaustive]` variant on `EncodeError`, `mp4::Error`,
+    /// `ContainerError` or `PipelineError` itself — including a mux error from a
+    /// container other than MP4, which no C entry point can currently select.
     UnknownError = 11,
     /// This call caught a Rust panic; the handle is now poisoned.
     InternalPanic = 12,
@@ -128,6 +129,21 @@ impl From<mp4::Error> for MediawayPipelineStatus {
             mp4::Error::InvalidTrack => Self::MuxInvalidTrack,
             mp4::Error::InvalidPacket => Self::MuxInvalidPacket,
             mp4::Error::InvalidData => Self::MuxInvalidData,
+            _ => Self::UnknownError,
+        }
+    }
+}
+
+impl From<ContainerError> for MediawayPipelineStatus {
+    fn from(err: ContainerError) -> Self {
+        match err {
+            ContainerError::Mp4(e) => e.into(),
+            // `ContainerError` is `#[non_exhaustive]` and gained a `Webm` variant when
+            // `EncodeSession` became generic over its muxer. Every encode path this crate
+            // exposes to C opens the default MP4 session, so a non-MP4 mux error is not
+            // reachable from here — mapping one to a precise status code would be
+            // untestable precision. If a future C entry point lets the caller pick a
+            // container, that is the change that must add real variants here.
             _ => Self::UnknownError,
         }
     }

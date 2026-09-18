@@ -6,6 +6,7 @@
 | [api-layers](api-layers.md) | Low-level APIs first-class; convenience is composition |
 | [async-streaming](async-streaming.md) | Streaming-first · async without mandatory runtime |
 | [encode-session-byte-output](encode-session-byte-output.md) | `poll_bytes` / `finish_into` / `finish` — streaming vs whole-buffer exits (ADR-0006) |
+| [encode-session-container-choice](encode-session-container-choice.md) | `EncodeSession` generic over its muxer — `open_in`, `MuxOpen`, `FIRST_TRACK_ID` (ADR-0007) |
 | [frame-filter-hook](frame-filter-hook.md) | Mid-pipeline `FrameFilter` chain on `EncodeSession` (implemented, ADR-0001) |
 | [audio-track-and-apm](audio-track-and-apm.md) | Optional audio track + `mediaway-sw::apm` (AEC/NS/AGC2/VAD) on `EncodeSession` (implemented, ADR-0003) |
 | [c-ffi](c-ffi.md) | Per-capability `*-ffi` + optional feature umbrella |

@@ -17,9 +17,15 @@ pub enum PipelineError {
     /// Encoder session failure.
     #[error("encoder error: {0}")]
     Encode(#[from] mediaway_encoder::EncodeError),
-    /// Container mux failure.
+    /// Container mux failure, from whichever container the session was opened with.
+    ///
+    /// Wraps [`ContainerError`](mediaway_container::ContainerError) rather than
+    /// `mp4::Error` directly: [`crate::EncodeSession`] is generic over its muxer, so this
+    /// variant cannot name one container's error type without dragging a generic
+    /// parameter through `PipelineError` and every signature that mentions it. Matching on
+    /// a specific container's error still works, one level deeper.
     #[error("mux error: {0}")]
-    Mux(#[from] mediaway_container::mp4::Error),
+    Mux(#[from] mediaway_container::ContainerError),
     /// Frame filter chain failure.
     #[error("filter error: {0}")]
     Filter(#[from] crate::filter::FilterError),

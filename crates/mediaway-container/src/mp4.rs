@@ -3,7 +3,7 @@
 #![forbid(unsafe_code)]
 
 use crate::convert::{from_packet, from_stream_info, to_packet, to_stream_info};
-use crate::{ContainerFormat, Demux, DemuxDecrypt, Mux};
+use crate::{ContainerFormat, Demux, DemuxDecrypt, Mux, MuxOpen};
 #[cfg(feature = "demux")]
 use iso_bmff::Demuxer as IsoDemuxer;
 #[cfg(feature = "mux")]
@@ -225,6 +225,25 @@ impl Mux for Muxer<Live> {
 
     fn poll_bytes(&mut self, out: &mut Vec<u8>) -> usize {
         Muxer::<Live>::poll_bytes(self, out)
+    }
+
+    fn set_track_extra_data(&mut self, track_id: u32, extra_data: mediaway_common::Bytes) {
+        Muxer::<Live>::set_track_extra_data(self, track_id, extra_data);
+    }
+}
+
+#[cfg(feature = "mux")]
+#[allow(clippy::use_self)]
+impl MuxOpen for Muxer<Open> {
+    type Live = Muxer<Live>;
+    type Error = Error;
+
+    fn add_track(&mut self, track: StreamInfo) -> Result<u32, Self::Error> {
+        Muxer::<Open>::add_track(self, track)
+    }
+
+    fn begin(self) -> Self::Live {
+        Muxer::<Open>::begin(self)
     }
 }
 

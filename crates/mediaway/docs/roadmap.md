@@ -85,3 +85,19 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 - [ ] Migrate `examples/pipeline/screen_record.rs` onto `EncodeSession` now that the
       reason it bypassed the facade is gone (it also predates `open_with_audio`, so this
       is one migration, not two)
+
+### 8 — Container choice — done (2026-09-18)
+
+- [x] `EncodeSession<E, M: MuxOpen = mp4::Muxer<mp4::Open>>` + `open_in` /
+      `open_in_with_audio` — [ADR-0007](../adr/0007-encode-session-generic-muxer.md). The
+      facade was welded to fMP4 while `mediaway-container` shipped a WebM muxer of the same
+      shape and `mediaway-ffi` already let a C caller pick between them; the layer above
+      could not. Same shape of gap as stage 7: a convenience layer hiding a low-level
+      capability rather than composing it.
+- [x] `MuxOpen::FIRST_TRACK_ID` — track numbering is a container rule (Matroska reserves
+      `TrackNumber` 0, encoders default to `id: 0`), found by the WebM round-trip test on
+      its first run rather than reasoned out in advance.
+- [ ] `mp4::Muxer`-only `set_track_extra_data` remains a real asymmetry: WebM writes
+      `CodecPrivate` at `begin()`, so a late-config encoder backend (`VideoToolbox`) paired
+      with WebM silently loses its configuration record. Documented on the trait method;
+      a loud failure was rejected because the call is a legitimate no-op on MP4 too.

@@ -46,6 +46,16 @@
 
 ### Fixed
 
+- **Opus in MP4 was written as AAC.** `iso-bmff` shared AAC's `mp4a`/`esds` branch for
+  `Codec::Opus`, so an Opus track got an `esds` declaring `objectTypeIndication` 0x40
+  (MPEG-4 AAC) plus a hardcoded AAC `AudioSpecificConfig`. The file muxed without error and
+  failed at playback. Opus now writes a real `Opus` sample entry with a `dOps`
+  (`OpusSpecificBox`), and demux recognizes it, yielding an RFC 7845 `OpusHead` in
+  `extra_data` so the configuration survives an MP4 → WebM remux
+  (`crates/iso-bmff/adr/0005-opus-sample-entry.md`). Files written with an Opus track by an
+  earlier version are invalid and must be remuxed.
+
+
 - `cargo nextest run --workspace` no longer moves the developer's mouse cursor. The two
   desktop-capture smoke tests nudge the pointer to make DXGI Desktop Duplication produce
   frames on an idle desktop; they are now `#[ignore]`d and opt-in via `--run-ignored all`.

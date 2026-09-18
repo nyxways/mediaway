@@ -104,4 +104,11 @@ pub mod tag {
     pub const AV01: FourCc = FourCc(*b"av01");
     /// `av1C`
     pub const AV1C: FourCc = FourCc(*b"av1C");
+    /// `Opus` — the Opus sample entry. Case-sensitive: capital `O`, per
+    /// [Encapsulation of Opus in ISOBMFF][spec] §4.3.2.
+    ///
+    /// [spec]: https://opus-codec.org/docs/opus_in_isobmff.html
+    pub const OPUS: FourCc = FourCc(*b"Opus");
+    /// `dOps` — `OpusSpecificBox`. Replaces `esds`, which the spec forbids here.
+    pub const DOPS: FourCc = FourCc(*b"dOps");
 }

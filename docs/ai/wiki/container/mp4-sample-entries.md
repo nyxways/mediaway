@@ -11,6 +11,7 @@
 | HEVC | `hvc1`/`hvcC` | `hvc1`/`hev1` |
 | AV1 | `av01`/`av1C` | `av01` |
 | AAC | `mp4a`/`esds` | `mp4a` |
+| Opus | `Opus`/`dOps` | `Opus` | (see [opus-in-mp4](opus-in-mp4.md)) |
 
 Every video `Codec` variant now has a real, correctly-labeled sample entry —
 `write_stsd`'s fallback to `write_avc1` only fires for `Codec::H264` itself.

@@ -1,4 +1,5 @@
-//! Sample entries: `avc1`/`avcC`, `vp09`/`vpcC`, `mp4a`/`esds`, and encrypted `encv`/`enca`.
+//! Sample entries: `avc1`/`avcC`, `vp09`/`vpcC`, `mp4a`/`esds`, `Opus`/`dOps`, and
+//! encrypted `encv`/`enca`.
 
 #![forbid(unsafe_code)]
 
@@ -8,11 +9,12 @@ use crate::types::{Bytes, Codec, Track};
 
 /// Write `stsd` with one sample entry for `track`.
 pub(crate) fn write_stsd(buf: &mut Vec<u8>, track: &Track) {
-    let audio = matches!(track.codec, Codec::Aac | Codec::Opus);
     write_box(buf, tag::STSD, |st| {
         st.extend_from_slice(&0u32.to_be_bytes());
         st.extend_from_slice(&1u32.to_be_bytes());
-        if audio {
+        if track.codec == Codec::Opus {
+            write_opus(st, track);
+        } else if track.codec == Codec::Aac {
             write_mp4a(st, track);
         } else if track.codec == Codec::Vp9 {
             write_vp09(st, track);
@@ -48,6 +50,7 @@ pub(crate) fn parse_sample_entry(
         b"hvc1" | b"hev1" => parse_visual_hevc(body, width, height, codec, extra),
         b"av01" => parse_visual_av1(body, width, height, codec, extra),
         b"mp4a" => parse_audio_mp4a(body, codec, extra),
+        b"Opus" => parse_audio_opus(body, codec, extra),
         b"encv" => {
             parse_visual_avc(body, width, height, codec, extra);
             if let Some(tenc) = find_tenc(body) {
@@ -155,6 +158,134 @@ fn parse_audio_mp4a(body: &[u8], codec: &mut Codec, extra: &mut Bytes) {
         && let Some(asc) = find_asc(esds)
     {
         *extra = asc;
+    }
+}
+
+/// Bytes of an `OpusHead` before its optional channel-mapping table: the 8-byte magic plus
+/// Version, `ChannelCount`, `PreSkip`, `InputSampleRate`, `OutputGain`, `MappingFamily`.
+const OPUS_HEAD_FIXED: usize = 19;
+/// The same fields in a `dOps`, which carries no magic.
+const DOPS_FIXED: usize = OPUS_HEAD_FIXED - 8;
+/// `PreSkip` when no real `OpusHead` is available — 80 ms at 48 kHz, the value RFC 7845
+/// § 4.1 recommends when the encoder's own pre-skip is unknown.
+const OPUS_DEFAULT_PRE_SKIP: u16 = 3840;
+
+/// `dOps` for a track with no real `OpusHead` in `extra_data`: version 0, stereo, default
+/// pre-skip, 48 kHz input, unity gain, mapping family 0 (so no mapping table follows).
+///
+/// Same posture as [`VPCC_PLACEHOLDER`]: a conservative, structurally valid config so the
+/// file parses, and a documented signaling gap rather than a silent lie — the real channel
+/// count and pre-skip are properties of the encoder that produced the packets, and this
+/// crate cannot derive them from the bitstream without leaving its sans-io boundary.
+const DOPS_PLACEHOLDER: [u8; DOPS_FIXED] = [
+    0, // Version
+    2, // OutputChannelCount
+    (OPUS_DEFAULT_PRE_SKIP >> 8) as u8,
+    (OPUS_DEFAULT_PRE_SKIP & 0xff) as u8,
+    0x00,
+    0x00,
+    0xbb,
+    0x80, // InputSampleRate = 48000
+    0,
+    0, // OutputGain
+    0, // ChannelMappingFamily
+];
+
+/// `OpusHead` (RFC 7845 § 5.1, little-endian) → `dOps` payload (big-endian, no magic).
+///
+/// The two carry identical fields in identical order and differ only in byte order and the
+/// leading magic, which is why this is a re-serialization rather than a parse. Returns
+/// `None` when `head` is not a plausible `OpusHead`, so the caller falls back to
+/// [`DOPS_PLACEHOLDER`] instead of writing a truncated box.
+fn opus_head_to_dops(head: &[u8]) -> Option<Vec<u8>> {
+    if head.len() < OPUS_HEAD_FIXED || &head[..8] != b"OpusHead" {
+        return None;
+    }
+    let channels = head[9];
+    let family = head[18];
+    let mut out = Vec::with_capacity(DOPS_FIXED);
+    out.push(head[8]);
+    out.push(channels);
+    out.extend_from_slice(&u16::from_le_bytes([head[10], head[11]]).to_be_bytes());
+    out.extend_from_slice(
+        &u32::from_le_bytes([head[12], head[13], head[14], head[15]]).to_be_bytes(),
+    );
+    out.extend_from_slice(&u16::from_le_bytes([head[16], head[17]]).to_be_bytes());
+    out.push(family);
+    if family != 0 {
+        // StreamCount + CoupledCount + one ChannelMapping byte per output channel. All
+        // single bytes, so this tail is byte-order-identical and copies straight across.
+        let table = OPUS_HEAD_FIXED + 2 + channels as usize;
+        if head.len() < table {
+            return None;
+        }
+        out.extend_from_slice(&head[OPUS_HEAD_FIXED..table]);
+    }
+    Some(out)
+}
+
+/// `dOps` payload → `OpusHead`. The inverse of [`opus_head_to_dops`].
+///
+/// Demux hands back an `OpusHead` rather than the raw `dOps` so `extra_data` means one
+/// thing across containers — `mediaway-container::webm` stores `OpusHead` as
+/// `CodecPrivate`, and a decoder wants the codec-level header, not the container's box.
+/// This mirrors how `mp4a` demux yields the raw `AudioSpecificConfig` rather than the
+/// `esds` that wrapped it, and it is what makes an MP4 → `WebM` remux preserve the config.
+fn dops_to_opus_head(dops: &[u8]) -> Option<Bytes> {
+    if dops.len() < DOPS_FIXED {
+        return None;
+    }
+    let channels = dops[1];
+    // Offsets, since getting these wrong is silent: Version 0, OutputChannelCount 1,
+    // PreSkip 2..4, InputSampleRate 4..8, OutputGain 8..10, ChannelMappingFamily 10.
+    let family = dops[10];
+    let mut out = Vec::with_capacity(OPUS_HEAD_FIXED);
+    out.extend_from_slice(b"OpusHead");
+    out.push(dops[0]);
+    out.push(channels);
+    out.extend_from_slice(&u16::from_be_bytes([dops[2], dops[3]]).to_le_bytes());
+    out.extend_from_slice(&u32::from_be_bytes([dops[4], dops[5], dops[6], dops[7]]).to_le_bytes());
+    out.extend_from_slice(&u16::from_be_bytes([dops[8], dops[9]]).to_le_bytes());
+    out.push(family);
+    if family != 0 {
+        let table = DOPS_FIXED + 2 + channels as usize;
+        if dops.len() < table {
+            return None;
+        }
+        out.extend_from_slice(&dops[DOPS_FIXED..table]);
+    }
+    Some(Bytes::from(out))
+}
+
+/// `Opus` sample entry + its mandatory `dOps`.
+///
+/// Three field values are fixed by the spec rather than taken from `track`: `samplerate` is
+/// always `48000 << 16` (Opus decodes at 48 kHz regardless of the rate it was fed —
+/// `InputSampleRate` inside `dOps` is the informational one), `samplesize` is always 16, and
+/// no `esds` is permitted. Writing `mp4a`/`esds` here instead — which this function replaces
+/// — produced a file declaring `objectTypeIndication` 0x40 (MPEG-4 AAC) over Opus packets.
+fn write_opus(buf: &mut Vec<u8>, track: &Track) {
+    let dops = opus_head_to_dops(&track.extra_data).unwrap_or_else(|| DOPS_PLACEHOLDER.to_vec());
+    let channels = u16::from(dops.get(1).copied().unwrap_or(2));
+    write_box(buf, tag::OPUS, |a| {
+        a.extend_from_slice(&[0u8; 6]);
+        a.extend_from_slice(&1u16.to_be_bytes());
+        a.extend_from_slice(&[0u8; 8]);
+        a.extend_from_slice(&channels.to_be_bytes());
+        a.extend_from_slice(&16u16.to_be_bytes());
+        a.extend_from_slice(&0u32.to_be_bytes());
+        a.extend_from_slice(&0x00bb_8000u32.to_be_bytes());
+        write_box(a, tag::DOPS, |d| d.extend_from_slice(&dops));
+    });
+}
+
+fn parse_audio_opus(body: &[u8], codec: &mut Codec, extra: &mut Bytes) {
+    *codec = Codec::Opus;
+    if body.len() > 28
+        && let Some(dops) = find_child_payload(&body[28..], *b"dOps")
+        && let Some(head) = dops_to_opus_head(dops)
+    {
+        *extra = head;
     }
 }
 

@@ -23,7 +23,7 @@
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 interface Args {
   since: string | null;
@@ -206,6 +206,7 @@ function main(): void {
 
   const report = lines.join("\n") + "\n";
   if (args.output) {
+    mkdirSync(dirname(args.output), { recursive: true });
     writeFileSync(args.output, report, "utf8");
     console.log(`report written to ${args.output}`);
   } else {
@@ -220,7 +221,7 @@ function main(): void {
       total: cov.total,
       files: cov.files,
     };
-    mkdirSync(join(import.meta.dir, "..", "..", "local", ".cache", "coverage"), { recursive: true });
+    mkdirSync(dirname(args.baseline), { recursive: true });
     writeFileSync(args.baseline, JSON.stringify(b, null, 2), "utf8");
     console.log(`baseline stored: ${args.baseline}`);
   }

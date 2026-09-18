@@ -111,7 +111,23 @@ mod hardware {
     /// Skips gracefully (never fails the default suite) at any missing capability: no WGC
     /// support, window creation failure, or no frame delivered within the bounded poll
     /// window (WGC delivery is async and this test cannot control compositor timing).
+    ///
+    /// # Why this is `#[ignore]`d
+    ///
+    /// It calls `ShowWindow(SW_SHOWNORMAL)`, so it pops a real window onto whatever desktop
+    /// the suite runs on. Needing real hardware would not by itself justify opting out —
+    /// this crate's other hardware tests stay in the default suite because they only open a
+    /// device and leave the machine alone. The line, per
+    /// [`docs/conventions/testing.md`](../../../../docs/conventions/testing.md) § Tests that
+    /// manipulate the desktop, is whether a test touches input or the screen. This one does.
+    ///
+    /// Run it explicitly:
+    ///
+    /// ```text
+    /// cargo nextest run -p mediaway-device --run-ignored all -E 'test(wgc_window_capture)'
+    /// ```
     #[test]
+    #[ignore = "opens a visible window on the desktop; run explicitly with --run-ignored all"]
     fn wgc_window_capture_delivers_zero_copy_frame_or_skip() {
         let _guard = crate::windows_desktop::HARDWARE_TEST_LOCK
             .lock()

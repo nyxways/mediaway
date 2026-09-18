@@ -19,6 +19,6 @@ pub use audio::{
     DesktopAudioCapture, DesktopAudioCaptureConfig, DesktopAudioSource, ProcessTreeScope,
 };
 pub use video::{
-    CaptureOutputPreference, CaptureSharing, CursorCapture, DesktopCaptureSource,
+    CaptureOutputPreference, CaptureRegion, CaptureSharing, CursorCapture, DesktopCaptureSource,
     DesktopVideoCapture, DesktopVideoCaptureConfig, capture_desktop_video_once,
 };

@@ -48,6 +48,58 @@ pub enum CursorCapture {
     Included,
 }
 
+/// A rectangle of the captured surface to record instead of the whole of it, in the
+/// surface's own physical pixels, origin at its top-left.
+///
+/// Like [`CursorCapture`], this is part of the frame's *content*, so a backend that cannot
+/// crop rejects a region at `open` with [`CaptureError::Unsupported`] rather than recording
+/// the whole surface. A region that no longer fits the surface, for example after the
+/// captured window shrank, is [`CaptureError::RegionOutOfBounds`]. It is never padded,
+/// because a padded frame contains pixels the source never drew.
+///
+/// | Backend | Region support | Cost |
+/// |---|---|---|
+/// | Windows WGC (window) | ✅ | free at origin `(0, 0)`; otherwise one GPU→GPU region copy per frame |
+/// | Windows DXGI (screen) | ❌ rejected | — |
+/// | Linux portal, macOS `ScreenCaptureKit`, iOS | ❌ rejected | — |
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CaptureRegion {
+    /// Left edge, in surface pixels.
+    pub x: u32,
+    /// Top edge, in surface pixels.
+    pub y: u32,
+    /// Width in pixels. Zero is never a valid region.
+    pub width: u32,
+    /// Height in pixels. Zero is never a valid region.
+    pub height: u32,
+}
+
+impl CaptureRegion {
+    /// Whether this region is non-empty and lies entirely within a `width`×`height` surface.
+    ///
+    /// Overflow-safe: a region whose right or bottom edge does not fit in `u32` does not fit.
+    #[must_use]
+    pub const fn fits_within(self, width: u32, height: u32) -> bool {
+        if self.width == 0 || self.height == 0 {
+            return false;
+        }
+        let (Some(right), Some(bottom)) = (
+            self.x.checked_add(self.width),
+            self.y.checked_add(self.height),
+        ) else {
+            return false;
+        };
+        right <= width && bottom <= height
+    }
+
+    /// Whether the region starts at the surface's top-left, which lets a backend that
+    /// crops by sizing its capture buffer do so without a copy.
+    #[must_use]
+    pub const fn is_at_origin(self) -> bool {
+        self.x == 0 && self.y == 0
+    }
+}
+
 /// Whether a [`DesktopCaptureSource::Screen`] session may be joined by a later, independent
 /// `open()` for the same output.
 ///
@@ -113,6 +165,9 @@ pub struct DesktopVideoCaptureConfig {
     /// Whether the mouse pointer is drawn into frames. Defaults to
     /// [`CursorCapture::Excluded`]; see that type for which backends can include it.
     pub cursor: CursorCapture,
+    /// Record only this rectangle of the surface. `None` (the default) records all of it.
+    /// See [`CaptureRegion`] for which backends support it and what it costs.
+    pub region: Option<CaptureRegion>,
 }
 
 impl DesktopVideoCaptureConfig {
@@ -127,6 +182,7 @@ impl DesktopVideoCaptureConfig {
             gpu_device: None,
             sharing: CaptureSharing::Shared,
             cursor: CursorCapture::Excluded,
+            region: None,
         }
     }
 
@@ -140,6 +196,7 @@ impl DesktopVideoCaptureConfig {
             gpu_device: None,
             sharing: CaptureSharing::Shared,
             cursor: CursorCapture::Excluded,
+            region: None,
         }
     }
 }

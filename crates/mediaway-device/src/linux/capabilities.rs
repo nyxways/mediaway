@@ -130,6 +130,7 @@ fn probe_screen_permission() -> Result<PermissionState, CaptureError> {
         gpu_device: None,
         sharing: CaptureSharing::Shared,
         cursor: crate::desktop::CursorCapture::Excluded,
+        region: None,
     };
     match LinuxScreenCapture::open(&cfg) {
         Ok(mut cap) => {
@@ -154,6 +155,7 @@ fn probe_window_permission() -> Result<PermissionState, CaptureError> {
         gpu_device: None,
         sharing: CaptureSharing::Shared,
         cursor: crate::desktop::CursorCapture::Excluded,
+        region: None,
     };
     match LinuxWindowCapture::open(&cfg) {
         Ok(mut cap) => {

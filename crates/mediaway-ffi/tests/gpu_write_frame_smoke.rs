@@ -76,6 +76,7 @@ fn gpu_screen_frame_write_frame_roundtrips_to_fmp4() {
         gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
         sharing: CaptureSharing::Shared,
         cursor: mediaway_device::desktop::CursorCapture::Excluded,
+        region: None,
     };
     let mut screen = match platform::ScreenCapture::open(&cap_cfg) {
         Ok(c) => c,

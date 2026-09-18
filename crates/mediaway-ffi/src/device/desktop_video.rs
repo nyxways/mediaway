@@ -148,6 +148,7 @@ fn open_desktop_capture(
                 // No C ABI knob for this either. `Excluded` keeps what every C caller got
                 // before the field existed; this path is DXGI, which cannot include it anyway.
                 cursor: mediaway_device::desktop::CursorCapture::Excluded,
+                region: None,
             };
             open_screen_capture(&rust_config)
         }

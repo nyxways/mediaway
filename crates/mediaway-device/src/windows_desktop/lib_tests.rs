@@ -60,6 +60,7 @@ fn open_screen_zero_copy_poll_release_or_skip() {
         gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
         sharing: CaptureSharing::Shared,
         cursor: crate::desktop::CursorCapture::Excluded,
+        region: None,
     };
     let mut cap = match WindowsScreenCapture::open(&cfg) {
         Ok(c) => c,
@@ -127,6 +128,7 @@ fn screen_capture_delivers_zero_copy_frame_or_skip() {
         gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
         sharing: CaptureSharing::Shared,
         cursor: crate::desktop::CursorCapture::Excluded,
+        region: None,
     };
     let mut cap = match WindowsScreenCapture::open(&cfg) {
         Ok(c) => c,
@@ -213,6 +215,7 @@ fn exclusive_screen_capture_delivers_zero_copy_frame_or_skip() {
         gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
         sharing: CaptureSharing::Exclusive,
         cursor: crate::desktop::CursorCapture::Excluded,
+        region: None,
     };
     let mut cap = match WindowsScreenCapture::open(&cfg) {
         Ok(c) => c,
@@ -300,6 +303,7 @@ fn exclusive_screen_capture_blocks_second_open_or_skip() {
         gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
         sharing: CaptureSharing::Exclusive,
         cursor: crate::desktop::CursorCapture::Excluded,
+        region: None,
     };
     let first = match WindowsScreenCapture::open(&cfg) {
         Ok(c) => c,
@@ -355,6 +359,7 @@ fn capture_video_once_screen_is_unsupported_for_gpu_storage_or_skip() {
         gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
         sharing: CaptureSharing::Shared,
         cursor: crate::desktop::CursorCapture::Excluded,
+        region: None,
     };
     let mut dangling_frame_size = None;
     match capture_desktop_video_once(
@@ -497,6 +502,23 @@ fn open_window_capture_foreground_or_skip() {
 fn screen_capture_refuses_to_include_the_cursor() {
     let mut cfg = DesktopVideoCaptureConfig::screen(Select::Default, Rational::new(1, 30));
     cfg.cursor = CursorCapture::Included;
+    assert!(matches!(
+        WindowsScreenCapture::open(&cfg),
+        Err(CaptureError::Unsupported)
+    ));
+}
+
+/// Cropping is not implemented for Desktop Duplication, so a region must be refused rather than
+/// the whole screen recorded. Checked before the device, so nothing is opened.
+#[test]
+fn screen_capture_refuses_a_region() {
+    let mut cfg = DesktopVideoCaptureConfig::screen(Select::Default, Rational::new(1, 30));
+    cfg.region = Some(crate::desktop::CaptureRegion {
+        x: 0,
+        y: 0,
+        width: 64,
+        height: 64,
+    });
     assert!(matches!(
         WindowsScreenCapture::open(&cfg),
         Err(CaptureError::Unsupported)

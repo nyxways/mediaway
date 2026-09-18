@@ -25,5 +25,9 @@
   (measured: 0 of 3.3 M pixels differ). `ContentSize` still reports the full window, so
   resize detection compares against the *target* pool size. Frame size comes from the
   texture (`GetDesc`), since the frame in hand after a resize is from the old pool.
+- Region: `config.region` → origin: pool = region (free); elsewhere: pool = region's far
+  corner + `CopySubresourceRegion` into a 4-slot ring (WGC frame released right after the
+  copy). With a region the pool never recreates on resize; a window smaller than the region
+  is `RegionOutOfBounds`, never padded. ADR-0009.
 - ADR: [0004](../../../../crates/mediaway-device/adr/windows/0004-wgc-window-capture.md) ·
   cursor/border [0008](../../../../crates/mediaway-device/adr/0008-cursor-capture-and-wgc-border.md)

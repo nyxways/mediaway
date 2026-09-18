@@ -83,6 +83,7 @@ fn screen_and_mic_to_fmp4_two_tracks() {
         gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
         sharing: CaptureSharing::Shared,
         cursor: mediaway_device::desktop::CursorCapture::Excluded,
+        region: None,
     };
     let mut screen = match platform::ScreenCapture::open(&cap_cfg) {
         Ok(c) => c,

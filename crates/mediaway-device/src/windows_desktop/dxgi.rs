@@ -70,7 +70,8 @@ impl WindowsScreenCapture {
     ///
     /// Returns [`CaptureError::Unsupported`] for non-screen sources, CPU output preference, or
     /// [`CursorCapture::Included`]: Desktop Duplication reports the pointer separately from the
-    /// frame, and this backend does not composite it.
+    /// frame, and this backend does not composite it. Also for any `config.region`, which this
+    /// backend does not crop.
     /// Returns [`CaptureError::InvalidInput`] when `gpu_device` is unset, or when an existing
     /// shared session for this output was opened against a different `ID3D11Device` instance.
     /// Returns [`CaptureError::AccessDenied`] for `Exclusive` when another duplication (`Shared`
@@ -83,6 +84,12 @@ impl WindowsScreenCapture {
             return Err(CaptureError::Unsupported);
         }
         if config.cursor == CursorCapture::Included {
+            return Err(CaptureError::Unsupported);
+        }
+        // Cropping is not implemented here yet. The shared path already copies every frame
+        // into its ring and could crop in that same copy for free; until it does, refuse
+        // rather than record the whole screen.
+        if config.region.is_some() {
             return Err(CaptureError::Unsupported);
         }
         let Some(GpuDeviceHandle::DirectX11(handle)) = config.gpu_device else {

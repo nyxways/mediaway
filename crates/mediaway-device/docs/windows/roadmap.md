@@ -38,8 +38,12 @@ Platform order: **Windows first**. Workspace index: [`docs/roadmap.md`](../../..
 
 - [x] `CaptureSource::Window` + `WindowsWindowCapture` (separate from screen)
 - [x] Cursor per `DesktopVideoCaptureConfig::cursor` (WGC honours both values; DXGI rejects
-      `Included`) and the yellow border via `open_with_border(.., CaptureBorder::Hidden)`,
+      `Included`) and the yellow border via `open_with(.., options)` with `border: CaptureBorder::Hidden`,
       read back into `border_hidden()` — ADR-0008 (crate level)
+- [x] Even-cropped frames for hardware encoders (`FrameDimensions::EvenCropped`) — free,
+      via the frame-pool size; see ADR-0008 § Even-cropped frames
+- [ ] Arbitrary-rectangle crop of a window (needs a GPU copy; the pool trick only trims
+      right/bottom edges)
 - [ ] DXGI: composite the Desktop Duplication pointer shape so screen capture can honour
       `CursorCapture::Included` (currently rejected)
 - [x] Frame-pool recreate on content-size change

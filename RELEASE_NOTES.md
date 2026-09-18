@@ -4,9 +4,15 @@
 
 ### Fixed
 
+- **WGC window capture could not feed a hardware encoder at an odd window size**, which is
+  most window sizes: 4:2:0 encoders reject an odd axis. `WindowCaptureOptions::dimensions =
+  FrameDimensions::EvenCropped` trims the last column/row of an odd axis at no cost (WGC crops
+  to its frame pool; measured). Also fixed along the way: a frame delivered just after a
+  resize reported the new size while its texture was still the old one; frame sizes now come
+  from the texture itself.
+
 - **The WGC capture border was never hidden, despite a comment saying it was.**
-  `SetIsBorderRequired` was never called. `WindowsWindowCapture::open_with_border(config,
-  CaptureBorder::Hidden)` now requests borderless access and hides it. A refusal does not fail
+  `SetIsBorderRequired` was never called. `WindowsWindowCapture::open_with(config, options)` with `options.border = CaptureBorder::Hidden` now requests borderless access and hides it. A refusal does not fail
   the capture (the border is drawn on screen, not into frames), and
   `WindowsWindowCapture::border_hidden()` reports what the OS actually did. `open` keeps the
   border shown. (`crates/mediaway-device/adr/0008-cursor-capture-and-wgc-border.md`)

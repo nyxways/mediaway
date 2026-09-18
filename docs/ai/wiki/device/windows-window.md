@@ -15,10 +15,15 @@
   (previously every frame after a resize was silently skipped forever)
 - Cursor: `config.cursor` → `SetIsCursorCaptureEnabled`; failure is an **error in both
   directions** (WGC's own default *includes* the pointer, so a failed `Excluded` would leak it)
-- Yellow border: `open_with_border(config, CaptureBorder::Hidden)` →
+- Yellow border: `open_with(config, options)` with `options.border = CaptureBorder::Hidden` →
   `RequestAccessAsync(Borderless)` + `SetIsBorderRequired(false)`, **read back** into
   `border_hidden()`. A refusal does not fail the open (the border is on screen, never in
   frames). Unpackaged process on Win11 26100: granted with no prompt. Until 2026-09-18 a
   comment claimed the border was hidden, but nothing ever called `SetIsBorderRequired`.
+- Even crop: `options.dimensions = FrameDimensions::EvenCropped` sizes the frame pool to
+  the content rounded down to even — free, because **WGC crops to the pool, never scales**
+  (measured: 0 of 3.3 M pixels differ). `ContentSize` still reports the full window, so
+  resize detection compares against the *target* pool size. Frame size comes from the
+  texture (`GetDesc`), since the frame in hand after a resize is from the old pool.
 - ADR: [0004](../../../../crates/mediaway-device/adr/windows/0004-wgc-window-capture.md) ·
   cursor/border [0008](../../../../crates/mediaway-device/adr/0008-cursor-capture-and-wgc-border.md)

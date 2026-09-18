@@ -146,6 +146,23 @@ only yields a frame when the desktop image *or* the pointer position changes, so
 test on an idle desktop has a real incentive to nudge the cursor — and two of ours did, by
 default, on every full-suite run.
 
+### The checklist, because "moves the mouse" is too narrow
+
+The first pass at this rule caught the two cursor-nudging tests and **missed a third that
+creates a real window and calls `ShowWindow`** — the rule was written from the symptom that
+had just been reported rather than from the category. A test needs `#[ignore]` if it calls
+any of:
+
+| Win32 | Effect |
+|---|---|
+| `SetCursorPos`, `mouse_event`, `SendInput` | moves the pointer or injects input |
+| `CreateWindowExW` + `ShowWindow` | puts a window on the user's screen |
+| `SetForegroundWindow`, `SetFocus` | steals focus mid-keystroke |
+
+Equivalents on other platforms count the same way; the list is Win32 because that is where
+our desktop backends live. Grep for these before adding a capture test, and again whenever
+this rule is revisited — the failure mode is a *new* offender, not a regression in an old one.
+
 ```rust
 #[ignore = "moves the mouse cursor; run explicitly with --run-ignored all"]
 #[test]

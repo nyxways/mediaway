@@ -69,9 +69,11 @@
   earlier version are invalid and must be remuxed.
 
 
-- `cargo nextest run --workspace` no longer moves the developer's mouse cursor. The two
-  desktop-capture smoke tests nudge the pointer to make DXGI Desktop Duplication produce
-  frames on an idle desktop; they are now `#[ignore]`d and opt-in via `--run-ignored all`.
+- `cargo nextest run --workspace` no longer takes over the developer's desktop. Two
+  screen-capture smoke tests nudged the mouse cursor and a third opened a visible window;
+  all three are now `#[ignore]`d and opt-in via `--run-ignored all`. The convention now
+  lists the Win32 calls that trigger the rule, because the first pass was written from the
+  reported symptom ("moves the mouse") and missed the window-opening case.
 
 - **DX11 Zero-Copy encode now works on NVIDIA hardware.** Three async-MFT sequencing bugs
   made `VideoInputPreference::ZeroCopyGpu` fail on every machine that selected an async

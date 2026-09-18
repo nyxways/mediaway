@@ -8,6 +8,7 @@
 | [async-mft](async-mft.md) | **Async vs sync encoder MFTs** — unlock/HaveOutput/interleave contract; the NVIDIA Zero-Copy bug (ADR-0012) |
 | [capability-probe](capability-probe.md) | `encoder_support{,_at}` · live probe · **support is resolution-dependent** (ADR-0005) |
 | [web-gpu-frame](web-gpu-frame.md) | Web: WebGPU-backed `VideoFrame` — no `GPUTexture` ctor, canvas path, honesty label |
+| [end-of-stream](end-of-stream.md) | `finish(self)` ends a stream; an unflushed drop silently discards the last frames |
 | [web-real-chrome-bugs](web-real-chrome-bugs.md) | Web: 3 real bugs found only via real Chrome + CDP (arg order, description, AAC flush) |
 | [web-opus-design](web-opus-design.md) | Web: codec-parameterized audio smoke surface (`is_webcodecs_audio_codec_supported`, `encode_audio_buffer`), Opus exercised alongside AAC — wasm32 compile-verified only; no `OpusEncoderConfig`; `iso-bmff` mislabels Opus as `mp4a` |
 | [../platform/linux-encode](../platform/linux-encode.md) | Linux: VA-API H.264 CPU-upload (`cros-libva`); zero HW verification caveat |

@@ -63,6 +63,22 @@ paywalled = false
 note = "AV1 Codec ISO Media File Format Binding (AOMedia) — av01/av1C sample entry used by iso-bmff sample_entry.rs. Free; not yet cached locally."
 
 [[standard]]
+id = "opus-in-isobmff"
+url = "https://opus-codec.org/docs/opus_in_isobmff.html"
+filename = "opus_in_isobmff.html"
+blake3 = ""
+paywalled = false
+note = "Encapsulation of Opus in ISOBMFF — Opus/dOps sample entry used by iso-bmff sample_entry.rs. Free; not yet cached locally."
+
+[[standard]]
+id = "rfc-7845-opus-ogg"
+url = "https://www.rfc-editor.org/rfc/rfc7845"
+filename = "rfc7845.txt"
+blake3 = ""
+paywalled = false
+note = "Ogg Encapsulation for Opus — OpusHead identification header, which iso-bmff converts to/from dOps and ebml-webm stores as CodecPrivate. Free IETF RFC; not yet cached locally."
+
+[[standard]]
 id = "rfc-3550-rtp"
 url = "https://www.rfc-editor.org/rfc/rfc3550"
 filename = "rfc3550.txt"

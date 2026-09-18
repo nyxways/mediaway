@@ -20,4 +20,7 @@ Freestanding ISOBMFF/MP4. Workspace index: [`docs/roadmap.md`](../../../docs/roa
       compatible brands — [`adr/0003`](../adr/0003-hevc-av1-sample-entry.md)
 - [x] Mux sample durations derived from `dts` deltas (no silent zero-duration
       trun) — [`adr/0004`](../adr/0004-mux-duration-dts-delta.md)
+- [x] Opus (`Opus`/`dOps`) sample entry — [`adr/0005`](../adr/0005-opus-sample-entry.md).
+      `Codec::Opus` previously fell into AAC's `mp4a`/`esds` branch and shipped an `esds`
+      declaring MPEG-4 AAC over Opus packets: muxed clean, failed on playback.
 - [ ] More codecs / sample entries as needed (`hev1` variant, `dvhe`/Dolby Vision, …)

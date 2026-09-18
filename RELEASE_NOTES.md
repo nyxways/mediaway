@@ -4,6 +4,22 @@
 
 ### Fixed
 
+- **Every video file the Windows (WMF) encoder wrote had a malformed timestamp track.** The
+  files played, so it went unnoticed until ffmpeg named it: *"Application provided invalid,
+  non monotonically increasing dts to muxer"*. A measured 1/60 recording held **279 video
+  packets and 215 distinct presentation timestamps**. Two defects
+  (`crates/mediaway-encoder/adr/windows/0013-wmf-timestamp-round-trip.md`):
+
+  - `to_hns` and `from_hns` **both truncated**, so the tick → hns → tick round trip through
+    the MFT was not an inverse. 10 000 000 does not divide most timebase denominators, so
+    distinct ticks collapsed onto one — at `1/60`, only every third tick survived. `1/30`,
+    `1/24`, `1001/30000` and audio were affected equally, and `mediaway-decoder` carried a
+    byte-identical copy of the same pair. `from_hns` now rounds to the nearest tick.
+  - **`dts` was reported as a copy of `pts`.** The inbox H.264 MFT emits B-frames in decode
+    order, so that sequence went backwards every other packet. `dts` now comes from
+    `MFSampleExtension_DecodeTimestamp`, and `iso_bmff::Muxer` finally receives a real
+    `pts - dts` composition offset instead of a permanent zero.
+
 - **Windows per-process audio loopback never opened, on any machine.**
   `IAudioClient::Initialize` was passed `AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM |
   AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY` and answered `AUDCLNT_E_INVALID_STREAM_FLAG`

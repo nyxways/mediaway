@@ -6,9 +6,11 @@
 
 #![forbid(unsafe_code)]
 
+use std::ffi::{OsStr, OsString};
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use thiserror::Error;
 
@@ -124,6 +126,12 @@ fn verify_hash(path: &Path, expected_hex: &str) -> Result<(), TestMediaError> {
 /// - Missing or hash mismatch → regenerate, then verify (generator drift fails loudly).
 ///
 /// `relative_name` uses `/` separators (e.g. `solid/red_64x64.rgba`).
+///
+/// **Concurrency:** safe to call from several processes at once for the same
+/// fixture. `generate` is given a process-unique temporary sibling path, never
+/// the final one; the caller must not assume the path it writes to is the path
+/// returned. Generators that infer a format from the file extension would need
+/// changing first — none does today.
 pub fn ensure(
     relative_name: &str,
     expected_blake3_hex: &str,
@@ -139,12 +147,56 @@ pub fn ensure(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    if path.is_file() {
-        fs::remove_file(&path)?;
+
+    // Generate into a process-unique sibling, then rename into place. `nextest`
+    // gives every test its own process (`docs/conventions/testing.md`), so
+    // several tests sharing a fixture race here on a cold cache. Generating in
+    // place — and unlinking a stale file first — let one process delete the
+    // bytes another had just written and was about to hash, which surfaced as a
+    // spurious `NotFound` rather than as a real cache problem. Rename within a
+    // directory is atomic, so the loser of the race either replaces an
+    // identical file or finds the winner's already correct.
+    let temp = temp_sibling(&path);
+    generate(&temp)?;
+    if let Err(err) = verify_hash(&temp, &expected) {
+        drop(fs::remove_file(&temp));
+        // Report the fixture the caller asked for; the staging name is an
+        // implementation detail and only confuses a generator-drift report.
+        return Err(match err {
+            TestMediaError::HashMismatch {
+                expected, actual, ..
+            } => TestMediaError::HashMismatch {
+                path,
+                expected,
+                actual,
+            },
+            other => other,
+        });
     }
-    generate(&path)?;
-    verify_hash(&path, &expected)?;
+    if fs::rename(&temp, &path).is_err() {
+        // Windows refuses to replace a file another process holds open. Only
+        // the final contents matter, and the winner already verified them.
+        drop(fs::remove_file(&temp));
+        verify_hash(&path, &expected)?;
+    }
     Ok(path)
+}
+
+/// Unique sibling of `path`, used as the staging file for [`ensure`].
+///
+/// The pid separates processes; the counter separates threads within one, since
+/// `SystemTime` is too coarse on Windows to rely on for that.
+fn temp_sibling(path: &Path) -> PathBuf {
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let mut name = path
+        .file_name()
+        .map_or_else(|| OsString::from("fixture"), OsStr::to_os_string);
+    name.push(format!(".tmp.{}.{nanos}.{seq}", std::process::id()));
+    path.with_file_name(name)
 }
 
 /// Write a solid-color packed RGBA8 frame (`width * height * 4` bytes).

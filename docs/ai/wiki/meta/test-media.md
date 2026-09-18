@@ -15,12 +15,24 @@
 flowchart LR
   T[Test] --> E["ensure + expected hash"]
   E -->|hit and hash OK| C[local/.cache]
-  E -->|miss or mismatch| G[Rust generator]
+  E -->|miss or mismatch| G["Rust generator → &lt;name&gt;.tmp.&lt;pid&gt;.&lt;n&gt;"]
   G --> V[BLAKE3 verify]
-  V -->|OK| C
-  V -->|fail| X[HashMismatch]
+  V -->|OK| R[atomic rename into place]
+  R --> C
+  V -->|fail| X["HashMismatch (reported against the real name)"]
   C --> T
 ```
+
+**`ensure` is concurrency-safe, and had to be made so.** `nextest` runs every test in its
+own process, so tests sharing a fixture all call `ensure` at once on a cold cache. It used to
+unlink any stale file and generate *in place*: one process would delete the bytes another had
+just written and was about to hash. That surfaced as a bogus I/O error — `NotFound` on Linux,
+`PermissionDenied` on Windows — which reads like a missing fixture, not a race. Reproduced 7/10
+runs with `mediaway-test-media`'s `ensure_is_safe_for_concurrent_callers_of_one_fixture`; 0/15
+after. Generation now goes to a unique sibling and is renamed in, so **a generator must not
+assume the path it writes is the path `ensure` returns** — one that infers a format from the
+file extension would break. Fix flakes here rather than adding retries: `.config/nextest.toml`
+pins `retries = 0` on purpose.
 
 Allowed in git: generator `.rs` + expected hex constants. Forbidden: media/raw binaries.
 

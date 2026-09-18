@@ -7,6 +7,7 @@
 | [0003](0003-auto-encode.md) | `auto` encode surface | Accepted |
 | [0004](0004-backend-preference.md) | Backend preference hierarchy (Auto/Os/Gpu/Sw) | Accepted |
 | [0005](0005-resolution-aware-capability-probe.md) | Resolution-aware encoder capability probe (`support_at`) | Accepted |
+| [0006](0006-finish-ends-a-stream.md) | `finish(self)` ends a stream; dropping discards what is in flight | Accepted |
 
 Template: [`template.md`](template.md)
 

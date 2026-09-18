@@ -107,7 +107,7 @@ fn friendly_name(activate: &IMFActivate) -> Option<String> {
 
 #[cfg(test)]
 mod zero_copy {
-    use crate::{VideoEncoder as _, VideoEncoderConfig, VideoInputPreference};
+    use crate::{VideoEncoder, VideoEncoderConfig, VideoInputPreference};
     use mediaway_common::{
         CodecKind, ColorRange, GpuBufferHandle, GpuDeviceHandle, NativeHandle, PixelFormat,
         Rational, VideoFrame, VideoFrameStorage,
@@ -221,13 +221,8 @@ mod zero_copy {
                 .push_frame(&frame)
                 .expect("async MFT must accept every frame, not just the first");
         }
-        encoder.flush().expect("flush");
-
-        let mut packets = 0;
-        while encoder.poll_packet().expect("poll").is_some() {
-            packets += 1;
-        }
-        drop(encoder);
+        // `finish` consumes (and so drops) the encoder before the texture below.
+        let packets = VideoEncoder::finish(encoder).expect("finish").len();
         drop(texture);
         Some(packets)
     }
@@ -259,9 +254,12 @@ mod zero_copy {
             ),
         ] {
             match encode_case(&device, codec, pixel_format, format) {
-                Some(packets) => assert!(
-                    packets > 0,
-                    "{codec:?} {pixel_format:?}: encoded {FRAMES} frames, produced no packets",
+                // Every frame, not merely "some": the last frames live in the pipeline until
+                // the flush, and this is what catches an end-of-stream that drops them.
+                Some(packets) => assert_eq!(
+                    packets,
+                    usize::try_from(FRAMES).expect("frames"),
+                    "{codec:?} {pixel_format:?}: encoded {FRAMES} frames, got {packets} packets",
                 ),
                 None => eprintln!("skip: {codec:?} {pixel_format:?} unavailable on this machine"),
             }

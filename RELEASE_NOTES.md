@@ -100,6 +100,11 @@
 
 ### Added
 
+- **`VideoEncoder::finish(self)` / `AudioEncoder::finish(self)`**: flush and collect every
+  remaining packet in one call. The trait docs now also say what skipping it costs: dropping
+  an unflushed encoder silently discards its in-flight frames, which are the end of the stream
+  on a pipelined hardware encoder. (`crates/mediaway-encoder/adr/0006-finish-ends-a-stream.md`)
+
 - **`mediaway::platform::WindowCapture` and `platform::DesktopAudio`** — single-window capture
   (WGC / portal / ScreenCaptureKit) and desktop audio (Windows system or per-process loopback)
   through the auto-dispatch facade. Recording one application's picture and sound had been

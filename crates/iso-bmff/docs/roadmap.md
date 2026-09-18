@@ -18,6 +18,9 @@ Freestanding ISOBMFF/MP4. Workspace index: [`docs/roadmap.md`](../../../docs/roa
 - [x] VP9 (`vp09`/`vpcC`) sample entry — [`adr/0002`](../adr/0002-vp9-sample-entry.md)
 - [x] HEVC (`hvc1`/`hvcC`) + AV1 (`av01`/`av1C`) sample entries, honest `ftyp`
       compatible brands — [`adr/0003`](../adr/0003-hevc-av1-sample-entry.md)
+- [x] HEVC Annex-B → length-prefixed conversion and real `hvcC` construction, with an
+      ffprobe end-to-end oracle. Until 2026-09-18 an HEVC MP4 written here decoded
+      zero frames — [`adr/0006`](../adr/0006-hevc-in-mp4.md)
 - [x] Mux sample durations derived from `dts` deltas (no silent zero-duration
       trun) — [`adr/0004`](../adr/0004-mux-duration-dts-delta.md)
 - [x] Opus (`Opus`/`dOps`) sample entry — [`adr/0005`](../adr/0005-opus-sample-entry.md).

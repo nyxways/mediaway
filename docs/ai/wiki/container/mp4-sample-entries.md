@@ -47,22 +47,34 @@ both in [`docs/standards/registry.toml`](../../../docs/standards/registry.toml).
   only the child box (`hvcC`/`av1C`) differs. Only the `hvc1` box type is
   written (out-of-band parameter sets); `hev1` is recognized on parse but not
   produced.
-- Same "no real out-of-band config → placeholder" posture as VP9:
+- Same "no real out-of-band config → placeholder" posture as VP9 — but for HEVC
+  the placeholder is now near-unreachable, since the backfill above supplies a
+  real record from the first packet. It had been the *shipping* path for the
+  inbox `HEVCVideoExtensionEncoder` MFT, which publishes no config at all:
   `HVCC_PLACEHOLDER` (minimal valid `HEVCDecoderConfigurationRecord`,
   `lengthSizeMinusOne=3` to match this crate's 4-byte NAL length framing) and
   `AV1C_PLACEHOLDER` (minimal valid `AV1CodecConfigurationRecord`, no
   `configOBUs`) are used only when `track.extra_data` (a demuxed real config)
   is empty.
-- No bitstream-specific handling was added for either — like VP9, HEVC/AV1
-  samples pass through `Muxer::push_packet` unconverted; the caller is
-  responsible for correct NAL-length framing (unlike `Codec::H264`, which
-  gets automatic Annex-B → AVCC conversion).
+- **HEVC no longer passes through unconverted** (2026-09-18,
+  [ADR-0006](../../../crates/iso-bmff/adr/0006-hevc-in-mp4.md)). `push_packet`
+  runs `to_hvcc` on `Codec::Hevc` exactly as it runs `to_avcc` on `Codec::H264`:
+  Annex-B → 4-byte length prefixes, plus `hvcC` backfilled from the first
+  packet's parameter sets. The old "the caller is responsible for NAL-length
+  framing" contract was violated by every caller in the workspace and produced
+  files that decoded **zero** frames. AV1/VP9 still pass through — correctly,
+  since neither builds its config record out of the bitstream.
 - `write_ftyp` gained a `tracks: &[Track]` parameter (breaking change, one
   in-tree caller) so the compatible brand reflects what `write_stsd` actually
   wrote instead of a separate, independently-hardcoded guess.
 
 ## Test coverage
 
+- **End-to-end oracle:** `crates/iso-bmff/tests/conformance_hevc.rs` — real HEVC
+  from ffmpeg, stripped to Annex-B, muxed here with an *empty* config record,
+  then `ffprobe -count_frames` must decode all 30. A synthetic fixture cannot
+  replace this: the HEVC bug lived in escaping, framing and decodability at
+  once, and hand-written payloads exhibit none of the three.
 - Unit: `crates/iso-bmff/src/isobmff/sample_entry_tests.rs` — write/parse round trip,
   `avc1` vs `vp09` tag selection, demuxed-`vpcC`-payload reuse.
 - Integration: `crates/iso-bmff/tests/roundtrip.rs::fmp4_vp9_roundtrip` — full

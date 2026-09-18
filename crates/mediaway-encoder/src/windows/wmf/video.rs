@@ -167,16 +167,29 @@ impl WmfVideoEncoder {
             buf.truncate(written as usize);
             let codec = self.info.codec();
             if let StreamInfo::Video { extra_data, .. } = &mut self.info {
-                // WMF's MF_MT_MPEG_SEQUENCE_HEADER shape depends on the codec: H.264 hands
-                // back an Annex-B SPS/PPS blob (container contract wants a full
-                // AVCDecoderConfigurationRecord/avcC); AV1 hands back a raw OBU stream
-                // (container contract wants a real AV1CodecConfigurationRecord/av1C, see
-                // ADR-0010). HEVC/VP9 keep the pre-existing raw-bytes-verbatim fallback —
-                // their own config-record correctness is a known, separately-tracked gap
-                // (ADR-0010's Decision), not fixed here.
+                // WMF's MF_MT_MPEG_SEQUENCE_HEADER shape depends on the codec: H.264 and
+                // HEVC hand back an Annex-B parameter-set blob (the container contract wants
+                // an AVCDecoderConfigurationRecord/avcC or an
+                // HEVCDecoderConfigurationRecord/hvcC); AV1 hands back a raw OBU stream (the
+                // contract wants an AV1CodecConfigurationRecord/av1C, see ADR-0010). VP9 keeps
+                // the raw-bytes-verbatim fallback, which is correct for it — `vpcC` is not
+                // built from the bitstream.
+                //
+                // HEVC joined this list on 2026-09-18. Before that it fell through to the
+                // verbatim arm, and the raw sequence header written into an `hvcC` box made
+                // every HEVC MP4 this encoder produced decode zero frames — see
+                // `iso-bmff`'s `adr/0006-hevc-in-mp4.md`.
+                //
+                // `unwrap_or_else(verbatim)` is the right fallback in every arm: a blob the
+                // converter did not recognise is more useful to a caller than nothing, and an
+                // MFT that publishes no blob at all is handled a layer down — the muxer
+                // backfills the record from the first packet's in-band parameter sets.
                 *extra_data = match codec {
                     CodecKind::H264 => iso_bmff::bitstream::avc::to_avcc(&buf)
                         .avcc
+                        .unwrap_or_else(|| Bytes::from(buf)),
+                    CodecKind::Hevc => iso_bmff::bitstream::hevc::to_hvcc(&buf)
+                        .hvcc
                         .unwrap_or_else(|| Bytes::from(buf)),
                     CodecKind::Av1 => iso_bmff::bitstream::av1::to_av1c(&buf)
                         .av1c

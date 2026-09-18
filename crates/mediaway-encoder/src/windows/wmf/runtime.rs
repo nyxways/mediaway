@@ -72,27 +72,26 @@ pub(crate) fn to_hns(units: i64, time_base_num: u64, time_base_den: u32) -> i64 
 /// | 8 | 1 333 333 | **7** | 8 |
 ///
 /// Measured 2026-09-18 on a real recording taken through this path: 279 video packets carried
-/// only 215 distinct presentation timestamps, and ffmpeg rejected the file with *"Application
-/// provided invalid, non monotonically increasing dts to muxer"*. `1/30`, `1/24` and
-/// `1001/30000` are all affected the same way, and so is audio — `aac.rs` shares [`to_hns`].
+/// only 215 distinct presentation timestamps. Decoding it, ffmpeg warned *"Application provided
+/// invalid, non monotonically increasing dts to muxer"* — the duplicate presentation times,
+/// surfacing as duplicate timestamps on its decoded output. The file's own decode timestamps
+/// were monotonic throughout. `1/30`, `1/24` and `1001/30000` are all affected the same way,
+/// and so is audio — `aac.rs` shares [`to_hns`].
 ///
 /// # Why *nearest*, and not "away from zero"
 ///
-/// Away-from-zero also makes `from_hns(to_hns(t)) == t` exact, and is the tidier-looking
-/// argument: [`to_hns`] truncates *toward* zero, so its result is short of the exact hns value
-/// and dividing back always lands inside the tick below. Rounding to the far end recovers it.
+/// Away-from-zero is also an exact inverse of [`to_hns`]: `to_hns` truncates toward zero, so
+/// dividing back lands just below the original tick, and the far end recovers it. On every
+/// value measured the two rules agree. The HEVC MFT hands back exactly the hns written to it;
+/// the H.264 MFT recomputes its own, landing at or a hair *below* each whole tick. No MFT was
+/// observed rounding *up*.
 ///
-/// It is wrong on the real path, and the integration test `wmf_timestamp_round_trip` is what
-/// showed it. **The MFT does not hand back the hns value we wrote.** It recomputes sample times
-/// from the frame rate with rounding of its own, so the value arriving here sits a fraction of a
-/// tick *above* the exact one as often as below. Away-from-zero then pushes every one of them
-/// into the next tick: 30 frames pushed at ticks 0..29 came back as `1, 3, 2, 5, 4, … 29, 28,
-/// 30` — distinct, so the original defect was gone, but shifted by a whole frame and carrying a
-/// timestamp that was never submitted.
-///
-/// Nearest is correct for both sources at once. For a value that came from [`to_hns`] the error
-/// is under one hns against a tick worth many, so the nearest tick is the original one. For a
-/// value the MFT computed itself, the nearest tick is the one it meant, from either side.
+/// Nearest is chosen for the case that was not observed. An MFT that computed its sample
+/// times by rounding up would land a hair above a whole tick, and away-from-zero would push
+/// that value into the next tick, while nearest still returns the intended one. For every
+/// value actually seen, the two rules cost the same. This is a design argument, not a
+/// measurement. An earlier version of this comment claimed a measurement, which was wrong;
+/// ADR-0013 § Correction records it.
 ///
 /// Exactness on the round trip holds whenever a tick is worth at least two hns, i.e.
 /// `time_base_den <= num * 5 * 10^6`. Past that the timebase is finer than MF's own resolution

@@ -6,7 +6,7 @@
 | [windows-encode](windows-encode.md) | WMF + DX11 encoder backend status |
 | [windows-encode-d3d12](windows-encode-d3d12.md) | D3D12 native Video Encode API: H.264/HEVC/AV1 all-intra, GOP, row-based intra refresh — hardware findings |
 | [windows-encode-gpu-input](windows-encode-gpu-input.md) | D3D12 encoder GPU-input Zero-Copy design (wgpu + native capture callers) — Proposed, no code |
-| [windows-timestamps](windows-timestamps.md) | WMF `hns` round trip (rounds to nearest, and why not away-from-zero) · `dts` from `MFSampleExtension_DecodeTimestamp` · the inbox H.264 MFT reorders regardless of `gop_size` |
+| [windows-timestamps](windows-timestamps.md) | WMF `hns` round trip (rounds to nearest; HEVC collapsed, H.264 got `dts > pts`) · video `dts` comes from `drain_output`'s counter, open VFR divergence · reading ffmpeg's dts warning |
 | [windows-decode](windows-decode.md) | WMF + DX11 decoder Zero-Copy out; D3D12 native decode (H.264 implemented, **paused** on a real GPU-TDR hang) |
 | [windows-decode-d3d12-hevc](windows-decode-d3d12-hevc.md) | D3D12 native HEVC decode (ADR-0004) — **implemented, sans-io-verified only**; zero real GPU hardware run, deliberately |
 | [windows-decode-d3d12-av1](windows-decode-d3d12-av1.md) | D3D12 native AV1 decode (ADR-0005) — **implemented, sans-io-verified only**, `KEY_FRAME`-only; zero real GPU hardware run, deliberately; open bitstream-source question for any future hardware attempt |

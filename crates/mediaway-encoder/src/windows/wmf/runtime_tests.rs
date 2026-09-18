@@ -78,10 +78,11 @@ fn the_measured_regression_case_survives() {
 
 #[test]
 fn a_timestamp_the_mft_recomputed_lands_on_the_tick_it_meant() {
-    // The MFT does not echo the hns we wrote; it derives sample times from the frame rate with
-    // its own rounding, so values arrive a fraction of a tick above the exact one as often as
-    // below. Both sides must come back as the tick, which is why this rounds to nearest rather
-    // than away from zero — away from zero turned every one of these into `tick + 1`, measured.
+    // An MFT that recomputes sample times (the inbox H.264 one does) reports a whole hns near
+    // the exact value rather than the one written to it. Measured MFTs landed at or below the
+    // exact value; this also covers one rounding *up*, which is the case that separates
+    // nearest from away-from-zero. See `from_hns` — this is the design argument, not a
+    // measured failure.
     for tick in 1..1_000i64 {
         // The exact hns for this tick is `tick * 10_000_000 / 60`, which is not a whole
         // number. An MFT reports one of the two whole hns values bracketing it; both must

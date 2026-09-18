@@ -85,18 +85,11 @@ pub(crate) fn to_hns(units: i64, time_base_num: u64, time_base_den: u32) -> i64 
 ///
 /// # Why *nearest*, and not "away from zero"
 ///
-/// Away-from-zero is also an exact inverse of [`to_hns`] on paper, and the argument for it is
-/// neater: `to_hns` truncates toward zero, so dividing back always lands inside the tick below,
-/// and rounding to the far end recovers the original.
-///
-/// It is wrong against a real MFT, which is what the encoder's `wmf_timestamp_round_trip`
-/// integration test showed. **An MFT does not hand back the hns value that was written to it**
-/// — it recomputes sample times with rounding of its own, landing a fraction of a tick above
-/// the exact value as often as below. Away-from-zero pushes every such value into the next
-/// tick; on the encode side that shifted a whole 30-frame sequence by one frame.
-///
-/// Nearest is right for both sources at once: within a fraction of a hns (a [`to_hns`] result)
-/// or within a fraction of a tick (an MFT's own), the nearest tick is the intended one.
+/// Away-from-zero is also an exact inverse of [`to_hns`], and on every value measured on the
+/// encode side the two rules agree: MFTs there returned sample times at or a hair *below* each
+/// whole tick, never above. Nearest is chosen for the unobserved case, an MFT that rounds up.
+/// There away-from-zero would jump to the next tick and nearest would not. It is a design
+/// argument rather than a measurement; see `mediaway-encoder`'s ADR-0013 § Correction.
 ///
 /// Exactness on the round trip holds whenever a tick is worth at least two hns
 /// (`time_base_den <= num * 5 * 10^6`); past that the timebase is finer than MF can represent

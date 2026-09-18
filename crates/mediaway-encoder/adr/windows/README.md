@@ -14,7 +14,7 @@
 | [0010](0010-wmf-av1-encode-config-record-and-mft-probe.md) | WMF AV1 encode: `av1C` config-record correctness + real encoder-MFT probe (dispatch already done, ADR-0004) | Accepted |
 | [0011](0011-shared-encode-bridge-external-resource.md) | `D3d12SharedEncodeBridge::open_with_resource` — caller-owned shared resource | Accepted — hardware-verified |
 | [0012](0012-async-mft-zero-copy-sequencing.md) | Async MFT sequencing for the DX11 Zero-Copy encode path | Accepted — hardware-verified |
-| [0013](0013-wmf-timestamp-round-trip.md) | WMF timestamps: exact `hns` round trip + real decode timestamp | Accepted — hardware-verified |
+| [0013](0013-wmf-timestamp-round-trip.md) | WMF timestamps: exact `hns` round trip (corrected: decode timestamps unchanged; VFR counter open) | Accepted — hardware-verified |
 
 Template: copy from [`mediaway-encoder/adr/template.md`](../../mediaway-encoder/adr/template.md).
 

@@ -62,13 +62,18 @@ position changes. An unattended background job's desktop can otherwise sit idle 
 whole capture window. The test nudges the cursor by one pixel every poll tick to keep
 frames flowing deterministically, then restores the original cursor position.
 
-## Known environment gap (not a wiring bug)
+## Resolved (2026-09-18): this was never an environment gap
 
-On some execution sessions (e.g. certain automated/background job contexts), Media
-Foundation hardware transforms — both the DX11 H.264 hardware MFT *and* the AAC encoder
-MFT (a pure software codec, no GPU involved) — fail to activate with `EncodeError::Backend`
-even though screen + mic capture succeed. The **pre-existing** sibling tests
-(`av_fmp4_zc_smoke.rs`, `av_fmp4_smoke.rs`, the `audio_tests::open_aac_encodes_silence_pcm`
-unit test) skip identically in that same session — this is an existing, already-tolerated
-environment limitation, not something introduced by this composition. The test skips
-honestly (`eprintln!("skip: …")`) rather than failing when it hits this.
+This page used to record a "known environment gap": that in certain automated/background
+session contexts, Media Foundation hardware transforms failed to activate with
+`EncodeError::Backend` even though screen and mic capture succeeded, and that several
+sibling tests skipped identically because of it.
+
+**That diagnosis was wrong.** It was three async-MFT sequencing bugs in `mediaway-encoder`
+— see [encode/async-mft](../encode/async-mft.md) and
+[ADR-0012](../../../../crates/mediaway-encoder/adr/windows/0012-async-mft-zero-copy-sequencing.md).
+It looked environmental because every NVIDIA encoder MFT is async and Intel QuickSync's are
+sync, so the path failed on exactly the machines that selected an NVIDIA MFT.
+
+The hardware, driver and session were never the problem. This test no longer skips on this
+machine.

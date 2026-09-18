@@ -13,6 +13,7 @@
 | [0009](0009-native-capture-shared-handle-zero-copy.md) | Native (non-wgpu) capture-to-encode shared-handle Zero-Copy | Proposed |
 | [0010](0010-wmf-av1-encode-config-record-and-mft-probe.md) | WMF AV1 encode: `av1C` config-record correctness + real encoder-MFT probe (dispatch already done, ADR-0004) | Accepted |
 | [0011](0011-shared-encode-bridge-external-resource.md) | `D3d12SharedEncodeBridge::open_with_resource` — caller-owned shared resource | Accepted — hardware-verified |
+| [0012](0012-async-mft-zero-copy-sequencing.md) | Async MFT sequencing for the DX11 Zero-Copy encode path | Accepted — hardware-verified |
 
 Template: copy from [`mediaway-encoder/adr/template.md`](../../mediaway-encoder/adr/template.md).
 

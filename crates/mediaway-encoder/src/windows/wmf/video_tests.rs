@@ -104,3 +104,167 @@ fn friendly_name(activate: &IMFActivate) -> Option<String> {
     }
     name
 }
+
+#[cfg(test)]
+mod zero_copy {
+    use crate::{VideoEncoder as _, VideoEncoderConfig, VideoInputPreference};
+    use mediaway_common::{
+        CodecKind, ColorRange, GpuBufferHandle, GpuDeviceHandle, NativeHandle, PixelFormat,
+        Rational, VideoFrame, VideoFrameStorage,
+    };
+    use windows::Win32::Foundation::HMODULE;
+    use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
+    use windows::Win32::Graphics::Direct3D11::{
+        D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE, D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
+        D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11CreateDevice,
+        ID3D11Device, ID3D11Texture2D,
+    };
+    use windows::Win32::Graphics::Dxgi::Common::{
+        DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_NV12, DXGI_SAMPLE_DESC,
+    };
+    use windows::core::Interface;
+
+    const W: u32 = 1920;
+    const H: u32 = 1080;
+    const FRAMES: i64 = 5;
+
+    fn hardware_device() -> Option<ID3D11Device> {
+        let mut device: Option<ID3D11Device> = None;
+        // SAFETY: standard D3D11 device creation; the out-param is checked by the caller.
+        unsafe {
+            let _ = D3D11CreateDevice(
+                None,
+                D3D_DRIVER_TYPE_HARDWARE,
+                HMODULE::default(),
+                D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
+                None,
+                D3D11_SDK_VERSION,
+                Some(&raw mut device),
+                None,
+                None,
+            );
+        }
+        device
+    }
+
+    fn texture(device: &ID3D11Device, format: DXGI_FORMAT, bgra: bool) -> Option<ID3D11Texture2D> {
+        let mut bind = D3D11_BIND_SHADER_RESOURCE.0 as u32;
+        if bgra {
+            bind |= D3D11_BIND_RENDER_TARGET.0 as u32;
+        }
+        let desc = D3D11_TEXTURE2D_DESC {
+            Width: W,
+            Height: H,
+            MipLevels: 1,
+            ArraySize: 1,
+            Format: format,
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
+            Usage: D3D11_USAGE_DEFAULT,
+            BindFlags: bind,
+            CPUAccessFlags: 0,
+            MiscFlags: 0,
+        };
+        let mut out: Option<ID3D11Texture2D> = None;
+        // SAFETY: `desc` is a fully initialized POD descriptor; out-param checked by caller.
+        unsafe {
+            let _ = device.CreateTexture2D(&raw const desc, None, Some(&raw mut out));
+        }
+        out
+    }
+
+    /// `Some(packets)` when the case ran, `None` when this machine cannot exercise it.
+    fn encode_case(
+        device: &ID3D11Device,
+        codec: CodecKind,
+        pixel_format: PixelFormat,
+        format: DXGI_FORMAT,
+    ) -> Option<usize> {
+        // The texture is created **before** the encoder so it outlives it: locals drop in
+        // reverse declaration order, and the encoder's MFT still holds samples that
+        // reference this surface until it is dropped.
+        let texture = texture(device, format, pixel_format == PixelFormat::Bgra8)?;
+        let texture_handle = NativeHandle::new(Interface::as_raw(&texture) as usize)?;
+        let device_handle = NativeHandle::new(Interface::as_raw(device) as usize)?;
+
+        let config = VideoEncoderConfig {
+            codec,
+            width: W,
+            height: H,
+            time_base: Rational::new(1, 60),
+            bitrate_bps: 20_000_000,
+            pixel_format,
+            color_range: ColorRange::Video,
+            input: VideoInputPreference::ZeroCopyGpu,
+            gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
+            gop_size: 120,
+            rate_control: None,
+            intra_refresh_period: None,
+        };
+        let mut encoder = super::super::WmfVideoEncoder::open(&config).ok()?;
+
+        for pts in 0..FRAMES {
+            let frame = VideoFrame {
+                pts,
+                duration: 1,
+                width: W,
+                height: H,
+                format: pixel_format,
+                storage: VideoFrameStorage::Gpu(GpuBufferHandle::DirectX11 {
+                    texture: texture_handle,
+                    subresource: 0,
+                }),
+            };
+            encoder
+                .push_frame(&frame)
+                .expect("async MFT must accept every frame, not just the first");
+        }
+        encoder.flush().expect("flush");
+
+        let mut packets = 0;
+        while encoder.poll_packet().expect("poll").is_some() {
+            packets += 1;
+        }
+        drop(encoder);
+        drop(texture);
+        Some(packets)
+    }
+
+    /// Regression for the three async-MFT sequencing bugs in
+    /// `adr/windows/0012-async-mft-zero-copy-sequencing.md`. Each surfaced at a different
+    /// stage — `open`, the first `push_frame`, and the *second* `push_frame` — so this
+    /// pushes several frames rather than one, and asserts packets actually came out.
+    ///
+    /// Skips honestly without a hardware encoder MFT.
+    #[test]
+    fn dx11_zero_copy_encodes_multiple_frames_or_skip() {
+        let Some(device) = hardware_device() else {
+            eprintln!("skip: no D3D11 hardware device");
+            return;
+        };
+        for (codec, pixel_format, format) in [
+            (CodecKind::H264, PixelFormat::Nv12, DXGI_FORMAT_NV12),
+            (
+                CodecKind::H264,
+                PixelFormat::Bgra8,
+                DXGI_FORMAT_B8G8R8A8_UNORM,
+            ),
+            (CodecKind::Hevc, PixelFormat::Nv12, DXGI_FORMAT_NV12),
+            (
+                CodecKind::Hevc,
+                PixelFormat::Bgra8,
+                DXGI_FORMAT_B8G8R8A8_UNORM,
+            ),
+        ] {
+            match encode_case(&device, codec, pixel_format, format) {
+                Some(packets) => assert!(
+                    packets > 0,
+                    "{codec:?} {pixel_format:?}: encoded {FRAMES} frames, produced no packets",
+                ),
+                None => eprintln!("skip: {codec:?} {pixel_format:?} unavailable on this machine"),
+            }
+        }
+    }
+}

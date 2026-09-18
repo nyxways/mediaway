@@ -158,3 +158,16 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
         (`GpuBufferHandle::Metal`) is a plain borrow of the caller's `CVPixelBuffer` for one
         `encode_frame` call — no retain/release at all, the simplest of this workspace's three
         Apple Zero-Copy directions.
+
+### Capability probe — resolution-aware (2026-09-18)
+
+- [x] `windows::auto::support_at(codec, w, h)` + `capability::DEFAULT_PROBE_{WIDTH,HEIGHT}`,
+      with `support(codec)` delegating —
+      [ADR-0005](../adr/0005-resolution-aware-capability-probe.md). Fixes a real false
+      negative: the probe opened every session at 64×64, below NVENC's minimum dimensions,
+      so it reported `NoDevice` for NVENC on an RTX 4090 that encodes AV1 and H.264 fine.
+      Raising the constant alone would not have been enough — on the same machine AV1
+      `Backend::Vulkan` is `Supported` at 256×256 and `NotImplemented` at 1920×1080, so a
+      fixed probe size under-reports at one end and over-reports at the other.
+- [ ] Extend `support_at` to the non-Windows platform crates once they grow a per-backend
+      selection surface (today they have one path each, so there are no rows to report)

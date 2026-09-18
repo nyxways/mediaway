@@ -260,3 +260,71 @@ fn support_probe_lists_every_backend() {
     assert!(backends.contains(&Backend::Amf));
     assert!(backends.contains(&Backend::Software));
 }
+
+/// Regression: the default probe resolution must not be below any backend's minimum.
+///
+/// The probe used to open at 64x64, which is under NVENC's minimum dimensions, so
+/// `support` reported `NoDevice` for NVENC on an RTX 4090 that encodes H.264 and AV1
+/// fine — a false "this machine has no NVIDIA encoder" (see
+/// `adr/0005-resolution-aware-capability-probe.md`).
+///
+/// Phrased as an implication so it is meaningful on hardware and a no-op without it:
+/// any backend that opens at a realistic 1920x1080 must not be reported unavailable at
+/// the default probe size. A machine with no such hardware skips every arm.
+#[cfg(windows)]
+#[cfg(feature = "video")]
+#[test]
+fn default_probe_resolution_does_not_under_report_working_backends() {
+    use crate::capability::{EncodeSupport, EncodeUnavailable};
+
+    for codec in [CodecKind::H264, CodecKind::Av1] {
+        let default_rows = super::support(codec);
+        for row in &default_rows {
+            if row.backend == Backend::Amf {
+                continue; // no implementation at all — see adr/0001 in mediaway-encoder-amf
+            }
+            let cfg = AutoVideoEncodeConfig {
+                backend: BackendSelection::Explicit(row.backend),
+                ..AutoVideoEncodeConfig::new(codec, 1920, 1080, Rational::new(1, 30))
+            };
+            if AutoVideoEncoder::open(&cfg).is_err() {
+                continue; // genuinely unavailable on this machine
+            }
+            assert_ne!(
+                row.support,
+                EncodeSupport::Unavailable(EncodeUnavailable::NoDevice),
+                "{:?} encodes {codec:?} at 1920x1080 but the default probe called it NoDevice",
+                row.backend,
+            );
+        }
+    }
+}
+
+/// `support_at` is the resolution-aware form, and resolution actually changes the answer.
+///
+/// Skips honestly when this machine has no NVENC, which is the only backend whose
+/// minimum this test is positioned to demonstrate.
+#[cfg(windows)]
+#[cfg(feature = "video")]
+#[test]
+fn support_at_below_a_backend_minimum_reports_unavailable_or_skip() {
+    use crate::capability::EncodeSupport;
+
+    let works_large = super::support_at(CodecKind::H264, 1920, 1080)
+        .into_iter()
+        .any(|r| r.backend == Backend::Nvenc && matches!(r.support, EncodeSupport::Supported(_)));
+    if !works_large {
+        eprintln!("skip: no NVENC GPU+driver available");
+        return;
+    }
+
+    let tiny = super::support_at(CodecKind::H264, 64, 64);
+    let nvenc = tiny
+        .iter()
+        .find(|r| r.backend == Backend::Nvenc)
+        .expect("NVENC row is always present");
+    assert!(
+        !matches!(nvenc.support, EncodeSupport::Supported(_)),
+        "64x64 is below NVENC's minimum, so it must not report Supported there",
+    );
+}

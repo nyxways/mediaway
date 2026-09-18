@@ -6,6 +6,7 @@
 | [0002](0002-facade-platform-boundary.md) | Facade vs `mediaway-encoder-<platform>` | Accepted |
 | [0003](0003-auto-encode.md) | `auto` encode surface | Accepted |
 | [0004](0004-backend-preference.md) | Backend preference hierarchy (Auto/Os/Gpu/Sw) | Accepted |
+| [0005](0005-resolution-aware-capability-probe.md) | Resolution-aware encoder capability probe (`support_at`) | Accepted |
 
 Template: [`template.md`](template.md)
 

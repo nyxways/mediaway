@@ -59,7 +59,9 @@ impl From<CaptureError> for MediawayDeviceStatus {
             CaptureError::Unsupported => Self::Unsupported,
             CaptureError::NoBackend => Self::NoBackend,
             CaptureError::InvalidInput => Self::InvalidInput,
-            CaptureError::Backend => Self::BackendFailure,
+            // The native code cannot cross this C ABI (no out-parameter for it); both
+            // backend-failure variants collapse to one status rather than to `UnknownError`.
+            CaptureError::Backend | CaptureError::BackendCode { .. } => Self::BackendFailure,
             CaptureError::Closed => Self::Closed,
             CaptureError::AccessDenied => Self::AccessDenied,
             CaptureError::Timeout => Self::Timeout,

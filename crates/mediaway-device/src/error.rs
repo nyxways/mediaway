@@ -24,6 +24,19 @@ pub enum CaptureError {
     /// Backend rejected the operation (OS/API failure).
     #[error("capture backend failure")]
     Backend,
+    /// Same failure class as [`Self::Backend`], but the platform named a status
+    /// code: a Windows `HRESULT`, a POSIX `errno`, … Backends that cannot produce
+    /// one (a JNI exception, for instance) keep returning [`Self::Backend`].
+    ///
+    /// Carrying the code is what lets a caller — or a test — distinguish
+    /// "this machine does not support it" from "we called the API wrong", which a
+    /// bare [`Self::Backend`] cannot. Shape mirrors `mediaway_sw::opus::OpusError::Backend`.
+    #[error("capture backend failure (native code {code:#010x})")]
+    BackendCode {
+        /// Raw platform status code, stored with its original bit pattern
+        /// (`HRESULT` is already `i32`; other platforms sign-extend into one).
+        code: i32,
+    },
     /// Session already finished or not open.
     #[error("capture session closed")]
     Closed,

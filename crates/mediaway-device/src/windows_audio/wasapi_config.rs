@@ -29,20 +29,27 @@ pub enum WasapiSource {
     },
     /// Per-process WASAPI loopback (`VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK`).
     ProcessLoopback {
-        /// Target process id.
+        /// The process the mode is applied to — captured in
+        /// [`WasapiProcessTreeScope::IncludeChildren`], excluded in
+        /// [`WasapiProcessTreeScope::ExcludeProcessTree`].
         process_id: u32,
-        /// Whether descendant processes are included (`INCLUDE_TARGET_PROCESS_TREE`).
+        /// Which of the two Windows process-loopback modes to activate.
         tree_scope: WasapiProcessTreeScope,
     },
 }
 
-/// Whether a [`WasapiSource::ProcessLoopback`] capture includes child processes.
+/// Which `PROCESS_LOOPBACK_MODE` a [`WasapiSource::ProcessLoopback`] capture activates.
+///
+/// Mirrors `crate::desktop::ProcessTreeScope`; see it for why there is no
+/// "target process alone" variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WasapiProcessTreeScope {
-    /// Only audio rendered directly by the target process.
-    ProcessOnly,
-    /// Audio rendered by the target process and its descendants.
+    /// `PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE` — audio rendered by the target
+    /// process and its descendants.
     IncludeChildren,
+    /// `PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE` — everything the desktop renders
+    /// **except** the target process and its descendants.
+    ExcludeProcessTree,
 }
 
 /// Parameters for opening a [`crate::windows_audio::WindowsWasapiCapture`] session.

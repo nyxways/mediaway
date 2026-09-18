@@ -24,23 +24,26 @@ public static class DesktopAudioCapture
         TryOpenFrom(BuildLoopbackConfig(sampleRateTimeBase), out error);
 
     /// <summary>
-    /// Captures only the audio rendered by <paramref name="processId"/> (and its
-    /// descendants, if <paramref name="includeChildProcesses"/>) — Windows 10 2004+.
-    /// Capture is IEEE float at a fixed 48 kHz stereo layout on the Windows backend
-    /// (mix-format queries are unsupported for this mode).
+    /// Per-process loopback — Windows 10 2004+. With
+    /// <paramref name="includeTargetProcessTree"/> <c>true</c>, captures the audio rendered
+    /// by <paramref name="processId"/> and its descendants; with <c>false</c>, captures
+    /// everything the desktop renders <em>except</em> that process tree. Windows offers no
+    /// "target process alone" mode, so <c>false</c> is the complement of <c>true</c>, not a
+    /// narrowing of it. Capture is IEEE float at a fixed 48 kHz stereo layout on the Windows
+    /// backend (mix-format queries are unsupported for this mode).
     /// </summary>
     /// <exception cref="CaptureUnavailableException">No supported capture backend is compiled in here.</exception>
     public static IDesktopAudioCapture OpenProcessLoopback(
-        uint processId, bool includeChildProcesses, Rational sampleRateTimeBase)
+        uint processId, bool includeTargetProcessTree, Rational sampleRateTimeBase)
     {
-        var config = BuildProcessLoopbackConfig(processId, includeChildProcesses, sampleRateTimeBase);
+        var config = BuildProcessLoopbackConfig(processId, includeTargetProcessTree, sampleRateTimeBase);
         return OpenFrom(config);
     }
 
     /// <summary>Non-throwing form of <see cref="OpenProcessLoopback"/>.</summary>
     public static IDesktopAudioCapture? TryOpenProcessLoopback(
-        uint processId, bool includeChildProcesses, Rational sampleRateTimeBase, out MediawayDeviceStatus? error) =>
-        TryOpenFrom(BuildProcessLoopbackConfig(processId, includeChildProcesses, sampleRateTimeBase), out error);
+        uint processId, bool includeTargetProcessTree, Rational sampleRateTimeBase, out MediawayDeviceStatus? error) =>
+        TryOpenFrom(BuildProcessLoopbackConfig(processId, includeTargetProcessTree, sampleRateTimeBase), out error);
 
     private static IDesktopAudioCapture OpenFrom(NativeDesktopAudioCaptureConfig config)
     {
@@ -67,18 +70,18 @@ public static class DesktopAudioCapture
         SourceKind = NativeDesktopAudioSourceKind.Loopback,
         DeviceIndex = 0,
         ProcessId = 0,
-        IncludeChildProcesses = 0,
+        IncludeTargetProcessTree = 0,
         TimeBase = new NativeRational(sampleRateTimeBase),
         SampleFormat = SampleFormat.F32, // Only format the real Windows backend accepts today.
     };
 
     private static NativeDesktopAudioCaptureConfig BuildProcessLoopbackConfig(
-        uint processId, bool includeChildProcesses, Rational sampleRateTimeBase) => new()
+        uint processId, bool includeTargetProcessTree, Rational sampleRateTimeBase) => new()
     {
         SourceKind = NativeDesktopAudioSourceKind.ProcessLoopback,
         DeviceIndex = 0,
         ProcessId = processId,
-        IncludeChildProcesses = includeChildProcesses ? (byte)1 : (byte)0,
+        IncludeTargetProcessTree = includeTargetProcessTree ? (byte)1 : (byte)0,
         TimeBase = new NativeRational(sampleRateTimeBase),
         SampleFormat = SampleFormat.F32,
     };

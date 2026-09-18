@@ -4,6 +4,24 @@
 
 ### Fixed
 
+- **Windows per-process audio loopback never opened, on any machine.**
+  `IAudioClient::Initialize` was passed `AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM |
+  AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY` and answered `AUDCLNT_E_INVALID_STREAM_FLAG`
+  (`0x88890021`) every time: the process-loopback virtual device requires
+  `AUDCLNT_STREAMFLAGS_LOOPBACK` and accepts no sample-rate conversion, because there is no
+  mix format to convert from. `DeviceKind::ProcessLoopback` capability probing shares that
+  code path, so it reported "not supported" everywhere, Windows 11 included. Both now work
+  and are covered by tests that open a real session
+  (`crates/mediaway-device/adr/windows/0002-wasapi-capture.md` § Correction).
+
+- **`ProcessTreeScope::ProcessOnly` recorded the inverse of what it promised.** Documented as
+  "only audio rendered directly by the target process", it selected
+  `PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE` — everything *except* that process
+  tree — and did so silently, since the session opened normally. Windows has no
+  "target process alone" mode, so the variant is **renamed `ExcludeProcessTree`** and
+  documented as the "record everything else" mode it always was. The scope → Windows-mode
+  mapping is now pinned by unit tests.
+
 - **HEVC in MP4 decoded zero frames. It now decodes every frame.** Not a regression — no
   HEVC MP4 this workspace ever wrote was playable, on any platform. Three defects had to
   line up, and each had been deferred as somebody else's job
@@ -138,6 +156,19 @@
 ### Deprecated
 
 ### Breaking
+
+- `ProcessTreeScope::ProcessOnly` is renamed `ProcessTreeScope::ExcludeProcessTree` (and
+  `WasapiProcessTreeScope::ProcessOnly` likewise), because it selected the "capture
+  everything *except* this process tree" Windows mode while claiming the opposite. Callers
+  that meant "the target process" want `IncludeChildren`; Windows offers no narrower mode.
+  The C ABI's `mediaway_desktop_audio_capture_config_t.include_child_processes` is renamed
+  `include_target_process_tree` for the same reason — same polarity, same struct layout, so
+  only source references change. The C#/Python bindings' parameter names follow.
+
+- `CaptureError` gained a `BackendCode { code: i32 }` variant carrying the platform's own
+  status code (`HRESULT`, …). The enum is `#[non_exhaustive]`, so only exhaustive matches
+  written inside this workspace are affected; `CaptureError::Backend` still exists for
+  backends that have no such code.
 
 - `PipelineError::Mux` now wraps `mediaway_container::ContainerError` instead of
   `mediaway_container::mp4::Error`. `EncodeSession` is generic over its container, so the

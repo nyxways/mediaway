@@ -62,7 +62,7 @@ internal struct NativeDesktopAudioCaptureConfig
     public NativeDesktopAudioSourceKind SourceKind;
     public uint DeviceIndex;
     public uint ProcessId;
-    public byte IncludeChildProcesses;
+    public byte IncludeTargetProcessTree;
     public NativeRational TimeBase;
     public SampleFormat SampleFormat;
 }

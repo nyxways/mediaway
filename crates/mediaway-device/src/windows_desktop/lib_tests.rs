@@ -23,6 +23,9 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 use windows::core::Interface;
 
+/// `AUDCLNT_E_INVALID_STREAM_FLAG` — the `windows` crate exports no constant for it.
+const AUDCLNT_E_INVALID_STREAM_FLAG: i32 = 0x8889_0021_u32.cast_signed();
+
 #[test]
 fn open_screen_zero_copy_poll_release_or_skip() {
     let _guard = crate::windows_desktop::HARDWARE_TEST_LOCK
@@ -379,6 +382,16 @@ fn open_desktop_audio_process_loopback_or_skip() {
     );
     let mut cap = match WindowsDesktopAudioCapture::open(&cfg) {
         Ok(c) => c,
+        // A blanket skip here is what let a never-working path ship: `open` failed on every
+        // machine with `AUDCLNT_E_INVALID_STREAM_FLAG` and this test called it "no support".
+        // Machine-dependent absence is still a legitimate skip; a flag we got wrong is not.
+        Err(crate::CaptureError::BackendCode { code }) if code == AUDCLNT_E_INVALID_STREAM_FLAG => {
+            panic!(
+                "process loopback Initialize rejected our stream flags \
+                 (AUDCLNT_E_INVALID_STREAM_FLAG {code:#010x}) — this is a Mediaway bug, \
+                 not a missing OS capability"
+            );
+        }
         Err(e) => {
             eprintln!("skip: process loopback open ({e:?})");
             return;

@@ -209,7 +209,7 @@ fn read_left<const N: usize>(plane: &[u8], stride: usize, x0: usize, y0: usize) 
 }
 
 /// Read the reconstructed corner sample `(-1, -1)` relative to `(x0, y0)`.
-fn read_corner(plane: &[u8], stride: usize, x0: usize, y0: usize) -> u8 {
+const fn read_corner(plane: &[u8], stride: usize, x0: usize, y0: usize) -> u8 {
     plane[(y0 - 1) * stride + x0 - 1]
 }
 

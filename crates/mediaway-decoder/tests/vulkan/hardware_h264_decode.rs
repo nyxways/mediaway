@@ -273,7 +273,7 @@ fn build_p_slice() -> Vec<u8> {
     writer.finish()
 }
 
-fn luma_at(nv12: &[u8], x: usize, y: usize) -> u8 {
+const fn luma_at(nv12: &[u8], x: usize, y: usize) -> u8 {
     nv12[y * WIDTH as usize + x]
 }
 

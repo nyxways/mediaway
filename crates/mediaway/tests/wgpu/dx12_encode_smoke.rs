@@ -32,7 +32,7 @@ use mediaway_encoder::{VideoEncoder, VideoEncoderConfig, VideoInputPreference};
 
 /// `true` if `payload` contains an Annex-B NAL unit (00 00 01 / 00 00 00 01
 /// start code) whose header byte's low 5 bits equal `nal_type`.
-fn has_annex_b_nal(payload: &[u8], nal_type: u8) -> bool {
+const fn has_annex_b_nal(payload: &[u8], nal_type: u8) -> bool {
     let mut i = 0usize;
     while i + 3 <= payload.len() {
         let is_start4 = i + 4 <= payload.len()

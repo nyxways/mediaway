@@ -44,3 +44,16 @@ CI test jobs — see `docs/ai/wiki/meta/language-bindings.md`.
 - **e2e-web wasm build**: `mediaway-device` is rlib-only (no cdylib → no `.wasm`
   artifact) — building it in the e2e `build-wasm.ts` list always threw "Missing wasm
   artifact". Dropped from the list; the CI wasm job still compile-gates it.
+
+## Toolchain pin (2026-09-18)
+
+- **Rust is pinned, not `stable`**: `rust-toolchain.toml` `channel` and every
+  `dtolnay/rust-toolchain@<ver>` in `.github/workflows/` must name the same version.
+  With `@stable`, CI silently moved to 1.98 while local hooks stayed on 1.97; new
+  clippy lints (`missing_const_for_fn`, `chunks_exact` → `as_chunks`) turned `main`
+  red for a month and every compile job (rust / android / apple) failed on the first
+  `iso-bmff` error. Bump the toolchain deliberately, in one PR, after a clean
+  `cargo clippy --workspace --all-targets -- -D warnings` on the new version.
+- **coverage-daily never passed before this**: it invoked
+  `tools/scripts/node_modules/.bin/bun`, which does not exist (bun is not an npm
+  dep); it now calls the `setup-bun` binary directly.

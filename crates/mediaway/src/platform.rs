@@ -480,6 +480,11 @@ impl WindowCapture {
     ///
     /// [`CaptureError::NoBackend`] on a target with no window-capture backend (iOS, Android,
     /// web). Otherwise propagates the backend's open error.
+    #[allow(
+        clippy::missing_const_for_fn,
+        reason = "the desktop branches open a capture session; only the no-backend branch, \
+                  compiled alone on other targets, is trivially const-eligible"
+    )]
     pub fn open(config: &DesktopVideoCaptureConfig) -> Result<PlatformWindowCapture, CaptureError> {
         #[cfg(windows)]
         {
@@ -530,6 +535,11 @@ impl DesktopAudio {
     ///
     /// [`CaptureError::NoBackend`] on every target except Windows, which is the only one
     /// with a desktop-audio backend today. Otherwise propagates the backend's open error.
+    #[allow(
+        clippy::missing_const_for_fn,
+        reason = "the Windows branch opens a WASAPI session; only the no-backend branch, compiled \
+                  alone elsewhere, is trivially const-eligible"
+    )]
     pub fn open(
         config: &DesktopAudioCaptureConfig,
     ) -> Result<PlatformDesktopAudioCapture, CaptureError> {

@@ -12,6 +12,8 @@ then:
 | [0002](0002-platform-dispatch-avoid-box-dyn.md) | Platform dispatch shape (avoid `Box<dyn>`) | Accepted |
 | [0003](0003-audio-track-and-apm-integration.md) | Audio track support on `EncodeSession`, with optional `mediaway-audio-apm` (AEC/NS/AGC + VAD) integration | Accepted |
 | [0004](0004-autoencoder-zerocopy-linux-apple.md) | `AutoEncoder::open` — wire Linux/Apple `ZeroCopyGpu` into the auto chain | Accepted |
+| [0005](0005-late-known-mux-extra-data.md) | Backfill mux track `extra_data` after the first encoded packet | Accepted |
+| [0006](0006-encode-session-streaming-bytes.md) | Streaming byte output on `EncodeSession` | Accepted |
 
 Template: [`template.md`](template.md)
 

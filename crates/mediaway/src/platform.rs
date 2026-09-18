@@ -418,7 +418,10 @@ impl ScreenCapture {
             // config — it always captures the whole app (video + app audio + mic audio); see
             // `mediaway-device` adr/apple/0004.
             use mediaway_device::apple::AppleScreenCapture;
-            let _ = config;
+            // No pointer on iOS to composite: refuse rather than record without it.
+            if config.cursor == mediaway_device::desktop::CursorCapture::Included {
+                return Err(CaptureError::Unsupported);
+            }
             let cap = AppleScreenCapture::open()?;
             Ok(Box::new(cap))
         }

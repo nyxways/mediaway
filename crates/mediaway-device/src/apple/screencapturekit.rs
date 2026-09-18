@@ -28,7 +28,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::desktop::{
-    CaptureOutputPreference, DesktopCaptureSource, DesktopVideoCapture, DesktopVideoCaptureConfig,
+    CaptureOutputPreference, CursorCapture, DesktopCaptureSource, DesktopVideoCapture,
+    DesktopVideoCaptureConfig,
 };
 use crate::{CaptureError, Select};
 use block2::RcBlock;
@@ -194,7 +195,7 @@ fn open_stream(
         stream_config.setWidth(CAPTURE_WIDTH);
         stream_config.setHeight(CAPTURE_HEIGHT);
         stream_config.setPixelFormat(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange);
-        stream_config.setShowsCursor(true);
+        stream_config.setShowsCursor(config.cursor == CursorCapture::Included);
     }
 
     let queue = Arc::new(FrameQueue {

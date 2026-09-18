@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, reason = "unit tests")]
+
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
@@ -7,8 +9,11 @@ use mediaway_common::{
 };
 
 use super::{
-    CaptureError, CaptureOutputPreference, DesktopVideoCapture, capture_desktop_video_once,
+    CaptureError, CaptureOutputPreference, CursorCapture, DesktopVideoCapture,
+    DesktopVideoCaptureConfig, capture_desktop_video_once,
 };
+use crate::Select;
+use mediaway_common::NativeHandle;
 
 struct MockDesktopVideo {
     frame: Option<VideoFrame>,
@@ -115,4 +120,19 @@ fn default_output_preference_is_zero_copy_gpu() {
         CaptureOutputPreference::default(),
         CaptureOutputPreference::ZeroCopyGpu
     );
+}
+
+#[test]
+fn the_cursor_is_left_out_unless_asked_for() {
+    // The default every backend now shares. Before the field existed it was only a
+    // convention, and macOS followed the other one.
+    assert_eq!(CursorCapture::default(), CursorCapture::Excluded);
+    let time_base = Rational::new(1, 30);
+    let screen = DesktopVideoCaptureConfig::screen(Select::Default, time_base);
+    let window = DesktopVideoCaptureConfig::window(
+        NativeHandle::new(1).expect("non-zero placeholder"),
+        time_base,
+    );
+    assert_eq!(screen.cursor, CursorCapture::Excluded);
+    assert_eq!(window.cursor, CursorCapture::Excluded);
 }

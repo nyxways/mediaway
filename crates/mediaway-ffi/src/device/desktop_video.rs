@@ -145,6 +145,9 @@ fn open_desktop_capture(
                 // No C ABI knob for this yet — keep today's shareable-by-default behavior
                 // unchanged; see `mediaway-device` ADR-0008.
                 sharing: CaptureSharing::Shared,
+                // No C ABI knob for this either. `Excluded` keeps what every C caller got
+                // before the field existed; this path is DXGI, which cannot include it anyway.
+                cursor: mediaway_device::desktop::CursorCapture::Excluded,
             };
             open_screen_capture(&rust_config)
         }

@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- **The WGC capture border was never hidden, despite a comment saying it was.**
+  `SetIsBorderRequired` was never called. `WindowsWindowCapture::open_with_border(config,
+  CaptureBorder::Hidden)` now requests borderless access and hides it. A refusal does not fail
+  the capture (the border is drawn on screen, not into frames), and
+  `WindowsWindowCapture::border_hidden()` reports what the OS actually did. `open` keeps the
+  border shown. (`crates/mediaway-device/adr/0008-cursor-capture-and-wgc-border.md`)
+
 - **Windows (WMF) video timestamps did not survive the encoder.** `to_hns` and `from_hns`
   **both truncated**, so the tick → hns → tick trip through the MFT was not an inverse, and
   10 000 000 does not divide most timebase denominators. The two codecs broke differently
@@ -176,6 +183,13 @@
 ### Deprecated
 
 ### Breaking
+
+- **`DesktopVideoCaptureConfig` gains `cursor: CursorCapture`** (`Excluded` by default,
+  `Included` on request). Struct-literal constructions must add it; `::screen` / `::window`
+  set it. Backends that cannot composite the pointer — DXGI screen capture, iOS — reject
+  `Included` with `CaptureError::Unsupported` instead of recording without it. **macOS
+  previously always showed the pointer and now hides it by default.** On WGC, failing to apply
+  either setting is now an error rather than a discarded result.
 
 - `ProcessTreeScope::ProcessOnly` is renamed `ProcessTreeScope::ExcludeProcessTree` (and
   `WasapiProcessTreeScope::ProcessOnly` likewise), because it selected the "capture

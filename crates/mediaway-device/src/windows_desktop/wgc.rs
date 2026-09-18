@@ -2,19 +2,23 @@
 
 #![allow(unsafe_code)]
 
+use super::CaptureBorder;
 use crate::CaptureError;
 use crate::desktop::{
-    CaptureOutputPreference, DesktopCaptureSource, DesktopVideoCapture, DesktopVideoCaptureConfig,
+    CaptureOutputPreference, CursorCapture, DesktopCaptureSource, DesktopVideoCapture,
+    DesktopVideoCaptureConfig,
 };
 use mediaway_common::{
     Bytes, CodecKind, GpuBufferHandle, GpuDeviceHandle, NativeHandle, PixelFormat, StreamInfo,
     VideoFrame, VideoFrameStorage, VideoGeometry,
 };
 use windows::Graphics::Capture::{
-    Direct3D11CaptureFrame, Direct3D11CaptureFramePool, GraphicsCaptureItem, GraphicsCaptureSession,
+    Direct3D11CaptureFrame, Direct3D11CaptureFramePool, GraphicsCaptureAccess,
+    GraphicsCaptureAccessKind, GraphicsCaptureItem, GraphicsCaptureSession,
 };
 use windows::Graphics::DirectX::Direct3D11::IDirect3DDevice;
 use windows::Graphics::DirectX::DirectXPixelFormat;
+use windows::Security::Authorization::AppCapabilityAccess::AppCapabilityAccessStatus;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11Texture2D};
 use windows::Win32::Graphics::Dxgi::IDXGIDevice;
@@ -41,6 +45,7 @@ struct CaptureSession {
     stream_info: StreamInfo,
     held: Option<HeldFrame>,
     next_pts: i64,
+    border_hidden: bool,
 }
 
 /// Windows **window** capture via `WinRT` Graphics Capture (not DXGI Desktop Duplication).
@@ -57,8 +62,33 @@ impl WindowsWindowCapture {
     /// # Errors
     ///
     /// Returns [`CaptureError::Unsupported`] when WGC is unavailable or the source is not
-    /// a window. Returns [`CaptureError::InvalidInput`] for a null hwnd / unset device.
+    /// a window, or when the OS cannot apply `config.cursor` (see below). Returns
+    /// [`CaptureError::InvalidInput`] for a null hwnd / unset device.
+    ///
+    /// # Cursor
+    ///
+    /// `config.cursor` is applied with `SetIsCursorCaptureEnabled` (Windows 10 2004+), and
+    /// failing to apply it is an error **in both directions**. WGC's own default is to include
+    /// the pointer. So on a build without that call, even an `Excluded` request would otherwise
+    /// record a pointer nobody asked for.
+    ///
+    /// Leaves the yellow capture border at the OS default (shown); use
+    /// [`Self::open_with_border`] to ask for it to be hidden.
     pub fn open(config: &DesktopVideoCaptureConfig) -> Result<Self, CaptureError> {
+        Self::open_with_border(config, CaptureBorder::Shown)
+    }
+
+    /// [`Self::open`], also choosing whether Windows draws its capture border.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::open`]. A [`CaptureBorder::Hidden`] request the OS refuses is **not** an
+    /// error — see [`CaptureBorder`] — and shows up as [`Self::border_hidden`] returning
+    /// `false`.
+    pub fn open_with_border(
+        config: &DesktopVideoCaptureConfig,
+        border: CaptureBorder,
+    ) -> Result<Self, CaptureError> {
         let DesktopCaptureSource::Window { window } = config.source else {
             return Err(CaptureError::Unsupported);
         };
@@ -114,8 +144,10 @@ impl WindowsWindowCapture {
         let session = frame_pool
             .CreateCaptureSession(&item)
             .map_err(|_| CaptureError::Backend)?;
-        // Best-effort: hide yellow border / cursor when the OS build supports it.
-        let _ = session.SetIsCursorCaptureEnabled(false);
+        session
+            .SetIsCursorCaptureEnabled(config.cursor == CursorCapture::Included)
+            .map_err(|_| CaptureError::Unsupported)?;
+        let border_hidden = border == CaptureBorder::Hidden && hide_border(&session);
         session
             .StartCapture()
             .map_err(|_| CaptureError::AccessDenied)?;
@@ -138,9 +170,45 @@ impl WindowsWindowCapture {
                 stream_info,
                 held: None,
                 next_pts: 0,
+                border_hidden,
             }),
         })
     }
+}
+
+impl WindowsWindowCapture {
+    /// Whether the yellow capture border is actually hidden for this session.
+    ///
+    /// `false` when [`CaptureBorder::Shown`] was asked for, when the OS refused
+    /// [`CaptureBorder::Hidden`], or once the session is closed. Read back from the session
+    /// rather than remembered from the request, so it reports what Windows did.
+    #[must_use]
+    pub fn border_hidden(&self) -> bool {
+        self.inner.as_ref().is_some_and(|s| s.border_hidden)
+    }
+}
+
+/// Ask Windows not to draw the capture border for `session`. Returns whether it is now hidden.
+///
+/// Two steps, and either can refuse. The process has to be granted borderless capture
+/// (`GraphicsCaptureAccess`), and the session then has to accept `IsBorderRequired = false`.
+/// Measured 2026-09-18 on Windows 11 26100: an unpackaged desktop process is granted it
+/// without a prompt (`AppCapabilityAccessStatus::Allowed`). A packaged app may instead see a
+/// consent prompt, and this blocks until it is answered.
+///
+/// The answer is read back rather than assumed. Before this existed, a comment at the call
+/// site said the border was hidden, and it never had been.
+fn hide_border(session: &GraphicsCaptureSession) -> bool {
+    let granted = GraphicsCaptureAccess::RequestAccessAsync(GraphicsCaptureAccessKind::Borderless)
+        .and_then(|op| op.join())
+        .is_ok_and(|status| status == AppCapabilityAccessStatus::Allowed);
+    if !granted {
+        return false;
+    }
+    if session.SetIsBorderRequired(false).is_err() {
+        return false;
+    }
+    session.IsBorderRequired().is_ok_and(|required| !required)
 }
 
 impl DesktopVideoCapture for WindowsWindowCapture {

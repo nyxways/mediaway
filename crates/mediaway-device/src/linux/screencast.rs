@@ -7,10 +7,11 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
 use crate::desktop::{
-    CaptureOutputPreference, DesktopCaptureSource, DesktopVideoCapture, DesktopVideoCaptureConfig,
+    CaptureOutputPreference, CursorCapture, DesktopCaptureSource, DesktopVideoCapture,
+    DesktopVideoCaptureConfig,
 };
 use crate::{CaptureError, Select};
-use ashpd::desktop::screencast::SourceType;
+use ashpd::desktop::screencast::{CursorMode, SourceType};
 use mediaway_common::{
     Bytes, CodecKind, PixelFormat, Rational, StreamInfo, VideoFrame, VideoFrameStorage,
     VideoGeometry,
@@ -113,8 +114,15 @@ pub(crate) fn open_session(
         return Err(CaptureError::Unsupported);
     }
 
-    let PortalStream { node_id, remote_fd } =
-        portal::open_portal_stream(source_type).map_err(|e| portal::map_ashpd_error(&e))?;
+    // `Embedded` draws the pointer into the stream's frames. The portal also offers
+    // `Metadata` (pointer position sent alongside), which would need compositing here, so it
+    // is not used.
+    let cursor_mode = match config.cursor {
+        CursorCapture::Included => CursorMode::Embedded,
+        CursorCapture::Excluded => CursorMode::Hidden,
+    };
+    let PortalStream { node_id, remote_fd } = portal::open_portal_stream(source_type, cursor_mode)
+        .map_err(|e| portal::map_ashpd_error(&e))?;
 
     let queue = Arc::new(SharedQueue {
         frames: Mutex::new(VecDeque::new()),

@@ -26,6 +26,7 @@ fn non_default_select_is_unsupported() {
         output: CaptureOutputPreference::CpuFramesOk,
         gpu_device: None,
         sharing: CaptureSharing::Shared,
+        cursor: crate::desktop::CursorCapture::Excluded,
     };
     assert!(matches!(
         LinuxScreenCapture::open(&cfg),
@@ -53,6 +54,7 @@ fn window_source_is_unsupported() {
         output: CaptureOutputPreference::CpuFramesOk,
         gpu_device: None,
         sharing: CaptureSharing::Shared,
+        cursor: crate::desktop::CursorCapture::Excluded,
     };
     assert!(matches!(
         LinuxScreenCapture::open(&cfg),
@@ -77,6 +79,7 @@ fn open_screen_capture_or_skip() {
         output: CaptureOutputPreference::CpuFramesOk,
         gpu_device: None,
         sharing: CaptureSharing::Shared,
+        cursor: crate::desktop::CursorCapture::Excluded,
     };
     let mut cap = match LinuxScreenCapture::open(&cfg) {
         Ok(c) => c,

@@ -46,6 +46,20 @@ impl WindowsWindowCapture {
     pub const fn open(_config: &DesktopVideoCaptureConfig) -> Result<Self, CaptureError> {
         Err(CaptureError::Unsupported)
     }
+
+    /// Unavailable off Windows.
+    pub const fn open_with_border(
+        _config: &DesktopVideoCaptureConfig,
+        _border: super::CaptureBorder,
+    ) -> Result<Self, CaptureError> {
+        Err(CaptureError::Unsupported)
+    }
+
+    /// Always `false` off Windows.
+    #[must_use]
+    pub const fn border_hidden(&self) -> bool {
+        false
+    }
 }
 
 impl DesktopVideoCapture for WindowsWindowCapture {

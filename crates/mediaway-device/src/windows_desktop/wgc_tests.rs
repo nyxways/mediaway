@@ -16,9 +16,11 @@ mod hardware {
         reason = "real win32 window creation for a real-hardware WGC capture smoke test"
     )]
 
-    use crate::desktop::{CaptureOutputPreference, DesktopVideoCapture, DesktopVideoCaptureConfig};
+    use crate::desktop::{
+        CaptureOutputPreference, CursorCapture, DesktopVideoCapture, DesktopVideoCaptureConfig,
+    };
     use crate::windows::{GpuDevice, GpuDeviceOptions};
-    use crate::windows_desktop::WindowsWindowCapture;
+    use crate::windows_desktop::{CaptureBorder, WindowsWindowCapture};
     use mediaway_common::{GpuBufferHandle, NativeHandle, Rational, VideoFrameStorage};
     use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
     use windows::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -197,6 +199,51 @@ mod hardware {
         eprintln!(
             "wgc window capture: real Zero-Copy frame delivered ({}x{})",
             frame.width, frame.height
+        );
+    }
+
+    /// The cursor and border settings, applied to a real WGC session.
+    ///
+    /// Opening with [`CursorCapture::Included`] succeeding is the cursor check: `open` fails
+    /// when `SetIsCursorCaptureEnabled` does, in either direction. The border is read back from
+    /// the session. **Needs Windows 11 (build 22000+)**, where borderless capture exists, and
+    /// asserts it rather than skipping, because a skip is how the border went unhidden before.
+    ///
+    /// `#[ignore]`d for the same reason as the test above: it shows a real window.
+    ///
+    /// ```text
+    /// cargo nextest run -p mediaway-device --run-ignored all -E 'test(wgc_window_capture)'
+    /// ```
+    #[test]
+    #[ignore = "opens a visible window on the desktop; run explicitly with --run-ignored all"]
+    fn wgc_window_capture_includes_cursor_and_hides_border() {
+        let _guard = crate::windows_desktop::HARDWARE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(window) = TestWindow::create() else {
+            eprintln!("skip: could not create a real test window");
+            return;
+        };
+        let device = GpuDevice::create(GpuDeviceOptions::default()).expect("D3D11 device");
+        let window_handle = NativeHandle::new(window.hwnd.0 as usize).expect("test window");
+
+        let mut cfg = DesktopVideoCaptureConfig::window(window_handle, Rational::new(1, 30));
+        cfg.output = CaptureOutputPreference::ZeroCopyGpu;
+        cfg.gpu_device = Some(device.handle());
+        cfg.cursor = CursorCapture::Included;
+
+        let hidden = WindowsWindowCapture::open_with_border(&cfg, CaptureBorder::Hidden)
+            .expect("WGC open with the cursor included");
+        assert!(
+            hidden.border_hidden(),
+            "Windows 11 grants an unpackaged process borderless capture; the border is still on"
+        );
+        drop(hidden);
+
+        let shown = WindowsWindowCapture::open(&cfg).expect("WGC open with the default border");
+        assert!(
+            !shown.border_hidden(),
+            "`open` must leave the border at the OS default"
         );
     }
 }

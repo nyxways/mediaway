@@ -8,7 +8,7 @@ Module: `mediaway-device::linux`. ADR: [`0001-portal-pipewire-screen-capture.md`
 flowchart LR
     subgraph App["LinuxScreenCapture::open"]
         A[ashpd Screencast::new] --> B[create_session]
-        B --> C[select_sources: Monitor, cursor hidden]
+        B --> C[select_sources: Monitor, cursor per config.cursor]
         C --> D[start -> node_id]
         D --> E[open_pipe_wire_remote -> fd]
     end

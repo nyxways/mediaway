@@ -13,4 +13,12 @@
 - Resize: `poll_frame` detects a `Frame.ContentSize` mismatch and calls
   `Direct3D11CaptureFramePool::Recreate` at the new size before delivering the frame
   (previously every frame after a resize was silently skipped forever)
-- ADR: [0004](../../../../crates/mediaway-device/adr/windows/0004-wgc-window-capture.md)
+- Cursor: `config.cursor` → `SetIsCursorCaptureEnabled`; failure is an **error in both
+  directions** (WGC's own default *includes* the pointer, so a failed `Excluded` would leak it)
+- Yellow border: `open_with_border(config, CaptureBorder::Hidden)` →
+  `RequestAccessAsync(Borderless)` + `SetIsBorderRequired(false)`, **read back** into
+  `border_hidden()`. A refusal does not fail the open (the border is on screen, never in
+  frames). Unpackaged process on Win11 26100: granted with no prompt. Until 2026-09-18 a
+  comment claimed the border was hidden, but nothing ever called `SetIsBorderRequired`.
+- ADR: [0004](../../../../crates/mediaway-device/adr/windows/0004-wgc-window-capture.md) ·
+  cursor/border [0008](../../../../crates/mediaway-device/adr/0008-cursor-capture-and-wgc-border.md)

@@ -21,6 +21,33 @@ pub enum CaptureOutputPreference {
     CpuFramesOk,
 }
 
+/// Whether the mouse pointer is composited into captured frames.
+///
+/// Part of the frame's *content*, so a backend that cannot honour [`Self::Included`] rejects it
+/// at `open` with [`CaptureError::Unsupported`] rather than recording without the pointer. A
+/// recording that silently lacks what was asked for looks fine and is wrong.
+///
+/// | Backend | `Excluded` | `Included` |
+/// |---|---|---|
+/// | Windows WGC (window) | ✅ | ✅ `SetIsCursorCaptureEnabled` |
+/// | Windows DXGI (screen) | ✅ | ❌ DDA returns the pointer separately; not composited |
+/// | Linux portal (screen, window) | ✅ | ✅ `CursorMode::Embedded` |
+/// | macOS `ScreenCaptureKit` | ✅ | ✅ `showsCursor` |
+/// | iOS `ReplayKit` (via `mediaway::platform::ScreenCapture`) | ✅ | ❌ no pointer to composite |
+///
+/// Before this field existed, each backend hard-coded its own answer: hidden on Windows and
+/// Linux, shown on macOS. Its default is the hidden one, so **macOS callers that relied on the
+/// pointer must now ask for it.**
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
+pub enum CursorCapture {
+    /// The pointer is not drawn into frames — the default.
+    #[default]
+    Excluded,
+    /// The pointer is drawn into frames where it overlaps the captured source.
+    Included,
+}
+
 /// Whether a [`DesktopCaptureSource::Screen`] session may be joined by a later, independent
 /// `open()` for the same output.
 ///
@@ -83,6 +110,9 @@ pub struct DesktopVideoCaptureConfig {
     /// [`Self::window`] — set [`CaptureSharing::Exclusive`] explicitly for true Zero-Copy when
     /// the caller knows it is the only consumer. See [`CaptureSharing`]'s own docs.
     pub sharing: CaptureSharing,
+    /// Whether the mouse pointer is drawn into frames. Defaults to
+    /// [`CursorCapture::Excluded`]; see that type for which backends can include it.
+    pub cursor: CursorCapture,
 }
 
 impl DesktopVideoCaptureConfig {
@@ -96,6 +126,7 @@ impl DesktopVideoCaptureConfig {
             output: CaptureOutputPreference::ZeroCopyGpu,
             gpu_device: None,
             sharing: CaptureSharing::Shared,
+            cursor: CursorCapture::Excluded,
         }
     }
 
@@ -108,6 +139,7 @@ impl DesktopVideoCaptureConfig {
             output: CaptureOutputPreference::ZeroCopyGpu,
             gpu_device: None,
             sharing: CaptureSharing::Shared,
+            cursor: CursorCapture::Excluded,
         }
     }
 }

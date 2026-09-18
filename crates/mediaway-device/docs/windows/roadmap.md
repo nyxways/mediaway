@@ -37,6 +37,11 @@ Platform order: **Windows first**. Workspace index: [`docs/roadmap.md`](../../..
 ### 3 — Window capture (WGC)
 
 - [x] `CaptureSource::Window` + `WindowsWindowCapture` (separate from screen)
+- [x] Cursor per `DesktopVideoCaptureConfig::cursor` (WGC honours both values; DXGI rejects
+      `Included`) and the yellow border via `open_with_border(.., CaptureBorder::Hidden)`,
+      read back into `border_hidden()` — ADR-0008 (crate level)
+- [ ] DXGI: composite the Desktop Duplication pointer shape so screen capture can honour
+      `CursorCapture::Included` (currently rejected)
 - [x] Frame-pool recreate on content-size change
 - [ ] Proven CI/`machine_id` ⚡ cell
 

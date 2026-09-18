@@ -22,6 +22,9 @@ mod dxgi_shared;
 #[cfg(windows)]
 mod wgc;
 
+mod border;
+pub use border::CaptureBorder;
+
 #[cfg(windows)]
 pub use capture_exclusion::exclude_window_from_capture;
 #[cfg(windows)]

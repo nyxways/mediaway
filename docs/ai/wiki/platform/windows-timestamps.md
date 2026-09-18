@@ -1,13 +1,13 @@
 # Windows timestamps (WMF encode + decode)
 
-How a timestamp crosses Media Foundation, and the two ways this workspace got it wrong.
-Fixed 2026-09-18 — `mediaway-encoder/adr/windows/0013-wmf-timestamp-round-trip.md`.
+How a timestamp crosses Media Foundation, and how this workspace got it wrong.
+`mediaway-encoder/adr/windows/0013-wmf-timestamp-round-trip.md` (read its § Correction).
 
 ## The round trip
 
 MF speaks 100-nanosecond units (`hns`). A packet timestamp in `time_base` ticks is converted
-on the way in (`to_hns`, on the input `IMFSample`) and back on the way out (`from_hns`, from
-the output sample). **The pair must be an exact inverse**, or distinct ticks collapse:
+on the way in (`to_hns`, onto the input `IMFSample`) and back on the way out (`from_hns`).
+**The pair must be an exact inverse**, or distinct ticks collapse:
 
 ```mermaid
 flowchart LR
@@ -15,57 +15,55 @@ flowchart LR
     A["pts in time_base ticks"]
   end
   subgraph wmf["MFT"]
-    B["IMFSample::SetSampleTime (hns)"]
-    C["output sample:<br/>GetSampleTime (hns)<br/>MFSampleExtension_DecodeTimestamp (hns)"]
+    B["SetSampleTime (hns)"]
+    C["output GetSampleTime (hns)"]
   end
-  subgraph back["Packet"]
-    D["pts ticks"]
-    E["dts ticks"]
+  subgraph encoder["WmfVideoEncoder"]
+    D["pts = from_hns, nearest"]
+    E["dts = decode-order counter<br/>(drain_output)"]
   end
-  A -->|to_hns, truncates| B --> C
-  C -->|from_hns, nearest| D
-  C -->|from_hns, nearest| E
+  A -->|to_hns, truncates| B --> C --> D
+  C -.->|emission order| E
 ```
 
-Both directions used to truncate. 10 000 000 does not divide most timebase denominators, so
-at `1/60` only every third tick survived (`7 → 1 166 666 → 6`). A real 1/60 recording came
-out with **279 packets and 215 distinct presentation timestamps**. `1/30`, `1/24`,
-`1001/30000` and audio (`aac.rs` shares `to_hns`) were all affected; `mediaway-decoder` had
-an identical copy of the pair.
+Both directions used to truncate, and 10 000 000 does not divide most denominators. At `1/60`,
+`7 → 1 166 666 → 6`. `from_hns` now rounds to nearest (fixed 2026-09-18, both crates).
 
-**`from_hns` rounds to nearest.** Not "away from zero" — that is also an exact inverse on
-paper and was tried first, and it is **wrong against a real MFT**: the MFT does not echo the
-hns written to it, it recomputes sample times with its own rounding, so values arrive a
-fraction of a tick above the exact one as often as below. Away-from-zero displaced a whole
-30-frame sequence by one frame. Only a test against a real encoder caught it.
+**The two codecs broke differently.** Same 30 ticks, RTX 4090 host:
 
-Exactness holds while a tick is worth ≥2 hns (`den <= num * 5e6`). Finer than that, the
-precision is already gone inside `to_hns`.
+| | MFT returns | truncated result |
+|---|---|---|
+| HEVC | exactly the hns written | **20 distinct** of 30: collapse |
+| H.264 (inbox) | recomputed, a hair below each tick, B-frames, one-tick reorder delay | distinct, but the delay is shaved off: **`dts > pts`** |
 
-## `dts` is not `pts`
+qarec records HEVC, hence its 279-packet / 215-distinct-pts file.
 
-`sample_to_packet` reported `dts: pts`. The inbox H.264 MFT emits **B-frames**, in decode
-order — measured, 30 frames pushed at ticks 0..29 came back as:
+**Nearest vs away-from-zero:** they agreed on every value measured. No MFT was seen rounding
+*up*; nearest wins only in that unobserved case. Do not cite it as measured.
 
-| | sequence |
-|---|---|
-| pts | `1, 3, 2, 5, 4, … 29, 28, 30` |
-| dts | `0, 1, 2, … 29` |
+## Decode timestamps
 
-With `dts = pts` that track marched backwards every other packet, which is literally what
-ffmpeg's *"non monotonically increasing dts to muxer"* was reporting. `dts` now comes from
-**`MFSampleExtension_DecodeTimestamp`**, present only when the MFT reorders; absent it, `pts`
-*is* the decode time and the fallback is correct.
+`sample_to_packet` writes `dts: pts`, and **`drain_output` overwrites it** for video with a
+decode-order counter. Read `drain_output` before reasoning about video `dts` from
+`sample_to_packet` alone — that mistake produced a false claim and some dead code in #100.
 
-`iso_bmff::Muxer::push_packet` already derives the container's composition offset from
-`pts - dts`, so the fix costs nothing downstream — that offset had simply been zero forever.
+**Open (ADR-0013 § Open question):** the counter advances one tick per frame. Under irregular
+input (ticks `0, 4, 6, 10, …`) the MFT's `MFSampleExtension_DecodeTimestamp` tracked the real
+times while the counter went `0, 1, 2, 3, …`. Variable-rate capture diverges.
 
-The `+1` on pts is **not** a defect: it is the reorder delay that lets the first `dts` be 0.
-`gop_size: 1` did **not** stop this MFT reordering — do not assume it disables B-frames.
+## ffmpeg's warning is about its output, not your file
+
+*"non monotonically increasing dts to muxer in stream 0"* while **decoding** (`-f null`) means
+ffmpeg's decoded frames carry duplicate timestamps — i.e. duplicate **pts** in the input.
+Check the file's own `dts` with `ffprobe -show_entries packet=pts,dts` before blaming it.
+It reproduces only with an audio track present; a video-only file with the same duplicates
+decodes silently.
 
 ## Testing note
 
-`crates/mediaway-encoder/tests/windows/*.rs` are **never compiled** — `cargo` does not pick
-up `tests/<dir>/*.rs` without a `main.rs`. `mediaway-decoder` already hit this and moved its
-file up (see [windows-decode](windows-decode.md)); the encoder's two are still down there.
-Put new integration tests directly in `tests/`.
+`crates/mediaway-encoder/tests/windows/*.rs` are **never compiled** — cargo does not pick up
+`tests/<dir>/*.rs` without a `main.rs`. `mediaway-decoder` hit this and moved its file up
+(see [windows-decode](windows-decode.md)). Put new integration tests directly in `tests/`.
+
+A regression test must fail on the old code. `wmf_timestamp_round_trip` is checked that
+way, by reinstating the truncation: HEVC fails on collapse, H.264 on `dts > pts`.

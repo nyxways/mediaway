@@ -43,12 +43,13 @@ Platform order: **Windows first**. Workspace index: [`docs/roadmap.md`](../../..
 - [x] `to_hns`/`from_hns` are an exact inverse (`from_hns` rounds to nearest). Both halves now
       live in `runtime.rs`; keeping them in two files is how they drifted apart. Mirrored in
       `mediaway-decoder`, which had a byte-identical copy of the defect.
-- [x] `dts` read from `MFSampleExtension_DecodeTimestamp` instead of copied from `pts` — the
-      inbox H.264 MFT reorders (B-frames) regardless of `gop_size`, so `dts = pts` produced
-      the non-monotonic track ffmpeg had been rejecting.
-- [x] Real-encoder regression test (`tests/wmf_timestamp_round_trip.rs`) — it is what caught
-      "round away from zero" displacing an entire sequence by one frame, which the unit round
-      trip alone reported as correct.
+- [x] Real-encoder regression test (`tests/wmf_timestamp_round_trip.rs`), HEVC + H.264. Both
+      cases verified to fail against the reinstated truncation: HEVC on collapsed timestamps,
+      H.264 on `dts > pts`. (#100 shipped it H.264-only with the wrong mechanism described —
+      ADR-0013 § Correction.)
+- [ ] `drain_output`'s decode-order counter assumes a constant frame rate. Under irregular
+      input the MFT's `MFSampleExtension_DecodeTimestamp` tracks real times and the counter
+      does not (measured, ADR-0013 § Open question, #101). Needs `duration` handled with it.
 - [ ] `tests/windows/av_fmp4_smoke.rs` and `av_fmp4_zc_smoke.rs` are in a path `cargo` never
       compiles (`tests/<dir>/*.rs` with no `main.rs`), so they have never run and their API
       usage has gone stale. `mediaway-decoder` already hit this and moved its file up. Left

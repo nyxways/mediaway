@@ -4,21 +4,25 @@
 
 ### Fixed
 
-- **Every video file the Windows (WMF) encoder wrote had a malformed timestamp track.** The
-  files played, so it went unnoticed until ffmpeg named it: *"Application provided invalid,
-  non monotonically increasing dts to muxer"*. A measured 1/60 recording held **279 video
-  packets and 215 distinct presentation timestamps**. Two defects
+- **Windows (WMF) video timestamps did not survive the encoder.** `to_hns` and `from_hns`
+  **both truncated**, so the tick → hns → tick trip through the MFT was not an inverse, and
+  10 000 000 does not divide most timebase denominators. The two codecs broke differently
   (`crates/mediaway-encoder/adr/windows/0013-wmf-timestamp-round-trip.md`):
 
-  - `to_hns` and `from_hns` **both truncated**, so the tick → hns → tick round trip through
-    the MFT was not an inverse. 10 000 000 does not divide most timebase denominators, so
-    distinct ticks collapsed onto one — at `1/60`, only every third tick survived. `1/30`,
-    `1/24`, `1001/30000` and audio were affected equally, and `mediaway-decoder` carried a
-    byte-identical copy of the same pair. `from_hns` now rounds to the nearest tick.
-  - **`dts` was reported as a copy of `pts`.** The inbox H.264 MFT emits B-frames in decode
-    order, so that sequence went backwards every other packet. `dts` now comes from
-    `MFSampleExtension_DecodeTimestamp`, and `iso_bmff::Muxer` finally receives a real
-    `pts - dts` composition offset instead of a permanent zero.
+  - **HEVC — presentation timestamps collapsed.** At `1/60` only every third tick survived;
+    a real recording held 279 video packets and 215 distinct presentation timestamps, and
+    ffmpeg warned *"non monotonically increasing dts to muxer"* while decoding it.
+  - **H.264 — B-frames presented before they were decoded** (`dts > pts`): truncation shaved
+    off the MFT's one-tick reorder delay.
+
+  `from_hns` now rounds to the nearest tick, in both `mediaway-encoder` and
+  `mediaway-decoder` (which carried a byte-identical copy). `1/30`, `1/24`, `1001/30000` and
+  audio were affected the same way.
+
+  *Corrected after #100:* that PR also said `dts` had been a copy of `pts`. It had not —
+  `drain_output` already assigned a decode-order counter — and a
+  `MFSampleExtension_DecodeTimestamp` read it added was dead code, now removed. `Packet::dts`
+  behaviour is unchanged by either PR.
 
 - **Windows per-process audio loopback never opened, on any machine.**
   `IAudioClient::Initialize` was passed `AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM |

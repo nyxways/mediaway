@@ -7,6 +7,10 @@
     reason = "pub(crate) graph for MF modules; not part of the public crate API"
 )]
 
+#[cfg(feature = "audio")]
+pub mod aac;
+#[cfg(feature = "audio")]
+mod audio_mft;
 #[cfg(feature = "video")]
 mod codec;
 #[cfg(feature = "video")]

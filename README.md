@@ -254,7 +254,7 @@ OS codec APIs (WMF, WebCodecs, VA-API, …) fed with CPU buffers.
 | AV1          | 🛠️ / ✅ | ✅      | ❌ / 🆗 | ❌ / 🆗 | 👻      |
 | VP9          | ✅ / ✅ | ✅      | 🆗 / 🆗 | ❌ / 🆗 | 👻      |
 | ProRes       | 👻       | 👻       | 👻    | 🆗 / 🆗 | 👻      |
-| AAC          | 🆗 / 👻 | 🆗       | 🛠️   | 🆗 / 🆗 | 👻      |
+| AAC          | 🆗 / ✅ | 🆗       | 🛠️   | 🆗 / 🆗 | 👻      |
 | Opus         | ✅ / ✅ | 🆗      | 🛠️   | 🆗 / 🆗 | 👻      |
 
 ### OS · GPU

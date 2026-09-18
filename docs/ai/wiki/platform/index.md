@@ -21,4 +21,5 @@
 | [vulkan-encode](vulkan-encode.md) | Vulkan Video H.264 encode: capability probe + real minimal session, hardware-verified |
 | [vulkan-decode](vulkan-decode.md) | Vulkan Video decode: H.264 **hardware-verified** (first general-GOP backend in workspace); HEVC IDR decode **hardware-verified** too (P/B deferred) |
 | [vulkan-decode-av1](vulkan-decode-av1.md) | Vulkan Video AV1 decode: `KEY_FRAME`-only, single-tile, **hardware-verified** on first attempt (no driver-maturity wall, unlike AV1 Vulkan encode) |
+| [windows-aac](windows-aac.md) | Windows: inbox WMF AAC decoder MFT (`CMSAACDecMFT`) — hardware-verified sample-exact round trip; `MF_MT_USER_DATA` = `HEAACWAVEINFO` tail + mandatory `AudioSpecificConfig` |
 | [support-matrix](support-matrix.md) | Link to human OS/GPU/CPU codec tables |

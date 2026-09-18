@@ -4,6 +4,19 @@
 
 ### Added
 
+- **Windows AAC decode** — `mediaway_decoder::windows::WmfAacDecoder` (+ `AacDecoderConfig`)
+  over the inbox `CMSAACDecMFT`, Float32 PCM out, wired into
+  `mediaway::platform::decoder_support(Aac)`. Closes a gap where this workspace could
+  *encode* AAC into fMP4 on Windows but had no way to play it back. Hardware-verified with
+  a sample-exact round trip (4096 PCM samples/channel → 4 AAC-LC packets → 4096 samples
+  back, real signal not silence), moving the README's Windows AAC decode cell `👻 → ✅`
+  (`crates/mediaway-decoder/adr/windows/0006-wmf-aac-decode.md`).
+
+  The stream's `AudioSpecificConfig` is **required** at open (`extra_data`, e.g. MP4's
+  `esds` DecoderSpecificInfo); an empty one is `DecodeError::Unsupported` rather than a
+  synthesized default, which would decode SBR/PS streams to quietly wrong output. Raw AAC
+  only — ADTS input must be de-headered first (`adts-core`).
+
 - `mediaway_container::MuxOpen` and `mediaway_container::ContainerError`. `MuxOpen` names
   the track-registration phase every muxer already had (`add_track` → `begin`), plus a
   `FIRST_TRACK_ID` const for the container's own track-numbering floor — Matroska reserves

@@ -32,16 +32,17 @@ use std::collections::VecDeque;
 use crate::{AudioDecoder, DecodeError};
 use mediaway_common::{AudioFrame, Bytes, CodecKind, Packet, Rational, SampleFormat, StreamInfo};
 use windows::Win32::Media::MediaFoundation::{
-    CMSOpusDecMFT, IMFMediaBuffer, IMFSample, IMFTransform, MF_E_TRANSFORM_NEED_MORE_INPUT,
-    MF_MT_AUDIO_NUM_CHANNELS, MF_MT_AUDIO_SAMPLES_PER_SECOND, MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE,
-    MFAudioFormat_Opus, MFCreateMediaType, MFCreateMemoryBuffer, MFCreateSample, MFMediaType_Audio,
-    MFT_MESSAGE_COMMAND_DRAIN, MFT_MESSAGE_NOTIFY_BEGIN_STREAMING,
-    MFT_MESSAGE_NOTIFY_END_OF_STREAM, MFT_MESSAGE_NOTIFY_END_STREAMING,
-    MFT_MESSAGE_NOTIFY_START_OF_STREAM, MFT_OUTPUT_DATA_BUFFER,
+    CMSOpusDecMFT, IMFTransform, MF_MT_AUDIO_NUM_CHANNELS, MF_MT_AUDIO_SAMPLES_PER_SECOND,
+    MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE, MFAudioFormat_Opus, MFCreateMediaType, MFMediaType_Audio,
+    MFT_MESSAGE_COMMAND_DRAIN, MFT_MESSAGE_NOTIFY_END_OF_STREAM,
 };
 use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance};
 
-use super::runtime::{from_hns, to_hns};
+use super::audio_mft::{
+    Drain, OutputPayload, begin_streaming, notify_end_streaming, output_buffer_size,
+    packet_to_sample, process_one_output,
+};
+use super::runtime::from_hns;
 
 /// Config for [`WmfOpusDecoder::open`].
 pub struct OpusDecoderConfig {
@@ -207,16 +208,6 @@ impl AudioDecoder for WmfOpusDecoder {
     }
 }
 
-enum Drain {
-    Frame(OutputPayload),
-    NeedMore,
-}
-
-struct OutputPayload {
-    data: Bytes,
-    pts_hns: i64,
-}
-
 fn configure_types(
     transform: &IMFTransform,
     sample_rate: u32,
@@ -252,133 +243,6 @@ fn configure_types(
             .map_err(|_| DecodeError::Backend)?;
     }
     Ok(())
-}
-
-fn begin_streaming(transform: &IMFTransform) -> Result<(), DecodeError> {
-    unsafe {
-        transform
-            .ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, 0)
-            .map_err(|_| DecodeError::Backend)?;
-        transform
-            .ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, 0)
-            .map_err(|_| DecodeError::Backend)?;
-    }
-    Ok(())
-}
-
-fn output_buffer_size(transform: &IMFTransform) -> Result<u32, DecodeError> {
-    let out_info = unsafe { transform.GetOutputStreamInfo(0) }.map_err(|_| DecodeError::Backend)?;
-    Ok(out_info.cbSize.max(1))
-}
-
-fn process_one_output(
-    transform: &IMFTransform,
-    output_buf_size: u32,
-) -> Result<Drain, DecodeError> {
-    let mut status = 0u32;
-    // SAFETY: allocate an output sample + memory buffer for this sync MFT (it does not
-    // provide its own output samples).
-    let out_sample: IMFSample = unsafe { MFCreateSample() }.map_err(|_| DecodeError::Backend)?;
-    let out_buffer =
-        unsafe { MFCreateMemoryBuffer(output_buf_size) }.map_err(|_| DecodeError::Backend)?;
-    unsafe { out_sample.AddBuffer(&out_buffer) }.map_err(|_| DecodeError::Backend)?;
-    let mut buffers = [MFT_OUTPUT_DATA_BUFFER {
-        dwStreamID: 0,
-        pSample: std::mem::ManuallyDrop::new(Some(out_sample)),
-        dwStatus: 0,
-        pEvents: std::mem::ManuallyDrop::new(None),
-    }];
-
-    // SAFETY: ProcessOutput; HRESULT inspected below.
-    let hr = unsafe { transform.ProcessOutput(0, &mut buffers, &raw mut status) };
-    let sample = unsafe { std::mem::ManuallyDrop::take(&mut buffers[0].pSample) };
-    let _ = unsafe { std::mem::ManuallyDrop::take(&mut buffers[0].pEvents) };
-
-    if let Err(e) = hr {
-        if e.code() == MF_E_TRANSFORM_NEED_MORE_INPUT {
-            return Ok(Drain::NeedMore);
-        }
-        return Err(DecodeError::Backend);
-    }
-    let Some(sample) = sample else {
-        return Ok(Drain::NeedMore);
-    };
-    Ok(Drain::Frame(payload_from_sample(&sample)?))
-}
-
-fn payload_from_sample(sample: &IMFSample) -> Result<OutputPayload, DecodeError> {
-    let buffer = unsafe { sample.ConvertToContiguousBuffer() }.map_err(|_| DecodeError::Backend)?;
-    let mut ptr = std::ptr::null_mut();
-    let mut cur_len = 0u32;
-    unsafe {
-        buffer
-            .Lock(&raw mut ptr, None, Some(std::ptr::from_mut(&mut cur_len)))
-            .map_err(|_| DecodeError::Backend)?;
-    }
-    if ptr.is_null() {
-        unsafe {
-            let _: windows::core::Result<()> = buffer.Unlock();
-        }
-        return Err(DecodeError::Backend);
-    }
-    let mut data = vec![0u8; cur_len as usize];
-    unsafe {
-        std::ptr::copy_nonoverlapping(ptr, data.as_mut_ptr(), cur_len as usize);
-        buffer.Unlock().map_err(|_| DecodeError::Backend)?;
-    }
-    let pts_hns = unsafe { sample.GetSampleTime() }.unwrap_or(0);
-    Ok(OutputPayload {
-        data: Bytes::from(data),
-        pts_hns,
-    })
-}
-
-fn packet_to_sample(
-    packet: &Packet,
-    time_base_num: u64,
-    time_base_den: u32,
-) -> Result<IMFSample, DecodeError> {
-    // Opus allows zero-length "frames" as an explicit packet-loss/DTX signal (RFC 6716
-    // section 3.1) but MF still needs at least the TOC byte to know the packet's frame layout.
-    if packet.payload.is_empty() {
-        return Err(DecodeError::InvalidInput);
-    }
-    let len = u32::try_from(packet.payload.len()).map_err(|_| DecodeError::InvalidInput)?;
-    let sample: IMFSample = unsafe { MFCreateSample() }.map_err(|_| DecodeError::Backend)?;
-    let buffer: IMFMediaBuffer =
-        unsafe { MFCreateMemoryBuffer(len) }.map_err(|_| DecodeError::Backend)?;
-    unsafe {
-        let mut ptr = std::ptr::null_mut();
-        let mut max_len = 0u32;
-        buffer
-            .Lock(&raw mut ptr, Some(std::ptr::from_mut(&mut max_len)), None)
-            .map_err(|_| DecodeError::Backend)?;
-        if ptr.is_null() || max_len < len {
-            let _: windows::core::Result<()> = buffer.Unlock();
-            return Err(DecodeError::Backend);
-        }
-        std::ptr::copy_nonoverlapping(packet.payload.as_ref().as_ptr(), ptr, packet.payload.len());
-        buffer
-            .SetCurrentLength(len)
-            .map_err(|_| DecodeError::Backend)?;
-        buffer.Unlock().map_err(|_| DecodeError::Backend)?;
-    }
-    unsafe { sample.AddBuffer(&buffer) }.map_err(|_| DecodeError::Backend)?;
-
-    let hns = to_hns(packet.pts, time_base_num, time_base_den);
-    unsafe {
-        sample
-            .SetSampleTime(hns)
-            .map_err(|_| DecodeError::Backend)?;
-    }
-    Ok(sample)
-}
-
-fn notify_end_streaming(transform: &IMFTransform) {
-    unsafe {
-        let _: windows::core::Result<()> =
-            transform.ProcessMessage(MFT_MESSAGE_NOTIFY_END_STREAMING, 0);
-    }
 }
 
 const fn validate(config: &OpusDecoderConfig) -> Result<(), DecodeError> {

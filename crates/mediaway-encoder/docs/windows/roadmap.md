@@ -38,6 +38,22 @@ Platform order: **Windows first**. Workspace index: [`docs/roadmap.md`](../../..
       [`docs/benchmarks/machines.md`](../../../docs/benchmarks/machines.md)), and
       per-codec ⚡ promotion needs Zero-Copy numbers, not just `sw`.
 
+### 3.5 — Timestamp correctness (ADR-0013)
+
+- [x] `to_hns`/`from_hns` are an exact inverse (`from_hns` rounds to nearest). Both halves now
+      live in `runtime.rs`; keeping them in two files is how they drifted apart. Mirrored in
+      `mediaway-decoder`, which had a byte-identical copy of the defect.
+- [x] `dts` read from `MFSampleExtension_DecodeTimestamp` instead of copied from `pts` — the
+      inbox H.264 MFT reorders (B-frames) regardless of `gop_size`, so `dts = pts` produced
+      the non-monotonic track ffmpeg had been rejecting.
+- [x] Real-encoder regression test (`tests/wmf_timestamp_round_trip.rs`) — it is what caught
+      "round away from zero" displacing an entire sequence by one frame, which the unit round
+      trip alone reported as correct.
+- [ ] `tests/windows/av_fmp4_smoke.rs` and `av_fmp4_zc_smoke.rs` are in a path `cargo` never
+      compiles (`tests/<dir>/*.rs` with no `main.rs`), so they have never run and their API
+      usage has gone stale. `mediaway-decoder` already hit this and moved its file up. Left
+      for its own change rather than folded into ADR-0013.
+
 ### 4 — Opus (research: no inbox encoder MFT)
 
 - [x] Verified via real `MFTEnumEx(MFT_CATEGORY_AUDIO_ENCODER, ..., MFAudioFormat_Opus)`

@@ -9,13 +9,15 @@ use windows::Win32::Media::MediaFoundation::{
     MF_E_TRANSFORM_STREAM_CHANGE, MF_MT_AVG_BITRATE, MF_MT_FRAME_RATE, MF_MT_FRAME_SIZE,
     MF_MT_INTERLACE_MODE, MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE, MFCreateMediaType, MFCreateMemoryBuffer,
     MFCreateSample, MFMediaType_Video, MFSampleExtension_CleanPoint,
-    MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, MFT_MESSAGE_NOTIFY_END_STREAMING,
-    MFT_MESSAGE_NOTIFY_START_OF_STREAM, MFT_OUTPUT_DATA_BUFFER, MFVideoFormat_ARGB32,
-    MFVideoFormat_NV12, MFVideoInterlace_Progressive,
+    MFSampleExtension_DecodeTimestamp, MFT_MESSAGE_NOTIFY_BEGIN_STREAMING,
+    MFT_MESSAGE_NOTIFY_END_STREAMING, MFT_MESSAGE_NOTIFY_START_OF_STREAM, MFT_OUTPUT_DATA_BUFFER,
+    MFVideoFormat_ARGB32, MFVideoFormat_NV12, MFVideoInterlace_Progressive,
 };
 use windows::core::GUID;
 
-use super::runtime::pack_u32_pair;
+// `from_hns` lives beside `to_hns` rather than here: they are only correct as a pair, and
+// keeping them in two files is how they drifted into not being inverses of each other.
+use super::runtime::{from_hns, pack_u32_pair};
 
 pub(super) enum Drain {
     Packet(Packet),
@@ -222,24 +224,36 @@ pub(super) fn sample_to_packet(
         u64::try_from(from_hns(dur_hns, time_base.num, time_base.den).max(0)).unwrap_or(0);
     let is_keyframe = unsafe { sample.GetUINT32(&MFSampleExtension_CleanPoint) }.unwrap_or(0) != 0;
 
+    // A reordering encoder emits packets in *decode* order, so the presentation time is not the
+    // decode time and the two must be reported separately. `dts = pts` was the standing
+    // assumption here, and it is what made a real recording's track malformed: the inbox H.264
+    // MFT produced B-frames (measured 2026-09-18 — 30 frames pushed at ticks 0..29 came back
+    // ordered 1, 3, 2, 5, 4, …), so a pts-as-dts track marched backwards every third packet and
+    // ffmpeg rejected it with "non monotonically increasing dts to muxer".
+    //
+    // MF reports the real decode time in `MFSampleExtension_DecodeTimestamp`, present only when
+    // the MFT actually reorders. When it is absent the encoder is not reordering and pts *is*
+    // the decode time, which is why the fallback below is the old behaviour rather than an
+    // error. The muxer turns the difference back into the container's composition offset
+    // (`iso-bmff`'s `cto`), so carrying it costs nothing downstream.
+    let dts = unsafe { sample.GetUINT64(&MFSampleExtension_DecodeTimestamp) }.map_or(pts, |raw| {
+        #[expect(
+            clippy::cast_possible_wrap,
+            reason = "MF stores this signed hns timestamp in a UINT64 attribute"
+        )]
+        let dts_hns = raw as i64;
+        from_hns(dts_hns, time_base.num, time_base.den)
+    });
+
     Ok(Packet {
         stream_id: info.id(),
         pts,
-        dts: pts,
+        dts,
         duration,
         is_keyframe,
         is_discard: false,
         payload: Bytes::from(payload),
     })
-}
-
-fn from_hns(hns: i64, time_base_num: u64, time_base_den: u32) -> i64 {
-    if time_base_num == 0 || time_base_den == 0 {
-        return 0;
-    }
-    let num = i128::from(hns) * i128::from(time_base_den);
-    let den = i128::from(time_base_num) * 10_000_000;
-    i64::try_from(num / den).unwrap_or(0)
 }
 
 /// Post-drain shutdown notification; ignore errors if the MFT already ended.

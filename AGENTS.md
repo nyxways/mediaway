@@ -130,6 +130,19 @@ Then, as needed by scope:
 
 1. **Light repo scripts = Bun + TypeScript** — new maintainers’ utilities live under `tools/scripts/` and use Bun/TS. Do not add Node/Python/PowerShell script trees for shared tooling. Git hooks stay bash (`tools/hooks/`). Product CLIs stay Rust. See [`docs/conventions/scripts.md`](docs/conventions/scripts.md).
 
+2. **Large mechanical changes go through an AST tool, not hand-edits or regex `sed`** — when the same shape changes in dozens of places (a signature change, a calling-convention swap, updating call sites after an async conversion), drive it structurally. First choice is `rust-analyzer ssr`, which is **type-aware** rather than textual: `rust-analyzer ssr 'foo($a, $b) ==>> bar($b, $a)'`. It resolves paths, so a pattern whose replacement does not resolve fails loudly (`Error: Parse error: Failed to resolve path 'bar'`) instead of quietly rewriting the wrong thing — precisely the failure a `sed` pass hides. If a change needs a repeatable, reviewable rule file, propose adopting `ast-grep`; it is **not installed**, so that needs user approval first. **Do not reach for these when the change needs judgment** — where the compiler enumerates every site for you (a type swap is the standard case), following the errors is faster and safer, because each site gets looked at. `ssr` rewrites files in place, so run it on a clean working tree, and verify afterwards with `cargo clippy --workspace --all-targets --all-features -- -D warnings` and `cargo nextest run`: an AST tool guarantees the shape, not that the result still compiles or passes.
+
+   **In this repo the obvious invocation fails.** `rust-toolchain.toml` pins a channel whose component list has no `rust-analyzer`, so the rustup proxy rejects it with a misleading error that names the wrong problem:
+
+   ```text
+   $ rust-analyzer ssr '...'
+   error: Unknown binary 'rust-analyzer.exe' in official toolchain '1.98.0-x86_64-pc-windows-msvc'.
+   ```
+
+   Pass a toolchain that does have it — `rust-analyzer +stable ssr '...'`, verified working from this repo — or `rustup component add rust-analyzer --toolchain <channel in rust-toolchain.toml>`. Do **not** add `rust-analyzer` to `rust-toolchain.toml`'s `components` to fix this: CI would then download it on every job for a tool CI never runs.
+
+   Note that `ssr` prints a panic backtrace after the error line when a pattern fails to resolve. The `Error:` line is the real message; the backtrace below it is rust-analyzer's own noise, not a second problem.
+
 ---
 
 ## Behavioral guidelines

@@ -442,11 +442,16 @@ impl VideoEncoder for AutoVideoEncoder {
 /// Probe every [`Backend`] for `codec` — see
 /// [`crate::capability`](../../mediaway-encoder/src/capability.rs).
 ///
+/// Probes at [`crate::capability::DEFAULT_PROBE_WIDTH`] ×
+/// [`crate::capability::DEFAULT_PROBE_HEIGHT`]. **If you know the resolution you will
+/// actually encode, call [`support_at`] with it** — hardware encoders have minimum *and*
+/// maximum dimensions, so support is resolution-dependent and no single default is
+/// correct for every caller.
+///
 /// **Windows:** each row (other than [`Backend::Amf`], which has no implementation at
 /// all yet — see `mediaway-encoder-amf` adr/0001) is a **costly, live probe**: it opens
-/// a real session at a tiny throwaway resolution and immediately drops it, analogous to
-/// `mediaway-device`'s `request_permission`. Call it once to populate a settings list,
-/// not per frame.
+/// a real session and immediately drops it, analogous to `mediaway-device`'s
+/// `request_permission`. Call it once to populate a settings list, not per frame.
 ///
 /// **Off Windows:** this crate's real implementation is Windows-only (every backend
 /// here is a compile-time `#[cfg(not(windows))]` stub — see the crate doc comment), so
@@ -454,6 +459,32 @@ impl VideoEncoder for AutoVideoEncoder {
 /// filtered at compile time, not discovered via a failed live probe.
 #[must_use]
 pub fn support(codec: CodecKind) -> Vec<crate::capability::EncoderCapability> {
+    support_at(
+        codec,
+        crate::capability::DEFAULT_PROBE_WIDTH,
+        crate::capability::DEFAULT_PROBE_HEIGHT,
+    )
+}
+
+/// Probe every [`Backend`] for `codec` **at `width` × `height`** — the resolution-aware
+/// form of [`support`], and the one to prefer when the caller knows its capture size.
+///
+/// Every backend here is a real hardware or software encoder with its own dimension
+/// limits, and `Supported` at one resolution implies nothing at another. Probing at a
+/// size below a backend's minimum makes it report
+/// [`EncodeUnavailable::NoDevice`] — indistinguishable, to the caller, from the machine
+/// genuinely lacking that hardware. That was a real false negative before this function
+/// existed: see `adr/0005-resolution-aware-capability-probe.md`.
+///
+/// `width`/`height` are ignored for audio codecs, which have no geometry.
+///
+/// Same cost and same off-Windows behaviour as [`support`].
+#[must_use]
+pub fn support_at(
+    codec: CodecKind,
+    width: u32,
+    height: u32,
+) -> Vec<crate::capability::EncoderCapability> {
     use crate::capability::{EncodeSupport, EncodeUnavailable, EncoderCapability};
 
     #[cfg(windows)]
@@ -468,7 +499,12 @@ pub fn support(codec: CodecKind) -> Vec<crate::capability::EncoderCapability> {
         .map(|backend| {
             let cfg = AutoVideoEncodeConfig {
                 backend: BackendSelection::Explicit(backend),
-                ..AutoVideoEncodeConfig::new(codec, 64, 64, mediaway_common::Rational::new(1, 30))
+                ..AutoVideoEncodeConfig::new(
+                    codec,
+                    width,
+                    height,
+                    mediaway_common::Rational::new(1, 30),
+                )
             };
             let support = match AutoVideoEncoder::open(&cfg) {
                 Ok(enc) => EncodeSupport::Supported(enc.path_class()),
@@ -489,7 +525,7 @@ pub fn support(codec: CodecKind) -> Vec<crate::capability::EncoderCapability> {
 
     #[cfg(not(windows))]
     {
-        let _ = codec;
+        let _ = (codec, width, height);
         [
             Backend::Os,
             Backend::Nvenc,

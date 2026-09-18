@@ -87,10 +87,31 @@ impl AutoEncoder {
 }
 
 /// Probe every encode [`mediaway_encoder::auto::Backend`] for `codec` on the current
-/// platform (see [`mediaway_encoder::capability`]).
+/// platform (see [`mediaway_encoder::capability`]), at a default probe resolution.
+///
+/// **Prefer [`encoder_support_at`] when you know the resolution you will encode.** Video
+/// encoder support is resolution-dependent — see that function.
+#[must_use]
+pub fn encoder_support(codec: CodecKind) -> Vec<EncoderCapability> {
+    encoder_support_at(
+        codec,
+        mediaway_encoder::capability::DEFAULT_PROBE_WIDTH,
+        mediaway_encoder::capability::DEFAULT_PROBE_HEIGHT,
+    )
+}
+
+/// Probe every encode [`mediaway_encoder::auto::Backend`] for `codec` **at `width` ×
+/// `height`** on the current platform.
+///
+/// Hardware encoders have minimum and maximum dimensions, so `Supported` at one size
+/// implies nothing at another, and probing below a backend's minimum reports
+/// `Unavailable(NoDevice)` — the same answer a machine with no such hardware gives. Pass
+/// your real capture size.
+///
+/// `width`/`height` are ignored for audio codecs, which have no geometry.
 ///
 /// **Windows:** a real, live (costly) probe — see
-/// `mediaway_encoder::windows::auto::support`.
+/// `mediaway_encoder::windows::auto::support_at`.
 ///
 /// **Other platforms:** empty — `mediaway-encoder-linux`/other platform crates have no
 /// per-backend selection surface yet (`AutoEncoder::open` always resolves to their one
@@ -102,7 +123,7 @@ impl AutoEncoder {
     reason = "the Windows branch calls a non-const backend probe; only the other-platforms \
               branch (compiled alone on non-Windows) is trivially const-eligible"
 )]
-pub fn encoder_support(codec: CodecKind) -> Vec<EncoderCapability> {
+pub fn encoder_support_at(codec: CodecKind, width: u32, height: u32) -> Vec<EncoderCapability> {
     #[cfg(windows)]
     {
         if codec == CodecKind::Opus {
@@ -129,7 +150,7 @@ pub fn encoder_support(codec: CodecKind) -> Vec<EncoderCapability> {
             };
             return vec![EncoderCapability::new(Backend::Software, support)];
         }
-        mediaway_encoder::windows::auto::support(codec)
+        mediaway_encoder::windows::auto::support_at(codec, width, height)
     }
 
     #[cfg(any(target_os = "macos", target_os = "ios"))]
@@ -162,13 +183,13 @@ pub fn encoder_support(codec: CodecKind) -> Vec<EncoderCapability> {
             };
             return vec![EncoderCapability::new(Backend::Os, support)];
         }
-        let _ = codec;
+        let _ = (codec, width, height);
         Vec::new()
     }
 
     #[cfg(not(any(windows, target_os = "macos", target_os = "ios")))]
     {
-        let _ = codec;
+        let _ = (codec, width, height);
         Vec::new()
     }
 }

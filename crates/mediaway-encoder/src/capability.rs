@@ -12,6 +12,25 @@
 
 use crate::auto::{Backend, EncodePathClass};
 
+/// Default probe width for [`crate::windows::auto::support`] and
+/// [`crate::windows::auto::support_at`]'s convenience wrapper.
+///
+/// **Hardware encoders have minimum dimensions, so a probe resolution is part of the
+/// question, not an implementation detail.** This value is not "small and cheap" — it is
+/// the smallest round size measured to clear every backend's minimum. An earlier 64×64
+/// fixture made NVENC report [`EncodeUnavailable::NoDevice`] on an RTX 4090 that encodes
+/// AV1 and H.264 fine; measured 2026-09-18, `Explicit(Nvenc)` fails at 64×64 and 128×128
+/// and succeeds at 256×256 and 1920×1080. See
+/// `adr/0005-resolution-aware-capability-probe.md`.
+///
+/// A caller that knows its real capture size should pass it to
+/// [`crate::windows::auto::support_at`] instead of trusting this default: support at
+/// 256×256 does not imply support at 7680×4320.
+pub const DEFAULT_PROBE_WIDTH: u32 = 256;
+
+/// Default probe height — see [`DEFAULT_PROBE_WIDTH`].
+pub const DEFAULT_PROBE_HEIGHT: u32 = 256;
+
 /// Why a [`Backend`] is not usable for a codec on this machine right now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]

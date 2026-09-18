@@ -439,6 +439,18 @@ fn ensure_mf_runtime() -> Result<(), EncodeError> {
     super::runtime::ensure_mf()
 }
 
+/// Give an asynchronous hardware MFT its grace period before the last reference goes.
+/// `dx11::ASYNC_MFT_RELEASE_GRACE` explains why and has the measurements (mediaway#106).
+/// Sync MFTs (CPU upload, or a sync hardware MFT such as Intel `QuickSync`) have no async work
+/// to race, so they release immediately.
+impl Drop for WmfVideoEncoder {
+    fn drop(&mut self) {
+        if self.dx11.as_ref().is_some_and(dx11::is_async) {
+            std::thread::sleep(dx11::ASYNC_MFT_RELEASE_GRACE);
+        }
+    }
+}
+
 #[cfg(test)]
 #[path = "video_tests.rs"]
 mod tests;

@@ -267,4 +267,74 @@ mod zero_copy {
             }
         }
     }
+
+    /// Stress regression for mediaway#106. Releasing an async hardware MFT (NVIDIA's) right
+    /// after use raced work it still had in flight, and the process died with an access
+    /// violation on a Media Foundation work-queue thread. Dropping an encoder *without*
+    /// flushing it is the sharpest trigger. Measured on an RTX 4090, it crashed on about 3% of
+    /// drops, and 138 of 200 processes doing 40 drops each died. This test does 200 unflushed
+    /// drops in a row: with the defect, a run survives that about 0.2% of the time
+    /// (0.97^200). With the fix, 8 000 such drops produced no crash. A failure here is the
+    /// process dying, not an assertion.
+    ///
+    /// `#[ignore]`d for time (200 × the 50 ms release grace ≈ 10 s plus encoding), not for
+    /// touching the desktop:
+    ///
+    /// ```text
+    /// cargo nextest run -p mediaway-encoder --run-ignored only -E 'test(dropping_encoders)'
+    /// ```
+    #[test]
+    #[ignore = "slow stress test; run explicitly"]
+    fn dropping_encoders_back_to_back_does_not_crash() {
+        let Some(device) = hardware_device() else {
+            eprintln!("skip: no D3D11 hardware device");
+            return;
+        };
+        let Some(texture) = texture(&device, DXGI_FORMAT_NV12, false) else {
+            return;
+        };
+        let Some(texture_handle) = NativeHandle::new(Interface::as_raw(&texture) as usize) else {
+            return;
+        };
+        let Some(device_handle) = NativeHandle::new(Interface::as_raw(&device) as usize) else {
+            return;
+        };
+        let config = VideoEncoderConfig {
+            codec: CodecKind::H264,
+            width: W,
+            height: H,
+            time_base: Rational::new(1, 60),
+            bitrate_bps: 20_000_000,
+            pixel_format: PixelFormat::Nv12,
+            color_range: ColorRange::Video,
+            input: VideoInputPreference::ZeroCopyGpu,
+            gpu_device: Some(GpuDeviceHandle::DirectX11(device_handle)),
+            gop_size: 120,
+            rate_control: None,
+            intra_refresh_period: None,
+        };
+        for i in 0..200 {
+            let Ok(mut encoder) = super::super::WmfVideoEncoder::open(&config) else {
+                eprintln!("skip: no hardware H.264 encoder (at iteration {i})");
+                return;
+            };
+            for pts in 0..FRAMES {
+                let frame = VideoFrame {
+                    pts,
+                    duration: 1,
+                    width: W,
+                    height: H,
+                    format: PixelFormat::Nv12,
+                    storage: VideoFrameStorage::Gpu(GpuBufferHandle::DirectX11 {
+                        texture: texture_handle,
+                        subresource: 0,
+                    }),
+                };
+                encoder.push_frame(&frame).expect("push");
+            }
+            // Deliberately no flush: the path a recorder takes when it stops or a window
+            // resizes, and the sharpest trigger for the race.
+            drop(encoder);
+        }
+    }
 }

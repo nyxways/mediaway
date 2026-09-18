@@ -4,6 +4,15 @@
 
 ### Fixed
 
+- **Dropping a Windows hardware video encoder could crash the process.** Releasing NVIDIA's
+  async encoder MFT right after use raced work it still had in flight: an access violation
+  on a Media Foundation work-queue thread inside `nvEncMFTH264x.dll` / `nvEncMFThevcx.dll`,
+  usually while the next encoder was opening. About 3% of drops crashed if the encoder had
+  not been flushed, and 0.2% if it had. `Drop` now waits a measured 50 ms grace period before
+  releasing an async MFT. Measured on an RTX 4090: 0 crashes in 16 000 drops, flushed and
+  unflushed. The cost is that dropping an async hardware encoder blocks for 50 ms. (#106,
+  `crates/mediaway-encoder/adr/windows/0012-async-mft-zero-copy-sequencing.md` § Addendum)
+
 - **WGC window capture could not feed a hardware encoder at an odd window size**, which is
   most window sizes: 4:2:0 encoders reject an odd axis. `WindowCaptureOptions::dimensions =
   FrameDimensions::EvenCropped` trims the last column/row of an odd axis at no cost (WGC crops

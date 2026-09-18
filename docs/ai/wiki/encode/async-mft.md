@@ -22,7 +22,7 @@ flowchart TD
     H --> F
 ```
 
-Three rules, each of which mediaway violated ([ADR-0012](../../../../crates/mediaway-encoder/adr/windows/0012-async-mft-zero-copy-sequencing.md)):
+Four rules, each of which mediaway violated ([ADR-0012](../../../../crates/mediaway-encoder/adr/windows/0012-async-mft-zero-copy-sequencing.md)):
 
 1. **Unlock before everything.** `MF_TRANSFORM_ASYNC_UNLOCK` precedes *every* other call,
    including `SET_D3D_MANAGER`.
@@ -30,6 +30,10 @@ Three rules, each of which mediaway violated ([ADR-0012](../../../../crates/medi
 3. **Input and output interleave.** The MFT stops issuing `METransformNeedInput` until you
    collect the output it already produced. A wait-for-input loop that does not drain output
    deadlocks after frame 1.
+4. **Do not release it right after use.** NVIDIA's MFT still has work in flight that no event
+   reports. Releasing then crashed ~3% of unflushed drops (mediaway#106). `Drop` waits
+   `ASYNC_MFT_RELEASE_GRACE` (50 ms). `IMFShutdown` and waiting for drain-complete both
+   failed; see `wmf/dx11.rs`.
 
 Sync MFTs have none of this: no unlock, no events, and "nothing ready" arrives as
 `MF_E_TRANSFORM_NEED_MORE_INPUT` from `ProcessOutput`.
@@ -41,6 +45,7 @@ Sync MFTs have none of this: no unlock, no events, and "nothing ready" arrives a
 | `open` fails, `MF_E_TRANSFORM_ASYNC_LOCKED` (`0xC00D6D77`) | Something was called before the unlock |
 | First `push_frame` fails | `ProcessOutput` called without `METransformHaveOutput` |
 | **Second** `push_frame` fails after a timeout | Input wait is not servicing output |
+| `0xc0000005` on an `RTWorkQ` thread in `nvEncMFT*.dll`, just after a drop | Released with work in flight (rule 4) |
 
 ## Why this read as an "environment gap" for so long
 

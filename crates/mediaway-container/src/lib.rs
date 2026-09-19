@@ -12,6 +12,7 @@ pub mod mp3;
 pub mod mp4;
 mod mp4_parser;
 pub mod ogg;
+pub mod replay;
 pub mod ts;
 pub mod wav;
 #[cfg(any(feature = "mux", feature = "demux"))]

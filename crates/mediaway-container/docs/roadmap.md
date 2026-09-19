@@ -61,3 +61,9 @@ Facade for container formats. Workspace index: [`docs/roadmap.md`](../../../docs
 - [ ] `ogg` `Vorbis`/`Opus` support is identification-header-only — no
       page-batching (multiple packets per page) on the mux side (matches
       `ogg` crate's own v1 scope, ADR `ogg/adr/0001`).
+
+### 4 — Replay ring
+
+- [x] `replay::ReplayRing`: the last N seconds of encoded packets, cut at anchor keyframes in
+      decode order, rebased to zero for a fresh muxer (`adr/0004-replay-ring.md`) —
+      2026-09-19. First caller: qarec's replay hotkey.

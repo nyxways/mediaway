@@ -108,6 +108,13 @@
 
 ### Added
 
+- **`mediaway_container::replay::ReplayRing`**: keeps the last *N* seconds of encoded packets
+  in memory and cuts "the last *M* seconds" at a keyframe, as a packet sequence rebased to
+  zero that a fresh muxer writes as a standalone file. Cuts are in decode order, so B-frames
+  and open-GOP leading pictures cannot be stranded across the cut. Other streams (audio) are
+  cut by time to match. Eviction is by whole GOPs, with an optional byte ceiling.
+  (`crates/mediaway-container/adr/0004-replay-ring.md`)
+
 - **`VideoEncoder::finish(self)` / `AudioEncoder::finish(self)`**: flush and collect every
   remaining packet in one call. The trait docs now also say what skipping it costs: dropping
   an unflushed encoder silently discards its in-flight frames, which are the end of the stream

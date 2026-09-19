@@ -113,10 +113,24 @@ tracked the real times (`0, 4, 6, 10, 12, …` ticks) while the counter produced
 composition offset grows over the recording. Event-driven screen capture is variable-rate by
 nature.
 
-Tracked as #101. Not decided here, because switching `dts` to the attribute alone would
-leave packet `duration` (from the MFT's nominal frame duration) inconsistent with the new
-`dts` deltas.
-Needs its own measurement of what a long variable-rate recording does in real players.
+Tracked as #101.
+
+**Resolved 2026-09-19 (#101).** `dts` now comes from `MFSampleExtension_DecodeTimestamp`,
+clamped to `pts`, and is `pts` itself where the attribute is absent. The worry recorded above,
+that `duration` would disagree with the new dts deltas, does not arise: `iso_bmff::Muxer`
+derives each sample's duration from the next sample's dts and uses the packet's `duration` only
+for a fragment's last sample. Measured on a live 11 s variable-rate window recording:
+
+| | before | after |
+|---|---|---|
+| video track duration | 0.30 s | 10.83 s (audio: 11.11 s) |
+| `trun` sample durations | one tick each | 83 ms, 517 ms, 500 ms, … (the real gaps) |
+| composition offsets | grew to ~8 s | 0 |
+
+The clamp exists because of one MFT. The inbox software H.264 encoder reorders, and delays
+presentation by a single *nominal* frame. Real VFR gaps exceed that, so its B-frame decode
+timestamps can pass their own presentation timestamps (measured: dts 6, pts 5). The DX11
+hardware MFTs measured here do not reorder at all, so they are unaffected.
 
 ## Correction (2026-09-18)
 

@@ -43,13 +43,20 @@ qarec records HEVC, hence its 279-packet / 215-distinct-pts file.
 
 ## Decode timestamps
 
-`sample_to_packet` writes `dts: pts`, and **`drain_output` overwrites it** for video with a
-decode-order counter. Read `drain_output` before reasoning about video `dts` from
-`sample_to_packet` alone — that mistake produced a false claim and some dead code in #100.
+`dts` is the MFT's own `MFSampleExtension_DecodeTimestamp`, clamped to `pts`. When the
+attribute is absent, `dts = pts`, because only reordering MFTs set it (fixed 2026-09-19,
+#101).
 
-**Open (ADR-0013 § Open question):** the counter advances one tick per frame. Under irregular
-input (ticks `0, 4, 6, 10, …`) the MFT's `MFSampleExtension_DecodeTimestamp` tracked the real
-times while the counter went `0, 1, 2, 3, …`. Variable-rate capture diverges.
+Until then a decode-order counter (one tick per frame) stood in for it. Under a variable
+frame rate that made every sample one tick long, because `iso_bmff` derives sample
+durations from dts deltas. An 8.7 s screen recording's video track claimed to last **0.3 s**.
+
+- DX11 hardware MFTs (NVIDIA H.264 and HEVC) do **not** reorder: on VFR input, pts = dts =
+  the submitted ticks (measured).
+- The inbox software H.264 MFT reorders, and delays pts by one *nominal* frame. Under VFR
+  its B-frame dts can exceed pts (measured dts 6, pts 5), which is why dts is clamped.
+- `ffprobe`'s `packet=duration_time` is not the `trun` sample duration. Read `trun` to check
+  durations.
 
 ## ffmpeg's warning is about its output, not your file
 

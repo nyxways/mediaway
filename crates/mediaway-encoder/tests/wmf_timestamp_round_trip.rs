@@ -51,8 +51,8 @@ const FRAMES: i64 = 30;
 const WIDTH: u32 = 64;
 const HEIGHT: u32 = 64;
 
-/// Encode `FRAMES` frames at ticks `0..FRAMES`, or `None` if this machine has no such encoder.
-fn encode(codec: CodecKind) -> Option<Vec<Packet>> {
+/// Encode one frame per tick in `ticks`, or `None` if this machine has no such encoder.
+fn encode(codec: CodecKind, ticks: &[i64]) -> Option<Vec<Packet>> {
     let config = VideoEncoderConfig {
         codec,
         width: WIDTH,
@@ -76,7 +76,7 @@ fn encode(codec: CodecKind) -> Option<Vec<Packet>> {
     };
 
     let nv12_len = (WIDTH * HEIGHT + WIDTH * HEIGHT / 2) as usize;
-    for pts in 0..FRAMES {
+    for &pts in ticks {
         let frame = VideoFrame {
             pts,
             duration: 1,
@@ -145,14 +145,92 @@ fn assert_timestamps_survive(codec: CodecKind, packets: &[Packet]) {
 
 #[test]
 fn hevc_packets_each_carry_their_own_timestamp() {
-    if let Some(packets) = encode(CodecKind::Hevc) {
+    if let Some(packets) = encode(CodecKind::Hevc, &constant_rate()) {
         assert_timestamps_survive(CodecKind::Hevc, &packets);
     }
 }
 
 #[test]
 fn h264_packets_each_carry_their_own_timestamp() {
-    if let Some(packets) = encode(CodecKind::H264) {
+    if let Some(packets) = encode(CodecKind::H264, &constant_rate()) {
         assert_timestamps_survive(CodecKind::H264, &packets);
     }
+}
+
+fn constant_rate() -> Vec<i64> {
+    (0..FRAMES).collect()
+}
+
+/// Irregular but strictly increasing: gaps of 4 and 2 ticks, the way event-driven screen
+/// capture delivers frames when the source is not repainting at a steady rate.
+fn variable_rate() -> Vec<i64> {
+    (0..FRAMES).map(|i| i * 3 + (i % 2)).collect()
+}
+
+/// Regression for mediaway#101. Under a variable frame rate, decode timestamps must follow
+/// the real submission times, not count frames. The old decode-order counter produced
+/// `0, 1, 2, …` whatever the input was. Because the muxer derives sample durations from dts
+/// deltas, that made every sample one tick long, and an 8.7 s screen recording's video track
+/// declared a length of 0.3 s.
+///
+/// Checked on two irregular patterns: the dts must be strictly increasing, span the submitted
+/// time, and never exceed the pts.
+fn assert_dts_follows_real_time(codec: CodecKind) {
+    for ticks in [variable_rate(), irregular_rate()] {
+        let Some(packets) = encode(codec, &ticks) else {
+            return;
+        };
+        let dts: Vec<i64> = packets.iter().map(|p| p.dts).collect();
+        // Real time, not a frame count: the dts span covers the submitted span. The old counter
+        // gave `FRAMES - 1` ticks here whatever the input was.
+        let span = dts[dts.len() - 1] - dts[0];
+        let submitted = ticks[ticks.len() - 1] - ticks[0];
+        assert!(
+            span >= submitted - 2,
+            "{codec:?}: dts spans {span} ticks for input spanning {submitted}: {dts:?}"
+        );
+        for pair in dts.windows(2) {
+            assert!(pair[1] > pair[0], "{codec:?}: dts not increasing: {dts:?}");
+        }
+        assert_timestamps_survive_vfr(codec, &packets, &ticks);
+    }
+}
+
+/// Gaps from 1 to 9 ticks in no regular order: a source that repaints in bursts.
+fn irregular_rate() -> Vec<i64> {
+    let gaps = [1, 7, 2, 9, 1, 1, 5, 3, 8, 2, 1, 6];
+    let mut t = 0;
+    (0..FRAMES)
+        .map(|i| {
+            let now = t;
+            t += gaps[usize::try_from(i).expect("index") % gaps.len()];
+            now
+        })
+        .collect()
+}
+
+/// Every presentation time is one that was submitted (shifted by the encoder's constant
+/// reorder delay, if it has one), and every packet presents no earlier than it decodes.
+fn assert_timestamps_survive_vfr(codec: CodecKind, packets: &[Packet], ticks: &[i64]) {
+    let mut pts: Vec<i64> = packets.iter().map(|p| p.pts).collect();
+    pts.sort_unstable();
+    let shift = pts[0] - ticks[0];
+    let shifted: Vec<i64> = ticks.iter().map(|t| t + shift).collect();
+    assert_eq!(
+        pts, shifted,
+        "{codec:?}: presentation times lost their spacing"
+    );
+    for p in packets {
+        assert!(p.dts <= p.pts, "{codec:?}: dts {} > pts {}", p.dts, p.pts);
+    }
+}
+
+#[test]
+fn hevc_decode_timestamps_follow_a_variable_frame_rate() {
+    assert_dts_follows_real_time(CodecKind::Hevc);
+}
+
+#[test]
+fn h264_decode_timestamps_follow_a_variable_frame_rate() {
+    assert_dts_follows_real_time(CodecKind::H264);
 }

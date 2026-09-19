@@ -4,6 +4,14 @@
 
 ### Fixed
 
+- **Variable-frame-rate video from the Windows (WMF) encoder declared the wrong length.** Decode
+  timestamps came from a counter that advanced one tick per frame. The muxer derives sample
+  durations from dts deltas, so under a variable frame rate every sample was one tick long:
+  an 8.7 s screen recording's video track claimed to last 0.3 s. `dts` now comes from the
+  MFT's `MFSampleExtension_DecodeTimestamp` (clamped to `pts`), or equals `pts` where the MFT
+  does not reorder. The same kind of recording now reports 10.83 s against 11.11 s of audio,
+  with the real frame gaps in `trun`. (#101)
+
 - **Dropping a Windows hardware video encoder could crash the process.** Releasing NVIDIA's
   async encoder MFT right after use raced work it still had in flight: an access violation
   on a Media Foundation work-queue thread inside `nvEncMFTH264x.dll` / `nvEncMFThevcx.dll`,

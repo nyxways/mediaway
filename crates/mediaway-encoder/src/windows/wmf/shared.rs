@@ -9,9 +9,9 @@ use windows::Win32::Media::MediaFoundation::{
     MF_E_TRANSFORM_STREAM_CHANGE, MF_MT_AVG_BITRATE, MF_MT_FRAME_RATE, MF_MT_FRAME_SIZE,
     MF_MT_INTERLACE_MODE, MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE, MFCreateMediaType, MFCreateMemoryBuffer,
     MFCreateSample, MFMediaType_Video, MFSampleExtension_CleanPoint,
-    MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, MFT_MESSAGE_NOTIFY_END_STREAMING,
-    MFT_MESSAGE_NOTIFY_START_OF_STREAM, MFT_OUTPUT_DATA_BUFFER, MFVideoFormat_ARGB32,
-    MFVideoFormat_NV12, MFVideoInterlace_Progressive,
+    MFSampleExtension_DecodeTimestamp, MFT_MESSAGE_NOTIFY_BEGIN_STREAMING,
+    MFT_MESSAGE_NOTIFY_END_STREAMING, MFT_MESSAGE_NOTIFY_START_OF_STREAM, MFT_OUTPUT_DATA_BUFFER,
+    MFVideoFormat_ARGB32, MFVideoFormat_NV12, MFVideoInterlace_Progressive,
 };
 use windows::core::GUID;
 
@@ -224,15 +224,37 @@ pub(super) fn sample_to_packet(
         u64::try_from(from_hns(dur_hns, time_base.num, time_base.den).max(0)).unwrap_or(0);
     let is_keyframe = unsafe { sample.GetUINT32(&MFSampleExtension_CleanPoint) }.unwrap_or(0) != 0;
 
-    // `dts = pts` is only a placeholder for video. `WmfVideoEncoder::drain_output` overwrites it
-    // with a decode-order counter, because a reordering MFT emits packets in decode order. Audio
-    // does not reorder, so for AAC, `pts` really is the decode time. ADR-0013 § Correction
-    // records a read of `MFSampleExtension_DecodeTimestamp` that briefly sat here: that override
-    // discarded it, so it never took effect.
+    // The decode time, which is not the presentation time once an encoder reorders (B-frames).
+    // MF reports it as `MFSampleExtension_DecodeTimestamp`, and it is the *real* decode time: on
+    // irregular input (ticks 0, 4, 6, 10, …) it measured 0, 4, 6, 10, …. The decode-order
+    // counter that used to stand in for it (one tick per frame) was right only at a constant
+    // frame rate. Under variable frame rate the dts, and the sample durations a muxer derives
+    // from dts deltas, collapsed to one tick each. A 8.7 s screen recording's video track
+    // claimed to last 0.3 s (mediaway#101).
+    //
+    // Absent the attribute, the MFT does not reorder (sync software/QuickSync-style MFTs, and
+    // AAC), so the presentation time *is* the decode time. Both inbox and NVIDIA H.264 MFTs,
+    // which do reorder, set it (measured).
+    //
+    // Clamped to `pts`: a frame cannot be decoded after it is shown. The inbox software H.264
+    // MFT reorders (B-frames) and delays presentation by one *nominal* frame (1/fps) to make
+    // room. Under a variable frame rate the real gaps exceed that, and its decode timestamp
+    // for a B-frame lands after the B-frame's own presentation time (measured: dts 6, pts 5).
+    // The DX11 hardware MFTs measured here do not reorder at all, so the clamp never changes
+    // their output.
+    let dts = unsafe { sample.GetUINT64(&MFSampleExtension_DecodeTimestamp) }.map_or(pts, |raw| {
+        #[expect(
+            clippy::cast_possible_wrap,
+            reason = "MF stores this signed hns timestamp in a UINT64 attribute"
+        )]
+        let dts_hns = raw as i64;
+        from_hns(dts_hns, time_base.num, time_base.den).min(pts)
+    });
+
     Ok(Packet {
         stream_id: info.id(),
         pts,
-        dts: pts,
+        dts,
         duration,
         is_keyframe,
         is_discard: false,

@@ -47,9 +47,9 @@ Platform order: **Windows first**. Workspace index: [`docs/roadmap.md`](../../..
       cases verified to fail against the reinstated truncation: HEVC on collapsed timestamps,
       H.264 on `dts > pts`. (#100 shipped it H.264-only with the wrong mechanism described —
       ADR-0013 § Correction.)
-- [ ] `drain_output`'s decode-order counter assumes a constant frame rate. Under irregular
-      input the MFT's `MFSampleExtension_DecodeTimestamp` tracks real times and the counter
-      does not (measured, ADR-0013 § Open question, #101). Needs `duration` handled with it.
+- [x] Variable frame rate: `dts` from `MFSampleExtension_DecodeTimestamp` (clamped to `pts`)
+      instead of a one-tick-per-frame counter; the muxer's dts-delta durations then come out
+      right (#101, ADR-0013 § Open question → resolved).
 - [ ] `tests/windows/av_fmp4_smoke.rs` and `av_fmp4_zc_smoke.rs` are in a path `cargo` never
       compiles (`tests/<dir>/*.rs` with no `main.rs`), so they have never run and their API
       usage has gone stale. `mediaway-decoder` already hit this and moved its file up. Left

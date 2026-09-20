@@ -6,6 +6,8 @@ Workspace-level facade traits and adapter decisions live here when needed.
 |----|-------|
 | [0001](0001-webm-ebml-demux.md) | WebM demux via a new unprefixed `ebml-webm` core |
 | [0002](0002-audio-and-general-container-facades.md) | Facade modules for `riff-wave`/`adts`/`mpeg-audio`/`ogg`/`flv`/`mpeg-ts` |
+| [0003](0003-webm-mux-facade.md) | WebM mux facade (`webm::Muxer`) |
+| [0004](0004-replay-ring.md) | Replay ring: encoded packets, cut in decode order at anchor keyframes |
 
 Format-specific sans-io cores use **unprefixed** crates with their own `adr/` (e.g. [`iso-bmff`](../../iso-bmff/adr/), [`iso-cenc`](../../iso-cenc/adr/)). Thin Mediaway adapters live in this facade — not separate `mediaway-container-<format>` crates (ADR-0012).
 

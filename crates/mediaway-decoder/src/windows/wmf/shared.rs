@@ -141,11 +141,27 @@ pub(super) fn process_one_output(
     Ok(Drain::Sample(sample))
 }
 
+/// How a packet's NALs are framed, which decides whether they need converting.
+///
+/// Length-prefixed (AVCC/HVCC) is what an MP4 demuxer produces; Annex-B start codes are what a
+/// Media Foundation decoder MFT looks for. The codec matters because the two bitstreams have
+/// their own NAL headers and their own configuration records, even though the length prefixes
+/// are laid out identically.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum NalFraming {
+    /// Feed the payload through untouched — already Annex-B, or a codec with no NAL framing.
+    AsIs,
+    /// H.264 length-prefixed, with this many bytes per length field.
+    Avc(u8),
+    /// HEVC length-prefixed, with this many bytes per length field.
+    Hevc(u8),
+}
+
 pub(super) fn packet_to_sample(
     packet: &Packet,
     time_base_num: u64,
     time_base_den: u32,
-    nal_length_size: Option<u8>,
+    framing: NalFraming,
 ) -> Result<IMFSample, DecodeError> {
     if packet.payload.is_empty() {
         return Err(DecodeError::InvalidInput);
@@ -157,9 +173,12 @@ pub(super) fn packet_to_sample(
     // (`mediaway-encoder`'s `refresh_extradata`), so a direct encoder→decoder feed has
     // AVCC `extra_data` with already-Annex-B packets — converting those as AVCC corrupts
     // them. Detect per-packet (same start-code probe the muxer's `to_avcc` uses).
-    let annex_b_payload = match nal_length_size {
-        Some(n) if !iso_bmff::bitstream::avc::is_annex_b(&packet.payload) => {
+    let annex_b_payload = match framing {
+        NalFraming::Avc(n) if !iso_bmff::bitstream::avc::is_annex_b(&packet.payload) => {
             iso_bmff::bitstream::avc::avcc_payload_to_annex_b(&packet.payload, n)
+        }
+        NalFraming::Hevc(n) if !iso_bmff::bitstream::hevc::is_annex_b(&packet.payload) => {
+            iso_bmff::bitstream::hevc::hvcc_payload_to_annex_b(&packet.payload, n)
         }
         _ => packet.payload.clone(), // clone: Bytes ref-count bump, not a payload copy
     };

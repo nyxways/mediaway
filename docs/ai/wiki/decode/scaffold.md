@@ -54,3 +54,22 @@ enumerate). Implemented as a tiny throwaway 64×64 open (empty `extra_data` is t
 by WMF/VA-API at open time), same live-probe cost trade-off as `encoder_support`.
 Compile-time OS filtering: non-Windows/non-Linux targets return `NotImplemented`
 without touching anything.
+
+## Bitstream framing is the decoder's first question (2026-09-21)
+
+A Media Foundation decoder MFT wants **Annex-B**. Where the packets came from decides what they
+are:
+
+| Source | Packets | `extra_data` |
+|---|---|---|
+| straight from `mediaway-encoder`'s Windows encoder | Annex-B | `avcC`/`hvcC` (normalized for the container) |
+| demuxed from MP4 | length-prefixed | `avcC`/`hvcC` |
+
+So neither the source nor the record alone answers it: `extra_data` is a configuration record in
+*both* rows. H.264 has always probed each payload for a start code; HEVC did not, and every MP4
+HEVC file decoded to **zero frames with no error** until 2026-09-21
+(`wmf/video_cpu.rs::resolve_framing`, `wmf/shared.rs::NalFraming`).
+
+**A silent zero-frame decode is this path's characteristic failure** — it has now happened twice,
+once for H.264 (`tests/cpu_roundtrip.rs`'s own header) and once for HEVC. When a decode produces
+nothing, check the framing before anything else.

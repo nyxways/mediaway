@@ -4,6 +4,19 @@
 
 ### Fixed
 
+- **HEVC read back out of a container decoded nothing at all.** The Windows HEVC/AV1/VP9 CPU
+  decoder used packets and `extra_data` exactly as given, which is right for a bitstream handed
+  straight over from this workspace's encoder (Annex-B) and wrong for MP4 samples, which are
+  length-prefixed with an `hvcC` configuration record. Every packet was accepted, the drain was
+  clean, and **zero frames** came out — no error anywhere. Measured on a real 16-packet HEVC
+  recording mediaway itself had written. `extra_data` that parses as `hvcC` is now converted to
+  an Annex-B VPS/SPS/PPS sequence header and packets are probed individually, exactly as the
+  H.264 path has always done. The same file now decodes all 16 frames.
+
+  Covered by `mediaway-decoder/tests/mp4_roundtrip.rs`, which encodes, **muxes to MP4**,
+  demuxes and decodes: the existing round-trip test fed the decoder straight from the encoder,
+  so the container — the whole difference — was never in the loop.
+
 - **Variable-frame-rate video from the Windows (WMF) encoder declared the wrong length.** Decode
   timestamps came from a counter that advanced one tick per frame. The muxer derives sample
   durations from dts deltas, so under a variable frame rate every sample was one tick long:

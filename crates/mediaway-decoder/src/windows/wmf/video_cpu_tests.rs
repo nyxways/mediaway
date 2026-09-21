@@ -441,3 +441,68 @@ fn encode_then_decode_hevc_av1_vp9_cpu_round_trip_or_skip() {
         decode_and_verify_cpu(codec, &packets, extra_data);
     }
 }
+
+// -------------------------------------------------------------------------------------------
+// `hvcC`-framed HEVC (what an MP4 demuxer produces) — 2026-09-21
+// -------------------------------------------------------------------------------------------
+
+/// A minimal Annex-B VPS+SPS+PPS sequence header. Not a decodable stream — it exists to be
+/// round-tripped through `to_hvcc`, which is what a muxer does to a real one.
+fn annex_b_parameter_sets() -> Vec<u8> {
+    let mut out = Vec::new();
+    // NAL header bytes: VPS (32), SPS (33), PPS (34), each `(type << 1)` in the first byte.
+    for (nal_type, body) in [(32u8, 0xAAu8), (33, 0xBB), (34, 0xCC)] {
+        out.extend_from_slice(&[0, 0, 0, 1, nal_type << 1, 0x01, body, body]);
+    }
+    out
+}
+
+#[test]
+fn hvcc_extra_data_becomes_an_annex_b_sequence_header() {
+    // The bug this covers: `extra_data` read back out of an MP4 is an `hvcC` record, and
+    // handing that to the MFT as a sequence header configures it with a structure it cannot
+    // parse — after which every packet is accepted and no frame ever comes out.
+    let annex_b = annex_b_parameter_sets();
+    let hvcc = iso_bmff::bitstream::hevc::to_hvcc(&annex_b)
+        .hvcc
+        .expect("VPS+SPS+PPS make an hvcC record");
+
+    let (header, framing) = resolve_framing(CodecKind::Hevc, &hvcc);
+    assert_eq!(
+        framing,
+        NalFraming::Hevc(4),
+        "MP4 samples are length-prefixed, four bytes per length"
+    );
+    assert!(
+        iso_bmff::bitstream::hevc::is_annex_b(&header),
+        "the MFT is configured with start codes, not with the record"
+    );
+    assert_eq!(
+        &header[..],
+        &annex_b[..],
+        "and with the same parameter sets"
+    );
+}
+
+#[test]
+fn annex_b_extra_data_is_left_alone() {
+    // A bitstream handed straight over from this workspace's own encoder is already Annex-B.
+    // Converting it as if it were `hvcC` would corrupt it — which is why the probe is on the
+    // record's own shape rather than on where the packet came from.
+    let annex_b = mediaway_common::Bytes::from(annex_b_parameter_sets());
+    let (header, framing) = resolve_framing(CodecKind::Hevc, &annex_b);
+    assert_eq!(framing, NalFraming::AsIs);
+    assert_eq!(header, annex_b);
+}
+
+#[test]
+fn av1_and_vp9_have_no_nal_framing_to_resolve() {
+    // Both are OBU/IVF-framed; there is nothing here for them, and an `hvcC` probe on their
+    // `extra_data` would be meaningless.
+    for codec in [CodecKind::Av1, CodecKind::Vp9] {
+        let extra = mediaway_common::Bytes::from_static(&[1, 2, 3, 4]);
+        let (header, framing) = resolve_framing(codec, &extra);
+        assert_eq!(framing, NalFraming::AsIs, "{codec:?}");
+        assert_eq!(header, extra, "{codec:?}");
+    }
+}

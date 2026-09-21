@@ -40,6 +40,10 @@ crate-type = ["cdylib", "rlib"]
 
 [dev-dependencies]
 mediaway-encoder = { workspace = true, features = ["video", "audio"] }
+# `tests/mp4_roundtrip.rs`: the container in the middle is the point of that test — packets
+# read back out of an MP4 are length-prefixed, which is the framing the decoder used to choke
+# on silently.
+mediaway-container = { workspace = true }
 criterion = { workspace = true }
 
 # Round-trip hardware test only (tests/hardware_hevc_decode.rs): produces a

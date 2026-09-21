@@ -3,10 +3,17 @@
 //! Structurally this mirrors [`super::h264::WmfH264Decoder`]'s CPU-only path (open a
 //! synchronous decoder MFT found through `MFTEnumEx`, configure an NV12 output type, drive
 //! `ProcessInput`/`ProcessOutput` directly, copy planes out of the system-memory output
-//! buffer) but drops H.264's DX11 Zero-Copy branch and its AVCC→Annex-B `extra_data`/NAL
-//! conversion — HEVC/AV1/VP9 packets/`extra_data` here are used as-is (the packaging a
-//! straight-from-`mediaway-encoder-windows` bitstream already has, same as H.264's
-//! straight-from-encoder case in `resolve_annex_b_extra_data`).
+//! buffer) but drops H.264's DX11 Zero-Copy branch.
+//!
+//! **HEVC accepts both framings** (2026-09-21). It used to take packets and `extra_data`
+//! exactly as given, which works for a bitstream handed straight over from
+//! `mediaway-encoder`'s own Windows encoder but silently decodes *nothing* for samples read
+//! back out of an MP4: those are length-prefixed (`hvcC`) and a decoder MFT looks for Annex-B
+//! start codes. Measured on a real 16-packet HEVC recording mediaway itself had written —
+//! every packet accepted, drain clean, zero frames out. `extra_data` that parses as an `hvcC`
+//! record is now converted to an Annex-B VPS/SPS/PPS sequence header, and packets are probed
+//! individually (an encoder can hand over `hvcC` `extra_data` with already-Annex-B packets),
+//! exactly as H.264 has always done. AV1 and VP9 have no NAL framing and are unaffected.
 //!
 //! Real `MFTEnumEx(MFT_CATEGORY_VIDEO_DECODER, MFT_ENUM_FLAG_SYNCMFT | SORTANDFILTER, …)`
 //! results per codec on the Windows 11 host this was verified on (RTX 4090 + Intel UHD 770)
@@ -33,8 +40,8 @@ use windows::Win32::Media::MediaFoundation::{
 use super::codec::{is_supported_video_codec, video_subtype};
 use super::cpu::{nv12_bytes_from_output_sample, open_sw_decoder};
 use super::shared::{
-    Drain, begin_streaming, configure_decode_types, notify_end_streaming, output_buffer_size,
-    packet_to_sample, process_one_output, read_output_dimensions,
+    Drain, NalFraming, begin_streaming, configure_decode_types, notify_end_streaming,
+    output_buffer_size, packet_to_sample, process_one_output, read_output_dimensions,
 };
 
 /// After `MF_E_TRANSFORM_STREAM_CHANGE`, adopt the decoder's own proposed NV12 output type
@@ -82,6 +89,33 @@ pub(crate) struct WmfMultiCodecCpuDecoder {
     /// (`MFT_ENUM_FLAG_SYNCMFT` decoders in practice do not set
     /// `MFT_OUTPUT_STREAM_PROVIDES_SAMPLES`).
     output_buf_size: u32,
+    /// How this stream's packets are framed, decided once from `extra_data` at open.
+    framing: NalFraming,
+}
+
+/// The sequence header to configure the MFT with, and the framing its packets will need.
+///
+/// HEVC `extra_data` that parses as an `hvcC` record becomes an Annex-B VPS/SPS/PPS header, and
+/// its packets are length-prefixed until a per-packet probe says otherwise. Anything else —
+/// already-Annex-B `extra_data`, AV1, VP9 — is passed through untouched.
+fn resolve_framing(
+    codec: CodecKind,
+    extra_data: &mediaway_common::Bytes,
+) -> (mediaway_common::Bytes, NalFraming) {
+    if codec != CodecKind::Hevc {
+        // clone: Bytes ref-count bump, not a payload copy.
+        return (extra_data.clone(), NalFraming::AsIs);
+    }
+    match iso_bmff::bitstream::hevc::parse_hevc_decoder_config(extra_data) {
+        Some(config) => {
+            let nal_length_size = config.nal_length_size;
+            (
+                iso_bmff::bitstream::hevc::annex_b_sequence_header(&config),
+                NalFraming::Hevc(nal_length_size),
+            )
+        }
+        None => (extra_data.clone(), NalFraming::AsIs), // clone: as above
+    }
 }
 
 impl WmfMultiCodecCpuDecoder {
@@ -101,11 +135,12 @@ impl WmfMultiCodecCpuDecoder {
         }
         let input_subtype = video_subtype(config.codec)?;
         let transform = open_sw_decoder(&input_subtype)?;
+        let (sequence_header, framing) = resolve_framing(config.codec, &config.extra_data);
         configure_decode_types(
             &transform,
             config.width,
             config.height,
-            &config.extra_data,
+            &sequence_header,
             &input_subtype,
         )?;
         begin_streaming(&transform)?;
@@ -118,11 +153,13 @@ impl WmfMultiCodecCpuDecoder {
             pending: VecDeque::new(),
             flushed: false,
             output_buf_size,
+            framing,
         })
     }
 
     fn push_transform_packet(&mut self, packet: &Packet) -> Result<(), DecodeError> {
-        let sample = packet_to_sample(packet, self.time_base_num, self.time_base_den, None)?;
+        let sample =
+            packet_to_sample(packet, self.time_base_num, self.time_base_den, self.framing)?;
         unsafe { self.transform.ProcessInput(0, &sample, 0) }.map_err(|_| DecodeError::Backend)?;
         self.drain_output()?;
         Ok(())

@@ -21,8 +21,8 @@ use super::cpu::{self, open_sw_decoder};
 use super::dx11::{self, Dx11Session};
 use super::runtime::from_hns;
 use super::shared::{
-    Drain, begin_streaming, configure_decode_types, notify_end_streaming, output_buffer_size,
-    packet_to_sample, process_one_output, read_output_dimensions,
+    Drain, NalFraming, begin_streaming, configure_decode_types, notify_end_streaming,
+    output_buffer_size, packet_to_sample, process_one_output, read_output_dimensions,
 };
 
 /// Keeps DXGI output sample + texture alive until the surface is recycled.
@@ -170,7 +170,8 @@ impl WmfH264Decoder {
             packet,
             self.time_base_num,
             self.time_base_den,
-            self.nal_length_size,
+            self.nal_length_size
+                .map_or(NalFraming::AsIs, NalFraming::Avc),
         )?;
         unsafe { self.transform.ProcessInput(0, &sample, 0) }.map_err(|_| DecodeError::Backend)?;
         if let Some(session) = self.dx11.as_mut() {

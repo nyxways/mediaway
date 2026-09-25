@@ -95,6 +95,35 @@ Two properties make this more than a `VecDeque`:
   that long would back up the encoder, collect `packets()` into a `Vec` first (refcount bumps
   only) and write from that.
 
+## Updates
+
+### 2026-09-25 — Payloads may be stored elsewhere (`ReplayRing<P = Bytes>`)
+
+The first caller writes the same packets to a fragmented MP4 while the ring holds them, so the
+ring's ~450 MB (12 Mbps, five minutes; ceiling 2x) duplicated bytes already on disk. The ring is
+now generic over what it keeps of a payload:
+
+- `ReplayRing<P = Bytes>`, `P: ReplayPayload` (`fn byte_len(&self) -> usize`), implemented for
+  `Bytes` and for `StoredPayload { file: u32, offset: u64, len: u32 }`, a `Copy` location whose
+  `file` id is the caller's. Entries are `PacketMeta` (every `Packet` field but the payload,
+  `Copy`) plus `P`. Static dispatch only; no new dependency.
+- `Bytes` API unchanged: `new`, `push(Packet)`, `Clip::packets()`. `new` stays `Bytes`-only
+  (as `HashMap::new` is `RandomState`-only) so existing calls need no annotation; any `P` is
+  built with `for_payload`, fed with `push_entry(PacketMeta, P)`, and read with
+  `Clip::entries()`, which yields `(PacketMeta, &P)` rebased, in the same order `packets()`
+  uses (`packets()` is now `entries()` plus a `Bytes` refcount bump).
+- `payloads()` iterates every payload still held, so a caller can free storage nothing refers
+  to any more (e.g. delete spill files).
+- `with_max_bytes` counts `byte_len()`: for `StoredPayload` it bounds referenced *disk* bytes;
+  the ring's own memory is then a few dozen bytes per packet.
+- Byte positions come from `iso-bmff`'s opt-in mux placements
+  (`iso-bmff/adr/0007-mux-payload-placements.md`). Reading bytes back is the caller's I/O; the
+  ring stays sans-io. Eviction and cutting are identical for every `P`, tested by running the
+  same reordering A/V sequence through a `Bytes` ring and a `StoredPayload` ring.
+
+Trade-off: a stored clip is only as durable as the caller's files. Deleting storage that
+`payloads()` still reports, or that a collected clip still refers to, breaks the clip.
+
 ## References
 
 - `src/replay.rs`, `src/replay_tests.rs`

@@ -15,6 +15,9 @@ use mediaway_common::{Packet, StreamInfo};
 /// Default fragment batch size.
 #[cfg(feature = "mux")]
 pub use iso_bmff::DEFAULT_FRAGMENT_BATCH;
+/// Where a sample's payload landed in the output — see [`Muxer::with_placements`].
+#[cfg(feature = "mux")]
+pub use iso_bmff::Placement;
 /// Re-export freestanding ISOBMFF helpers (box walk, etc.).
 pub use iso_bmff::isobmff;
 /// MP4 error (same as [`iso_bmff::Error`]).
@@ -64,6 +67,17 @@ impl Muxer<Open> {
             tracks_cache: Vec::new(),
             _state: core::marker::PhantomData,
         }
+    }
+
+    /// Also record a [`Placement`] for every sample written: the absolute offset and length of
+    /// its payload in the output stream. Take them with [`Muxer::poll_placements`].
+    ///
+    /// Off by default. When on, the output bytes are unchanged and the only cost is one small
+    /// push per sample. See [`iso_bmff::mux::Muxer::with_placements`].
+    #[must_use]
+    pub fn with_placements(mut self) -> Self {
+        self.open = self.open.take().map(IsoMuxer::with_placements);
+        self
     }
 
     /// Register a track.
@@ -136,6 +150,16 @@ impl Muxer<Live> {
     /// Poll container bytes.
     pub fn poll_bytes(&mut self, out: &mut Vec<u8>) -> usize {
         self.live.as_mut().map_or(0, |m| m.poll_bytes(out))
+    }
+
+    /// Move the [`Placement`]s recorded since the last call into `out`, in write order, and
+    /// return how many. Zero unless built [`Muxer::with_placements`]. A placement's `track_id`
+    /// is the packet's `stream_id`; its `len` counts the payload as written (H.264/HEVC
+    /// Annex-B becomes length-prefixed, AAC loses its ADTS header). Its bytes are available
+    /// from [`Muxer::poll_bytes`] by the time the placement is. See
+    /// [`iso_bmff::mux::Muxer::poll_placements`].
+    pub fn poll_placements(&mut self, out: &mut Vec<Placement>) -> usize {
+        self.live.as_mut().map_or(0, |m| m.poll_placements(out))
     }
 
     /// Registered tracks.

@@ -128,6 +128,19 @@
   cut by time to match. Eviction is by whole GOPs, with an optional byte ceiling.
   (`crates/mediaway-container/adr/0004-replay-ring.md`)
 
+- **`ReplayRing` can hold payload locations instead of payloads.** `ReplayRing<P = Bytes>` is
+  generic over `ReplayPayload`; with `StoredPayload { file, offset, len }` a caller that already
+  writes the packets to disk keeps only their locations in the ring (a few dozen bytes per
+  packet instead of the payload) and reads the bytes back itself when it saves a clip. New:
+  `ReplayRing::for_payload`, `push_entry`, `payloads`, `Clip::entries`, `PacketMeta`. The
+  `Bytes` API is unchanged. (`crates/mediaway-container/adr/0004-replay-ring.md` § Updates)
+
+- **MP4 mux payload placements**: `iso_bmff::Muxer::with_placements` (and
+  `mediaway_container::mp4::Muxer::with_placements`) records, for every sample written, the
+  absolute byte offset and length of its payload in the output stream; `poll_placements`
+  takes them. Off by default, and no work at all when off.
+  (`crates/iso-bmff/adr/0007-mux-payload-placements.md`)
+
 - **`VideoEncoder::finish(self)` / `AudioEncoder::finish(self)`**: flush and collect every
   remaining packet in one call. The trait docs now also say what skipping it costs: dropping
   an unflushed encoder silently discards its in-flight frames, which are the end of the stream

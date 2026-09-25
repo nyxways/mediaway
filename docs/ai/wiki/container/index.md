@@ -11,6 +11,6 @@
 | [rtmp](rtmp.md) | `rtmp` — publish-client protocol core (implemented, handshake unverified against a real server), reuses FLV tag-body byte shapes |
 | [rtp](rtp.md) | `rtp-core` — RTP payloadization for H.264/HEVC (implemented); no aggregation packets/RTCP/SRTP yet |
 | [webm](webm.md) | `ebml-webm` core + `mediaway-container::webm` — mux + demux, deferred items |
-| [replay-ring](replay-ring.md) | `replay::ReplayRing`: last N seconds of encoded packets, keyframe cuts in decode order (ADR-0004) |
+| [replay-ring](replay-ring.md) | `replay::ReplayRing`: last N seconds of encoded packets, keyframe cuts in decode order; payloads as `Bytes` or on-disk `StoredPayload` (ADR-0004) |
 | [cli-tools](cli-tools.md) | `mediaway-avprobe` / `mediaway-avcli` flag subsets over the facade |
 | [ffi-c-abi](ffi-c-abi.md) | `mediaway-ffi` — C ABI over MP4 mux/demux; opaque handles, panic-catch |

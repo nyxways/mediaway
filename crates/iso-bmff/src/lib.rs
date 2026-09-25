@@ -34,5 +34,5 @@ pub use error::Error;
 #[cfg(feature = "demux")]
 pub use demux::Demuxer;
 #[cfg(feature = "mux")]
-pub use mux::{DEFAULT_FRAGMENT_BATCH, Live, Muxer, Open};
+pub use mux::{DEFAULT_FRAGMENT_BATCH, Live, Muxer, Open, Placement};
 pub use types::{Bytes, Codec, Rational, Sample, Track};

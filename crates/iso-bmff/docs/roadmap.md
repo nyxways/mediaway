@@ -26,4 +26,7 @@ Freestanding ISOBMFF/MP4. Workspace index: [`docs/roadmap.md`](../../../docs/roa
 - [x] Opus (`Opus`/`dOps`) sample entry — [`adr/0005`](../adr/0005-opus-sample-entry.md).
       `Codec::Opus` previously fell into AAC's `mp4a`/`esds` branch and shipped an `esds`
       declaring MPEG-4 AAC over Opus packets: muxed clean, failed on playback.
+- [x] Opt-in mux payload placements (`Muxer::with_placements` / `poll_placements`): where
+      each sample's payload landed in the output — [`adr/0007`](../adr/0007-mux-payload-placements.md)
+      — 2026-09-25. First caller: qarec's disk-backed replay ring.
 - [ ] More codecs / sample entries as needed (`hev1` variant, `dvhe`/Dolby Vision, …)

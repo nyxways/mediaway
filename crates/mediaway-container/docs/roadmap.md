@@ -67,3 +67,6 @@ Facade for container formats. Workspace index: [`docs/roadmap.md`](../../../docs
 - [x] `replay::ReplayRing`: the last N seconds of encoded packets, cut at anchor keyframes in
       decode order, rebased to zero for a fresh muxer (`adr/0004-replay-ring.md`) —
       2026-09-19. First caller: qarec's replay hotkey.
+- [x] `ReplayRing<P = Bytes>`: payloads may be held as `StoredPayload` locations on the
+      caller's disk instead of `Bytes`; `mp4::Muxer::with_placements` supplies them
+      (`adr/0004-replay-ring.md` § Updates) — 2026-09-25.

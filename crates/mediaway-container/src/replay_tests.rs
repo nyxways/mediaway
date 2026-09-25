@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use mediaway_common::{Bytes, Packet, Rational};
 
-use super::{ReplayError, ReplayRing};
+use super::{PacketMeta, ReplayError, ReplayRing, StoredPayload};
 
 const VIDEO: u32 = 1;
 const AUDIO: u32 = 2;
@@ -247,4 +247,231 @@ fn bad_streams_are_refused() {
         Err(ReplayError::BadTimebase { .. })
     ));
     assert!(ReplayRing::new(VIDEO, Rational::new(0, 1000), Duration::from_secs(1)).is_err());
+}
+
+/// A reordering video stream (90 kHz, 30 fps, keyframe every 12 frames, B-frames) with audio
+/// (48 kHz, 1024-sample packets) interleaved by time, starting with three anchor packets before
+/// the first keyframe. Payload `i` is `8 + (i * 37) % 300` bytes whose first 8 are `i`.
+fn av_sequence() -> Vec<Packet> {
+    let mut out = Vec::new();
+    let mut audio_dts = 0i64;
+    let mut index = 0u64;
+    let mut push = |out: &mut Vec<Packet>, stream_id, dts, pts, key| {
+        let size = 8 + usize::try_from(index * 37 % 300).unwrap();
+        let mut payload = vec![0u8; size];
+        payload[..8].copy_from_slice(&index.to_le_bytes());
+        index += 1;
+        out.push(Packet {
+            stream_id,
+            pts,
+            dts,
+            duration: 0,
+            is_keyframe: key,
+            is_discard: false,
+            payload: Bytes::from(payload),
+        });
+    };
+    for frame in 0..600i64 {
+        // Decode order P, B, B: the P presents after the two B-frames that follow it. The
+        // keyframes (every 12th frame from frame 3) therefore have leading pictures.
+        let pts = match frame % 3 {
+            0 => frame + 2,
+            _ => frame - 1,
+        } + 1;
+        let dts = frame;
+        push(&mut out, VIDEO, dts * 3000, pts * 3000, frame % 12 == 3);
+        while audio_dts * 90_000 <= dts * 3000 * 48_000 {
+            push(&mut out, AUDIO, audio_dts, audio_dts, true);
+            audio_dts += 1024;
+        }
+    }
+    out
+}
+
+fn index_of(payload: &Bytes) -> usize {
+    usize::try_from(u64::from_le_bytes(payload[..8].try_into().unwrap())).unwrap()
+}
+
+#[test]
+fn a_ring_of_stored_payloads_evicts_and_cuts_exactly_like_a_ring_of_bytes() {
+    let v = Rational::new(1, 90_000);
+    let a = Rational::new(1, 48_000);
+    let packets = av_sequence();
+    // Where each packet "was written": 50 packets per file, back to back.
+    let mut handles = Vec::new();
+    let mut offset = 0u64;
+    for (i, p) in packets.iter().enumerate() {
+        if i % 50 == 0 {
+            offset = 0;
+        }
+        let len = u32::try_from(p.payload.len()).unwrap();
+        handles.push(StoredPayload {
+            file: u32::try_from(i / 50).unwrap(),
+            offset,
+            len,
+        });
+        offset += u64::from(len);
+    }
+
+    for max_bytes in [None, Some(20_000)] {
+        let mut bytes_ring = ReplayRing::new(VIDEO, v, Duration::from_secs(3)).unwrap();
+        let mut stored_ring =
+            ReplayRing::<StoredPayload>::for_payload(VIDEO, v, Duration::from_secs(3)).unwrap();
+        if let Some(max) = max_bytes {
+            bytes_ring = bytes_ring.with_max_bytes(max);
+            stored_ring = stored_ring.with_max_bytes(max);
+        }
+        bytes_ring.add_stream(AUDIO, a).unwrap();
+        stored_ring.add_stream(AUDIO, a).unwrap();
+
+        for (i, packet) in packets.iter().enumerate() {
+            stored_ring
+                .push_entry(PacketMeta::from(packet), handles[i])
+                .unwrap();
+            bytes_ring.push(packet.clone()).unwrap();
+
+            assert_eq!(stored_ring.bytes(), bytes_ring.bytes(), "packet {i}");
+            assert_eq!(stored_ring.span(), bytes_ring.span(), "packet {i}");
+            let held: Vec<StoredPayload> = bytes_ring
+                .payloads()
+                .map(|b| handles[index_of(b)])
+                .collect();
+            assert!(stored_ring.payloads().copied().eq(held), "packet {i}");
+            if i % 25 != 0 {
+                continue;
+            }
+            for span_ms in [0, 700, 1500, 2900, 10_000] {
+                let span = Duration::from_millis(span_ms);
+                let (Some(want), Some(got)) =
+                    (bytes_ring.clip_last(span), stored_ring.clip_last(span))
+                else {
+                    assert!(bytes_ring.clip_last(span).is_none());
+                    assert!(stored_ring.clip_last(span).is_none());
+                    continue;
+                };
+                assert_eq!(got.anchor_origin(), want.anchor_origin());
+                assert_eq!(got.duration(), want.duration());
+                let want: Vec<(PacketMeta, StoredPayload)> = want
+                    .packets()
+                    .map(|p| (PacketMeta::from(&p), handles[index_of(&p.payload)]))
+                    .collect();
+                let got: Vec<(PacketMeta, StoredPayload)> =
+                    got.entries().map(|(m, h)| (m, *h)).collect();
+                assert!(!got.is_empty());
+                assert_eq!(got, want, "packet {i}, span {span_ms} ms");
+            }
+        }
+        // Eviction really happened, so old files are free: none of the first ones is referred to.
+        let oldest_file = stored_ring.payloads().map(|h| h.file).min().unwrap();
+        assert!(oldest_file > 0, "max_bytes {max_bytes:?}");
+    }
+}
+
+#[test]
+fn entries_and_packets_agree_for_bytes() {
+    let ring = video_ring(60, 30, 5);
+    let clip = ring.clip_last(Duration::from_secs(12)).unwrap();
+    let from_entries: Vec<Packet> = clip
+        .entries()
+        .map(|(meta, payload)| meta.into_packet(payload.clone()))
+        .collect();
+    assert_eq!(from_entries, clip.packets().collect::<Vec<_>>());
+}
+
+/// The flow a file-writing caller runs: mux with placements, hold `StoredPayload`s, and read a
+/// clip's bytes back out of what the muxer emitted.
+#[cfg(feature = "mux")]
+#[test]
+fn stored_payloads_from_mp4_placements_read_back_as_the_pushed_packets() {
+    use std::collections::VecDeque;
+
+    use mediaway_common::{CodecKind, StreamInfo, VideoGeometry};
+
+    use crate::mp4;
+
+    let v = Rational::new(1, 90_000);
+    let a = Rational::new(1, 48_000);
+    let packets = av_sequence();
+    let mut open = mp4::Muxer::with_fragment_batch(8).with_placements();
+    open.add_track(StreamInfo::Video {
+        id: VIDEO,
+        codec: CodecKind::H264,
+        time_base: v,
+        geometry: VideoGeometry {
+            width: 64,
+            height: 64,
+        },
+        extra_data: Bytes::new(),
+    })
+    .unwrap();
+    open.add_track(StreamInfo::Audio {
+        id: AUDIO,
+        codec: CodecKind::Opus,
+        time_base: a,
+        extra_data: Bytes::new(),
+        sample_rate: 48_000,
+        channels: 2,
+    })
+    .unwrap();
+    let mut mux = open.begin();
+    let mut ring = ReplayRing::<StoredPayload>::for_payload(VIDEO, v, Duration::from_secs(3))
+        .unwrap()
+        .with_max_bytes(30_000);
+    ring.add_stream(AUDIO, a).unwrap();
+
+    // The file, and packets muxed but not yet placed, per stream.
+    let mut file = Vec::new();
+    let mut waiting: [VecDeque<PacketMeta>; 2] = Default::default();
+    let place = |mux: &mut mp4::Muxer<mp4::Live>,
+                 ring: &mut ReplayRing<StoredPayload>,
+                 file: &mut Vec<u8>,
+                 waiting: &mut [VecDeque<PacketMeta>; 2]| {
+        mux.poll_bytes(file);
+        let mut placements = Vec::new();
+        mux.poll_placements(&mut placements);
+        for p in placements {
+            let meta = waiting[usize::from(p.track_id == AUDIO)]
+                .pop_front()
+                .unwrap();
+            assert_eq!((meta.stream_id, meta.dts), (p.track_id, p.dts));
+            let stored = StoredPayload {
+                file: 0,
+                offset: p.offset,
+                len: p.len,
+            };
+            ring.push_entry(meta, stored).unwrap();
+        }
+    };
+    for packet in &packets {
+        mux.push_packet(packet).unwrap();
+        waiting[usize::from(packet.stream_id == AUDIO)].push_back(PacketMeta::from(packet));
+        place(&mut mux, &mut ring, &mut file, &mut waiting);
+    }
+    mux.flush();
+    place(&mut mux, &mut ring, &mut file, &mut waiting);
+    assert!(
+        waiting.iter().all(VecDeque::is_empty),
+        "every packet placed"
+    );
+
+    let clip = ring.clip_last(Duration::from_secs(2)).unwrap();
+    let mut streams = [0usize; 2];
+    for (meta, stored) in clip.entries() {
+        let start = usize::try_from(stored.offset).unwrap();
+        let bytes = &file[start..start + stored.len as usize];
+        let original =
+            &packets[usize::try_from(u64::from_le_bytes(bytes[..8].try_into().unwrap())).unwrap()];
+        assert_eq!(bytes, original.payload.as_ref());
+        assert_eq!(meta.stream_id, original.stream_id);
+        assert_eq!(
+            meta.pts - meta.dts,
+            original.pts - original.dts,
+            "rebased as a whole"
+        );
+        if meta.stream_id == VIDEO {
+            assert_eq!(meta.dts + clip.anchor_origin(), original.dts);
+        }
+        streams[usize::from(meta.stream_id == AUDIO)] += 1;
+    }
+    assert!(streams.iter().all(|&n| n > 10), "{streams:?}");
 }

@@ -196,3 +196,90 @@ fn fragment_bases_advance_with_dts() {
         assert!(durations(frag).iter().all(|&d| d == 30));
     }
 }
+
+/// Distinct, non-Annex-B bytes for track 0: passed through untouched.
+fn plain_payload(i: usize) -> Vec<u8> {
+    let len = 3000 + (i * 97) % 4000;
+    (0..len)
+        .map(|j| 0x80 | ((i * 7 + j) % 0x7f) as u8)
+        .collect()
+}
+
+/// One Annex-B NAL for track 1: rewritten to a 4-byte length prefix by the muxer.
+fn annex_b_payload(i: usize) -> Vec<u8> {
+    let mut v = vec![0, 0, 0, 1, if i.is_multiple_of(10) { 0x65 } else { 0x41 }];
+    v.extend((0..2000 + i * 13).map(|j| 0x80 | ((i + j * 3) % 0x7f) as u8));
+    v
+}
+
+#[test]
+fn placements_point_at_the_payload_bytes_in_the_output() {
+    let mut m = Muxer::with_fragment_batch(4).with_placements();
+    m.add_track(track(0)).unwrap();
+    m.add_track(track(1)).unwrap();
+    let mut live = m.begin();
+
+    let mut out = Vec::new();
+    let mut placements = Vec::new();
+    // What each (track, dts) should read back as.
+    let mut expected = Vec::new();
+    for i in 0..60usize {
+        let dts = i as i64 * 30;
+        for (stream_id, raw) in [(0u32, plain_payload(i)), (1, annex_b_payload(i))] {
+            let written = if stream_id == 0 {
+                raw.clone()
+            } else {
+                crate::bitstream::to_avcc(&raw).payload.to_vec()
+            };
+            expected.push((stream_id, dts, written));
+            live.push_packet(&Sample {
+                stream_id,
+                pts: dts,
+                dts,
+                duration: 30,
+                is_keyframe: i.is_multiple_of(10),
+                is_discard: false,
+                payload: Bytes::from(raw),
+            })
+            .unwrap();
+        }
+        // Polled in many small chunks, so the muxer drains its buffer along the way.
+        if i % 3 == 0 {
+            live.poll_bytes(&mut out);
+            live.poll_placements(&mut placements);
+        }
+    }
+    live.flush();
+    live.poll_bytes(&mut out);
+    live.poll_placements(&mut placements);
+    assert!(out.len() > 256 * 1024, "several output-buffer drains");
+
+    assert_eq!(placements.len(), expected.len(), "one placement per sample");
+    assert!(moofs(&out).len() > 10, "several fragments");
+    for p in &placements {
+        let (_, _, want) = expected
+            .iter()
+            .find(|(s, d, _)| *s == p.track_id && *d == p.dts)
+            .unwrap();
+        let start = usize::try_from(p.offset).unwrap();
+        let got = &out[start..start + p.len as usize];
+        assert_eq!(got, want.as_slice(), "track {} dts {}", p.track_id, p.dts);
+    }
+    // Offsets never go backwards: placement order is write order.
+    assert!(placements.windows(2).all(|w| w[0].offset < w[1].offset));
+}
+
+#[test]
+fn placements_are_off_by_default() {
+    let mut m = Muxer::new();
+    m.add_track(track(0)).unwrap();
+    let mut live = m.begin();
+    for i in 0..40 {
+        live.push_packet(&sample(0, i * 30, 30, i % 10 == 0))
+            .unwrap();
+    }
+    live.flush();
+    let mut placements = Vec::new();
+    assert_eq!(live.poll_placements(&mut placements), 0);
+    assert!(placements.is_empty());
+}

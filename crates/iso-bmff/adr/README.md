@@ -8,3 +8,4 @@
 | [0004](0004-mux-duration-dts-delta.md) | Mux sample durations from `dts` deltas |
 | [0005](0005-opus-sample-entry.md) | Opus (`Opus`/`dOps`) sample-entry mux + demux; replaces an `mp4a`/`esds` AAC mislabel |
 | [0006](0006-hevc-in-mp4.md) | HEVC in MP4: unescape the SPS, length-prefix the samples; every HEVC file this workspace wrote decoded zero frames |
+| [0007](0007-mux-payload-placements.md) | Opt-in mux payload placements: absolute output offset + length of every sample written |

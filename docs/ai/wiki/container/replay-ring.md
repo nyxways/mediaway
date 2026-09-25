@@ -26,6 +26,20 @@ Sans-io: no I/O, no clock; the caller pushes and asks.
 - Anchor packets before the first keyframe are discarded on push.
 - A `Clip` borrows the ring. Its packets are `Packet` clones: a `Bytes` refcount, no copy.
 
+## Payload type: `ReplayRing<P = Bytes>`
+
+- `P: ReplayPayload` (`byte_len`). `Bytes` (default) or `StoredPayload { file, offset, len }`:
+  where the bytes sit in one of the caller's files. The ring never reads it.
+- `Bytes`: `new` / `push(Packet)` / `Clip::packets()` (unchanged). Any `P`:
+  `ReplayRing::<P>::for_payload` / `push_entry(PacketMeta, P)` / `Clip::entries()` →
+  `(PacketMeta rebased, &P)`, same order as `packets()`. `new` is `Bytes`-only on purpose
+  (`HashMap::new` pattern) so old call sites infer without annotations.
+- `with_max_bytes` counts `byte_len()`: disk bytes referenced, for `StoredPayload`.
+- `payloads()` lists every payload still held; storage absent from it is free to delete.
+- Offsets come from `mp4::Muxer::with_placements` → `poll_placements` (`iso-bmff/adr/0007`):
+  absolute offset in the polled byte stream, `len` of the payload *as written* (H.264/HEVC
+  length-prefixed). Bytes read back are that converted form.
+
 ```mermaid
 flowchart LR
   subgraph capture["encoder thread"]
@@ -45,4 +59,5 @@ flowchart LR
   ring holds packets only.
 
 Tests: `crates/mediaway-container/src/replay_tests.rs` covers an open-GOP decode-order
-sequence, two timebases interleaved, the byte ceiling, and the eviction boundary.
+sequence, two timebases interleaved, the byte ceiling, the eviction boundary, and a `Bytes`
+ring vs a `StoredPayload` ring fed the same A/V sequence (identical clips, bytes, payloads).

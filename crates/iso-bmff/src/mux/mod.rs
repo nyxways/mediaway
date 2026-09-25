@@ -30,9 +30,28 @@ const _: () = assert!(
     "INLINE_SAMPLES must cover the default fragment batch"
 );
 
+/// Where one sample's payload landed in the muxer's output stream — see
+/// [`Muxer::with_placements`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Placement {
+    /// The sample's [`Sample::stream_id`] (the caller's id, not the ISOBMFF `track_ID`).
+    pub track_id: u32,
+    /// The sample's decode timestamp, as pushed.
+    pub dts: i64,
+    /// Absolute byte offset of the payload in the muxer's output: counted from the first byte
+    /// [`Muxer::poll_bytes`] ever returned, so it is the file offset when every polled byte is
+    /// written sequentially from offset 0.
+    pub offset: u64,
+    /// Payload length in bytes, **as written** — after Annex-B → length-prefixed conversion
+    /// (H.264/HEVC) or ADTS stripping (AAC), so it can differ from the pushed payload's length.
+    pub len: u32,
+}
+
 #[derive(Debug)]
 struct Pending {
     track_id: u32,
+    /// The caller's stream id (`track_id` is `stream_id + 1`), for [`Placement`]s.
+    stream_id: u32,
     base_dts: u64,
     /// Per-sample decode timestamps (media timescale) — durations are derived
     /// from consecutive `dts` deltas at flush time, see [`Muxer::push_packet`].
@@ -54,6 +73,13 @@ pub struct Muxer<S = Open> {
     sequence: u32,
     batch: usize,
     pending: SmallVec<[Pending; INLINE_TRACKS]>,
+    /// Bytes already drained from the front of `output`: `output[i]` is stream byte
+    /// `drained + i`.
+    drained: u64,
+    /// Whether [`Muxer::with_placements`] is on. When off, `placements` is never touched.
+    record_placements: bool,
+    /// Placements not yet taken by [`Muxer::poll_placements`]; reused across polls.
+    placements: Vec<Placement>,
     _state: PhantomData<S>,
 }
 
@@ -75,8 +101,24 @@ impl Muxer<Open> {
             sequence: 0,
             batch: batch.max(1),
             pending: SmallVec::new(),
+            drained: 0,
+            record_placements: false,
+            placements: Vec::new(),
             _state: PhantomData,
         }
+    }
+
+    /// Also record a [`Placement`] for every sample written: where its payload sits in the
+    /// output stream. Take them with [`Muxer::poll_placements`].
+    ///
+    /// For a caller that writes the output to a file and wants to read sample payloads back
+    /// later instead of keeping them in memory (e.g. a replay buffer). Off by default; when off
+    /// the muxer does no placement work at all. When on, the cost is one 24-byte push per
+    /// sample into a `Vec` the caller drains, and nothing else: the output bytes are identical.
+    #[must_use]
+    pub const fn with_placements(mut self) -> Self {
+        self.record_placements = true;
+        self
     }
 
     /// Registered tracks so far.
@@ -107,6 +149,9 @@ impl Muxer<Open> {
             sequence: self.sequence,
             batch: self.batch,
             pending: self.pending,
+            drained: self.drained,
+            record_placements: self.record_placements,
+            placements: self.placements,
             _state: PhantomData,
         }
     }
@@ -253,6 +298,7 @@ impl Muxer<Live> {
         } else {
             let mut pending = Pending {
                 track_id: isobmff_id,
+                stream_id: sample.stream_id,
                 base_dts,
                 dts: SmallVec::with_capacity(batch),
                 durations: SmallVec::with_capacity(batch),
@@ -300,9 +346,23 @@ impl Muxer<Live> {
         self.output_consumed = self.output.len();
         if self.output_consumed >= 64 * 1024 {
             self.output.drain(..self.output_consumed);
+            self.drained += self.output_consumed as u64;
             self.output_consumed = 0;
         }
         available
+    }
+
+    /// Move the [`Placement`]s recorded since the last call into `out`, in the order the
+    /// samples were written (fragment by fragment; within a fragment, push order). Returns how
+    /// many were moved. Always zero unless the muxer was built [`Muxer::with_placements`].
+    ///
+    /// A placement is recorded when its fragment is written, which is also when its bytes
+    /// become available to [`Muxer::poll_bytes`]: poll and write the bytes before reading a
+    /// payload back at `offset`.
+    pub fn poll_placements(&mut self, out: &mut Vec<Placement>) -> usize {
+        let n = self.placements.len();
+        out.append(&mut self.placements);
+        n
     }
 
     fn flush_track(&mut self, track_id: u32) {
@@ -341,6 +401,19 @@ impl Muxer<Live> {
             &pending.ctos,
             &pending.payload,
         );
+        if self.record_placements {
+            // `write_fragment` ends with the `mdat` payload, so it is the output's tail.
+            let mut offset = self.drained + (self.output.len() - pending.payload.len()) as u64;
+            for (&dts, &len) in pending.dts.iter().zip(&pending.sizes) {
+                self.placements.push(Placement {
+                    track_id: pending.stream_id,
+                    dts,
+                    offset,
+                    len,
+                });
+                offset += u64::from(len);
+            }
+        }
     }
 }
 

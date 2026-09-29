@@ -55,5 +55,6 @@ captures into `StreamInfo::extra_data`.
 - `mediaway-ffi`'s audio decode C ABI is still Opus-only (`pipeline/audio_decoder.rs`
   wraps `mediaway_sw::opus::OpusDecoder` directly by design, so output is host-independent);
   widening it to AAC is an ABI change that needs its own ADR.
-- `platform::decoder_support` has no AAC arm on **Apple**, although `apple::AacDecoder`
-  exists — same gap this change closed on Windows.
+- `platform::decoder_support(Aac)` has an arm on **Apple** too (`platform.rs`, probing
+  `apple::AacDecoder` with the same canonical ASC), but that arm has never run: like every Apple
+  backend it is compile-checked only until macOS CI exercises it.

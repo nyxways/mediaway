@@ -55,6 +55,7 @@ sector subfolders (`container/`, `pipeline/`, `device/`), one file per scenario:
 | `pipeline/screen_record.*` | [`examples/pipeline/screen_record.rs`](../examples/pipeline/screen_record.rs) | screen + mic capture → encode → MP4 | ✅ C, C#, C++, Python, Node.js / native (browser) — every binding |
 | `device/camera_record.*` | [`examples/device/capture_camera.rs`](../examples/device/capture_camera.rs) | camera + mic capture → H.264 + AAC → ONE two-track MP4 | ✅ (video-only fallback without mic/audio backend) |
 | `device/capture_microphone.*` | [`examples/device/capture_microphone.rs`](../examples/device/capture_microphone.rs) | microphone capture, raw PCM | ✅ |
+| `device/capture_window.*` | [`examples/device/capture_window.rs`](../examples/device/capture_window.rs) | one window by `HWND` (WGC) with cursor / region / border / even-crop options (ADR-0005) | ✅ C, C++, Python, Node.js, C# — Windows only; hardware-verified through every binding (opt-in `MEDIAWAY_RUN_WINDOW_TESTS=1` where it opens a real window) |
 | `device/capture_screen.*` | [`examples/device/capture_screen.rs`](../examples/device/capture_screen.rs) | screen capture only | ✅ C, C++, Python, Node.js / native (browser) · 🚧 no standalone example file (C# — see `pipeline/screen_record.*` row) |
 
 ## Rules

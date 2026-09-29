@@ -1,7 +1,7 @@
 #![cfg(test)]
 #![allow(clippy::unwrap_used, clippy::expect_used, reason = "unit tests")]
 
-use super::{from_hns, to_hns};
+use super::{from_hns, sample_duration_hns, to_hns};
 
 /// Timebases a caller realistically hands this backend. Every one of them has a denominator
 /// that does not divide 10 000 000, which is the whole point — that is the case the truncating
@@ -110,4 +110,42 @@ fn a_zero_timebase_yields_zero_instead_of_dividing_by_it() {
     assert_eq!(to_hns(42, 1, 0), 0);
     assert_eq!(from_hns(42, 1, 0), 0);
     assert_eq!(from_hns(42, 0, 60), 0);
+}
+
+/// A frame with no duration must not be handed to the MFT as a 100-nanosecond sample: it is one
+/// tick, the nominal frame interval, the same as declaring `duration: 1`.
+#[test]
+fn unknown_duration_is_one_tick_not_one_hns() {
+    for &(num, den) in TIMEBASES {
+        assert_eq!(
+            sample_duration_hns(0, num, den),
+            sample_duration_hns(1, num, den),
+            "duration 0 differs from one tick at {num}/{den}"
+        );
+    }
+    // At 1/30 a tick is 333 333 hns; the old code answered 1.
+    assert_eq!(sample_duration_hns(0, 1, 30), 333_333);
+}
+
+/// A duration the caller did give is honoured, tick for tick.
+#[test]
+fn declared_duration_is_kept() {
+    // Truncated once, over the whole duration, not once per tick.
+    assert_eq!(sample_duration_hns(3, 1, 30), 1_000_000);
+    assert_eq!(sample_duration_hns(2, 1001, 30000), to_hns(2, 1001, 30000));
+}
+
+/// Not representable as `i64`: unknown, not zero and not a wrapped negative.
+#[test]
+fn an_oversized_duration_is_treated_as_unknown() {
+    assert_eq!(
+        sample_duration_hns(u64::MAX, 1, 30),
+        sample_duration_hns(1, 1, 30)
+    );
+}
+
+/// A time base finer than one hns still yields a positive duration; MF rejects zero.
+#[test]
+fn a_sub_hns_tick_is_floored_at_one() {
+    assert_eq!(sample_duration_hns(0, 1, 100_000_000), 1);
 }

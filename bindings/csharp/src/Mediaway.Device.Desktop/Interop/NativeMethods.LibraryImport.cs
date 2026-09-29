@@ -30,6 +30,10 @@ internal static unsafe partial class NativeMethods
     [LibraryImport(LibraryName)]
     internal static partial void mediaway_desktop_frame_free(ref NativeDesktopFrame frame);
 
+    [LibraryImport(LibraryName)]
+    internal static partial MediawayDeviceStatus mediaway_desktop_capture_border_hidden(
+        DesktopCaptureHandle capture, out byte outHidden);
+
     // ── Desktop audio (Loopback / ProcessLoopback) ──────────────────────────────────
 
     [LibraryImport(LibraryName)]

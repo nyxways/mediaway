@@ -2,9 +2,10 @@
 
 ## Status (2026-08)
 
-Package versions (v0.1.2, 2026-08-04): npm `@mediaway/*` 0.1.2 · NuGet `Mediaway.*`
-0.1.2 · PyPI `mediaway` 0.1.2 · crates.io `mediaway-*` family 0.1.2,
-freestanding cores 0.1.1 (`ebml-webm` 0.2.1) · CPack `Mediaway-0.1.2-win64`.
+Package versions (v0.1.8, 2026-08-21): npm `@mediaway/*` · NuGet `Mediaway.*` · PyPI
+`mediaway` · crates.io `mediaway-*` family · CPack `Mediaway-<v>-win64` are stamped from the
+workspace version (0.1.8) at release; freestanding cores keep their own (0.1.1, `ebml-webm`
+0.2.1). C ABI versions: container 7 · pipeline 6 · device 1.
 
 | Language | Mechanism | Status |
 |---|---|---|
@@ -33,7 +34,7 @@ bindings were then implemented to satisfy those examples. Examples mirror the Ru
   camera_record now produces ONE two-track MP4 (H.264 + AAC, remuxed) on real hardware.
   C# gained its own `Mediaway.Pipeline.AudioEncoder` wrapper (previously Node-only) —
   hardware-verified, matching Node's own output to within container-padding noise.
-- **Screen capture not from C**: needs a live `ID3D11Device*`, no CPU fallback; Screen + `NONE` gpu → `INVALID_INPUT`, Window → `UNSUPPORTED`. Browser host: `getDisplayMedia` is native and real.
+- **Screen capture not from C**: needs a live `ID3D11Device*`, no CPU fallback; Screen + `NONE` gpu → `INVALID_INPUT`. Window (`HWND`, WGC, device ABI 2, ADR-0005) is real in every binding, Windows only. Browser host: `getDisplayMedia` is native and real.
 - **C# Screen capture hardware-verified** — `CaptureTests` gained a test-only raw
   `D3D11CreateDevice` P/Invoke polling real GPU-backed 2560×1440 frames end to end.
 
@@ -72,5 +73,10 @@ bindings were then implemented to satisfy those examples. Examples mirror the Ru
   C# is covered now (Capability truth) — the C gap still needs the live GPU-device-handle ADR.
 - GOP/CBR/`set_bitrate` reach the C ABI + C# now (ABI v6), no-op through auto-select
   until Vulkan joins it — [gop-cbr-set-bitrate](gop-cbr-set-bitrate.md).
+- **Not in the C ABI yet (Rust-only since v0.1.8):** `ReplayRing` + mux placements. Window capture
+  landed in device ABI 2 (ADR-0005); streaming bytes, AAC decode and the capability probes in
+  pipeline ABI 7 (ADR-0007). The
+  `include_child_processes` → `include_target_process_tree` rename (same layout) was done in
+  C/C#/Python; C++/Node do not bind desktop audio.
 - Android AAR/Maven Central distribution: ADR-0025 (Proposed) — design-only,
   no code yet — [android-status](android-status.md).

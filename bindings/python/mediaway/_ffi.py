@@ -921,6 +921,7 @@ DEVICE_INTERNAL_PANIC = 10
 DEVICE_CALLBACK_ALREADY_REGISTERED = 11
 DEVICE_CALLBACK_MODE_ACTIVE = 12
 DEVICE_TIMEOUT = 13
+DEVICE_REGION_OUT_OF_BOUNDS = 14  # capture region does not fit the surface (adr/0005)
 
 # enum mediaway_sample_format
 SAMPLE_S16 = 0
@@ -939,6 +940,15 @@ DEVKIND_UNKNOWN = 255
 # enum mediaway_desktop_capture_source_kind
 DESKTOP_SOURCE_SCREEN = 0
 DESKTOP_SOURCE_WINDOW = 1
+
+# enum mediaway_capture_cursor / mediaway_capture_border / mediaway_frame_dimensions
+# (adr/device/0005-window-capture-c-abi.md). Zero is the previous behaviour in every case.
+CAPTURE_CURSOR_EXCLUDED = 0
+CAPTURE_CURSOR_INCLUDED = 1
+CAPTURE_BORDER_SHOWN = 0
+CAPTURE_BORDER_HIDDEN = 1
+FRAME_DIMENSIONS_NATIVE = 0
+FRAME_DIMENSIONS_EVEN_CROPPED = 1
 
 # enum mediaway_desktop_audio_source_kind
 DESKTOP_AUDIO_LOOPBACK = 0
@@ -965,11 +975,22 @@ class CameraFrame(Structure):  # owned output; CPU-only
 
 
 class DesktopCaptureConfig(Structure):
+    # Every field after `gpu_device` was added by adr/device/0005-window-capture-c-abi.md
+    # (device ABI 2) and is zero-means-previous-behaviour.
     _fields_ = [
         ("source_kind", c_int32),
         ("source_index", c_uint32),
         ("time_base", Rational),
         ("gpu_device", GpuDeviceHandle),
+        ("window_handle", c_uint64),
+        ("cursor", c_int32),
+        ("border", c_int32),
+        ("dimensions", c_int32),
+        ("region_x", c_uint32),
+        ("region_y", c_uint32),
+        ("region_width", c_uint32),
+        ("region_height", c_uint32),
+        ("region_enabled", c_bool),
     ]
 
 
@@ -1083,6 +1104,10 @@ _H.mediaway_gpu_device_close.argtypes = [c_void_p]
 
 _H.mediaway_desktop_capture_config_screen.restype = DesktopCaptureConfig
 _H.mediaway_desktop_capture_config_screen.argtypes = [c_uint32, Rational, GpuDeviceHandle]
+_H.mediaway_desktop_capture_config_window.restype = DesktopCaptureConfig
+_H.mediaway_desktop_capture_config_window.argtypes = [c_uint64, Rational, GpuDeviceHandle]
+_H.mediaway_desktop_capture_border_hidden.restype = c_int32
+_H.mediaway_desktop_capture_border_hidden.argtypes = [c_void_p, POINTER(c_bool)]
 _H.mediaway_desktop_capture_open.restype = c_int32
 _H.mediaway_desktop_capture_open.argtypes = [POINTER(DesktopCaptureConfig), POINTER(c_void_p)]
 _H.mediaway_desktop_capture_geometry.restype = c_int32

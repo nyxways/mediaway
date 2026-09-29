@@ -25,13 +25,11 @@ Video's equivalent functions were already codec-parameterized
 - `AudioEncoderConfig::new(codec, number_of_channels, sample_rate)` confirmed by reading
   `gen_AudioEncoderConfig.rs` directly — same order already fixed for AAC
   ([web-real-chrome-bugs](web-real-chrome-bugs.md) bug #1); Opus needs no different call.
-- `iso-bmff`'s MP4 muxer (`sample_entry.rs::write_stsd`) routes `Codec::Opus` through the
-  same `write_mp4a`/`esds` (AAC) writer as `Codec::Aac` — **no real `Opus`/`dOps` sample
-  entry exists**. Same "wrong sample entry" situation HEVC/AV1 were in before `iso-bmff`
-  ADR-0003; that ADR's own text already lists `Opus` under "codecs with no ISOBMFF brand
-  yet." A real Opus fMP4 mux therefore isn't possible today — the ADR scopes the Opus smoke
-  path to `EncodedAudioChunk`-level validation only (no container), same posture VP9 used
-  before `iso-bmff` ADR-0002.
+- **Superseded (2026-09-18, #93):** when this page was written, `iso-bmff`'s muxer routed
+  `Codec::Opus` through the AAC `mp4a`/`esds` writer, so a real Opus fMP4 mux was not
+  possible and the smoke path was scoped to `EncodedAudioChunk`-level validation. `iso-bmff`
+  now writes a real `Opus`/`dOps` entry (ADR-0005; [opus-in-mp4](../container/opus-in-mp4.md)),
+  so that limit no longer holds; the smoke path itself is unchanged.
 - `@mediaway/browser` (npm package, `bindings/browser/packages/browser`) already handles
   Opus generically at the TS level today (`EncodeSession.audio()` passes through any
   `WebCodecs` codec string) — a separate layer (ADR-0020), unaffected by this gap.

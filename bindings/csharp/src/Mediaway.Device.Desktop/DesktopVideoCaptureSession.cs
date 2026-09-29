@@ -5,11 +5,11 @@ using Mediaway.Device.Desktop.Interop;
 
 namespace Mediaway.Device.Desktop;
 
-internal sealed class DesktopVideoCaptureSession : IDesktopVideoCapture
+internal class DesktopVideoCaptureSession : IDesktopVideoCapture
 {
     private readonly DesktopCaptureHandle _handle;
 
-    private DesktopVideoCaptureSession(DesktopCaptureHandle handle, uint width, uint height)
+    private protected DesktopVideoCaptureSession(DesktopCaptureHandle handle, uint width, uint height)
     {
         _handle = handle;
         Width = width;
@@ -25,9 +25,15 @@ internal sealed class DesktopVideoCaptureSession : IDesktopVideoCapture
 
     internal static DesktopVideoCaptureSession OpenFrom(DesktopCaptureHandle handle)
     {
+        var (width, height) = ReadGeometry(handle);
+        return new DesktopVideoCaptureSession(handle, width, height);
+    }
+
+    private protected static (uint Width, uint Height) ReadGeometry(DesktopCaptureHandle handle)
+    {
         var status = NativeMethods.mediaway_desktop_capture_geometry(handle, out uint width, out uint height);
         MediawayDeviceException.ThrowIfError(status);
-        return new DesktopVideoCaptureSession(handle, width, height);
+        return (width, height);
     }
 
     public bool TryPollFrame(out DesktopVideoFrame? frame)

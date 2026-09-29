@@ -30,9 +30,10 @@ Platform order: **Windows first**. Workspace index: [`docs/roadmap.md`](../../..
 - [x] D3D12 shared → native D3D11 bridge (`D3d12SharedEncodeBridge`, GpuCopy)
 - [ ] Proven CI/`machine_id` cells for each codec (promote 🆗 → ⚡ where earned) —
       `ad-hoc` numbers collected for H.264 `sw_wmf_h264_cpu` encode/decode only
-      (see [`docs/benchmarks.md`](benchmarks.md)); `zc_wmf_h264_dx11` is N/A on the
-      one ad-hoc host tried (no adapter registers a working D3D11-aware Media
-      Foundation encode/decode MFT there), and HEVC/AV1/VP9 are still unmeasured.
+      (see [`docs/benchmarks.md`](benchmarks.md)); `zc_wmf_h264_dx11` was recorded N/A on the
+      one ad-hoc host tried, but that diagnosis ("no working D3D11-aware MFT") is retired —
+      NVIDIA's async MFT was mis-sequenced, fixed in ADR-0012 — so the cell needs
+      re-measuring, and HEVC/AV1/VP9 are still unmeasured.
       Stays unchecked: no `ref-*` machine profile evidence yet (`ref-*` promotion of
       an ad-hoc box is a maintainer decision, see
       [`docs/benchmarks/machines.md`](../../../docs/benchmarks/machines.md)), and

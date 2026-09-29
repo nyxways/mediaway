@@ -20,7 +20,7 @@ flowchart LR
   end
   subgraph encoder["WmfVideoEncoder"]
     D["pts = from_hns, nearest"]
-    E["dts = decode-order counter<br/>(drain_output)"]
+    E["dts = MFT DecodeTimestamp, clamped to pts<br/>(= pts if the MFT sets none)"]
   end
   A -->|to_hns, truncates| B --> C --> D
   C -.->|emission order| E
@@ -57,6 +57,14 @@ durations from dts deltas. An 8.7 s screen recording's video track claimed to la
   its B-frame dts can exceed pts (measured dts 6, pts 5), which is why dts is clamped.
 - `ffprobe`'s `packet=duration_time` is not the `trun` sample duration. Read `trun` to check
   durations.
+
+## Unknown frame duration (`duration: 0`)
+
+`0` is the documented "unknown". It used to reach the MFT as a 100 ns sample (`to_hns(0).max(1)`),
+and the H.264 MFT built its timeline from that: 150 frames at `1/30` came back as pts
+`0, 2, 2, 5, 5, 8, 8, …`, all 150 packets delivered, 110 frames readable. Now `0` is one time-base
+tick (`runtime::sample_duration_hns`). HEVC's MFT echoes timestamps and never showed it. Every test
+above declared `duration: 1`, which is why none saw it (ADR-0013 § Addendum).
 
 ## ffmpeg's warning is about its output, not your file
 

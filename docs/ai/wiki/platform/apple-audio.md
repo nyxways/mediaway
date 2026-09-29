@@ -3,7 +3,7 @@
 ADRs: [`mediaway-encoder` ADR-apple/0004](../../../../crates/mediaway-encoder/adr/apple/0004-audiotoolbox-aac-encode.md)/[0005](../../../../crates/mediaway-encoder/adr/apple/0005-audiotoolbox-opus-encode.md),
 [`mediaway-decoder` ADR-apple/0004](../../../../crates/mediaway-decoder/adr/apple/0004-audiotoolbox-aac-decode.md)/[0005](../../../../crates/mediaway-decoder/adr/apple/0005-audiotoolbox-opus-decode.md)
 — all **Accepted, zero compile verification** (same posture as every other Apple backend this
-session). First AAC decoder in this workspace at all — Windows only ever had an encoder.
+session). Windows has an AAC decoder too now — [windows-aac](windows-aac.md).
 
 ## `AudioConverter` is pull-based — a real shape difference from `VideoToolbox`
 

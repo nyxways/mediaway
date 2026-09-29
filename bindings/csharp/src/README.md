@@ -22,7 +22,7 @@ on Linux is untested here. Pre-1.0: APIs may change.
 | `Mediaway.Device` | Camera, microphone, and screen capture |
 | `Mediaway.Device.Camera` | Camera capture (`Mediaway.Device.Camera`) |
 | `Mediaway.Device.Audio` | Microphone capture (`Mediaway.Device.Audio`) |
-| `Mediaway.Device.Desktop` | Screen capture (`Mediaway.Device.Desktop`) |
+| `Mediaway.Device.Desktop` | Screen and single-window capture (`DesktopScreenCapture`, `DesktopWindowCapture` — cursor, hidden border, even-cropped frames, capture region), loopback audio |
 | `Mediaway.Device.Hotplug` | Device add/remove events (`Mediaway.Device.Hotplug`) |
 | `Mediaway.Pipeline` | End-to-end capture → encode → mux pipeline, streaming fMP4 output, AAC/Opus audio decode, encoder/decoder capability probes |
 

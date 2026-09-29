@@ -17,7 +17,7 @@ use windows::Win32::Media::MediaFoundation::{
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::core::{GUID, Interface};
 
-use super::runtime::to_hns;
+use super::runtime::{sample_duration_hns, to_hns};
 use super::shared::{begin_streaming, bitrate_and_fps, configure_types, output_buffer_hint};
 
 /// DXGI / async state for Zero-Copy sessions.
@@ -139,12 +139,7 @@ pub(super) fn sample_from_dx11_texture(
     unsafe { sample.AddBuffer(&buffer) }.map_err(|_| EncodeError::Backend)?;
 
     let hns = to_hns(pts, time_base_num, time_base_den);
-    let dur = to_hns(
-        i64::try_from(duration).unwrap_or(0),
-        time_base_num,
-        time_base_den,
-    )
-    .max(1);
+    let dur = sample_duration_hns(duration, time_base_num, time_base_den);
     unsafe {
         sample
             .SetSampleTime(hns)

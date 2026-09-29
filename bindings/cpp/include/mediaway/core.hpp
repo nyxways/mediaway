@@ -54,6 +54,10 @@ enum class Status {
     DecodeError,
     CaptureError,
     Panic,
+    /// A capture region does not fit the surface: at open, or because the
+    /// window later shrank below it. A runtime condition (retry with a smaller
+    /// region), not a malformed config - see device::WindowCaptureConfig.
+    RegionOutOfBounds,
 };
 
 /// Thrown by every wrapper entry point. `rawCode()` carries the per-crate ABI

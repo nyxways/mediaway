@@ -4,6 +4,18 @@
 
 ### Fixed
 
+- **A Windows H.264 frame with an unknown duration (`duration: 0`) scrambled the video's
+  timeline.** The WMF encoder handed the MFT a sample duration of `to_hns(0).max(1)`, one hundred
+  *nanoseconds*, and the MFT builds its output timeline from the durations it is given. 150 frames
+  at `1/30` came back with presentation times `0, 2, 2, 5, 5, 8, 8, 11, …`: every packet was
+  delivered, the repeated instants were dropped by whatever read the file, and a player or
+  `ffprobe` saw 110 of 150 frames. `0` is the documented "unknown" and is what a C caller with no
+  duration passes (the C++ wrapper's `writeFrame` defaulted to it), so this hit every binding.
+  Unknown now means one time-base tick, the nominal frame interval; a duration the caller gives is
+  used as before. The C++ encode example that read 70 of 90 frames now reads 90 of 90 and 3.0 s.
+  HEVC was never affected (its MFT echoes timestamps). The regression test fails on the old code
+  (`crates/mediaway-encoder/adr/windows/0013-wmf-timestamp-round-trip.md` § Addendum).
+
 - **HEVC read back out of a container decoded nothing at all.** The Windows HEVC/AV1/VP9 CPU
   decoder used packets and `extra_data` exactly as given, which is right for a bitstream handed
   straight over from this workspace's encoder (Annex-B) and wrong for MP4 samples, which are
@@ -120,6 +132,16 @@
   `Cargo.toml`, importing a crate that no longer exists, so cargo never built them).
 
 ### Added
+
+- **Window capture over the C ABI** (C, C++, C#, Python, Node.js): `mediaway_desktop_capture_config_window(hwnd, …)`
+  records one window through WGC, with the pointer (`cursor`), a cropped `region_*`, a hidden
+  capture `border` and `EVEN_CROPPED` frames as fields on `mediaway_desktop_capture_config_t`.
+  `mediaway_desktop_capture_border_hidden` reports whether the OS honoured `border = HIDDEN`
+  (a refusal is not an error), and the new status `MEDIAWAY_DEVICE_STATUS_REGION_OUT_OF_BOUNDS`
+  (14) is returned when a region does not fit, including after the window shrinks. Windows only;
+  other platforms answer `UNSUPPORTED`. A region away from the window's origin costs one GPU copy
+  per frame. Hardware-verified end to end through the C ABI on a real WGC session
+  (`crates/mediaway-ffi/adr/device/0005-window-capture-c-abi.md`).
 
 - **Streaming, AAC decode and capability probes over the pipeline C ABI** (C, C++, C#, Python,
   Node.js): `mediaway_encode_session_poll_bytes` drains fMP4 bytes during a session, so a long
@@ -270,6 +292,14 @@
 ### Deprecated
 
 ### Breaking
+
+- **`MEDIAWAY_DEVICE_FFI_ABI_VERSION` 1 → 2: `mediaway_desktop_capture_config_t` grew.** It is
+  built and passed by value, so every C/C++ caller must recompile and every binding's struct
+  mirror changed. The new fields all mean "as before" when zero, so a zero-initialised config
+  behaves exactly like a version-1 one. A `Screen` config now forwards `cursor` and `region_*`
+  instead of pinning them: `cursor = INCLUDED` or a region on DXGI is `UNSUPPORTED`, and a
+  Window-only option (`border`, `dimensions`) on a Screen config is `INVALID_INPUT`. Nothing could
+  set those before, so no existing caller changes behaviour.
 
 - **`MEDIAWAY_PIPELINE_FFI_ABI_VERSION` 6 → 7: `mediaway_audio_decode_config_t` grew.**
   `extra_data` and `extra_data_len` were appended. It is passed by value, so C/C++ callers must

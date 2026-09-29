@@ -53,6 +53,27 @@ pub(crate) fn to_hns(units: i64, time_base_num: u64, time_base_den: u32) -> i64 
     i64::try_from(num / den).unwrap_or(0)
 }
 
+/// The MF sample duration, in hns, for a frame declared `duration` ticks of the time base long.
+///
+/// `0` is "unknown" (`VideoFrame::duration` documents it, and a C caller with no duration passes
+/// it), and it becomes **one tick**: the nominal frame interval, since this encoder's time base
+/// is its frame rate. It used to be `to_hns(0).max(1)`, a sample one hundred *nanoseconds* long.
+/// The MFT builds its output timeline from the sample durations it is given, so the H.264 MFT
+/// answered 150 frames at `1/30` with presentation times `0, 2, 2, 5, 5, 8, 8, 11, …`. All 150
+/// packets came out, the repeated instants were dropped by whatever read the file, and 110
+/// frames survived.
+///
+/// A duration too large for `i64` is treated as unknown too, rather than as zero.
+#[must_use]
+pub(crate) fn sample_duration_hns(duration: u64, time_base_num: u64, time_base_den: u32) -> i64 {
+    let ticks = match i64::try_from(duration) {
+        Ok(0) | Err(_) => 1,
+        Ok(ticks) => ticks,
+    };
+    // Still floored at one hns: a time base finer than MF's own resolution rounds a tick to zero.
+    to_hns(ticks, time_base_num, time_base_den).max(1)
+}
+
 /// Convert MF 100-nanosecond units back to `time_base` units.
 ///
 /// # Why this rounds to the nearest tick rather than truncating

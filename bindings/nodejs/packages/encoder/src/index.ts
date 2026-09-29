@@ -29,7 +29,7 @@ import {
   type RawRational,
 } from "@mediaway/ffi";
 import { MediawayError, type Rational } from "@mediaway/container";
-import { NATIVE_HANDLE, type CameraSession, type GpuDevice, type ScreenSession } from "@mediaway/device";
+import { NATIVE_HANDLE, type CameraSession, type DesktopCaptureSession, type GpuDevice } from "@mediaway/device";
 
 export type { Rational } from "@mediaway/container";
 export { MediawayError } from "@mediaway/container";
@@ -173,13 +173,13 @@ export class EncodeSession {
   }
 
   /**
-   * Same shape as `writeFrameFromCameraCapture`, for a `ScreenSession`
+   * Same shape as `writeFrameFromCameraCapture`, for a `ScreenSession` or `WindowSession`
    * (`@mediaway/device`) instead of Camera. GPU frames pass through
    * Zero-Copy: the polled frame's GPU handle moves straight into the encoder
    * with no CPU copy — this is the real way to consume Screen frames (see
    * `ScreenSession.pollFrame()`'s own doc: it never copies pixels out).
    */
-  async writeFrameFromDesktopCapture(capture: ScreenSession): Promise<boolean> {
+  async writeFrameFromDesktopCapture(capture: DesktopCaptureSession): Promise<boolean> {
     const wrote: [boolean] = [false];
     checkPipeline(
       pipeline.sessionWriteFrameFromDesktopCapture(this.handle, capture[NATIVE_HANDLE](), wrote)

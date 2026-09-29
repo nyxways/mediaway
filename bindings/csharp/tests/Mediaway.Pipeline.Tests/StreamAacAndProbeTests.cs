@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Runtime.InteropServices;
 using Mediaway.Common;
 using Mediaway.Container;
 using Mediaway.Pipeline.Interop;
@@ -15,6 +16,15 @@ namespace Mediaway.Pipeline.Tests;
 /// </summary>
 public sealed unsafe class StreamAacAndProbeTests
 {
+    /// <summary>
+    /// Platforms with an OS AAC decoder behind the C ABI: Media Foundation on Windows, AudioToolbox
+    /// on macOS. Elsewhere AAC decode is <c>Unsupported</c> by design. Found by the v0.2.0 release
+    /// pipeline's RC gate: these tests once assumed Windows, and macOS's decoder did not open at all
+    /// until its magic cookie was fixed (an <c>esds</c> descriptor, not the bare ASC).
+    /// </summary>
+    private static bool HasOsAacDecoder =>
+        RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
+
     // ── ABI + layout pins ────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -261,6 +271,11 @@ public sealed unsafe class StreamAacAndProbeTests
     [Fact]
     public void OpenAac_WithoutAudioSpecificConfig_IsInvalidInput()
     {
+        if (!HasOsAacDecoder)
+        {
+            return; // no OS decoder here: the open is Unsupported before the config is looked at
+        }
+
         var ex = Assert.Throws<MediawayPipelineException>(
             () => AudioDecodeSession.OpenAac(SampleRate, Channels, new Rational(1, SampleRate), ReadOnlyMemory<byte>.Empty));
         Assert.Equal(MediawayPipelineStatus.InvalidInput, ex.Status);
@@ -269,6 +284,11 @@ public sealed unsafe class StreamAacAndProbeTests
     [Fact]
     public void AacPushPacket_WithEmptyPayload_IsInvalidInput()
     {
+        if (!HasOsAacDecoder)
+        {
+            return; // no OS AAC decoder on this platform
+        }
+
         // Opus's empty packet is a loss-concealment hint; AAC has no such convention.
         using var decoder = AudioDecodeSession.OpenAac(
             SampleRate, Channels, new Rational(1, SampleRate), new byte[] { 0x11, 0x90 });
@@ -314,6 +334,14 @@ public sealed unsafe class StreamAacAndProbeTests
     public void EncoderSupport_AgreesWithActuallyOpeningAnEncoder()
     {
         var rows = EncoderSupport.Query(VideoCodec.H264, 1280, 720);
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            // Only Windows probes per backend; every other platform reports no rows (documented on
+            // the probe), so there is nothing to compare with opening an encoder.
+            Assert.Empty(rows);
+            return;
+        }
+
         Assert.NotEmpty(rows); // Windows reports at least one backend row
         bool anySupported = rows.Any(r => r.State == SupportState.Supported);
 
@@ -340,9 +368,16 @@ public sealed unsafe class StreamAacAndProbeTests
     }
 
     [Fact]
-    public void DecoderSupport_AacIsSupportedOnWindows_AndASessionThenOpens()
+    public void DecoderSupport_AacIsSupportedWhereTheOsHasADecoder_AndASessionThenOpens()
     {
-        Assert.Equal(SupportState.Supported, DecoderSupport.Query(CodecKind.Aac));
+        var state = DecoderSupport.Query(CodecKind.Aac);
+        if (!HasOsAacDecoder)
+        {
+            Assert.NotEqual(SupportState.Supported, state);
+            return;
+        }
+
+        Assert.Equal(SupportState.Supported, state);
         using var decoder = AudioDecodeSession.OpenAac(
             SampleRate, Channels, new Rational(1, SampleRate), new byte[] { 0x11, 0x90 });
         Assert.Null(decoder.PollFrame());

@@ -310,12 +310,83 @@ impl AacEncoder {
         if status != NO_ERROR || len == 0 || len > buf.len() {
             return;
         }
+        // Core Audio hands back the MPEG-4 ES descriptor (`esds` payload), not the bare
+        // `AudioSpecificConfig` this stream's `extra_data` is documented to be. Measured on a real
+        // `macos-14` runner: 39 bytes, `03 80 80 80 22 ...`, with the two-byte ASC `12 10` inside.
+        // Passed through as it was, a muxer wrote it as the `DecoderSpecificInfo` of its own `esds`,
+        // wrapping the descriptor a second time. Unwrap it; a cookie that is not a descriptor is
+        // kept as it is.
+        let cookie = &buf[..len];
+        let asc = asc_from_cookie(cookie).unwrap_or(cookie);
         if let StreamInfo::Audio { extra_data, .. } = &mut self.info {
-            *extra_data = Bytes::copy_from_slice(&buf[..len]);
+            *extra_data = Bytes::copy_from_slice(asc);
         }
         self.extradata_read = true;
     }
 }
+
+/// Reads the descriptor header at `pos`: `(tag, body start, body length)`. Lengths are ISO/IEC
+/// 14496-1's: seven bits per byte, high bit set on every byte but the last, at most four bytes.
+fn read_descriptor(data: &[u8], pos: usize) -> Option<(u8, usize, usize)> {
+    let tag = *data.get(pos)?;
+    let mut len = 0usize;
+    let mut at = pos.checked_add(1)?;
+    for _ in 0..4 {
+        let byte = *data.get(at)?;
+        at = at.checked_add(1)?;
+        len = (len << 7) | usize::from(byte & 0x7f);
+        if byte & 0x80 == 0 {
+            break;
+        }
+    }
+    Some((tag, at, len))
+}
+
+/// The bare `AudioSpecificConfig` inside a Core Audio MPEG-4 AAC magic cookie, which is an
+/// `ES_Descriptor` (tag 0x03) around a `DecoderConfigDescriptor` (0x04) whose
+/// `DecoderSpecificInfo` (0x05) is the ASC. `None` when `cookie` is not that shape, so the caller
+/// can keep it as it is.
+fn asc_from_cookie(cookie: &[u8]) -> Option<&[u8]> {
+    let (tag, body, len) = read_descriptor(cookie, 0)?;
+    if tag != 0x03 {
+        return None;
+    }
+    let end = body.checked_add(len)?.min(cookie.len());
+    // ES_ID (2 bytes) and the flags byte, then whatever those flags announce.
+    let flags = *cookie.get(body.checked_add(2)?)?;
+    let mut pos = body.checked_add(3)?;
+    if flags & 0x80 != 0 {
+        pos = pos.checked_add(2)?; // dependsOn_ES_ID
+    }
+    if flags & 0x40 != 0 {
+        let url_len = usize::from(*cookie.get(pos)?);
+        pos = pos.checked_add(1)?.checked_add(url_len)?; // URLstring
+    }
+    if flags & 0x20 != 0 {
+        pos = pos.checked_add(2)?; // OCR_ES_Id
+    }
+    while pos < end {
+        let (inner, inner_body, inner_len) = read_descriptor(cookie, pos)?;
+        if inner == 0x04 {
+            // objectTypeIndication, streamType, bufferSizeDB (3), maxBitrate (4), avgBitrate (4).
+            let mut at = inner_body.checked_add(13)?;
+            let config_end = inner_body.checked_add(inner_len)?.min(cookie.len());
+            while at < config_end {
+                let (t, b, l) = read_descriptor(cookie, at)?;
+                if t == 0x05 {
+                    return cookie.get(b..b.checked_add(l)?);
+                }
+                at = b.checked_add(l)?;
+            }
+        }
+        pos = inner_body.checked_add(inner_len)?;
+    }
+    None
+}
+
+#[cfg(test)]
+#[path = "aac_tests.rs"]
+mod tests;
 
 impl AudioEncoder for AacEncoder {
     fn stream_info(&self) -> &StreamInfo {

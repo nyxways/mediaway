@@ -1,349 +1,188 @@
-# Mediaway release notes
+# Mediaway v0.2.0
 
-<!-- Accumulate development changes under ## Unreleased
-
-### Fixed
-
-- **A Windows H.264 frame with an unknown duration (`duration: 0`) scrambled the video's
-  timeline.** The WMF encoder handed the MFT a sample duration of `to_hns(0).max(1)`, one hundred
-  *nanoseconds*, and the MFT builds its output timeline from the durations it is given. 150 frames
-  at `1/30` came back with presentation times `0, 2, 2, 5, 5, 8, 8, 11, …`: every packet was
-  delivered, the repeated instants were dropped by whatever read the file, and a player or
-  `ffprobe` saw 110 of 150 frames. `0` is the documented "unknown" and is what a C caller with no
-  duration passes (the C++ wrapper's `writeFrame` defaulted to it), so this hit every binding.
-  Unknown now means one time-base tick, the nominal frame interval; a duration the caller gives is
-  used as before. The C++ encode example that read 70 of 90 frames now reads 90 of 90 and 3.0 s.
-  HEVC was never affected (its MFT echoes timestamps). The regression test fails on the old code
-  (`crates/mediaway-encoder/adr/windows/0013-wmf-timestamp-round-trip.md` § Addendum).
-
-- **HEVC read back out of a container decoded nothing at all.** The Windows HEVC/AV1/VP9 CPU
-  decoder used packets and `extra_data` exactly as given, which is right for a bitstream handed
-  straight over from this workspace's encoder (Annex-B) and wrong for MP4 samples, which are
-  length-prefixed with an `hvcC` configuration record. Every packet was accepted, the drain was
-  clean, and **zero frames** came out — no error anywhere. Measured on a real 16-packet HEVC
-  recording mediaway itself had written. `extra_data` that parses as `hvcC` is now converted to
-  an Annex-B VPS/SPS/PPS sequence header and packets are probed individually, exactly as the
-  H.264 path has always done. The same file now decodes all 16 frames.
-
-  Covered by `mediaway-decoder/tests/mp4_roundtrip.rs`, which encodes, **muxes to MP4**,
-  demuxes and decodes: the existing round-trip test fed the decoder straight from the encoder,
-  so the container — the whole difference — was never in the loop.
-
-- **Variable-frame-rate video from the Windows (WMF) encoder declared the wrong length.** Decode
-  timestamps came from a counter that advanced one tick per frame. The muxer derives sample
-  durations from dts deltas, so under a variable frame rate every sample was one tick long:
-  an 8.7 s screen recording's video track claimed to last 0.3 s. `dts` now comes from the
-  MFT's `MFSampleExtension_DecodeTimestamp` (clamped to `pts`), or equals `pts` where the MFT
-  does not reorder. The same kind of recording now reports 10.83 s against 11.11 s of audio,
-  with the real frame gaps in `trun`. (#101)
-
-- **Dropping a Windows hardware video encoder could crash the process.** Releasing NVIDIA's
-  async encoder MFT right after use raced work it still had in flight: an access violation
-  on a Media Foundation work-queue thread inside `nvEncMFTH264x.dll` / `nvEncMFThevcx.dll`,
-  usually while the next encoder was opening. About 3% of drops crashed if the encoder had
-  not been flushed, and 0.2% if it had. `Drop` now waits a measured 50 ms grace period before
-  releasing an async MFT. Measured on an RTX 4090: 0 crashes in 16 000 drops, flushed and
-  unflushed. The cost is that dropping an async hardware encoder blocks for 50 ms. (#106,
-  `crates/mediaway-encoder/adr/windows/0012-async-mft-zero-copy-sequencing.md` § Addendum)
-
-- **WGC window capture could not feed a hardware encoder at an odd window size**, which is
-  most window sizes: 4:2:0 encoders reject an odd axis. `WindowCaptureOptions::dimensions =
-  FrameDimensions::EvenCropped` trims the last column/row of an odd axis at no cost (WGC crops
-  to its frame pool; measured). Also fixed along the way: a frame delivered just after a
-  resize reported the new size while its texture was still the old one; frame sizes now come
-  from the texture itself.
-
-- **The WGC capture border was never hidden, despite a comment saying it was.**
-  `SetIsBorderRequired` was never called. `WindowsWindowCapture::open_with(config, options)` with `options.border = CaptureBorder::Hidden` now requests borderless access and hides it. A refusal does not fail
-  the capture (the border is drawn on screen, not into frames), and
-  `WindowsWindowCapture::border_hidden()` reports what the OS actually did. `open` keeps the
-  border shown. (`crates/mediaway-device/adr/0008-cursor-capture-and-wgc-border.md`)
-
-- **Windows (WMF) video timestamps did not survive the encoder.** `to_hns` and `from_hns`
-  **both truncated**, so the tick → hns → tick trip through the MFT was not an inverse, and
-  10 000 000 does not divide most timebase denominators. The two codecs broke differently
-  (`crates/mediaway-encoder/adr/windows/0013-wmf-timestamp-round-trip.md`):
-
-  - **HEVC — presentation timestamps collapsed.** At `1/60` only every third tick survived;
-    a real recording held 279 video packets and 215 distinct presentation timestamps, and
-    ffmpeg warned *"non monotonically increasing dts to muxer"* while decoding it.
-  - **H.264 — B-frames presented before they were decoded** (`dts > pts`): truncation shaved
-    off the MFT's one-tick reorder delay.
-
-  `from_hns` now rounds to the nearest tick, in both `mediaway-encoder` and
-  `mediaway-decoder` (which carried a byte-identical copy). `1/30`, `1/24`, `1001/30000` and
-  audio were affected the same way.
-
-  *Corrected after #100:* that PR also said `dts` had been a copy of `pts`. It had not —
-  `drain_output` already assigned a decode-order counter — and a
-  `MFSampleExtension_DecodeTimestamp` read it added was dead code, now removed. `Packet::dts`
-  behaviour is unchanged by either PR.
-
-- **Windows per-process audio loopback never opened, on any machine.**
-  `IAudioClient::Initialize` was passed `AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM |
-  AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY` and answered `AUDCLNT_E_INVALID_STREAM_FLAG`
-  (`0x88890021`) every time: the process-loopback virtual device requires
-  `AUDCLNT_STREAMFLAGS_LOOPBACK` and accepts no sample-rate conversion, because there is no
-  mix format to convert from. `DeviceKind::ProcessLoopback` capability probing shares that
-  code path, so it reported "not supported" everywhere, Windows 11 included. Both now work
-  and are covered by tests that open a real session
-  (`crates/mediaway-device/adr/windows/0002-wasapi-capture.md` § Correction).
-
-- **`ProcessTreeScope::ProcessOnly` recorded the inverse of what it promised.** Documented as
-  "only audio rendered directly by the target process", it selected
-  `PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE` — everything *except* that process
-  tree — and did so silently, since the session opened normally. Windows has no
-  "target process alone" mode, so the variant is **renamed `ExcludeProcessTree`** and
-  documented as the "record everything else" mode it always was. The scope → Windows-mode
-  mapping is now pinned by unit tests.
-
-- **HEVC in MP4 decoded zero frames. It now decodes every frame.** Not a regression — no
-  HEVC MP4 this workspace ever wrote was playable, on any platform. Three defects had to
-  line up, and each had been deferred as somebody else's job
-  (`crates/iso-bmff/adr/0006-hevc-in-mp4.md`):
-
-  - `iso_bmff::bitstream::hevc::build_hvcc` read `profile_tier_level()` at fixed byte
-    offsets into the NAL **as transmitted**, by analogy to `build_avcc`. The analogy does
-    not hold: H.264's profile/level sit where an emulation-prevention escape cannot occur,
-    HEVC's span RBSP bytes 3..15, and a Main-profile SPS carries three escapes inside
-    exactly that range. Measured against ffmpeg's `hvcC` for the same encoder, **6 of 23
-    header bytes were wrong**, `general_level_idc` among them — `0x00` instead of `0x5a`.
-    **This also corrupted every HEVC file produced on macOS**, which shares `to_hvcc`.
-  - `iso_bmff::Muxer::push_packet` did not convert HEVC Annex-B to length-prefixed samples,
-    while `hvcC` declares `lengthSizeMinusOne = 3`. A `00 00 00 01` start code read as a
-    length gives `Invalid NAL unit size (17564159 > 22953)`, which is what ffmpeg reported
-    for every sample. HEVC now gets the same automatic conversion and configuration-record
-    backfill H.264 has always had.
-  - `mediaway_encoder`'s WMF path never built an `hvcC` at all, passing Media Foundation's
-    raw sequence header through as `extra_data` — the follow-up `mediaway-encoder`'s
-    ADR-0010 named and deferred. Worse, the inbox `HEVCVideoExtensionEncoder` MFT never
-    publishes that attribute, so `extra_data` was *empty* and the muxer wrote
-    `HVCC_PLACEHOLDER`, a record whose `numOfArrays` is 0.
-
-  **Verified end to end, as a test rather than a claim:**
-  `crates/iso-bmff/tests/conformance_hevc.rs` encodes real HEVC with ffmpeg, strips it to
-  Annex-B, muxes it through this crate with an *empty* configuration record, and asserts
-  ffprobe decodes all 30 frames. Both container-side defects were confirmed to fail it
-  individually before the fix. It skips loudly without ffmpeg/ffprobe.
-
-  **Why this survived seven weeks:** the HEVC mux test fed the muxer six hand-written bytes,
-  `build_hvcc`'s unit test used an SPS fixture containing no escape sequence, and the only
-  encode→mux→demux integration tests were H.264-only *and* orphaned (no `[[test]]` entry in
-  `Cargo.toml`, importing a crate that no longer exists, so cargo never built them).
+## What's new
 
 ### Added
 
-- **Window capture over the C ABI** (C, C++, C#, Python, Node.js): `mediaway_desktop_capture_config_window(hwnd, …)`
-  records one window through WGC, with the pointer (`cursor`), a cropped `region_*`, a hidden
-  capture `border` and `EVEN_CROPPED` frames as fields on `mediaway_desktop_capture_config_t`.
-  `mediaway_desktop_capture_border_hidden` reports whether the OS honoured `border = HIDDEN`
-  (a refusal is not an error), and the new status `MEDIAWAY_DEVICE_STATUS_REGION_OUT_OF_BOUNDS`
-  (14) is returned when a region does not fit, including after the window shrinks. Windows only;
-  other platforms answer `UNSUPPORTED`. A region away from the window's origin costs one GPU copy
-  per frame. Hardware-verified end to end through the C ABI on a real WGC session
-  (`crates/mediaway-ffi/adr/device/0005-window-capture-c-abi.md`).
-
-- **Streaming, AAC decode and capability probes over the pipeline C ABI** (C, C++, C#, Python,
-  Node.js): `mediaway_encode_session_poll_bytes` drains fMP4 bytes during a session, so a long
-  capture is bounded by poll cadence instead of recording length (`finish` then returns only the
-  unpolled tail). `mediaway_audio_decode_session_open` now opens AAC (Windows `CMSAACDecMFT`,
-  Apple `AudioConverter`) given the stream's `AudioSpecificConfig`; unlike the software Opus
-  decoder its samples can differ between hosts, and the Apple arm is compile-checked but not yet
-  run. `mediaway_encoder_support_at(codec, width, height)` and `mediaway_decoder_support(codec)`
-  report what is usable before a session is opened (both open throwaway sessions, so they are
-  costly). Hardware-verified on Windows: a sample-exact AAC round trip through the C ABI
-  (48 packets to 49152 samples) and a streamed recording byte-for-byte the size of an unpolled
-  one (`crates/mediaway-ffi/adr/pipeline/0007-stream-bytes-aac-decode-support-probe.md`).
-
-- **Replay ring over the container C ABI** (C, C++, C#, Python, Node.js): `mediaway_replay_ring_*` keeps
-  the last *N* milliseconds of encoded packets and `mediaway_replay_ring_clip_last` cuts the last *M* at a
-  keyframe, in decode order, rebased to zero, for a fresh muxer to write as a standalone file. A ring holds
-  either the payloads (`BYTES`) or only where they are (`STORED`, fed from the new
-  `mediaway_muxer_create_with_placements` / `mediaway_muxer_poll_placements`, which record where each MP4
-  sample landed). A clip is an owned snapshot, so pushing more or closing the ring cannot invalidate it. The
-  C ABI has no video-packet source yet (`mediaway_encode_session` muxes internally), so feed the ring demuxer
-  packets, audio-encoder packets or packets from your own encoder. `MEDIAWAY_CONTAINER_FFI_ABI_VERSION` is 8;
-  additions only, no existing struct changed. Hardware-verified on real H.264
-  (`crates/mediaway-ffi/adr/container/0009-replay-ring-c-abi.md`).
-
-- **`mediaway_container::replay::ReplayRing`**: keeps the last *N* seconds of encoded packets
-  in memory and cuts "the last *M* seconds" at a keyframe, as a packet sequence rebased to
-  zero that a fresh muxer writes as a standalone file. Cuts are in decode order, so B-frames
-  and open-GOP leading pictures cannot be stranded across the cut. Other streams (audio) are
-  cut by time to match. Eviction is by whole GOPs, with an optional byte ceiling.
-  (`crates/mediaway-container/adr/0004-replay-ring.md`)
-
-- **`ReplayRing` can hold payload locations instead of payloads.** `ReplayRing<P = Bytes>` is
-  generic over `ReplayPayload`; with `StoredPayload { file, offset, len }` a caller that already
-  writes the packets to disk keeps only their locations in the ring (a few dozen bytes per
-  packet instead of the payload) and reads the bytes back itself when it saves a clip. New:
-  `ReplayRing::for_payload`, `push_entry`, `payloads`, `Clip::entries`, `PacketMeta`. The
-  `Bytes` API is unchanged. (`crates/mediaway-container/adr/0004-replay-ring.md` § Updates)
-
-- **MP4 mux payload placements**: `iso_bmff::Muxer::with_placements` (and
-  `mediaway_container::mp4::Muxer::with_placements`) records, for every sample written, the
-  absolute byte offset and length of its payload in the output stream; `poll_placements`
-  takes them. Off by default, and no work at all when off.
-  (`crates/iso-bmff/adr/0007-mux-payload-placements.md`)
-
-- **`VideoEncoder::finish(self)` / `AudioEncoder::finish(self)`**: flush and collect every
-  remaining packet in one call. The trait docs now also say what skipping it costs: dropping
-  an unflushed encoder silently discards its in-flight frames, which are the end of the stream
-  on a pipelined hardware encoder. (`crates/mediaway-encoder/adr/0006-finish-ends-a-stream.md`)
-
-- **`mediaway::platform::WindowCapture` and `platform::DesktopAudio`** — single-window capture
-  (WGC / portal / ScreenCaptureKit) and desktop audio (Windows system or per-process loopback)
-  through the auto-dispatch facade. Recording one application's picture and sound had been
-  possible only by naming backend types directly. Both return the concrete per-target type
-  (`PlatformWindowCapture`, `PlatformDesktopAudioCapture`) rather than a box, per
-  `crates/mediaway/adr/0002-platform-dispatch-avoid-box-dyn.md`.
-
-- **Capture a region of a window** — `DesktopVideoCaptureConfig::region: Option<CaptureRegion>`.
-  WGC honours it: a region at the origin is cropped by sizing the frame pool (no copy), any
-  other region by one GPU `CopySubresourceRegion` per frame. A window that shrinks below the
-  region is `CaptureError::RegionOutOfBounds`, never padded. DXGI, Linux, macOS and iOS refuse a
-  region with `Unsupported` rather than record the whole surface.
-  (`crates/mediaway-device/adr/0009-capture-region.md`)
-
-- **Windows AAC decode** — `mediaway_decoder::windows::WmfAacDecoder` (+ `AacDecoderConfig`)
-  over the inbox `CMSAACDecMFT`, Float32 PCM out, wired into
-  `mediaway::platform::decoder_support(Aac)`. Closes a gap where this workspace could
-  *encode* AAC into fMP4 on Windows but had no way to play it back. Hardware-verified with
-  a sample-exact round trip (4096 PCM samples/channel → 4 AAC-LC packets → 4096 samples
-  back, real signal not silence), moving the README's Windows AAC decode cell `👻 → ✅`
-  (`crates/mediaway-decoder/adr/windows/0006-wmf-aac-decode.md`).
-
-  The stream's `AudioSpecificConfig` is **required** at open (`extra_data`, e.g. MP4's
-  `esds` DecoderSpecificInfo); an empty one is `DecodeError::Unsupported` rather than a
-  synthesized default, which would decode SBR/PS streams to quietly wrong output. Raw AAC
-  only — ADTS input must be de-headered first (`adts-core`).
-
-- `mediaway_container::MuxOpen` and `mediaway_container::ContainerError`. `MuxOpen` names
-  the track-registration phase every muxer already had (`add_track` → `begin`), plus a
-  `FIRST_TRACK_ID` const for the container's own track-numbering floor — Matroska reserves
-  `TrackNumber` 0, ISOBMFF does not.
-
-- `EncodeSession::open_in` / `open_in_with_audio` — open a session against a
-  caller-supplied muxer. This is what makes non-MP4 containers reachable through the facade
-  (`EncodeSession::open_in(webm::Muxer::new(), encoder)`), and it is also the only way to
-  reach muxer options the facade does not mirror — `mp4::Muxer::with_fragment_batch` was
-  previously unreachable, pinning fragment cadence at the default 30
-  (`crates/mediaway/adr/0007-encode-session-generic-muxer.md`).
-
-- `Mux::set_track_extra_data`, defaulted to a no-op. Moves ADR-0005's late-known
-  extra-data backfill onto the trait. **Containers that commit their track header at
-  `begin()` cannot honour it and drop it silently** — `webm::Muxer` is that case, so a
-  late-config encoder backend (e.g. `VideoToolbox`) paired with WebM produces a file with
-  no codec configuration record. Pair those backends with `mp4::Muxer`.
-
-- `mediaway_encoder::windows::auto::support_at` and `mediaway::platform::encoder_support_at`
-  — probe encoder availability at a caller-supplied resolution. Encoder support is
-  resolution-dependent; the resolution-free `support`/`encoder_support` forms remain and now
-  delegate at a documented default
-  (`crates/mediaway-encoder/adr/0005-resolution-aware-capability-probe.md`).
-
-- `EncodeSession::poll_bytes` and `EncodeSession::finish_into` — drain fMP4 bytes
-  incrementally during a session instead of holding the whole recording in RAM until
-  `finish()`. A long capture's memory is now bounded by poll cadence rather than by
-  duration (`crates/mediaway/adr/0006-encode-session-streaming-bytes.md`).
+- Window capture over the C ABI (C, C++, C#, Python, Node.js): record one window with a chosen pointer, a cropped region, a hidden capture border and even-cropped frames, Windows only
+- Streaming fMP4 bytes over the pipeline C ABI (`mediaway_encode_session_poll_bytes`) so a long capture's memory is bounded by poll cadence
+- AAC decode over the pipeline C ABI (Windows Media Foundation, Apple AudioToolbox) given the stream's `AudioSpecificConfig`
+- Encoder and decoder capability probes over the pipeline C ABI (`mediaway_encoder_support_at`, `mediaway_decoder_support`), both costly because they open throwaway sessions
+- Replay ring over the container C ABI: keep the last N seconds of encoded packets and cut a standalone clip at a keyframe, holding payloads or only file locations
+- MP4 payload placements over the container C ABI (`mediaway_muxer_create_with_placements`) to find every sample's bytes in the output file
+- `mediaway_container::replay::ReplayRing<P>` in Rust, generic over `Bytes` or `StoredPayload`, cutting in decode order so B-frames are never stranded
+- `iso_bmff::Muxer::with_placements` and `poll_placements`, off by default and free when off
+- `VideoEncoder::finish(self)` and `AudioEncoder::finish(self)` to flush and collect every remaining packet, with the cost of skipping it documented
+- `mediaway::platform::WindowCapture` and `platform::DesktopAudio` through the auto-dispatch facade, returning concrete per-target types
+- Capture a region of a window with `DesktopVideoCaptureConfig::region`, cropped by the frame pool or by one GPU copy per frame
+- Windows AAC decode with `WmfAacDecoder`, a sample-exact round trip against the Windows AAC encoder
+- `EncodeSession::open_in` and `open_in_with_audio` to write any container through the facade, plus `MuxOpen`, `ContainerError` and `Mux::set_track_extra_data`
+- `EncodeSession::poll_bytes` and `finish_into` to drain fMP4 bytes during a session
+- `encoder_support_at` and `mediaway_encoder::windows::auto::support_at` to probe encoder availability at the resolution you will use
 
 ### Changed
 
-- `EncodeSession` is now generic over its muxer:
-  `EncodeSession<E: VideoEncoder, M: MuxOpen = mp4::Muxer<mp4::Open>>`. `open` and
-  `open_with_audio` keep their exact signatures and still produce fragmented MP4, so no
-  existing call site changed.
-
-- `EncodeSession::finish` is now a convenience wrapper over `finish_into`. Its signature
-  and its behaviour for a session that was never polled are unchanged; a session drained
-  with `poll_bytes` receives only the unpolled tail, as documented on both methods.
+- `EncodeSession` is generic over its muxer with `mp4::Muxer` as the default, so existing call sites are unchanged
+- `EncodeSession::finish` wraps `finish_into` and returns only the unpolled tail after `poll_bytes`
 
 ### Fixed
 
-- **Opus in MP4 was written as AAC.** `iso-bmff` shared AAC's `mp4a`/`esds` branch for
-  `Codec::Opus`, so an Opus track got an `esds` declaring `objectTypeIndication` 0x40
-  (MPEG-4 AAC) plus a hardcoded AAC `AudioSpecificConfig`. The file muxed without error and
-  failed at playback. Opus now writes a real `Opus` sample entry with a `dOps`
-  (`OpusSpecificBox`), and demux recognizes it, yielding an RFC 7845 `OpusHead` in
-  `extra_data` so the configuration survives an MP4 → WebM remux
-  (`crates/iso-bmff/adr/0005-opus-sample-entry.md`). Files written with an Opus track by an
-  earlier version are invalid and must be remuxed.
-
-
-- `cargo nextest run --workspace` no longer takes over the developer's desktop. Two
-  screen-capture smoke tests nudged the mouse cursor and a third opened a visible window;
-  all three are now `#[ignore]`d and opt-in via `--run-ignored all`. The convention now
-  lists the Win32 calls that trigger the rule, because the first pass was written from the
-  reported symptom ("moves the mouse") and missed the window-opening case.
-
-- **DX11 Zero-Copy encode now works on NVIDIA hardware.** Three async-MFT sequencing bugs
-  made `VideoInputPreference::ZeroCopyGpu` fail on every machine that selected an async
-  encoder MFT — which is every NVIDIA machine, since Intel QuickSync's MFTs are sync and
-  NVIDIA's are not: the async unlock came after `MFT_MESSAGE_SET_D3D_MANAGER` (so `open`
-  failed with `MF_E_TRANSFORM_ASYNC_LOCKED`), `METransformHaveOutput` was received and
-  discarded (so the first `push_frame` failed), and the input wait never drained output (so
-  the second `push_frame` deadlocked). Verified on an RTX 4090 at 1920×1080 for H.264 and
-  HEVC, from NV12 **and** BGRA input
-  (`crates/mediaway-encoder/adr/windows/0012-async-mft-zero-copy-sequencing.md`).
-  This was previously recorded in the wiki as an unexplained "environment gap"; that
-  diagnosis is retired.
-
-  **That verification is encoder-level.** It asserts the MFT produces packets, and says
-  nothing about whether those packets mux into a playable file. For HEVC they did not, until
-  the container fix under **Fixed** above — wording it as a bare "verified" is part of how
-  that stayed invisible.
-
-- Encoder capability probe no longer reports `NoDevice` for backends that work. It opened
-  every probe session at 64×64, below NVENC's minimum dimensions, so `encoder_support`
-  reported no NVIDIA encoder on an RTX 4090 that encodes AV1 and H.264 fine. The default
-  probe size is now one measured to clear every backend's minimum.
-
-### Removed
-
-### Deprecated
+- HEVC in MP4 was never playable: the `hvcC` record, the Annex-B to length-prefixed conversion and the Windows encoder's missing `hvcC` are all fixed, including on macOS
+- HEVC read back out of an MP4 decoded zero frames on Windows and now decodes every frame
+- Opus in MP4 was written as AAC and is now a real `Opus`/`dOps` track; files written by earlier versions are invalid and must be remuxed
+- A Windows H.264 frame with an unknown duration (`duration: 0`) scrambled the timeline and dropped frames on playback; it is now one time-base tick
+- Windows video timestamps did not survive the encoder: the hns round trip is exact, `dts` comes from the MFT, and a variable-frame-rate recording declares its real length
+- Dropping a Windows hardware video encoder could crash the process; it now waits a measured 50 ms before releasing an async MFT
+- DX11 Zero-Copy encode now works on NVIDIA hardware, where three async-MFT sequencing bugs made it fail on every machine
+- WGC window capture can hide its border and trim odd-sized frames to even, which hardware encoders require
+- Windows per-process audio loopback never opened on any machine and now works
+- `ProcessTreeScope::ProcessOnly` recorded the inverse of what it promised and is renamed `ExcludeProcessTree`
+- The encoder capability probe no longer reports `NoDevice` for backends that work
+- `cargo nextest run --workspace` no longer takes over the developer's desktop
 
 ### Breaking
 
-- **`MEDIAWAY_DEVICE_FFI_ABI_VERSION` 1 → 2: `mediaway_desktop_capture_config_t` grew.** It is
-  built and passed by value, so every C/C++ caller must recompile and every binding's struct
-  mirror changed. The new fields all mean "as before" when zero, so a zero-initialised config
-  behaves exactly like a version-1 one. A `Screen` config now forwards `cursor` and `region_*`
-  instead of pinning them: `cursor = INCLUDED` or a region on DXGI is `UNSUPPORTED`, and a
-  Window-only option (`border`, `dimensions`) on a Screen config is `INVALID_INPUT`. Nothing could
-  set those before, so no existing caller changes behaviour.
+- `MEDIAWAY_DEVICE_FFI_ABI_VERSION` 1 to 2: `mediaway_desktop_capture_config_t` grew, zero-initialised configs behave as before, and Screen configs now refuse a pointer or region on DXGI
+- `MEDIAWAY_PIPELINE_FFI_ABI_VERSION` 6 to 7: `mediaway_audio_decode_config_t` gained `extra_data` and `extra_data_len`, both null for Opus
+- `MEDIAWAY_CONTAINER_FFI_ABI_VERSION` 7 to 8: additions only (replay ring, placements), no existing struct changed
+- `DesktopVideoCaptureConfig` gains `region` and `cursor`, so struct literals must add them; macOS previously always showed the pointer and now hides it by default
+- `ProcessTreeScope::ProcessOnly` is renamed `ExcludeProcessTree`, and the C ABI's `include_child_processes` is renamed `include_target_process_tree` with the same polarity and layout
+- `CaptureError` gains `RegionOutOfBounds` and `BackendCode { code }`, and `PipelineError::Mux` now wraps `ContainerError` instead of `mp4::Error`
+- `iso-bmff` writes HEVC and Opus tracks differently, so files those tracks produced with earlier versions are invalid
 
-- **`MEDIAWAY_PIPELINE_FFI_ABI_VERSION` 6 → 7: `mediaway_audio_decode_config_t` grew.**
-  `extra_data` and `extra_data_len` were appended. It is passed by value, so C/C++ callers must
-  recompile and every binding's struct mirror changed. Both new fields are `NULL`/`0` for Opus,
-  so an Opus config behaves as before.
+## Overview
 
-- **`DesktopVideoCaptureConfig` gains `region: Option<CaptureRegion>`**; struct literals add
-  `region: None` (the constructors set it). `CaptureError` gains `RegionOutOfBounds`
-  (the enum is `#[non_exhaustive]`).
+Mediaway is a cross-platform media toolkit built on Zero-Copy paths (GPU
+handles or shared CPU buffers), sans-io cores for mux/demux/bitstream/config,
+and low-level APIs as first-class entry points. The workspace ships 11
+freestanding, independently versioned core crates (`iso-bmff`, `ebml-webm`,
+`flv-core`, `adts-core`, `ogg-core`, `riff-wave-core`, `mpeg-ts-core`,
+`mpeg-audio`, `iso-cenc`, `rtmp`, `rtp-core`) plus one `mediaway` umbrella with
+five capability crates (`container`, `encoder`, `decoder`, `device`, `sw`) and
+a single C ABI (`mediaway-ffi`). This release brings the non-Rust bindings up
+to what the Rust API gained since v0.1.8 (window capture, streaming, AAC decode,
+capability probes, the replay ring) and fixes a run of Windows encode/decode
+defects found by testing the container round trip end to end. `iso-bmff` moves
+to 0.1.2 because the HEVC and Opus fixes and the new placements API live there.
 
-- **`DesktopVideoCaptureConfig` gains `cursor: CursorCapture`** (`Excluded` by default,
-  `Included` on request). Struct-literal constructions must add it; `::screen` / `::window`
-  set it. Backends that cannot composite the pointer — DXGI screen capture, iOS — reject
-  `Included` with `CaptureError::Unsupported` instead of recording without it. **macOS
-  previously always showed the pointer and now hides it by default.** On WGC, failing to apply
-  either setting is now an error rather than a discarded result.
+## Platforms
 
-- `ProcessTreeScope::ProcessOnly` is renamed `ProcessTreeScope::ExcludeProcessTree` (and
-  `WasapiProcessTreeScope::ProcessOnly` likewise), because it selected the "capture
-  everything *except* this process tree" Windows mode while claiming the opposite. Callers
-  that meant "the target process" want `IncludeChildren`; Windows offers no narrower mode.
-  The C ABI's `mediaway_desktop_audio_capture_config_t.include_child_processes` is renamed
-  `include_target_process_tree` for the same reason — same polarity, same struct layout, so
-  only source references change. The C#/Python bindings' parameter names follow.
+- Windows (win64): primary target and where this release's changes were verified,
+  on an RTX 4090 and Intel UHD 770. DX11 Zero-Copy encode now works on NVIDIA's
+  async encoder MFTs, AAC can be decoded as well as encoded, and window capture
+  can hide the WGC border, choose the pointer, trim to even sizes and crop a
+  region. The D3D12 native decode paths are unchanged and still deliberately not
+  hardware-run (known TDR on the existing D3D12 H.264 decode path).
+- Linux: unchanged this release. VA-API, DMA-BUF Zero-Copy and the AMF encode
+  backend are compile/test-verified on WSL2 only, with no real VA-API or AMD GPU
+  hardware available. A capture region is refused with `Unsupported`.
+- macOS / iOS: unchanged apart from the HEVC `hvcC` fix, which corrects every
+  HEVC file produced there (it shared the broken builder), and the macOS capture
+  pointer now hidden by default. `mediaway-encoder`/`decoder`/`device` compile on
+  real CI runners; no macOS device runs any actual encode, decode or capture in
+  CI. The C ABI's new Apple AAC decode arm compiles and passes clippy for
+  `aarch64-apple-darwin` and `aarch64-apple-ios`, but CI does not compile
+  `mediaway-ffi` for Apple and **it has never run**.
+- Android: unchanged. NDK `AMediaCodec` decode and Camera2/AAudio/`MediaProjection`
+  capture remain authored without a device or emulator, and are not in CI.
+- Web (wasm32): unchanged. `@mediaway/browser` ships `iso-bmff-wasm` and WebCodecs
+  encode/decode, compile-verified only; the Opus-in-MP4 fix applies to its muxer.
 
-- `CaptureError` gained a `BackendCode { code: i32 }` variant carrying the platform's own
-  status code (`HRESULT`, …). The enum is `#[non_exhaustive]`, so only exhaustive matches
-  written inside this workspace are affected; `CaptureError::Backend` still exists for
-  backends that have no such code.
+## Codecs
 
-- `PipelineError::Mux` now wraps `mediaway_container::ContainerError` instead of
-  `mediaway_container::mp4::Error`. `EncodeSession` is generic over its container, so the
-  variant could not keep naming one container's error type without making `PipelineError`
-  itself generic. Matching on a specific container's error still works, one level deeper:
-  `PipelineError::Mux(ContainerError::Mp4(mp4::Error::InvalidTrack))`.
+- Encode: H.264 — NVENC, Vulkan Video, QuickSync (VPL), VA-API (GOP), AMF,
+  Apple (unverified); HEVC — VA-API (GOP), AMF, Apple (unverified) and, on
+  Windows, now muxed into playable MP4; VP9 — VA-API (narrow real-driver support,
+  untested); AV1 — software (rav1e), AMF (untested), Vulkan (implemented but
+  driver-blocked on this workspace's reference GPU); ProRes — Apple (unverified).
+- Decode: H.264/HEVC — Media Foundation and Vulkan Video (hardware-verified),
+  VA-API (GOP, untested), D3D12 (HEVC, sans-io only), Apple (unverified); HEVC
+  read back out of an MP4 now decodes on Windows; VP9 — VA-API (untested), Apple
+  (unverified); AV1 — Vulkan (keyframe-only, hardware-verified), VA-API
+  (keyframe-only, untested), D3D12 (keyframe-only, sans-io only), Apple
+  (unverified); ProRes — Apple (unverified).
+- Audio: Opus — Windows decode via Media Foundation, cross-platform software
+  encode/decode (`unsafe-libopus`), native Apple encode/decode (unverified), and a
+  real `Opus`/`dOps` MP4 track; AAC — Windows encode and now decode via Media
+  Foundation (hardware-verified round trip), software encode (C# `AudioEncoder`),
+  Apple encode/decode (unverified); audio processing module (sonora). AAC decode
+  and the Opus decode session are both reachable from all five native bindings
+  through one C ABI call, but AAC is the OS's own decoder, so its samples can
+  differ between hosts, unlike the software Opus decoder.
+- Containers: ISOBMFF/MP4, WebM, FLV, MPEG-TS, ADTS, Ogg, RIFF/WAVE, MPEG
+  audio — all verified playable in mpv; CENC encryption/decryption; RTMP
+  (proposed, unpublished); `rtp-core` for RTP payloadization (H.264/HEVC). New:
+  a replay ring over encoded packets and MP4 payload placements.
 
+## Bindings
+
+Every package below ships native libs for Windows x64, Linux x86_64 and macOS
+(x86_64 + arm64) (ADR-0024). Linux is verified for the container capability only;
+the device and pipeline capabilities, including everything new in this release,
+are Windows-hardware-verified. Window capture, streaming, AAC decode, the probes and the
+replay ring reached every binding below and were re-run against the real native library.
+The C ABI still has no video-packet source, so a replay ring is fed demuxer packets,
+audio-encoder packets or packets from an encoder you drive yourself.
+
+- C: [`mediaway_ffi.h`](https://github.com/nyxways/mediaway/releases/tag/v0.2.0)
+  + one CMake/CPack archive per platform (GitHub Release assets) — device ABI 2,
+  pipeline ABI 7, container ABI 8; recompile against the new headers.
+- C#: [`Mediaway.*`](https://www.nuget.org/packages/Mediaway.Common) packages
+  on NuGet (Trusted Publishing, OIDC) — window capture, `PollBytes`, AAC decode,
+  probes and `ReplayRing`/`ReplayClip`.
+- Python: [`mediaway`](https://pypi.org/project/mediaway/) on PyPI (Trusted
+  Publishing) — the same surface; `include_child_processes` is now
+  `include_target_process_tree`.
+- Node: [`@mediaway/ffi`](https://www.npmjs.com/package/@mediaway/ffi),
+  [`@mediaway/container`](https://www.npmjs.com/package/@mediaway/container),
+  [`@mediaway/device`](https://www.npmjs.com/package/@mediaway/device),
+  [`@mediaway/encoder`](https://www.npmjs.com/package/@mediaway/encoder),
+  [`@mediaway/decoder`](https://www.npmjs.com/package/@mediaway/decoder) on
+  npm (OIDC Trusted Publishing) — the same surface.
+- C++: `bindings/cpp/include/mediaway/` — `WindowCapture`, `pollBytes`, `openAac`,
+  `encoderSupport`/`decoderSupport` and `ReplayRing`/`ReplayClip`; header-only.
+- Browser: [`@mediaway/browser`](https://www.npmjs.com/package/@mediaway/browser)
+  (wasm, wasm-bindgen) — unchanged apart from the Opus-in-MP4 fix in its muxer.
+
+## Breaking changes
+
+This release changes three C ABI versions and several Rust types. All are
+pre-1.0 and may change without a major bump, but you will notice these:
+
+- **Recompile against the new headers.** Device ABI 2 and pipeline ABI 7 grew
+  by-value config structs (zero-initialised new fields behave as before). Container
+  ABI 8 only adds functions.
+- **Struct literals of `DesktopVideoCaptureConfig`** must add `region` and `cursor`;
+  the `::screen`/`::window` constructors set them.
+- **Renames:** `ProcessTreeScope::ProcessOnly` to `ExcludeProcessTree` and the C ABI's
+  `include_child_processes` to `include_target_process_tree` (same layout, so only
+  source references change).
+- **`CaptureError` and `PipelineError`:** two new `CaptureError` variants, and
+  `PipelineError::Mux` wraps `ContainerError`.
+- **Files written by earlier versions with an HEVC or Opus track in MP4 are
+  invalid** and must be remuxed.
+
+## Maturity bar
+
+Not production-ready. Everything new in this release was verified on **Windows
+hardware through the real native library** (C ABI and each binding), and those
+tests are named in the notes above; treat every path without an explicit
+"hardware-verified" tag as unverified. The exceptions are the ones to read twice:
+
+- **Apple AAC decode through the C ABI has never run.** It compiles and passes
+  clippy for `aarch64-apple-darwin` and `aarch64-apple-ios`, but CI does not build
+  `mediaway-ffi` for Apple, so macOS CI is its first real check.
+- **Apple, Android, Linux VA-API/AMF and the D3D12 decode paths** are authored and
+  compile- or test-verified only, with no real-hardware run, as in v0.1.8.
+- **Bindings on Linux and macOS** are verified for the container capability at most;
+  the new device and pipeline surface was exercised on Windows only.
+- **AAC decode output is host-dependent** by construction: it is the OS's codec.
+- **The replay ring has no C video-packet source yet**, so from C it is fed
+  demuxed, audio-encoder or caller-encoded packets.
+
+A run of these fixes (HEVC in MP4, Opus in MP4, unknown frame duration) were
+defects that no existing test could see, because those tests never put the
+container in the loop. The tests added with them do. Costly paths (CPU readback,
+SW fallbacks, the throwaway sessions behind the capability probes, a window
+region away from the origin) are documented at each API
+(`docs/spec/caveats-and-clarity.md`). See `docs/spec/status.md`.

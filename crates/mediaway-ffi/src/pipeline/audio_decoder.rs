@@ -1,37 +1,27 @@
-//! Opus audio decode session C ABI — `mediaway_sw::opus::OpusDecoder` reachable
-//! from C.
+//! Audio decode session C ABI — Opus (software) and AAC (the OS's decoder).
 //!
-//! Design: `adr/pipeline/0006-audio-decode-c-abi.md` — single-step open (the handle
-//! *is* the decoder, same shape as [`crate::pipeline::decoder`]'s video surface),
-//! `poisoned`-guarded (`push_packet`/`poll_frame` are repeated-call APIs). Wraps the
-//! concrete `mediaway_sw::opus::OpusDecoder` directly rather than a `Box<dyn
-//! AudioDecoder>`.
+//! Design: `adr/pipeline/0006-audio-decode-c-abi.md` (Opus) and
+//! `adr/pipeline/0007-stream-bytes-aac-decode-support-probe.md` §2 (AAC) — single-step open
+//! (the handle *is* the decoder, same shape as [`crate::pipeline::decoder`]'s video surface),
+//! `poisoned`-guarded (`push_packet`/`poll_frame` are repeated-call APIs).
 //!
-//! **That choice's original reason is no longer true.** ADR-0006 recorded it as "no
-//! `AudioDecoder` trait exists yet in `mediaway-decoder`, so a trait object here would
-//! abstract over a backend set of exactly one". The trait landed in `mediaway-decoder`
-//! ADR-0003 and now has several implementors — `windows::WmfOpusDecoder`,
-//! `windows::WmfAacDecoder`, `apple::OpusDecoder`, `apple::AacDecoder`, and
-//! `SwOpusAudioDecoder`.
+//! The session dispatches over a closed `enum` of exactly the decoders this entry point is
+//! defined as, not a `Box<dyn AudioDecoder>` (`docs/spec/zero-cost-abstractions.md`).
+//! **Opus** is `mediaway_sw::opus::OpusDecoder` on every platform, so a C caller gets
+//! byte-identical output with no OS codec dependency. **AAC** is `windows::WmfAacDecoder` or
+//! `apple::AacDecoder`: the OS's own codec, so its samples can differ between hosts, and it is
+//! `UNSUPPORTED` elsewhere. That asymmetry is why `mediaway_decoder_support` exists.
 //!
-//! The concrete wrap is still what ships, on a different and narrower justification: this
-//! entry point is *defined* as the software Opus decoder, so a C caller gets byte-identical
-//! behaviour on every platform with no OS codec dependency. Dispatching over the trait would
-//! make the backend — and therefore the output — depend on the host.
-//!
-//! The real limitation this leaves is **not** the concrete type but the surface: there is no
-//! C entry point for any audio codec other than Opus, so AAC decode is unreachable from C
-//! even though the trait now covers it on two platforms. Widening that is an ABI change and
-//! wants its own ADR.
-//!
-//! An empty `payload` in
-//! [`mediaway_audio_decode_session_push_packet`] is Opus's packet-loss-concealment
-//! hint, passed straight through — the same contract
-//! `mediaway_sw::opus::OpusDecoder::push_packet` already documents.
+//! An empty `payload` in [`mediaway_audio_decode_session_push_packet`] is Opus's
+//! packet-loss-concealment hint, passed straight through — the same contract
+//! `mediaway_sw::opus::OpusDecoder::push_packet` documents. AAC has no such convention, so
+//! an empty AAC packet is `INVALID_INPUT`.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use mediaway_common::{Bytes, Packet};
+use mediaway_common::{AudioFrame, Bytes, Packet};
+#[cfg(any(windows, target_os = "macos", target_os = "ios"))]
+use mediaway_decoder::AudioDecoder;
 use mediaway_sw::opus::config::OpusDecoderConfig;
 use mediaway_sw::opus::decoder::OpusDecoder;
 
@@ -51,7 +41,117 @@ use crate::pipeline::types::{
 /// without external synchronization.
 pub struct AudioDecodeSessionHandle {
     poisoned: bool,
-    inner: OpusDecoder,
+    inner: AudioDecoderInner,
+}
+
+/// The OS's own AAC decoder on this platform (`adr/pipeline/0007` §2). Only Windows and Apple
+/// have one; everywhere else `AAC` is `UNSUPPORTED` and this type does not exist.
+#[cfg(windows)]
+type PlatformAacDecoder = mediaway_decoder::windows::WmfAacDecoder;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+type PlatformAacDecoder = mediaway_decoder::apple::AacDecoder;
+
+/// What a session decodes with. Enum dispatch over a set that is closed at compile time, not a
+/// `Box<dyn AudioDecoder>` (`docs/spec/zero-cost-abstractions.md`): the variants are the two
+/// decoders this entry point is defined as.
+enum AudioDecoderInner {
+    Opus(OpusDecoder),
+    #[cfg(any(windows, target_os = "macos", target_os = "ios"))]
+    Aac(PlatformAacDecoder),
+}
+
+impl AudioDecoderInner {
+    fn push_packet(&mut self, packet: &Packet) -> Result<(), MediawayPipelineStatus> {
+        match self {
+            Self::Opus(d) => d.push_packet(packet).map_err(Into::into),
+            #[cfg(any(windows, target_os = "macos", target_os = "ios"))]
+            Self::Aac(d) => {
+                // Opus's empty packet means "lost frame, conceal it". AAC has no such
+                // convention, so an empty one is a caller mistake, not a hint.
+                if packet.payload.is_empty() {
+                    return Err(MediawayPipelineStatus::InvalidInput);
+                }
+                AudioDecoder::push_packet(d, packet).map_err(Into::into)
+            }
+        }
+    }
+
+    fn poll_frame(&mut self) -> Result<Option<AudioFrame>, MediawayPipelineStatus> {
+        match self {
+            Self::Opus(d) => d.poll_frame().map_err(Into::into),
+            #[cfg(any(windows, target_os = "macos", target_os = "ios"))]
+            Self::Aac(d) => AudioDecoder::poll_frame(d).map_err(Into::into),
+        }
+    }
+
+    fn flush(&mut self) -> Result<(), MediawayPipelineStatus> {
+        match self {
+            Self::Opus(d) => d.flush().map_err(Into::into),
+            #[cfg(any(windows, target_os = "macos", target_os = "ios"))]
+            Self::Aac(d) => AudioDecoder::flush(d).map_err(Into::into),
+        }
+    }
+}
+
+/// Open the AAC decoder for `config`. The raw `AudioSpecificConfig` is required: both backends
+/// refuse to synthesise one, because a default would decode SBR/PS streams to quietly wrong
+/// output, and an empty one is a config mistake rather than a missing capability.
+#[cfg(any(windows, target_os = "macos", target_os = "ios"))]
+fn open_aac(
+    config: &MediawayAudioDecodeConfig,
+) -> Result<AudioDecoderInner, MediawayPipelineStatus> {
+    // SAFETY: `config.extra_data`/`extra_data_len` describe a buffer valid for the
+    // `mediaway_audio_decode_session_open` call (function contract).
+    let Some(asc) = (unsafe { borrow_slice(config.extra_data, config.extra_data_len) }) else {
+        return Err(MediawayPipelineStatus::InvalidArgument);
+    };
+    if asc.is_empty() {
+        return Err(MediawayPipelineStatus::InvalidInput);
+    }
+    let extra_data = Bytes::copy_from_slice(asc);
+    let time_base = config.time_base.into();
+
+    #[cfg(windows)]
+    let decoder = {
+        use mediaway_decoder::windows::AacDecoderConfig;
+        let mut cfg = AacDecoderConfig::new(config.sample_rate, config.channels, extra_data);
+        cfg.time_base = time_base;
+        PlatformAacDecoder::open(&cfg)
+    };
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    let decoder = {
+        use mediaway_decoder::apple::AacDecoderConfig;
+        let cfg = AacDecoderConfig::new(config.sample_rate, config.channels, time_base, extra_data);
+        PlatformAacDecoder::open(&cfg)
+    };
+    decoder.map(AudioDecoderInner::Aac).map_err(Into::into)
+}
+
+/// No OS AAC decoder on this platform.
+#[cfg(not(any(windows, target_os = "macos", target_os = "ios")))]
+const fn open_aac(
+    _: &MediawayAudioDecodeConfig,
+) -> Result<AudioDecoderInner, MediawayPipelineStatus> {
+    Err(MediawayPipelineStatus::Unsupported)
+}
+
+fn open_decoder(
+    config: &MediawayAudioDecodeConfig,
+) -> Result<AudioDecoderInner, MediawayPipelineStatus> {
+    match config.codec {
+        MediawayPipelineCodecKind::Opus => {
+            let sw_config = OpusDecoderConfig::new(
+                config.sample_rate,
+                config.channels,
+                config.time_base.into(),
+            );
+            OpusDecoder::open(&sw_config)
+                .map(AudioDecoderInner::Opus)
+                .map_err(Into::into)
+        }
+        MediawayPipelineCodecKind::Aac => open_aac(config),
+        _ => Err(MediawayPipelineStatus::Unsupported),
+    }
 }
 
 /// Open an Opus decode session for `config`.
@@ -79,18 +179,17 @@ pub unsafe extern "C" fn mediaway_audio_decode_session_open(
     // writable (function contract).
     unsafe { out_session.write(std::ptr::null_mut()) };
 
-    if config.codec != MediawayPipelineCodecKind::Opus {
-        return MediawayPipelineStatus::Unsupported; // only Opus today
+    if !matches!(
+        config.codec,
+        MediawayPipelineCodecKind::Opus | MediawayPipelineCodecKind::Aac
+    ) {
+        return MediawayPipelineStatus::Unsupported; // Opus and AAC only
     }
     if config.sample_rate == 0 || config.channels == 0 {
         return MediawayPipelineStatus::InvalidInput;
     }
 
-    let result = catch_unwind(AssertUnwindSafe(|| {
-        let sw_config =
-            OpusDecoderConfig::new(config.sample_rate, config.channels, config.time_base.into());
-        OpusDecoder::open(&sw_config)
-    }));
+    let result = catch_unwind(AssertUnwindSafe(|| open_decoder(&config)));
 
     match result {
         Ok(Ok(decoder)) => {
@@ -102,7 +201,7 @@ pub unsafe extern "C" fn mediaway_audio_decode_session_open(
             unsafe { out_session.write(Box::into_raw(handle)) };
             MediawayPipelineStatus::Ok
         }
-        Ok(Err(err)) => err.into(),
+        Ok(Err(status)) => status,
         Err(_) => MediawayPipelineStatus::InternalPanic,
     }
 }
@@ -155,10 +254,7 @@ pub unsafe extern "C" fn mediaway_audio_decode_session_push_packet(
             is_discard: view.is_discard,
             payload: Bytes::copy_from_slice(payload),
         };
-        handle
-            .inner
-            .push_packet(&packet)
-            .map_err(MediawayPipelineStatus::from)
+        handle.inner.push_packet(&packet)
     }));
 
     match result {
@@ -197,10 +293,7 @@ pub unsafe extern "C" fn mediaway_audio_decode_session_poll_frame(
     }
 
     let result = catch_unwind(AssertUnwindSafe(|| {
-        let maybe_frame = handle
-            .inner
-            .poll_frame()
-            .map_err(MediawayPipelineStatus::from)?;
+        let maybe_frame = handle.inner.poll_frame()?;
         let Some(frame) = maybe_frame else {
             return Ok(None);
         };
@@ -263,9 +356,7 @@ pub unsafe extern "C" fn mediaway_audio_decode_session_flush(
         return MediawayPipelineStatus::HandlePoisoned;
     }
 
-    let result = catch_unwind(AssertUnwindSafe(|| {
-        handle.inner.flush().map_err(MediawayPipelineStatus::from)
-    }));
+    let result = catch_unwind(AssertUnwindSafe(|| handle.inner.flush()));
 
     match result {
         Ok(Ok(())) => MediawayPipelineStatus::Ok,

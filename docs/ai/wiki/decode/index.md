@@ -17,7 +17,8 @@
 | [web-opus-design](web-opus-design.md) | Web: first audio decode surface in `mediaway-decoder::web` (`is_webcodecs_audio_decode_supported`, `decode_audio_chunks`), codec-generalized, exercised via Opus — wasm32 compile-verified only |
 
 `AudioDecoder` trait ([`crates/mediaway-decoder/adr/0003-audio-decoder-trait.md`](../../../crates/mediaway-decoder/adr/0003-audio-decoder-trait.md)):
-mirrors `VideoDecoder`, implemented by both Opus backends above; no shared
-`AudioDecoderConfig` yet (no audio `auto`-dispatch to justify one).
+mirrors `VideoDecoder`. Implementors: `windows::{WmfOpusDecoder, WmfAacDecoder}`,
+`apple::{AacDecoder, OpusDecoder}`, `SwOpusAudioDecoder`; no shared `AudioDecoderConfig`
+yet (no audio `auto`-dispatch to justify one).
 
 Packaging: [crate-packaging](../meta/crate-packaging.md).

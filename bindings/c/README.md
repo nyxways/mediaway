@@ -48,7 +48,14 @@ A streaming-first media stack. The C surface currently covers three capabilities
    packets into a fragmented MP4 muxer internally, and hands the caller complete MP4
    bytes from `finish()`. **Video only.** The audio encoder is separate (ABI v2,
    adr/0003): `mediaway_audio_encoder_open` returns a session that streams AAC
-   packets for the caller's own muxer.
+   packets for the caller's own muxer. Since ABI 7 (adr/pipeline/0007):
+   `mediaway_encode_session_poll_bytes` drains ready fMP4 bytes during the session so
+   memory is bounded by the poll cadence (`finish()` then returns only the unpolled
+   tail); `mediaway_audio_decode_config_aac` opens the OS AAC decoder (Windows,
+   Apple; the raw `AudioSpecificConfig` is required, samples are host-dependent, the
+   Apple arm is compile-checked but not yet run); and `mediaway_encoder_support_at` /
+   `mediaway_decoder_support` probe what this machine can encode/decode (both
+   costly, encoder support is resolution-dependent).
 3. **Device — capture** (`<mediaway/device.h>`): Camera video capture (CPU frames),
    Screen video capture (GPU-only, Zero-Copy), Microphone/Loopback/ProcessLoopback
    audio capture (PCM), and device hotplug (poll or callback mode). Screen capture
@@ -57,8 +64,12 @@ A streaming-first media stack. The C surface currently covers three capabilities
    explicit index; `mediaway-device` ADR-0007), then passes its
    `mediaway_gpu_device_handle_t` into `mediaway_desktop_capture_config_screen()`.
    `mediaway_gpu_adapter_list()` enumerates every adapter DXGI reports for a caller
-   that wants to pick explicitly. A Window-kind config still returns
-   `MEDIAWAY_DEVICE_STATUS_UNSUPPORTED` (not yet implemented).
+   that wants to pick explicitly. Window capture (Windows, WGC) takes a caller-owned
+   `HWND` through `mediaway_desktop_capture_config_window()` and the same GPU device;
+   the returned config's `cursor`, `region_*`, `border` and `dimensions` fields choose the
+   pointer, a cropped region (a region off the origin is one GPU copy per frame, not
+   Zero-Copy), the capture border and even-cropped frames. Off Windows a Window-kind
+   config returns `MEDIAWAY_DEVICE_STATUS_UNSUPPORTED`.
 
 ## The real ABI (what examples must call)
 
@@ -115,11 +126,13 @@ file must state what is real vs. aspirational.
 | `container/mux_roundtrip.c` | container mux + demux roundtrip (90 video + 90 audio fake packets → fMP4 → demux back) | ✅ link+run verified |
 | `container/replay_ring.c` | replay ring: 6 s of synthetic packets → keep 3 s → last-2 s clip → standalone MP4 (re-demuxed) → `STORED` ring fed by muxer placements reads back the same bytes | ✅ link+run verified |
 | `pipeline/encode_to_mp4.c` | auto H.264 encode of 90 synthetic NV12 frames → `out.mp4` bytes | ✅ link+run verified |
+| `pipeline/stream_encode.c` | auto H.264 encode of 150 synthetic NV12 frames streamed to a file with `poll_bytes` (5 polls + tail); output identical to the unpolled stream | ✅ link+run verified |
 | `pipeline/encode_audio.c` | auto AAC encode of 96 synthetic F32 stereo frames → audio-only fMP4 (ABI v2) | ✅ link+run verified |
 | `device/camera_record.c` | camera + mic capture → H.264 + AAC → ONE two-track MP4 (remuxed; audio track registered with the encoder's AudioSpecificConfig) | ✅ link+run verified on real hardware; video-only fallback without mic/audio backend |
 | `device/capture_microphone.c` | microphone capture, raw PCM (no encode) | ✅ link+run verified (real mic) |
 | `pipeline/screen_record.c` | GPU device factory → screen + mic capture → encode (bridge) → MP4 | ✅ link+run verified on real hardware (GPU-input H.264 encode gracefully skips on this dev machine's current encoder/driver — a known limitation, not a bug) |
 | `device/capture_screen.c` | GPU device factory → screen capture only | ✅ link+run verified on real hardware |
+| `device/capture_window.c` | GPU device factory → one window by `HWND` (default: the foreground window), hidden border read back with `mediaway_desktop_capture_border_hidden`, even-cropped frames | ✅ link+run verified on real hardware (a static window delivers one frame — WGC only sends on change) |
 
 No C example exercises Ogg/ADTS/FLV/MPEG-TS/MP3/WAV/WebM yet — `mux_roundtrip.c` covers
 MP4 only. Those formats are covered by the C++/C#/Python/Node bindings' examples instead.

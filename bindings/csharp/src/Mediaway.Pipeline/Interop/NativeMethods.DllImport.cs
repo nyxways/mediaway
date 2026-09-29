@@ -1,5 +1,6 @@
 #if !NET8_0_OR_GREATER
 using System.Runtime.InteropServices;
+using Mediaway.Common;
 
 namespace Mediaway.Pipeline.Interop;
 
@@ -29,6 +30,10 @@ internal static unsafe partial class NativeMethods
 
     [DllImport(LibraryName, ExactSpelling = true)]
     internal static extern MediawayPipelineStatus mediaway_encode_session_finish(
+        EncodeSessionHandle session, out nint outData, out nuint outLen);
+
+    [DllImport(LibraryName, ExactSpelling = true)]
+    internal static extern MediawayPipelineStatus mediaway_encode_session_poll_bytes(
         EncodeSessionHandle session, out nint outData, out nuint outLen);
 
     [DllImport(LibraryName, ExactSpelling = true)]
@@ -108,6 +113,19 @@ internal static unsafe partial class NativeMethods
 
     [DllImport(LibraryName, ExactSpelling = true)]
     internal static extern void mediaway_decoded_audio_frame_free(ref NativeDecodedAudioFrame frame);
+
+    // ── Capability probes (adr/pipeline/0007) — both are COSTLY: they open throwaway sessions ──
+
+    [DllImport(LibraryName, ExactSpelling = true)]
+    internal static extern MediawayPipelineStatus mediaway_encoder_support_at(
+        CodecKind codec, uint width, uint height, out nint outRows, out nuint outCount);
+
+    [DllImport(LibraryName, ExactSpelling = true)]
+    internal static extern void mediaway_encoder_support_free(nint rows, nuint count);
+
+    [DllImport(LibraryName, ExactSpelling = true)]
+    internal static extern MediawayPipelineStatus mediaway_decoder_support(
+        CodecKind codec, out SupportState outState);
 
     // ── Capture-to-encode bridge (adr/pipeline/0005-capture-encode-bridge-c-abi.md) ──────
 

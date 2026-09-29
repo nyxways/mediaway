@@ -12,7 +12,7 @@
 
 Hardware-accelerated video and audio decoding: the `VideoDecoder` trait plus per-platform
 backends — Windows WMF (H.264/HEVC/AV1/VP9 hardware decode with DX11 Zero-Copy output,
-plus the inbox Opus decoder MFT), Vulkan Video decode, and WebCodecs (wasm, planned).
+plus the inbox Opus and AAC decoder MFTs), Vulkan Video decode, and WebCodecs (wasm, planned).
 Streaming `push_packet` / `poll_frame` shape; GPU frames stay on the GPU until the
 session recycles the surface.
 
@@ -49,12 +49,13 @@ Status marks: ✅ first-class (tests for claimed scope) · ⚡ Zero-Copy path (n
 | ---- | ------ | ----- |
 | `VideoDecoder` trait | ✅ | Streaming push/poll API |
 | Windows WMF H.264 decode | ✅ | Hardware MFT, DX11 Zero-Copy output |
-| Windows WMF HEVC / AV1 / VP9 decode | ✅ | Same DXGI path; MFT may be absent on a machine |
+| Windows WMF HEVC / AV1 / VP9 decode | ✅ | Same DXGI path; MFT may be absent on a machine. HEVC read back out of an MP4 (`hvcC` + length-prefixed samples) decodes too — `resolve_framing` converts it to Annex-B; covered by `tests/mp4_roundtrip.rs` |
 | Windows Opus decode (`WmfOpusDecoder`) | ✅ | Verified end-to-end (ffmpeg-produced Opus → exact PCM) |
+| Windows AAC decode (`WmfAacDecoder`) | ✅ | Inbox `CMSAACDecMFT`, Float32 PCM out; sample-exact round trip against `WmfAacEncoder`. The `AudioSpecificConfig` is required at open; raw AAC only (de-header ADTS first) |
 | Vulkan Video decode | ✅ | H.264 general-GOP hardware-verified; HEVC GPU path unresolved; AV1 follow-up |
-| CPU frame output path | 🛠️ | `CpuFramesOk` policy recognized, backend pending |
+| CPU frame output path | ✅ | `CpuFramesOk` — Windows H.264 (roadmap), plus the CPU-output Linux/Apple backends |
 | WebCodecs decode (wasm32) | 🛠️ | Planned |
-| Linux VA-API decode | 🛠️ | Planned |
+| Linux VA-API decode | 🆗 | H.264 CPU-output, real GOP decode; zero real-hardware verification ([wiki](../../docs/ai/wiki/platform/linux-decode.md)) |
 
 ## Docs
 

@@ -27,7 +27,7 @@ from ctypes import POINTER, byref, c_bool, c_size_t, c_uint16, c_uint32, c_void_
 
 from . import _ffi
 from ._container import _from_units
-from ._errors import CaptureUnsupportedError, DeviceUnavailableError, MediawayError
+from ._errors import CaptureUnsupportedError, DeviceUnavailableError, MediawayError, RegionOutOfBoundsError
 from ._types import GpuAdapter, PixelFormat, Rational, VideoFrame
 
 __all__ = ["VideoCapture", "AudioCapture", "GpuDevice"]
@@ -40,6 +40,8 @@ def _check_device(status: int) -> None:
         raise DeviceUnavailableError(status, "no capture backend or device available")
     if status == _ffi.DEVICE_UNSUPPORTED:
         raise CaptureUnsupportedError(status, "this capture configuration is unsupported by the ABI")
+    if status == _ffi.DEVICE_REGION_OUT_OF_BOUNDS:
+        raise RegionOutOfBoundsError(status, "the capture region does not fit the captured surface")
     names = {
         _ffi.DEVICE_INVALID_ARGUMENT: "invalid argument",
         _ffi.DEVICE_HANDLE_POISONED: "handle poisoned by an earlier panic",
@@ -52,6 +54,37 @@ def _check_device(status: int) -> None:
         _ffi.DEVICE_TIMEOUT: "timed out waiting for a frame",
     }
     raise MediawayError(status, names.get(status, "unknown status"))
+
+
+_CURSORS = {"excluded": _ffi.CAPTURE_CURSOR_EXCLUDED, "included": _ffi.CAPTURE_CURSOR_INCLUDED}
+_BORDERS = {"shown": _ffi.CAPTURE_BORDER_SHOWN, "hidden": _ffi.CAPTURE_BORDER_HIDDEN}
+_DIMENSIONS = {"native": _ffi.FRAME_DIMENSIONS_NATIVE, "even_cropped": _ffi.FRAME_DIMENSIONS_EVEN_CROPPED}
+
+
+def _choice(table: dict[str, int], name: str, value: str) -> int:
+    try:
+        return table[value]
+    except KeyError:
+        raise ValueError(f"unknown {name}: {value!r} ({' | '.join(table)})") from None
+
+
+def _apply_options(
+    config: "_ffi.DesktopCaptureConfig",
+    cursor: str,
+    border: str,
+    dimensions: str,
+    region: tuple[int, int, int, int] | None,
+) -> None:
+    """Write the ADR-0005 option fields into `config`. The defaults are the zero values, i.e.
+    exactly what a config built before those fields existed captured."""
+    config.cursor = _choice(_CURSORS, "cursor", cursor)
+    config.border = _choice(_BORDERS, "border", border)
+    config.dimensions = _choice(_DIMENSIONS, "dimensions", dimensions)
+    if region is not None:
+        x, y, width, height = region
+        config.region_enabled = True
+        config.region_x, config.region_y = x, y
+        config.region_width, config.region_height = width, height
 
 
 def _read(ptr, length: int) -> bytes:
@@ -148,8 +181,25 @@ class VideoCapture:
     `gpu_device` is omitted (and closed on `close()`); a caller-supplied
     device is left open (caller owns it), letting one device be shared
     between capture and `AutoVideoEncoder.pick(gpu_device=...)`.
-    `source="window"` still surfaces the documented ABI gap (no C constructor
-    this pass) and raises `CaptureUnsupportedError`."""
+    `source="window"` captures one window by `HWND` (WGC, Windows only; other
+    platforms raise `CaptureUnsupportedError`) and needs a GPU device the same
+    way Screen does.
+
+    Desktop options (Screen and Window; `adr/device/0005-window-capture-c-abi.md`):
+
+    - `cursor`: `"excluded"` (default) or `"included"`. DXGI Screen capture cannot
+      draw the pointer, so `"included"` there raises `CaptureUnsupportedError`.
+    - `region`: `(x, y, width, height)` to record only that rectangle, or `None`.
+      WGC only. **A region away from the window's origin costs one GPU copy per
+      frame** (not Zero-Copy). DXGI Screen capture raises
+      `CaptureUnsupportedError`; a window smaller than the region raises
+      `RegionOutOfBoundsError`.
+    - `border` (`"shown"` default / `"hidden"`) and `dimensions` (`"native"`
+      default / `"even_cropped"`) are Window-only; passing a non-default value
+      with `source="screen"` is an invalid-input error, never ignored.
+      `"hidden"` needs Windows 11 build 22000+; check `border_hidden` for what
+      the OS actually did. `"even_cropped"` trims an odd axis by one pixel so
+      any hardware encoder accepts the frames, at no cost."""
 
     def __init__(self, handle: int, time_base: Rational, source: str = "camera"):
         self._handle = handle
@@ -164,7 +214,16 @@ class VideoCapture:
         index: int = 0,
         frame_rate: Rational = Rational(1, 30),
         gpu_device: GpuDevice | None = None,
+        *,
+        window: int | None = None,
+        cursor: str = "excluded",
+        border: str = "shown",
+        dimensions: str = "native",
+        region: tuple[int, int, int, int] | None = None,
     ) -> "VideoCapture":
+        """Open a capture session. `index` is the camera or display-output ordinal;
+        `window` is the caller-owned `HWND` for `source="window"` (`0` is rejected
+        as invalid input by the ABI)."""
         dll = _ffi.device.dll
         tb = _ffi.Rational(frame_rate.num, frame_rate.den)
         out = c_void_p()
@@ -172,29 +231,27 @@ class VideoCapture:
             config = dll.mediaway_camera_capture_config_default(index, tb)
             _check_device(dll.mediaway_camera_capture_open(byref(config), byref(out)))
             return cls(out.value, frame_rate, source="camera")
-        elif source == "screen":
+        elif source in ("screen", "window"):
+            if source == "window" and window is None:
+                raise ValueError('source="window" requires window=<HWND>')
+            # Validate the option strings before creating a GPU device we would then have to close.
+            _apply_options(_ffi.DesktopCaptureConfig(), cursor, border, dimensions, region)
             owned_gpu_device = None
             if gpu_device is None:
                 gpu_device = owned_gpu_device = GpuDevice.create(video_support=True)
-            config = dll.mediaway_desktop_capture_config_screen(index, tb, gpu_device.handle)
+            if source == "screen":
+                config = dll.mediaway_desktop_capture_config_screen(index, tb, gpu_device.handle)
+            else:
+                config = dll.mediaway_desktop_capture_config_window(window, tb, gpu_device.handle)
+            _apply_options(config, cursor, border, dimensions, region)
             status = dll.mediaway_desktop_capture_open(byref(config), byref(out))
             if status != _ffi.DEVICE_OK:
                 if owned_gpu_device is not None:
                     owned_gpu_device.close()
                 _check_device(status)
-            session = cls(out.value, frame_rate, source="screen")
+            session = cls(out.value, frame_rate, source=source)
             session._owned_gpu_device = owned_gpu_device
             return session
-        elif source == "window":
-            config = dll.mediaway_desktop_capture_config_screen(
-                index, tb, _ffi.GpuDeviceHandle(kind=_ffi.GPU_DEVICE_NONE, native=0, webgpu_device_id=0)
-            )
-            config.source_kind = _ffi.DESKTOP_SOURCE_WINDOW
-            try:
-                _check_device(dll.mediaway_desktop_capture_open(byref(config), byref(out)))
-            except MediawayError as err:
-                raise CaptureUnsupportedError(err.status, "Window capture has no C constructor this pass") from None
-            return cls(out.value, frame_rate, source="window")
         else:
             raise ValueError(f"unknown video source: {source!r} (camera | screen | window)")
 
@@ -212,6 +269,19 @@ class VideoCapture:
     def frame_rate(self) -> Rational:
         """The configured frame period (the ABI does not re-negotiate it)."""
         return self._time_base
+
+    @property
+    def border_hidden(self) -> bool:
+        """Whether the OS actually hid the capture border of a Window session.
+
+        A refused `border="hidden"` is not an error at open (the border is drawn
+        on screen, never into frames), so this is the only way to learn it.
+        Raises `CaptureUnsupportedError` for Camera and Screen sessions."""
+        if self._source != "window":
+            raise CaptureUnsupportedError(_ffi.DEVICE_UNSUPPORTED, "only a Window session has a capture border")
+        hidden = c_bool(False)
+        _check_device(_ffi.device.dll.mediaway_desktop_capture_border_hidden(self._handle, byref(hidden)))
+        return hidden.value
 
     def poll_frame(self, timeout: float | None = None) -> VideoFrame | None:
         """Poll the next frame; None when nothing is ready yet. With a

@@ -7,8 +7,9 @@ Capability truth (see the README's table): container mux/demux ✅ real,
 auto video encode -> fMP4 ✅ real, camera/mic capture ✅ real (CPU frames),
 Screen capture ✅ real (GPU-backed, via the `GpuDevice` factory) + the
 capture-to-encode bridge (`EncodeSession.write_frame_from_camera_capture`/
-`write_frame_from_desktop_capture`); Window capture 🚧 still unsupported
-(CaptureUnsupportedError).
+`write_frame_from_desktop_capture`); Window capture ✅ real on Windows
+(`VideoCapture.open(source="window", window=<HWND>, ...)`, WGC; other
+platforms raise CaptureUnsupportedError).
 """
 
 from ._container import Demuxer, LiveMuxer, Muxer
@@ -21,6 +22,7 @@ from ._container_ogg import OggDemuxer, OggMuxer
 from ._container_ts import TsDemuxer, TsMuxer
 from ._container_wav import WavMuxer
 from ._container_wav import parse as wav_parse
+from ._capability import decoder_support, encoder_support
 from ._decoder import AudioDecodeSession, DecodeSession
 from ._device import AudioCapture, GpuDevice, VideoCapture
 from ._encoder import AudioEncoder, AutoVideoEncoder, EncodeSession
@@ -31,6 +33,7 @@ from ._errors import (
     EncoderUnavailableError,
     InvalidStateError,
     MediawayError,
+    RegionOutOfBoundsError,
     OutOfOrderPacketError,
     UnknownStreamError,
 )
@@ -44,6 +47,9 @@ from ._types import (
     DecodedAudioFrame,
     DecodedVideoFrame,
     DecodePacket,
+    EncodeBackend,
+    EncoderCapability,
+    EncodePathClass,
     GpuAdapter,
     Mp3FrameHeader,
     MpegVersion,
@@ -55,6 +61,7 @@ from ._types import (
     RawPacket,
     ReplayClipEntry,
     SampleFormat,
+    SupportState,
     StoredPayload,
     TsElementaryStream,
     VideoFrame,
@@ -101,6 +108,12 @@ __all__ = [
     "AudioEncoder",
     "DecodeSession",
     "AudioDecodeSession",
+    "encoder_support",
+    "decoder_support",
+    "EncoderCapability",
+    "EncodeBackend",
+    "SupportState",
+    "EncodePathClass",
     "VideoCapture",
     "AudioCapture",
     "GpuDevice",
@@ -110,6 +123,7 @@ __all__ = [
     "DecoderUnavailableError",
     "DeviceUnavailableError",
     "CaptureUnsupportedError",
+    "RegionOutOfBoundsError",
     "InvalidStateError",
     "UnknownStreamError",
     "OutOfOrderPacketError",

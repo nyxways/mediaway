@@ -630,6 +630,12 @@ class VideoFrame(Structure):  # borrowed input
 
 _H = pipeline.dll
 
+# MEDIAWAY_PIPELINE_FFI_ABI_VERSION this binding's struct mirrors were written against.
+# 7: mediaway_audio_decode_config_t grew extra_data/extra_data_len (AAC decode), plus
+# mediaway_encode_session_poll_bytes and the capability probes
+# (adr/pipeline/0007-stream-bytes-aac-decode-support-probe.md).
+PIPELINE_ABI_VERSION = 7
+
 _H.mediaway_pipeline_ffi_abi_version.restype = c_uint32
 _H.mediaway_pipeline_ffi_abi_version.argtypes = []
 
@@ -649,6 +655,9 @@ _H.mediaway_encode_session_write_frame.restype = c_int32
 _H.mediaway_encode_session_write_frame.argtypes = [c_void_p, POINTER(VideoFrame)]
 _H.mediaway_encode_session_finish.restype = c_int32
 _H.mediaway_encode_session_finish.argtypes = [c_void_p, POINTER(U8P), POINTER(c_size_t)]
+# adr/pipeline/0007 §1: owned buffer (free with mediaway_pipeline_ffi_buffer_free); NULL/0 when idle.
+_H.mediaway_encode_session_poll_bytes.restype = c_int32
+_H.mediaway_encode_session_poll_bytes.argtypes = [c_void_p, POINTER(U8P), POINTER(c_size_t)]
 _H.mediaway_encode_session_close.restype = None
 _H.mediaway_encode_session_close.argtypes = [c_void_p]
 
@@ -791,11 +800,15 @@ class DecodedVideoFrame(Structure):  # owned output
 
 
 class AudioDecodeConfig(Structure):
+    # Layout pinned against the real header with a gcc offsetof probe (size 48; extra_data at
+    # 32, extra_data_len at 40) — tests/test_stream_aac_probe.py.
     _fields_ = [
-        ("codec", c_int32),  # Opus only today
+        ("codec", c_int32),  # Opus or AAC
         ("sample_rate", c_uint32),
         ("channels", c_uint16),
         ("time_base", Rational),
+        ("extra_data", U8P),  # AAC: BORROWED AudioSpecificConfig, valid for open() only
+        ("extra_data_len", c_size_t),
     ]
 
 
@@ -829,6 +842,8 @@ _H.mediaway_decoded_video_frame_free.argtypes = [POINTER(DecodedVideoFrame)]
 
 _H.mediaway_audio_decode_config_opus.restype = AudioDecodeConfig
 _H.mediaway_audio_decode_config_opus.argtypes = [c_uint32, c_uint16, Rational]
+_H.mediaway_audio_decode_config_aac.restype = AudioDecodeConfig
+_H.mediaway_audio_decode_config_aac.argtypes = [c_uint32, c_uint16, Rational, U8P, c_size_t]
 
 _H.mediaway_audio_decode_session_open.restype = c_int32
 _H.mediaway_audio_decode_session_open.argtypes = [POINTER(AudioDecodeConfig), POINTER(c_void_p)]
@@ -842,6 +857,52 @@ _H.mediaway_audio_decode_session_close.restype = None
 _H.mediaway_audio_decode_session_close.argtypes = [c_void_p]
 _H.mediaway_decoded_audio_frame_free.restype = None
 _H.mediaway_decoded_audio_frame_free.argtypes = [POINTER(DecodedAudioFrame)]
+
+
+# ── pipeline.h: capability probes (adr/pipeline/0007 §3) ─────────────────────
+
+ENCODE_BACKEND_OS = 0
+ENCODE_BACKEND_NVENC = 1
+ENCODE_BACKEND_QUICKSYNC = 2
+ENCODE_BACKEND_AMF = 3
+ENCODE_BACKEND_VULKAN = 4
+ENCODE_BACKEND_SOFTWARE = 5
+ENCODE_BACKEND_UNKNOWN = 255
+
+SUPPORT_STATE_SUPPORTED = 0
+SUPPORT_STATE_NOT_IMPLEMENTED = 1
+SUPPORT_STATE_NO_DEVICE = 2
+SUPPORT_STATE_UNKNOWN = 255
+
+ENCODE_PATH_NONE = 0
+ENCODE_PATH_ZERO_COPY = 1
+ENCODE_PATH_GPU_COPY = 2
+ENCODE_PATH_CPU_UPLOAD = 3
+ENCODE_PATH_READBACK = 4
+ENCODE_PATH_SOFTWARE = 5
+ENCODE_PATH_UNKNOWN = 255
+
+
+class EncoderCapability(Structure):  # plain value, no owned fields (size 12)
+    _fields_ = [
+        ("backend", c_int32),
+        ("state", c_int32),
+        ("path_class", c_int32),  # meaningful only when state == SUPPORTED
+    ]
+
+
+_H.mediaway_encoder_support_at.restype = c_int32
+_H.mediaway_encoder_support_at.argtypes = [
+    c_int32,
+    c_uint32,
+    c_uint32,
+    POINTER(POINTER(EncoderCapability)),
+    POINTER(c_size_t),
+]
+_H.mediaway_encoder_support_free.restype = None
+_H.mediaway_encoder_support_free.argtypes = [POINTER(EncoderCapability), c_size_t]
+_H.mediaway_decoder_support.restype = c_int32
+_H.mediaway_decoder_support.argtypes = [c_int32, POINTER(c_int32)]
 
 
 # ── device.h: status codes ────────────────────────────────────────────────────
@@ -860,6 +921,7 @@ DEVICE_INTERNAL_PANIC = 10
 DEVICE_CALLBACK_ALREADY_REGISTERED = 11
 DEVICE_CALLBACK_MODE_ACTIVE = 12
 DEVICE_TIMEOUT = 13
+DEVICE_REGION_OUT_OF_BOUNDS = 14  # capture region does not fit the surface (adr/0005)
 
 # enum mediaway_sample_format
 SAMPLE_S16 = 0
@@ -878,6 +940,15 @@ DEVKIND_UNKNOWN = 255
 # enum mediaway_desktop_capture_source_kind
 DESKTOP_SOURCE_SCREEN = 0
 DESKTOP_SOURCE_WINDOW = 1
+
+# enum mediaway_capture_cursor / mediaway_capture_border / mediaway_frame_dimensions
+# (adr/device/0005-window-capture-c-abi.md). Zero is the previous behaviour in every case.
+CAPTURE_CURSOR_EXCLUDED = 0
+CAPTURE_CURSOR_INCLUDED = 1
+CAPTURE_BORDER_SHOWN = 0
+CAPTURE_BORDER_HIDDEN = 1
+FRAME_DIMENSIONS_NATIVE = 0
+FRAME_DIMENSIONS_EVEN_CROPPED = 1
 
 # enum mediaway_desktop_audio_source_kind
 DESKTOP_AUDIO_LOOPBACK = 0
@@ -904,11 +975,22 @@ class CameraFrame(Structure):  # owned output; CPU-only
 
 
 class DesktopCaptureConfig(Structure):
+    # Every field after `gpu_device` was added by adr/device/0005-window-capture-c-abi.md
+    # (device ABI 2) and is zero-means-previous-behaviour.
     _fields_ = [
         ("source_kind", c_int32),
         ("source_index", c_uint32),
         ("time_base", Rational),
         ("gpu_device", GpuDeviceHandle),
+        ("window_handle", c_uint64),
+        ("cursor", c_int32),
+        ("border", c_int32),
+        ("dimensions", c_int32),
+        ("region_x", c_uint32),
+        ("region_y", c_uint32),
+        ("region_width", c_uint32),
+        ("region_height", c_uint32),
+        ("region_enabled", c_bool),
     ]
 
 
@@ -1022,6 +1104,10 @@ _H.mediaway_gpu_device_close.argtypes = [c_void_p]
 
 _H.mediaway_desktop_capture_config_screen.restype = DesktopCaptureConfig
 _H.mediaway_desktop_capture_config_screen.argtypes = [c_uint32, Rational, GpuDeviceHandle]
+_H.mediaway_desktop_capture_config_window.restype = DesktopCaptureConfig
+_H.mediaway_desktop_capture_config_window.argtypes = [c_uint64, Rational, GpuDeviceHandle]
+_H.mediaway_desktop_capture_border_hidden.restype = c_int32
+_H.mediaway_desktop_capture_border_hidden.argtypes = [c_void_p, POINTER(c_bool)]
 _H.mediaway_desktop_capture_open.restype = c_int32
 _H.mediaway_desktop_capture_open.argtypes = [POINTER(DesktopCaptureConfig), POINTER(c_void_p)]
 _H.mediaway_desktop_capture_geometry.restype = c_int32

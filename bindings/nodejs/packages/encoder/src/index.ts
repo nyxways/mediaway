@@ -13,19 +13,23 @@ import {
   MwAudioFrameView,
   MwAudioPacket,
   MwAudioStreamInfo,
+  MwEncoderCapability,
   MwPipelineFrame,
   MwRational,
+  PIPELINE_CODEC,
   pipeline,
   copyBytes,
+  decodeArray,
   type RawAudioEncodeConfig,
   type RawAudioFrameView,
   type RawAudioPacket,
   type RawAudioStreamInfo,
+  type RawEncoderCapability,
   type RawPipelineFrame,
   type RawRational,
 } from "@mediaway/ffi";
 import { MediawayError, type Rational } from "@mediaway/container";
-import { NATIVE_HANDLE, type CameraSession, type GpuDevice, type ScreenSession } from "@mediaway/device";
+import { NATIVE_HANDLE, type CameraSession, type DesktopCaptureSession, type GpuDevice } from "@mediaway/device";
 
 export type { Rational } from "@mediaway/container";
 export { MediawayError } from "@mediaway/container";
@@ -169,13 +173,13 @@ export class EncodeSession {
   }
 
   /**
-   * Same shape as `writeFrameFromCameraCapture`, for a `ScreenSession`
+   * Same shape as `writeFrameFromCameraCapture`, for a `ScreenSession` or `WindowSession`
    * (`@mediaway/device`) instead of Camera. GPU frames pass through
    * Zero-Copy: the polled frame's GPU handle moves straight into the encoder
    * with no CPU copy — this is the real way to consume Screen frames (see
    * `ScreenSession.pollFrame()`'s own doc: it never copies pixels out).
    */
-  async writeFrameFromDesktopCapture(capture: ScreenSession): Promise<boolean> {
+  async writeFrameFromDesktopCapture(capture: DesktopCaptureSession): Promise<boolean> {
     const wrote: [boolean] = [false];
     checkPipeline(
       pipeline.sessionWriteFrameFromDesktopCapture(this.handle, capture[NATIVE_HANDLE](), wrote)
@@ -183,7 +187,32 @@ export class EncodeSession {
     return wrote[0];
   }
 
-  /** Flush the encoder + muxer and return the complete fMP4 bytes. Terminal. */
+  /**
+   * Take the fMP4 bytes that are ready now, without ending the session — the streaming exit
+   * (`adr/pipeline/0007` §1). Call it as often as you like (after every `writeFrame`, on a timer,
+   * or never) and the session's memory stays bounded by the poll cadence instead of growing with
+   * the recording: a long capture polled into a file holds a fragment, not the whole file.
+   *
+   * Resolves to an empty buffer when nothing is ready, which is indistinguishable from "already
+   * drained" — track your own running total if you need the difference. Polling never finishes
+   * the stream: the last fragments only appear in `finish()`'s result.
+   */
+  async pollBytes(): Promise<Buffer> {
+    if (!this.handle) throw new MediawayError(7, "session already finished or not open");
+    const outData: [unknown] = [null];
+    const outLen: [number] = [0];
+    checkPipeline(pipeline.sessionPollBytes(this.handle, outData, outLen));
+    if (outLen[0] === 0) return Buffer.alloc(0);
+    const data = copyBytes(outData[0], outLen[0]);
+    pipeline.bufferFree(outData[0], outLen[0]);
+    return data;
+  }
+
+  /**
+   * Flush the encoder + muxer and return the fMP4 bytes **not yet taken by `pollBytes()`**:
+   * the complete file for a session that was never polled, only its tail for one that was.
+   * A streaming caller appends this to what it already wrote. Terminal.
+   */
   async finish(): Promise<Buffer> {
     const outData: [unknown] = [null];
     const outLen: [number] = [0];
@@ -215,6 +244,83 @@ export async function openAutoEncoder(config: AutoVideoEncodeConfig): Promise<En
   checkPipeline(pipeline.autoEncoderOpen(raw, outEncoder));
   if (!outEncoder[0]) throw new MediawayError(11, "encoder open returned no handle");
   return new EncodeSession(config, outEncoder[0]);
+}
+
+// ── Capability probe (ABI v7, adr/pipeline/0007 §3) ─────────────────────────────
+
+/** A codec the encoder probe accepts. */
+export type ProbeCodec = VideoCodec | "aac" | "opus";
+
+/** Which encode backend a probe row describes. */
+export type EncodeBackend = "os" | "nvenc" | "quicksync" | "amf" | "vulkan" | "software" | "unknown";
+
+/** Whether a backend or codec is usable right now. */
+export type SupportState = "supported" | "not-implemented" | "no-device" | "unknown";
+
+/** The cheapest data path a supported encoder reached. */
+export type EncodePathClass = "zero-copy" | "gpu-copy" | "cpu-upload" | "readback" | "software" | "unknown";
+
+/** One backend row of `encoderSupport()`. */
+export interface EncoderCapability {
+  backend: EncodeBackend;
+  state: SupportState;
+  /** The data path cost — `null` unless `state === "supported"`. */
+  pathClass: EncodePathClass | null;
+}
+
+const BACKENDS: Record<number, EncodeBackend> = {
+  0: "os",
+  1: "nvenc",
+  2: "quicksync",
+  3: "amf",
+  4: "vulkan",
+  5: "software",
+};
+const PATH_CLASSES: Record<number, EncodePathClass> = {
+  1: "zero-copy",
+  2: "gpu-copy",
+  3: "cpu-upload",
+  4: "readback",
+  5: "software",
+};
+const SUPPORT_STATES: Record<number, SupportState> = {
+  0: "supported",
+  1: "not-implemented",
+  2: "no-device",
+};
+
+/** Map a `mediaway_support_state_t` value to its name (shared with `@mediaway/decoder`). */
+export function supportStateName(state: number): SupportState {
+  return SUPPORT_STATES[state] ?? "unknown";
+}
+
+/**
+ * Probe every encode backend for `codec` **at `width` x `height`**.
+ *
+ * Encoder support is resolution-dependent — a hardware encoder has minimum and maximum
+ * dimensions, so a backend that works at one size says nothing about another — which is why there
+ * is deliberately no resolution-free form. Pass the size you will encode.
+ *
+ * **Costly:** it opens a throwaway session per backend (a real MFT / VA-API / VideoToolbox
+ * session each). Call it when a settings screen opens, never per frame or in a loop. A platform
+ * with no per-backend selection reports an empty list.
+ *
+ * @throws MediawayError status 5 for a zero width or height.
+ */
+export async function encoderSupport(codec: ProbeCodec, width: number, height: number): Promise<EncoderCapability[]> {
+  const outRows: [unknown] = [null];
+  const outCount: [number] = [0];
+  checkPipeline(pipeline.encoderSupportAt(PIPELINE_CODEC[codec], width, height, outRows, outCount));
+  const count = outCount[0];
+  if (count === 0) return [];
+  const rows = decodeArray<RawEncoderCapability>(outRows[0], MwEncoderCapability, count);
+  const result = rows.map((row): EncoderCapability => ({
+    backend: BACKENDS[row.backend] ?? "unknown",
+    state: supportStateName(row.state),
+    pathClass: row.state === 0 ? (PATH_CLASSES[row.path_class] ?? "unknown") : null,
+  }));
+  pipeline.encoderSupportFree(outRows[0], count);
+  return result;
 }
 
 // ── Audio encode (ABI v2, adr/0003) ────────────────────────────────────────────

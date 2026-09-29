@@ -1,5 +1,5 @@
 /*
- * device.hpp — camera / screen / microphone capture wrapper classes.
+ * device.hpp — camera / screen / window / microphone capture wrapper classes.
  *
  * Split out of the original single-file mediaway.hpp once wiring all 8
  * container formats pushed the combined header past the workspace's
@@ -37,6 +37,7 @@ inline void checkDevice(mediaway_device_status_t st) {
         case MEDIAWAY_DEVICE_STATUS_INVALID_ARGUMENT:
         case MEDIAWAY_DEVICE_STATUS_INVALID_INPUT: throwError(Status::CaptureError, st, "invalid capture config");
         case MEDIAWAY_DEVICE_STATUS_TIMEOUT: throwError(Status::CaptureError, st, "timed out waiting for a frame");
+        case MEDIAWAY_DEVICE_STATUS_REGION_OUT_OF_BOUNDS: throwError(Status::RegionOutOfBounds, st, "capture region does not fit the surface");
         case MEDIAWAY_DEVICE_STATUS_CALLBACK_ALREADY_REGISTERED:
         case MEDIAWAY_DEVICE_STATUS_CALLBACK_MODE_ACTIVE: throwError(Status::CaptureError, st, "hotplug callback mode conflict");
         case MEDIAWAY_DEVICE_STATUS_INTERNAL_PANIC:
@@ -199,6 +200,54 @@ struct ScreenCaptureConfig {
     std::uint32_t height = 0;
 };
 
+/// Whether the mouse pointer is drawn into frames.
+enum class CursorCapture : std::uint32_t {
+    Excluded = MEDIAWAY_CAPTURE_CURSOR_EXCLUDED,  // default
+    Included = MEDIAWAY_CAPTURE_CURSOR_INCLUDED,
+};
+
+/// Whether Windows draws its capture border around a captured window.
+enum class CaptureBorder : std::uint32_t {
+    Shown = MEDIAWAY_CAPTURE_BORDER_SHOWN,  // OS default
+    /// Windows 11 build 22000+. A refusal is NOT an error: read the outcome
+    /// with WindowCapture::borderHidden().
+    Hidden = MEDIAWAY_CAPTURE_BORDER_HIDDEN,
+};
+
+/// How frame dimensions relate to the window's.
+enum class FrameDimensions : std::uint32_t {
+    Native = MEDIAWAY_FRAME_DIMENSIONS_NATIVE,  // exactly the window's size, odd or not
+    /// An odd axis loses its last column/row so any hardware encoder accepts
+    /// the frames. Costs nothing on WGC.
+    EvenCropped = MEDIAWAY_FRAME_DIMENSIONS_EVEN_CROPPED,
+};
+
+/// A rectangle of the window to record instead of the whole of it, in surface
+/// pixels. A region at (0, 0) is free; a region anywhere else costs one GPU
+/// copy per frame (GpuCopy, NOT Zero-Copy). A width or height of zero is invalid.
+struct CaptureRegion {
+    std::uint32_t x = 0;
+    std::uint32_t y = 0;
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+};
+
+/// One window by HWND, captured through WGC (Windows only).
+struct WindowCaptureConfig {
+    /// The HWND bits. Caller-owned: it must stay valid for the whole session.
+    std::uint64_t window;
+    Rational frameRate;
+    /// Mandatory — from GpuDevice::create().handle(). Like Screen, Window has
+    /// no CPU fallback.
+    mediaway_gpu_device_handle_t gpuDevice;
+    CursorCapture cursor = CursorCapture::Excluded;
+    CaptureBorder border = CaptureBorder::Shown;
+    FrameDimensions dimensions = FrameDimensions::Native;
+    /// nullopt = the whole window. Open throws Error(Status::RegionOutOfBounds)
+    /// when it does not fit.
+    std::optional<CaptureRegion> region = std::nullopt;
+};
+
 /// Capture properties negotiated after open — authoritative over the config.
 struct CaptureInfo {
     std::uint32_t width;
@@ -207,8 +256,8 @@ struct CaptureInfo {
     PixelFormat format;  // camera = NV12
 };
 
-/// A Camera video capture session (CPU frames). Screen is not representable
-/// from C today — see ScreenCapture.
+/// A Camera video capture session (CPU frames). Screen and Window are
+/// GPU-only — see ScreenCapture and WindowCapture.
 class VideoCapture {
 public:
     /// Open camera `deviceIndex` at `frameRate`. Throws Error(Status::NoDevice)
@@ -397,6 +446,114 @@ private:
     /// Raw handle access for EncodeSession::writeFrameFromDesktopCapture's
     /// capture-to-encode bridge (adr/pipeline/0005) — the only sanctioned use
     /// of this class's opaque pointer outside its own methods.
+    mediaway_desktop_capture_t* rawHandle() const noexcept { return handle_.get(); }
+
+    std::unique_ptr<mediaway_desktop_capture_t, void (*)(mediaway_desktop_capture_t*)> handle_;
+    CaptureInfo info_;
+};
+
+/// A real, Zero-Copy single-window (WGC) capture session. Requires a live
+/// GpuDevice — see WindowCaptureConfig::gpuDevice. Frames are GPU-backed like
+/// Screen's: pollFrame() carries geometry and pts but no CPU pixels; real
+/// pixels move through EncodeSession::writeFrameFromDesktopCapture.
+class WindowCapture {
+public:
+    /// Open `config.window`. Throws Error(Status::Unsupported) off Windows,
+    /// Error(Status::CaptureError) for an HWND of 0 or a destroyed window,
+    /// Error(Status::RegionOutOfBounds) when `config.region` does not fit.
+    static WindowCapture open(const WindowCaptureConfig& config) {
+        mediaway_desktop_capture_config_t raw = mediaway_desktop_capture_config_window(
+            config.window, {config.frameRate.num, config.frameRate.den}, config.gpuDevice);
+        raw.cursor = static_cast<mediaway_capture_cursor_t>(config.cursor);
+        raw.border = static_cast<mediaway_capture_border_t>(config.border);
+        raw.dimensions = static_cast<mediaway_frame_dimensions_t>(config.dimensions);
+        if (config.region) {
+            raw.region_enabled = true;
+            raw.region_x = config.region->x;
+            raw.region_y = config.region->y;
+            raw.region_width = config.region->width;
+            raw.region_height = config.region->height;
+        }
+        mediaway_desktop_capture_t* capture = nullptr;
+        detail::checkDevice(mediaway_desktop_capture_open(&raw, &capture));
+        if (!capture) {
+            detail::throwError(Status::Panic, MEDIAWAY_DEVICE_STATUS_INTERNAL_PANIC,
+                               "capture open returned no handle");
+        }
+        WindowCapture session(capture, config.frameRate);
+        session.queryGeometry();
+        return session;
+    }
+
+    ~WindowCapture() { close(); }
+    WindowCapture()
+        : handle_(nullptr, &detail::desktopCaptureClose), info_{0, 0, {0, 0}, PixelFormat::Bgra8} {}
+    WindowCapture(WindowCapture&&) = default;
+    WindowCapture& operator=(WindowCapture&&) = default;
+    WindowCapture(const WindowCapture&) = delete;
+    WindowCapture& operator=(const WindowCapture&) = delete;
+
+    /// Negotiated size: the window's, or the even-cropped / region size.
+    const CaptureInfo& info() const { return info_; }
+
+    /// Whether the OS actually hid the capture border after
+    /// CaptureBorder::Hidden. The ABI reads it once at open; false when the
+    /// border was left Shown or the OS refused (older than Windows 11 build 22000).
+    bool borderHidden() const {
+        bool hidden = false;
+        detail::checkDevice(mediaway_desktop_capture_border_hidden(handle_.get(), &hidden));
+        return hidden;
+    }
+
+    /// Poll the next frame without blocking; nullopt when nothing is ready.
+    /// `data` stays empty (GPU frames). Release with releaseFrame() before the
+    /// next acquiring poll.
+    std::optional<VideoFrame> pollFrame() {
+        mediaway_desktop_frame_t raw{};
+        bool has = false;
+        detail::checkDevice(mediaway_desktop_capture_poll_frame(handle_.get(), &raw, &has));
+        if (!has) return std::nullopt;
+        Bytes data;
+        if (raw.storage_kind == MEDIAWAY_VIDEO_FRAME_STORAGE_CPU && raw.data_len > 0) {
+            data.assign(raw.data, raw.data + raw.data_len);
+        }
+        mediaway_desktop_frame_free(&raw);
+        return VideoFrame{detail::fromAbiPixel(raw.pixel_format), raw.width, raw.height,
+                          raw.pts, std::move(data)};
+    }
+
+    /// Release backend resources held by the last polled frame.
+    void releaseFrame() {
+        detail::checkDevice(mediaway_desktop_capture_release_frame(handle_.get()));
+    }
+
+    /// Close the session. BLOCKS up to one frame interval.
+    void close() noexcept {
+        if (handle_) {
+            detail::desktopCaptureClose(handle_.get());
+            handle_.release();
+        }
+    }
+
+private:
+    friend class encoder::EncodeSession;
+
+    explicit WindowCapture(mediaway_desktop_capture_t* handle, Rational frameRate)
+        : handle_(handle, &detail::desktopCaptureClose),
+          info_{0, 0, frameRate, PixelFormat::Bgra8} {}
+
+    void queryGeometry() {
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+        if (mediaway_desktop_capture_geometry(handle_.get(), &width, &height) ==
+            MEDIAWAY_DEVICE_STATUS_OK) {
+            info_.width = width;
+            info_.height = height;
+        }
+    }
+
+    /// Raw handle for EncodeSession::writeFrameFromDesktopCapture (the same
+    /// capture-to-encode bridge Screen uses; the ABI takes any desktop handle).
     mediaway_desktop_capture_t* rawHandle() const noexcept { return handle_.get(); }
 
     std::unique_ptr<mediaway_desktop_capture_t, void (*)(mediaway_desktop_capture_t*)> handle_;

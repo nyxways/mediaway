@@ -7,9 +7,11 @@
 | [async-streaming](async-streaming.md) | Streaming-first · async without mandatory runtime |
 | [encode-session-byte-output](encode-session-byte-output.md) | `poll_bytes` / `finish_into` / `finish` — streaming vs whole-buffer exits (ADR-0006) |
 | [encode-session-container-choice](encode-session-container-choice.md) | `EncodeSession` generic over its muxer — `open_in`, `MuxOpen`, `FIRST_TRACK_ID` (ADR-0007) |
+| [platform-window-desktop-audio](platform-window-desktop-audio.md) | `platform::WindowCapture` / `DesktopAudio` — concrete per-target types, no `Box<dyn>` (mediaway ADR-0002) |
 | [frame-filter-hook](frame-filter-hook.md) | Mid-pipeline `FrameFilter` chain on `EncodeSession` (implemented, ADR-0001) |
 | [audio-track-and-apm](audio-track-and-apm.md) | Optional audio track + `mediaway-sw::apm` (AEC/NS/AGC2/VAD) on `EncodeSession` (implemented, ADR-0003) |
 | [c-ffi](c-ffi.md) | Per-capability `*-ffi` + optional feature umbrella |
 | [ffi-c-abi](ffi-c-abi.md) | `mediaway-ffi` — auto-encode → fMP4 C ABI, GPU frame input reachable from C (ADR-0001/0002) |
+| [ffi-stream-aac-probe](ffi-stream-aac-probe.md) | C ABI 7: `poll_bytes` streaming (`finish` = unpolled tail), AAC decode (OS codec, host-dependent), costly capability probes (ADR-0007) |
 | [screen-record-av](screen-record-av.md) | Screen + mic → H.264 + AAC → two-track fMP4, via `EncodeSession::open_with_audio` |
 | [trim-and-splice](trim-and-splice.md) | Decode → trim → splice → re-encode; found the AVCC/Annex-B mux gap |

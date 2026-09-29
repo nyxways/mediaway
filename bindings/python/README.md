@@ -53,16 +53,32 @@ detail in [`../c/README.md`](../c/README.md) and `docs/spec/c-ffi.md`):
    adr/0003): `AudioEncoder.open()` streams AAC (or Opus) packets for the caller's
    own muxer. Decode is the mirror shape (adr/0004, adr/pipeline/0006):
    `DecodeSession` wraps the best available video decoder (CPU output only;
-   Windows/WMF today), `AudioDecodeSession` wraps the cross-platform Opus decoder —
+   Windows/WMF today), `AudioDecodeSession` decodes Opus (software, identical on every
+   host) or AAC (`codec=Codec.AAC, extra_data=<AudioSpecificConfig>`; adr/pipeline/0007) —
    both single-step handles (the handle IS the decoder), `NO_BACKEND` raises
-   `DecoderUnavailableError` gracefully.
-3. **Device — capture**: camera (CPU frames), microphone/loopback (PCM), hotplug.
+   `DecoderUnavailableError` gracefully. **AAC is the OS's own decoder** (Media Foundation
+   on Windows, AudioToolbox on Apple; unavailable elsewhere), so its samples can differ
+   between hosts; the AudioSpecificConfig is required and only raw AAC is accepted (de-header
+   ADTS first). The Apple arm is compile-checked but has not been run.
+   `EncodeSession.poll_bytes()` streams the fMP4 out during a long recording (memory bounded
+   by the poll cadence); `finish()` then returns only the unpolled tail.
+   `encoder_support(codec, width, height)` / `decoder_support(codec)` probe what works on
+   this machine before opening a session — **both are costly** (they open throwaway
+   sessions), and encoder support depends on resolution.
+3. **Device — capture**: camera (CPU frames), microphone/loopback (PCM), hotplug. `AudioCapture.open(source="process_loopback", process_id=…, include_target_process_tree=…)` records that process tree, or with `False` everything the desktop renders *except* it — Windows has no "target process alone" mode.
    **Screen capture is real** (GPU-backed, DXGI Desktop Duplication) via the
    `GpuDevice` factory (adr/0007-gpu-device-factory.md) — `VideoCapture.open(source=
    "screen")` builds one internally, or share your own with an encoder. There is no
    CPU pixel readback path for Screen frames; real pixels only ever move through
-   `EncodeSession.write_frame_from_desktop_capture` (adr/pipeline/0005). Window
-   capture is still `UNSUPPORTED` from C (no constructor this pass) — an honest gap.
+   `EncodeSession.write_frame_from_desktop_capture` (adr/pipeline/0005). **Window
+   capture is real on Windows** (WGC, adr/device/0005): `VideoCapture.open(source=
+   "window", window=<HWND>, ...)` takes the same `GpuDevice`, plus `cursor="included"`,
+   `border="hidden"` (read the outcome from `capture.border_hidden`),
+   `dimensions="even_cropped"` and `region=(x, y, w, h)`. A region away from the window's
+   origin is one GPU copy per frame — not Zero-Copy — and a window that shrinks below it
+   raises `RegionOutOfBoundsError`. DXGI Screen capture cannot draw the pointer or crop, so
+   `cursor="included"` / `region=` on `source="screen"` raise `CaptureUnsupportedError`.
+   Other platforms raise `CaptureUnsupportedError` for Window.
 
 ## The real ABI beneath (what the wrapper wraps)
 
@@ -122,11 +138,13 @@ aspirational):
 | `container/replay_ring.py` | synthetic packets → `ReplayRing` → `clip_last` → `Muxer` → standalone MP4, demuxed back (ABI 8) | ✅ run verified |
 | `pipeline/encode_to_mp4.py` | auto H.264 encode of 90 synthetic NV12 frames → `out.mp4` | ✅ run verified |
 | `pipeline/encode_audio.py` | auto AAC encode of 96 synthetic F32 stereo frames → audio-only fMP4 (ABI v2) | ✅ run verified |
+| `pipeline/stream_encode.py` | streams 300 synthetic NV12 frames to a file with `poll_bytes()`, appends the `finish()` tail, demuxes the result | ✅ run verified |
 | `pipeline/decode_roundtrip.py` | auto H.264 decode (encode→mux→demux→decode) + Opus audio decode round trip | ✅ run verified |
 | `device/camera_record.py` | camera + mic → H.264 + AAC → ONE two-track MP4 (remuxed; audio track registered with the encoder's AudioSpecificConfig) | ✅ run verified on real hardware; video-only fallback without mic/audio backend |
 | `device/capture_microphone.py` | microphone capture, raw PCM | ✅ run verified (real mic) |
 | `pipeline/screen_record.py` | screen + mic → encode → MP4, via `GpuDevice` + the capture-to-encode bridge | ✅ run verified on real hardware (GPU-input encode gracefully skips as a known driver/encoder limitation, not a bug); mic PCM drained, not muxed — see `camera_record.py` for two-track remux |
 | `device/capture_screen.py` | screen capture only, via `GpuDevice` | ✅ run verified on real hardware |
+| `device/capture_window.py` | one window by `HWND`: cursor, hidden border, even-crop | ✅ run verified on real hardware (Windows 11) |
 
 ## Rules
 

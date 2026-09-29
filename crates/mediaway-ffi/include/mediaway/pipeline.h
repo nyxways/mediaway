@@ -4,7 +4,9 @@
  * (adr/0004-auto-decode-c-abi.md), a capture-to-encode bridge
  * (adr/0005-capture-encode-bridge-c-abi.md) that wires device.h capture handles
  * directly into an encode session, and Opus audio decode + Opus wired into the
- * audio encode surface (adr/pipeline/0006-audio-decode-c-abi.md).
+ * audio encode surface (adr/pipeline/0006-audio-decode-c-abi.md), then streaming
+ * fMP4 output, AAC decode and encoder/decoder capability probes
+ * (adr/pipeline/0007-stream-bytes-aac-decode-support-probe.md).
  *
  * Hand-written (not cbindgen-generated) — see adr/0001-auto-encode-c-abi.md §8.
  * Design rules: docs/spec/c-ffi.md (ADR-0004).
@@ -74,7 +76,7 @@
 #ifndef MEDIAWAY_PIPELINE_H
 #define MEDIAWAY_PIPELINE_H
 
-#define MEDIAWAY_PIPELINE_FFI_ABI_VERSION 6 /* bump on any breaking change; pre-1.0, no stability promise */
+#define MEDIAWAY_PIPELINE_FFI_ABI_VERSION 7 /* bump on any breaking change; pre-1.0, no stability promise */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -207,6 +209,63 @@ typedef struct mediaway_video_frame {
     mediaway_gpu_buffer_handle_t gpu_buffer; /* GPU only; BORROWED, zeroed whenever storage_kind == CPU */
 } mediaway_video_frame_t;
 
+/* ── Capability probes (adr/pipeline/0007 §3) ───────────────────────────────────── */
+
+/* BOTH PROBES ARE COSTLY: each opens throwaway sessions (a real MFT / VA-API / VideoToolbox
+ * session per row). Call them when a settings screen opens, never per frame or in a loop. */
+
+typedef enum mediaway_encode_backend {
+    MEDIAWAY_ENCODE_BACKEND_OS        = 0, /* the platform's own media API */
+    MEDIAWAY_ENCODE_BACKEND_NVENC     = 1,
+    MEDIAWAY_ENCODE_BACKEND_QUICKSYNC = 2,
+    MEDIAWAY_ENCODE_BACKEND_AMF       = 3,
+    MEDIAWAY_ENCODE_BACKEND_VULKAN    = 4,
+    MEDIAWAY_ENCODE_BACKEND_SOFTWARE  = 5,
+    MEDIAWAY_ENCODE_BACKEND_UNKNOWN   = 255, /* added after this ABI version */
+} mediaway_encode_backend_t;
+
+typedef enum mediaway_support_state {
+    MEDIAWAY_SUPPORT_STATE_SUPPORTED       = 0,
+    MEDIAWAY_SUPPORT_STATE_NOT_IMPLEMENTED = 1, /* no code path for this combination on this platform */
+    MEDIAWAY_SUPPORT_STATE_NO_DEVICE       = 2, /* real code, but the driver/device did not answer now */
+    MEDIAWAY_SUPPORT_STATE_UNKNOWN         = 255,
+} mediaway_support_state_t;
+
+typedef enum mediaway_encode_path_class {
+    MEDIAWAY_ENCODE_PATH_NONE       = 0, /* the row is not SUPPORTED */
+    MEDIAWAY_ENCODE_PATH_ZERO_COPY  = 1, /* GPU handle accepted, no copy or readback */
+    MEDIAWAY_ENCODE_PATH_GPU_COPY   = 2, /* GPU-to-GPU copy / cross-API share; no CPU round trip */
+    MEDIAWAY_ENCODE_PATH_CPU_UPLOAD = 3, /* CPU planes uploaded into a hardware encoder */
+    MEDIAWAY_ENCODE_PATH_READBACK   = 4, /* GPU-to-CPU readback, then encode (costly) */
+    MEDIAWAY_ENCODE_PATH_SOFTWARE   = 5,
+    MEDIAWAY_ENCODE_PATH_UNKNOWN    = 255,
+} mediaway_encode_path_class_t;
+
+/* Plain value; no owned fields. */
+typedef struct mediaway_encoder_capability {
+    mediaway_encode_backend_t backend;
+    mediaway_support_state_t state;
+    mediaway_encode_path_class_t path_class; /* meaningful only when state == SUPPORTED */
+} mediaway_encoder_capability_t;
+
+/* Probe every encode backend for `codec` AT width x height. Encoder support is
+ * resolution-dependent (a hardware encoder has minimum and maximum dimensions), so there is
+ * deliberately no resolution-free form: pass the size you will encode. Writes an owned array to
+ * *out_rows and its length to *out_count; free with mediaway_encoder_support_free. A platform
+ * with no per-backend selection reports zero rows (*out_rows == NULL, *out_count == 0). Zero
+ * width or height is INVALID_INPUT. */
+mediaway_pipeline_status_t mediaway_encoder_support_at(
+    mediaway_pipeline_codec_kind_t codec, uint32_t width, uint32_t height,
+    mediaway_encoder_capability_t **out_rows, size_t *out_count);
+/* Free an array from mediaway_encoder_support_at. (NULL, 0) is always safe. */
+void mediaway_encoder_support_free(mediaway_encoder_capability_t *rows, size_t count);
+
+/* Whether decoding `codec` is usable on this machine right now. Decode has one implementation
+ * per platform, so this is one state, not a list. It is how a caller learns whether AAC decode
+ * exists here before opening a session. */
+mediaway_pipeline_status_t mediaway_decoder_support(
+    mediaway_pipeline_codec_kind_t codec, mediaway_support_state_t *out_state);
+
 /* ── ABI version ─────────────────────────────────────────────────────────────────── */
 
 /* Runtime counterpart to MEDIAWAY_PIPELINE_FFI_ABI_VERSION, for consumers that load
@@ -270,7 +329,18 @@ mediaway_pipeline_status_t mediaway_encode_session_write_frame(
 mediaway_pipeline_status_t mediaway_encode_session_set_bitrate(
     mediaway_encode_session_t *session, uint32_t bitrate_bps);
 
-/* Flush the encoder and muxer, returning the complete fMP4 byte stream. Consumes
+/* Take the fMP4 bytes that are ready NOW, without ending the session (adr/pipeline/0007 §1).
+ * The streaming exit: call it as often as you like — after every write_frame, on a timer, or
+ * never — and the session's memory stays bounded by the poll cadence instead of growing with
+ * the recording. Nothing ready is *out_data == NULL and *out_len == 0, with no allocation (and
+ * indistinguishable from "already drained"). Otherwise release *out_data with
+ * mediaway_pipeline_ffi_buffer_free. Polling never finishes the stream. */
+mediaway_pipeline_status_t mediaway_encode_session_poll_bytes(
+    mediaway_encode_session_t *session, uint8_t **out_data, size_t *out_len);
+
+/* Flush the encoder and muxer, returning the fMP4 bytes NOT YET TAKEN by
+ * mediaway_encode_session_poll_bytes: the whole stream for a session that was never polled,
+ * only its tail for one that was — concatenate every polled chunk and then this. Consumes
  * `session` UNCONDITIONALLY — do not call mediaway_encode_session_close on it
  * afterward regardless of the returned status. Release *out_data with
  * mediaway_pipeline_ffi_buffer_free. */
@@ -285,7 +355,7 @@ void mediaway_encode_session_close(mediaway_encode_session_t *session);
 
 /* ── Shared free ─────────────────────────────────────────────────────────────────── */
 
-/* Free a buffer returned by mediaway_encode_session_finish. Distinctly named from
+/* Free a buffer returned by mediaway_encode_session_finish or mediaway_encode_session_poll_bytes. Distinctly named from
  * mediaway-container-ffi's mediaway_buffer_free — see the file header comment above. */
 void mediaway_pipeline_ffi_buffer_free(uint8_t *data, size_t len);
 
@@ -428,20 +498,38 @@ typedef struct mediaway_decode_packet_view {
 
 /* ── Audio decode (adr/pipeline/0006-audio-decode-c-abi.md) ─────────────────────── */
 
-/* Config for mediaway_audio_decode_session_open. codec is Opus only today (any other
- * kind is a runtime MEDIAWAY_PIPELINE_STATUS_UNSUPPORTED). No extra_data field —
- * unlike video codecs, Opus needs no out-of-band codec config to open a decoder.
- * Output PCM is always F32 (opus_decode_float). */
+/* Config for mediaway_audio_decode_session_open (adr/pipeline/0007 §2). codec is Opus or AAC
+ * (any other kind is a runtime MEDIAWAY_PIPELINE_STATUS_UNSUPPORTED). Output PCM is always F32.
+ *
+ * Opus is the software decoder (unsafe-libopus): identical output on every host, no
+ * extra_data (pass NULL / 0).
+ *
+ * AAC is the OS's own decoder (Media Foundation on Windows, AudioToolbox on macOS/iOS;
+ * UNSUPPORTED elsewhere) — so, unlike Opus, its samples CAN DIFFER between hosts and OS
+ * versions. Call mediaway_decoder_support(AAC) to learn whether it exists here. extra_data is the
+ * raw AudioSpecificConfig (an MP4's esds DecoderSpecificInfo): REQUIRED, and INVALID_INPUT when
+ * empty, because a synthesised default would decode SBR/PS streams to quietly wrong output. Raw
+ * AAC only; de-header ADTS first. The Apple arm is compile-checked but not yet run. */
 typedef struct mediaway_audio_decode_config {
-    mediaway_pipeline_codec_kind_t codec; /* input codec (Opus today) */
+    mediaway_pipeline_codec_kind_t codec; /* input codec: Opus or AAC */
     uint32_t sample_rate;                 /* Hz, non-zero */
     uint16_t channels;                    /* non-zero */
-    mediaway_rational_t time_base;        /* frame duration; also the decode buffer's per-frame sample cap */
+    mediaway_rational_t time_base;        /* Opus: frame duration, also the per-frame sample cap;
+                                           * AAC: normally 1 / sample_rate (pts = sample counts) */
+    const uint8_t *extra_data;            /* AAC: BORROWED AudioSpecificConfig, valid for open() only;
+                                           * NULL iff extra_data_len == 0 */
+    size_t extra_data_len;
 } mediaway_audio_decode_config_t;
 
 /* Build an Opus decode config for `sample_rate`/`channels`/`time_base`. */
 mediaway_audio_decode_config_t mediaway_audio_decode_config_opus(
     uint32_t sample_rate, uint16_t channels, mediaway_rational_t time_base);
+
+/* Build an AAC decode config. `extra_data` (the AudioSpecificConfig) is borrowed: it must stay
+ * valid until mediaway_audio_decode_session_open returns. */
+mediaway_audio_decode_config_t mediaway_audio_decode_config_aac(
+    uint32_t sample_rate, uint16_t channels, mediaway_rational_t time_base,
+    const uint8_t *extra_data, size_t extra_data_len);
 
 /* Output of mediaway_audio_decode_session_poll_frame — OWNED; release with
  * mediaway_decoded_audio_frame_free. New, pipeline-scoped name: distinct ownership

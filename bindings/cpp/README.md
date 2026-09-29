@@ -54,14 +54,30 @@ detail in [`../c/README.md`](../c/README.md) and `docs/spec/c-ffi.md`):
    adr/0003): `AudioEncoder::open` streams AAC packets for the caller's own muxer.
    Decode is the mirror shape (adr/0004, adr/pipeline/0006): `decoder::DecodeSession`
    wraps the best available video decoder (CPU output only; Windows/WMF today),
-   `decoder::AudioDecodeSession` wraps the cross-platform Opus decoder — both
-   single-step handles (the handle IS the decoder), `NoBackend` is graceful.
+   `decoder::AudioDecodeSession` wraps the Opus decoder (software, identical on
+   every host — `open()`) and the OS AAC decoder (`openAac()`, Windows and Apple; the
+   raw AudioSpecificConfig is required, samples are host-dependent, the Apple arm is
+   compile-checked but not yet run) — both single-step handles (the handle IS the
+   decoder), `NoBackend` is graceful. Streaming: `EncodeSession::pollBytes()` drains
+   ready fMP4 bytes during the session (memory bounded by your poll cadence) and
+   `finish()` then returns only the unpolled tail (adr/pipeline/0007). Probes:
+   `encoder::encoderSupport(codec, width, height)` and
+   `decoder::decoderSupport(codec)` say what this machine can encode/decode before
+   you open a session — both are costly (they open throwaway sessions).
 3. **Device — capture**: camera (CPU frames), microphone/loopback (PCM), hotplug.
    **Screen capture is real** (GPU-backed, DXGI Desktop Duplication) via
    `device::GpuDevice::create()` (adr/0007-gpu-device-factory.md) —
    `device::ScreenCapture::open()` takes the resulting handle. There is no CPU
    pixel readback path for Screen frames; real pixels only ever move through
    `encoder::EncodeSession::writeFrameFromDesktopCapture` (adr/pipeline/0005).
+   **Window capture is real too** (WGC by `HWND`, adr/device/0005):
+   `device::WindowCapture::open(WindowCaptureConfig)` takes a caller-owned `HWND` and the
+   same `GpuDevice` handle, with typed `CursorCapture` / `CaptureBorder` /
+   `FrameDimensions` options and an optional `CaptureRegion` (a region off the window's
+   origin costs one GPU copy per frame, not Zero-Copy). `borderHidden()` reports what the
+   OS actually did with `CaptureBorder::Hidden`. A region the window cannot hold throws
+   `Error(Status::RegionOutOfBounds)`. The same `writeFrameFromDesktopCapture` bridge
+   accepts a `WindowCapture`.
 
 ## The real ABI beneath (what the wrapper wraps)
 
@@ -98,8 +114,8 @@ idiomatic shape; examples catch `mediaway::Error` (carrying the raw status) at `
   `std::optional<Packet> pollPacket()`, `setDecryptionKey`.
 - `mediaway::encoder::AutoVideoEncoder::open(config)` (throws on `NO_BACKEND` /
   unavailable), `mediaway::encoder::EncodeSession` — `writeFrame`, `finish()` returns
-  `Bytes`; **ownership of the encoder transfers into the session at construction and
-  into `finish()`** — never expose a close-after-open on the consumed objects.
+  `Bytes` (only what `pollBytes()` has not already taken); **ownership of the encoder
+  transfers into the session at construction and into `finish()`** — never expose a close-after-open on the consumed objects.
   `writeFrameFromCameraCapture`/`writeFrameFromDesktopCapture` are the
   capture-to-encode bridge (adr/pipeline/0005): poll-and-push in one native
   call, no intermediate `VideoFrame`, Zero-Copy for Screen's GPU frames.
@@ -125,12 +141,16 @@ aspirational):
 | `container/replay_ring.cpp` | `ReplayRing`/`ReplayClip`: 6 s of synthetic packets → keep 3 s → last-2 s clip → standalone MP4 (re-demuxed) → `Stored` ring fed by `Muxer::withPlacements()` reads back the same bytes | ✅ link+run verified |
 | `container/all_formats_smoke.cpp` | round-trip all 7 non-MP4 formats (WebM, Ogg, ADTS, FLV, MPEG-TS incl. `finish()`, MP3, WAV incl. `wavParse()`) | ✅ link+run verified |
 | `pipeline/encode_to_mp4.cpp` | auto H.264 encode of 90 synthetic NV12 frames → `out.mp4` | ✅ link+run verified |
+| `pipeline/stream_encode.cpp` | auto H.264 encode of 150 synthetic NV12 frames streamed to a file with `pollBytes()`; output identical to the C twin | ✅ link+run verified |
+| `pipeline/support_probe.cpp` | `encoderSupport` / `decoderSupport` printout for this machine | ✅ link+run verified |
 | `pipeline/encode_audio.cpp` | auto AAC encode of 96 synthetic F32 stereo frames → audio-only fMP4 (ABI v2) | ✅ link+run verified |
 | `pipeline/decode_roundtrip.cpp` | auto H.264 decode (encode→mux→demux→decode) + Opus audio decode round trip | ✅ link+run verified |
 | `device/camera_record.cpp` | camera + mic → H.264 + AAC → ONE two-track MP4 (remuxed; audio track registered with the encoder's AudioSpecificConfig) | ✅ link+run verified on real hardware; video-only fallback without mic/audio backend |
 | `device/capture_microphone.cpp` | microphone capture, raw PCM | ✅ link+run verified (real mic) |
 | `pipeline/screen_record.cpp` | screen + mic → encode → MP4, via `GpuDevice` + the capture-to-encode bridge | ✅ link+run verified on real hardware (GPU-input encode gracefully skips as a known driver/encoder limitation, not a bug); mic PCM drained, not muxed — see `camera_record.cpp` for two-track remux |
 | `device/capture_screen.cpp` | screen capture only, via `GpuDevice` | ✅ link+run verified on real hardware |
+| `device/capture_window.cpp` | one window by `HWND` (default: the foreground window), hidden border + even-cropped frames, via `GpuDevice` | ✅ link+run verified on real hardware (a static window delivers one frame — WGC only sends on change) |
+| `tests/window_config.cpp` | pins `mediaway_desktop_capture_config_t`'s layout (`static_assert`), the zero-means-previous defaults, the device ABI version and the `RegionOutOfBounds` mapping | ✅ compile+run, no hardware needed |
 
 `tests/replay_ring.cpp` is a hermetic behaviour test for `ReplayRing`/`ReplayClip` and `Muxer::withPlacements()` that also pins the C struct layouts the wrapper depends on (`static_assert`, 64-bit) and the container ABI version. Build it like an example: `g++ -std=c++17 -Ibindings/cpp/include -Icrates/mediaway-ffi/include bindings/cpp/tests/replay_ring.cpp -L<dll dir> -lmediaway_ffi`.
 

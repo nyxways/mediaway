@@ -1,5 +1,6 @@
 /*
- * pipeline.hpp — auto video encode -> fMP4 and audio encode wrapper classes.
+ * pipeline.hpp — auto video encode -> fMP4, audio encode, Opus/AAC audio decode
+ * and encoder/decoder capability probe wrapper classes.
  *
  * Split out of the original single-file mediaway.hpp once wiring all 8
  * container formats pushed the combined header past the workspace's
@@ -15,6 +16,7 @@
 
 #include <memory>
 #include <optional>
+#include <vector>
 
 namespace mediaway {
 
@@ -41,6 +43,18 @@ inline void checkPipeline(mediaway_pipeline_status_t st) {
 }
 
 }  // namespace detail
+
+/// Whether a backend or codec is usable on this machine right now
+/// (adr/pipeline/0007 §3). Values equal the C header's.
+enum class SupportState : std::uint32_t {
+    Supported = MEDIAWAY_SUPPORT_STATE_SUPPORTED,
+    /// No code path exists for this combination on this platform.
+    NotImplemented = MEDIAWAY_SUPPORT_STATE_NOT_IMPLEMENTED,
+    /// Real code exists but the driver or device did not answer just now.
+    NoDevice = MEDIAWAY_SUPPORT_STATE_NO_DEVICE,
+    /// A state added after this binding was written.
+    Unknown = MEDIAWAY_SUPPORT_STATE_UNKNOWN,
+};
 
 namespace encoder {
 
@@ -99,7 +113,7 @@ private:
 };
 
 /// A single-use encode session. finish() (rvalue-only) consumes the session
-/// and returns the complete fMP4 bytes — the ABI's unconditional handle
+/// and returns the fMP4 bytes not yet polled — the ABI's unconditional handle
 /// consumption cannot be double-released.
 class EncodeSession {
 public:
@@ -109,10 +123,16 @@ public:
     EncodeSession(const EncodeSession&) = delete;
     EncodeSession& operator=(const EncodeSession&) = delete;
 
-    void writeFrame(const VideoFrame& frame) {
+    /// `duration` is the frame's length in the stream timebase; 0 means unknown
+    /// (the default) and is treated as one tick, the nominal frame interval. Before
+    /// v0.2.0 the Windows encoder handed the MFT a 100 ns sample for it, which made
+    /// the encoder emit colliding presentation timestamps (0,2,2,5,5,...) so a player
+    /// showed only ~3/4 of the frames (mediaway-encoder ADR-windows/0013 addendum).
+    /// Pass the real duration whenever you know it, e.g. under a variable frame rate.
+    void writeFrame(const VideoFrame& frame, std::uint64_t duration = 0) {
         mediaway_video_frame_t raw{};
         raw.pts = frame.pts;
-        raw.duration = 0;  // unknown
+        raw.duration = duration;
         raw.width = frame.width;
         raw.height = frame.height;
         raw.pixel_format = detail::toAbiPixel(frame.format);
@@ -146,9 +166,38 @@ public:
         return wrote;
     }
 
-    /// Flush the encoder + muxer; returns the complete fMP4 bytes. Consumes
-    /// the session — the ABI frees the handle inside finish(), so it is
-    /// released here (even on failure), never closed (double-free otherwise).
+    /// The same bridge for a single-window (WGC) capture - one desktop-capture
+    /// ABI handle serves both Screen and Window. Same GPU-device rule.
+    bool writeFrameFromDesktopCapture(device::WindowCapture& capture) {
+        bool wrote = false;
+        detail::checkPipeline(mediaway_encode_session_write_frame_from_desktop_capture(
+            handle_.get(), capture.rawHandle(), &wrote));
+        return wrote;
+    }
+
+    /// Take the fMP4 bytes that are ready NOW without ending the session
+    /// (adr/pipeline/0007 §1) — the streaming exit. Call it as often as you
+    /// like (after every writeFrame, on a timer, or never); the session's
+    /// memory then stays bounded by your poll cadence instead of growing with
+    /// the recording. Returns an empty vector when nothing is ready, which is
+    /// indistinguishable from "already drained". Polling never finishes the
+    /// stream: the last fragments only appear in finish().
+    Bytes pollBytes() {
+        std::uint8_t* data = nullptr;
+        std::size_t len = 0;
+        detail::checkPipeline(mediaway_encode_session_poll_bytes(handle_.get(), &data, &len));
+        Bytes out;
+        if (len > 0) out.assign(data, data + len);
+        mediaway_pipeline_ffi_buffer_free(data, len);
+        return out;
+    }
+
+    /// Flush the encoder + muxer; returns the fMP4 bytes NOT YET TAKEN by
+    /// pollBytes(): the whole stream for a session that was never polled, only
+    /// its tail for one that was — write every polled chunk, then this.
+    /// Consumes the session — the ABI frees the handle inside finish(), so it
+    /// is released here (even on failure), never closed (double-free
+    /// otherwise).
     Bytes finish() && {
         std::uint8_t* data = nullptr;
         std::size_t len = 0;
@@ -274,9 +323,92 @@ private:
         handle_;
 };
 
+/// Which encode backend a capability row describes (adr/pipeline/0007 §3).
+enum class EncodeBackend : std::uint32_t {
+    /// The platform's own media API (Media Foundation, VideoToolbox, VA-API).
+    Os = MEDIAWAY_ENCODE_BACKEND_OS,
+    Nvenc = MEDIAWAY_ENCODE_BACKEND_NVENC,
+    QuickSync = MEDIAWAY_ENCODE_BACKEND_QUICKSYNC,
+    Amf = MEDIAWAY_ENCODE_BACKEND_AMF,
+    Vulkan = MEDIAWAY_ENCODE_BACKEND_VULKAN,
+    Software = MEDIAWAY_ENCODE_BACKEND_SOFTWARE,
+    /// A backend added after this binding was written.
+    Unknown = MEDIAWAY_ENCODE_BACKEND_UNKNOWN,
+};
+
+/// The cheapest data path a supported encoder reached.
+enum class EncodePathClass : std::uint32_t {
+    /// The row is not Supported.
+    None = MEDIAWAY_ENCODE_PATH_NONE,
+    /// GPU handle accepted with no copy or readback.
+    ZeroCopy = MEDIAWAY_ENCODE_PATH_ZERO_COPY,
+    /// GPU-to-GPU copy or cross-API share; no CPU round trip.
+    GpuCopy = MEDIAWAY_ENCODE_PATH_GPU_COPY,
+    /// CPU planes uploaded into a hardware encoder.
+    CpuUpload = MEDIAWAY_ENCODE_PATH_CPU_UPLOAD,
+    /// GPU-to-CPU readback, then encode (costly).
+    Readback = MEDIAWAY_ENCODE_PATH_READBACK,
+    Software = MEDIAWAY_ENCODE_PATH_SOFTWARE,
+    Unknown = MEDIAWAY_ENCODE_PATH_UNKNOWN,
+};
+
+/// One row of encoderSupport(): a backend, whether it is usable, and at what cost.
+struct EncoderCapability {
+    EncodeBackend backend;
+    SupportState state;
+    /// Meaningful only when `state == SupportState::Supported`; None otherwise.
+    EncodePathClass pathClass;
+};
+
+/// Probe every encode backend for `codec` AT `width` x `height`.
+///
+/// Encoder support is resolution-dependent — a hardware encoder has minimum
+/// and maximum dimensions — so there is deliberately no resolution-free form:
+/// pass the size you will encode.
+///
+/// COSTLY: this opens a throwaway session per backend (a real MFT / VA-API /
+/// VideoToolbox session per row). Call it when a settings screen opens, never
+/// per frame or in a loop. A platform with no per-backend selection returns an
+/// empty vector. Throws Error(Status::InvalidArgument) for a zero dimension.
+inline std::vector<EncoderCapability> encoderSupport(Codec codec, std::uint32_t width,
+                                                     std::uint32_t height) {
+    mediaway_encoder_capability_t* rows = nullptr;
+    std::size_t count = 0;
+    detail::checkPipeline(mediaway_encoder_support_at(
+        static_cast<mediaway_pipeline_codec_kind_t>(detail::toAbiCodec(codec)), width, height,
+        &rows, &count));
+    // Free the ABI array on every path, including a failed allocation below.
+    struct Guard {
+        mediaway_encoder_capability_t* rows;
+        std::size_t count;
+        ~Guard() { mediaway_encoder_support_free(rows, count); }
+    } guard{rows, count};
+    std::vector<EncoderCapability> out;
+    out.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        out.push_back({static_cast<EncodeBackend>(rows[i].backend),
+                       static_cast<SupportState>(rows[i].state),
+                       static_cast<EncodePathClass>(rows[i].path_class)});
+    }
+    return out;
+}
+
 }  // namespace encoder
 
 namespace decoder {
+
+/// Whether decoding `codec` is usable on this machine right now
+/// (adr/pipeline/0007 §3). Decode has one implementation per platform, so this
+/// is one state, not a list. It is how you learn whether AAC decode exists
+/// here (Windows and Apple only) before opening a session.
+///
+/// COSTLY: opens a throwaway session. Call it once, not per packet.
+inline SupportState decoderSupport(Codec codec) {
+    mediaway_support_state_t state = MEDIAWAY_SUPPORT_STATE_UNKNOWN;
+    detail::checkPipeline(mediaway_decoder_support(
+        static_cast<mediaway_pipeline_codec_kind_t>(detail::toAbiCodec(codec)), &state));
+    return static_cast<SupportState>(state);
+}
 
 /// One decoded video frame — CPU-only output (GPU decode output is deferred,
 /// adr/0004 §1/§5). `data` planes match `format` (NV12: Y then interleaved UV;
@@ -290,7 +422,8 @@ struct DecodedVideoFrame {
     Bytes data;
 };
 
-/// A decoded Opus PCM frame — always interleaved F32 (adr/pipeline/0006 §Decode side).
+/// A decoded Opus or AAC PCM frame — always interleaved F32 (adr/pipeline/0006 §Decode side,
+/// adr/pipeline/0007 §2).
 struct DecodedAudioFrame {
     std::int64_t pts;
     std::uint64_t duration;  // 0 if unknown
@@ -376,14 +509,49 @@ private:
     std::unique_ptr<mediaway_decode_session_t, void (*)(mediaway_decode_session_t*)> handle_;
 };
 
-/// Opus audio decode session — the handle IS the decoder (adr/pipeline/0006,
-/// mirrors DecodeSession's video shape; no muxer to wire, no consumption trap).
+/// Opus or AAC audio decode session — the handle IS the decoder
+/// (adr/pipeline/0006 + 0007, mirrors DecodeSession's video shape; no muxer to
+/// wire, no consumption trap).
+///
+/// Opus (open()) is the software decoder: identical output on every host.
+/// AAC (openAac()) is the OS's own decoder — Media Foundation on Windows,
+/// AudioToolbox on macOS/iOS, Error(Status::Unsupported) elsewhere — so its
+/// samples CAN DIFFER between hosts and OS versions. Ask
+/// decoder::decoderSupport(Codec::Aac) first if you need to know. The Apple
+/// arm is compile-checked but has not been run.
 class AudioDecodeSession {
 public:
+    /// Open an Opus session.
     static AudioDecodeSession open(std::uint32_t sampleRate, std::uint16_t channels,
                                    Rational timeBase) {
         const mediaway_audio_decode_config_t raw =
             mediaway_audio_decode_config_opus(sampleRate, channels, {timeBase.num, timeBase.den});
+        mediaway_audio_decode_session_t* session = nullptr;
+        detail::checkPipeline(mediaway_audio_decode_session_open(&raw, &session));
+        if (!session) {
+            detail::throwError(Status::Panic, MEDIAWAY_PIPELINE_STATUS_INTERNAL_PANIC,
+                               "audio decode session open returned no handle");
+        }
+        return AudioDecodeSession(session);
+    }
+
+    /// Open an AAC session (adr/pipeline/0007 §2).
+    ///
+    /// `audioSpecificConfig` is the stream's raw AudioSpecificConfig (an MP4's
+    /// `esds` DecoderSpecificInfo, or AudioEncoder::streamInfo().codecConfig).
+    /// It is REQUIRED — an empty one throws Error(Status::InvalidArgument),
+    /// because a synthesised default would decode SBR/PS streams to quietly
+    /// wrong output. It is borrowed for this call only and need not outlive it.
+    /// Raw AAC only: de-header ADTS before pushing. `timeBase` defaults to
+    /// {1, sampleRate}, so packet and frame timestamps are sample counts.
+    static AudioDecodeSession openAac(std::uint32_t sampleRate, std::uint16_t channels,
+                                      const Bytes& audioSpecificConfig,
+                                      std::optional<Rational> timeBase = std::nullopt) {
+        const Rational tb = timeBase.value_or(Rational{1, sampleRate});
+        const mediaway_audio_decode_config_t raw = mediaway_audio_decode_config_aac(
+            sampleRate, channels, {tb.num, tb.den},
+            audioSpecificConfig.empty() ? nullptr : audioSpecificConfig.data(),
+            audioSpecificConfig.size());
         mediaway_audio_decode_session_t* session = nullptr;
         detail::checkPipeline(mediaway_audio_decode_session_open(&raw, &session));
         if (!session) {
@@ -399,16 +567,19 @@ public:
     AudioDecodeSession(const AudioDecodeSession&) = delete;
     AudioDecodeSession& operator=(const AudioDecodeSession&) = delete;
 
-    /// Push one compressed Opus packet. An empty `payload` (nullptr or
-    /// `payloadLen == 0`) is Opus's packet-loss-concealment hint for a lost
-    /// frame, not an error. May produce zero or more frames (drain via
-    /// pollFrame()).
-    void pushPacket(std::int64_t pts, const std::uint8_t* payload, std::size_t payloadLen) {
+    /// Push one compressed packet. For Opus an empty `payload` (nullptr or
+    /// `payloadLen == 0`) is the packet-loss-concealment hint for a lost frame,
+    /// not an error. For AAC it means nothing, so it throws
+    /// Error(Status::InvalidArgument). May produce zero or more frames (drain
+    /// via pollFrame()). `duration` is in the stream timebase (AAC-LC:
+    /// 1024 samples per packet); 0 means unknown.
+    void pushPacket(std::int64_t pts, const std::uint8_t* payload, std::size_t payloadLen,
+                    std::uint64_t duration = 0) {
         mediaway_decode_packet_view_t raw{};
         raw.stream_id = 0;
         raw.pts = pts;
         raw.dts = pts;
-        raw.duration = 0;
+        raw.duration = duration;
         raw.is_keyframe = false;
         raw.is_discard = false;
         raw.payload = payload;

@@ -1,5 +1,8 @@
 # ADR-0006: Opus audio decode C ABI + Opus wired into the existing audio encode C ABI
 
+> **Update (2026-09-29):** the "Opus only" scope below is widened to AAC by
+> [ADR-0007](0007-stream-bytes-aac-decode-support-probe.md) §2.
+
 - **Status**: Accepted
 - **Date**: 2026-08-05
 - **Deciders**: @dev-nyxie (+ agent)

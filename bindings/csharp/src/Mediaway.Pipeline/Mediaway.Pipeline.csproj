@@ -10,7 +10,7 @@
     <RootNamespace>Mediaway.Pipeline</RootNamespace>
     <AssemblyName>Mediaway.Pipeline</AssemblyName>
     <NeedsNativeRuntime>true</NeedsNativeRuntime>
-    <Description>Rust-based, lightweight, fast idiomatic C# binding over mediaway-ffi (auto video encode -> fragmented MP4; AAC audio encode).</Description>
+    <Description>Rust-based, lightweight, fast idiomatic C# binding over mediaway-ffi (auto video encode -> fragmented MP4 with streaming output; AAC audio encode and decode; encoder/decoder capability probes).</Description>
     <PackageTags>mediaway;video;audio;encode;h264;aac;mp4</PackageTags>
   </PropertyGroup>
 

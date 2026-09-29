@@ -8,14 +8,14 @@ GPU handles: [`adr/0003-gpu-handle-c-abi.md`](../../../../crates/mediaway-ffi/ad
 
 ## Scope
 
-**Camera** (video, CPU-only), **Screen** (video, GPU-only, Windows), and
+**Camera** (video, CPU-only), **Screen** + **Window** (video, GPU-only, Windows), and
 **Microphone / Loopback / ProcessLoopback** (audio) all ship — real,
 hardware-verified Windows backends. Screen requires a live
 `mediaway_gpu_device_handle_t` (`MEDIAWAY_GPU_DEVICE_DIRECTX11`) passed to
 `mediaway_desktop_capture_config_screen()` — no CPU fallback exists in the wrapped Rust
 backend. `mediaway_desktop_capture_open()` enforces the pairing: Camera + non-`NONE`
 `gpu_device`, or Screen + `NONE`/malformed `gpu_device`, both return
-`INVALID_INPUT` rather than silently ignoring the mismatch. Window capture is deferred (see below).
+`INVALID_INPUT` rather than silently ignoring the mismatch. Window (HWND, WGC) + cursor/region/border/even-crop: ADR-0005, ABI 2.
 
 `mediaway_device_video_frame_t` carries a `storage_kind` tag: `CPU` (owned bytes,
 Camera) or `GPU` (borrowed `mediaway_gpu_buffer_handle_t`, Screen — never freed by the
@@ -70,7 +70,7 @@ and returns a real status instead of `void`. Header is hand-written
 
 ## Deferred
 
-Window capture (needs a native `HWND` C input shape), status-enum + buffer-free
+Non-Windows Window sources (portal / `SCContentFilter` tokens, not `HWND`s), status-enum + buffer-free
 fragmentation across all three modules, `cbindgen` migration of this file (tooling
 adopted crate-wide, this header itself not yet cut over —
 [ADR-0016](../../../adr/0016-cbindgen-ffi-headers.md)'s 2026-08-05 addendum), Linux

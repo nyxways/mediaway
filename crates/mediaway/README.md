@@ -12,7 +12,8 @@
 
 The Mediaway convenience pipeline: composes encoder + container (+ device capture for
 input) so apps don't hand-roll the encoder → muxer poll loop. `EncodeSession` wraps an
-encoder and an MP4 muxer behind `write_frame`/`finish`, `FrameFilter` gives you a
+encoder and a muxer (fragmented MP4 by default; any `MuxOpen` container via `open_in`)
+behind `write_frame`/`finish`, `FrameFilter` gives you a
 mid-pipeline transform hook, and `platform` auto-selects the best available backend per
 OS. The low-level traits stay fully public and reachable without this crate.
 
@@ -33,6 +34,8 @@ let mut session = EncodeSession::open(encoder)?;
 
 session.write_frame(&nv12_frame)?;
 let mp4_bytes = session.finish()?; // flush + mux flush + poll_bytes
+// Long capture? Call `session.poll_bytes()` as you go and `finish_into(sink)` at the end,
+// so memory is bounded by poll cadence instead of recording length.
 ```
 
 ## Status
@@ -43,7 +46,8 @@ Status marks: ✅ first-class (tests for claimed scope) · ⚡ Zero-Copy path (n
 
 | Area | Status | Notes |
 | ---- | ------ | ----- |
-| `EncodeSession` (open / write_frame / finish) | ✅ | Video track; optional second audio track via `open_with_audio` |
+| `EncodeSession<E, M>` (open / write_frame / finish) | ✅ | Video track; optional second audio track via `open_with_audio`. `open` / `open_with_audio` write fragmented MP4; `open_in` / `open_in_with_audio` take any `MuxOpen` muxer (e.g. `webm::Muxer`, or `mp4::Muxer::with_fragment_batch`) |
+| `EncodeSession::poll_bytes` / `finish_into` | ✅ | Drain container bytes during the session — memory bounded by poll cadence, not duration (ADR-0006) |
 | `FrameFilter` mid-pipeline hook | ✅ | CPU frames; GPU-backed frames fail loudly (`GpuFrameUnsupported`) |
 | APM / VAD wiring (AEC3 + NS + AGC2, RNN VAD) | ✅ | `attach_audio_processor` / `attach_vad` / `poll_vad_score` |
 
@@ -62,8 +66,8 @@ reach the backend module directly (e.g. `mediaway_encoder::web`) instead.
 | `WindowCapture::open` → `PlatformWindowCapture` (concrete, not boxed — ADR-0002) | ✅ ⚡ WGC (Zero-Copy out; border / even-crop options on `WindowsWindowCapture::open_with`) | 🆗 `linux::LinuxWindowCapture` (portal + PipeWire) | ❌ `NoBackend` | macOS 🆗 `apple::AppleWindowCapture` (ScreenCaptureKit); Android ❌ `NoBackend` |
 | `DesktopAudio::open` → `PlatformDesktopAudioCapture` (concrete) | ✅ WASAPI system loopback or per-process loopback | ❌ `NoBackend` | ❌ `NoBackend` | ❌ `NoBackend` |
 | `Microphone::open` | ✅ WASAPI | ❌ `NoBackend` (Linux mic module exists, not wired) | ❌ `NoBackend` | ❌ `NoBackend` |
-| `encoder_support(codec)` | ✅ live probe (incl. Opus via `mediaway-sw` software path) | empty | empty | empty |
-| `decoder_support(codec)` | ✅ live probe (incl. inbox WMF Opus decoder) | ✅ live probe (VA-API) | `NotImplemented` | `NotImplemented` |
+| `encoder_support(codec)` / `encoder_support_at(codec, w, h)` | ✅ live probe (incl. Opus via `mediaway-sw` software path); support is resolution-dependent, so use `_at` for the size you will encode | empty | empty | empty |
+| `decoder_support(codec)` | ✅ live probe (incl. inbox WMF Opus and AAC decoders) | ✅ live probe (VA-API) | `NotImplemented` | `NotImplemented` |
 | `device_support` / `request_device_permission` | ✅ | ✅ | — | — |
 
 Remaining wiring (`platform` dispatch for Web, Linux microphone, camera, and other

@@ -114,6 +114,32 @@ pub const extern "C" fn mediaway_audio_decode_config_opus(
         sample_rate,
         channels,
         time_base,
+        extra_data: std::ptr::null(),
+        extra_data_len: 0,
+    }
+}
+
+/// Build an AAC audio decode config (`adr/pipeline/0007-stream-bytes-aac-decode-support-probe.md` §2).
+///
+/// `extra_data`/`extra_data_len` is the stream's raw `AudioSpecificConfig` (MP4's `esds`
+/// `DecoderSpecificInfo`) — required, and borrowed: it must stay valid until
+/// [`crate::pipeline::mediaway_audio_decode_session_open`] returns. `time_base` is normally
+/// `1 / sample_rate`, so packet and frame `pts`/`duration` are sample counts.
+#[unsafe(no_mangle)]
+pub const extern "C" fn mediaway_audio_decode_config_aac(
+    sample_rate: u32,
+    channels: u16,
+    time_base: MediawayRational,
+    extra_data: *const u8,
+    extra_data_len: usize,
+) -> MediawayAudioDecodeConfig {
+    MediawayAudioDecodeConfig {
+        codec: MediawayPipelineCodecKind::Aac,
+        sample_rate,
+        channels,
+        time_base,
+        extra_data,
+        extra_data_len,
     }
 }
 

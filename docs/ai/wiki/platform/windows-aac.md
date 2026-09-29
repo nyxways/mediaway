@@ -53,7 +53,8 @@ captures into `StreamInfo::extra_data`.
   Microsoft's own decoder, which is not independent conformance evidence. Upgrading needs
   the `ffmpeg` oracle ([ADR-0002](../../../docs/adr/0002-system-oracle.md)).
 - `mediaway-ffi`'s audio decode C ABI is still Opus-only (`pipeline/audio_decoder.rs`
-  wraps `mediaway_sw::opus::OpusDecoder` directly); its module doc's claim that no
-  `AudioDecoder` trait exists is stale since ADR-0003.
-- `platform::decoder_support` has no AAC arm on **Apple**, although `apple::AacDecoder`
-  exists — same gap this change closed on Windows.
+  wraps `mediaway_sw::opus::OpusDecoder` directly by design, so output is host-independent);
+  widening it to AAC is an ABI change that needs its own ADR.
+- `platform::decoder_support(Aac)` has an arm on **Apple** too (`platform.rs`, probing
+  `apple::AacDecoder` with the same canonical ASC), but that arm has never run: like every Apple
+  backend it is compile-checked only until macOS CI exercises it.

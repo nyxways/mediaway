@@ -7,6 +7,10 @@ using System.Runtime.CompilerServices;
 // has nothing to do with struct marshalling, and Pipeline needs it under both TFMs.
 [assembly: InternalsVisibleTo("Mediaway.Pipeline")]
 
+// The integration suite pins NativeDesktopCaptureConfig's layout against device.h (a reordered
+// or resized field would corrupt every Window/Screen config) and needs the internal types to do it.
+[assembly: InternalsVisibleTo("Mediaway.Device.Tests")]
+
 #if NET8_0_OR_GREATER
 // Every native struct in this assembly (NativeStructs.cs) is deliberately kept fully
 // blittable (native `bool` is a `byte` field, not `bool`) so this attribute is safe: it

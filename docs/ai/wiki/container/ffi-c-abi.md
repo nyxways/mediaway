@@ -16,8 +16,8 @@ handles (`{ogg,adts,flv,ts,mp3,wav}`, `wav` mux-only — see below). ADRs:
 - `MuxerHandle { poisoned, state: MuxerState::{Mp4Open,Mp4Live,WebmOpen,WebmLive} }`;
   `DemuxerHandle { poisoned, inner: DemuxerState::{Mp4,Webm} }` — both `Demux`, so
   `as_demux_mut()` returns `&mut dyn Demux` once instead of duplicating
-  `push_bytes`/`streams`/`poll_packet` per variant (muxer's `add_track`/`begin` aren't part
-  of any shared trait, so it can't). `Open → Live` via `std::mem::take`. `_create()` stays
+  `push_bytes`/`streams`/`poll_packet` per variant (the muxer's `add_track`/`begin` phase is
+  `MuxOpen`, but its associated types differ per format, so no `dyn`). `Open → Live` via `std::mem::take`. `_create()` stays
   MP4-only, zero-arg (source compat); `_create_for_format(format)` is the sibling taking
   `mediaway_container_format_t` — ADR-0003 § Decision 1 on why not a parameter instead.
 - `MediawayStatus` (`#[repr(C)]`, 11 values): `InvalidArgument`/`InvalidState` are FFI-only;
@@ -79,8 +79,8 @@ drops the other side's symbols (WAV demux has no module to gate, just one fn und
 `mediaway-container` is pinned to `default-features = false, features = ["mux", "demux",
 "audio", "video"]` regardless of this crate's own selection (§9).
 
-Header: hand-written `include/mediaway/container.h`, not `cbindgen` (§8). ABI version `7`
-(WebM `1`, Ogg `2`, ADTS `3`, FLV `4`, MPEG-TS `5`, MP3 `6`, WAV `7`) — `_ffi_abi_version()`
+Header: hand-written `include/mediaway/container.h`, not `cbindgen` (§8). ABI version `8`
+(WebM `1`, Ogg `2`, ADTS `3`, FLV `4`, MPEG-TS `5`, MP3 `6`, WAV `7`, replay ring `8`) — `_ffi_abi_version()`
 drifted to a stale hardcoded `0` since the WebM bump, fixed with ADR-0004's own bump.
 
 ## ClearKey decrypt + fragment batch (ADR-0002, MP4 only)

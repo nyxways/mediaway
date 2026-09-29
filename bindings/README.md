@@ -51,10 +51,12 @@ sector subfolders (`container/`, `pipeline/`, `device/`), one file per scenario:
 | `container/replay_ring.*` | (C ABI 8, ADR-0009; Rust: `mediaway_container::replay`) | rolling buffer of the last N seconds of packets, cut at a keyframe into a standalone MP4; Stored + placements variant keeps only file locations | ✅ C, C++, C#, Python, Node.js — no C video-packet source yet: feed demuxer, audio-encoder or your own encoder's packets |
 | `container/mux_roundtrip.*` | [`examples/container/mux_demux_mp4.rs`](../examples/container/mux_demux_mp4.rs) | sans-io container mux + demux roundtrip | ✅ |
 | `pipeline/encode_to_mp4.*` | [`examples/pipeline/encode_to_mp4.rs`](../examples/pipeline/encode_to_mp4.rs) | auto video encoder → fragmented MP4 | ✅ |
+| `pipeline/stream_encode.*` | (streaming sibling of `encode_to_mp4`) | H.264 encode, `poll_bytes` drains fMP4 into a file while encoding, `finish` appends the tail (ADR-0007) | ✅ C, C++, C#, Python, Node.js — bounded memory; the streamed file is the same size as an unpolled one |
 | `pipeline/encode_audio.*` | (synthetic-PCM sibling of the audio encode ABI) | auto AAC encoder → audio-only fragmented MP4 | ✅ |
 | `pipeline/screen_record.*` | [`examples/pipeline/screen_record.rs`](../examples/pipeline/screen_record.rs) | screen + mic capture → encode → MP4 | ✅ C, C#, C++, Python, Node.js / native (browser) — every binding |
 | `device/camera_record.*` | [`examples/device/capture_camera.rs`](../examples/device/capture_camera.rs) | camera + mic capture → H.264 + AAC → ONE two-track MP4 | ✅ (video-only fallback without mic/audio backend) |
 | `device/capture_microphone.*` | [`examples/device/capture_microphone.rs`](../examples/device/capture_microphone.rs) | microphone capture, raw PCM | ✅ |
+| `device/capture_window.*` | [`examples/device/capture_window.rs`](../examples/device/capture_window.rs) | one window by `HWND` (WGC) with cursor / region / border / even-crop options (ADR-0005) | ✅ C, C++, Python, Node.js, C# — Windows only; hardware-verified through every binding (opt-in `MEDIAWAY_RUN_WINDOW_TESTS=1` where it opens a real window) |
 | `device/capture_screen.*` | [`examples/device/capture_screen.rs`](../examples/device/capture_screen.rs) | screen capture only | ✅ C, C++, Python, Node.js / native (browser) · 🚧 no standalone example file (C# — see `pipeline/screen_record.*` row) |
 
 ## Rules

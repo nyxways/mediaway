@@ -18,7 +18,9 @@ Platform order: **Windows first**. Workspace index: [`docs/roadmap.md`](../../..
 
 ### 2 — Audio + overlay helpers
 
-- [x] WASAPI mic + system + process loopback
+- [x] WASAPI mic + system + process loopback. *Correction (2026-09-18): process loopback never
+      opened on any machine until #99 (wrong `Initialize` flags), and `ProcessOnly` selected the
+      inverse mode — see [ADR-0002 § Correction](../../adr/windows/0002-wasapi-capture.md).*
 - [x] `exclude_window_from_capture`
 - [x] WASAPI shared-buffer path evaluated — genuine CPU ⚡ not achievable under the
       current `AudioCapture` contract + WASAPI `GetBuffer`/`ReleaseBuffer` lifetime rules
@@ -68,7 +70,8 @@ Platform order: **Windows first**. Workspace index: [`docs/roadmap.md`](../../..
 - [x] `capabilities::support` — live checks, not just "was Windows compiled
       in": `GraphicsCaptureSession::IsSupported` (window), DXGI adapter/output
       enumeration (screen), `WASAPI` endpoint enumeration (mic/loopback), real
-      process-loopback activation attempt (`ProcessLoopback`)
+      process-loopback activation attempt (`ProcessLoopback`; it reported "unsupported" on
+      every machine until the 2026-09-18 flag fix)
 - [x] `capabilities::request_permission` — real `WASAPI` open/close probe for
       `Microphone` (no cheaper OS consent-check API exists for Win32 apps);
       `Unknown` (not guessed) for screen/window, `Granted` for loopback

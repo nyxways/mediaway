@@ -34,6 +34,20 @@ internal struct NativeDesktopCaptureConfig
     public uint SourceIndex;
     public NativeRational TimeBase;
     public GpuDeviceHandle GpuDevice;
+
+    // Appended by adr/device/0005-window-capture-c-abi.md (device ABI 2). Every tail field's
+    // zero value is the previous behaviour, so a `new()` value still captures the whole
+    // surface with no pointer, the OS default border and native dimensions. The public enums
+    // are reused directly: their values are the native ones (0/1, 4 bytes).
+    public ulong WindowHandle;
+    public CursorCapture Cursor;
+    public WindowBorder Border;
+    public FrameDimensions Dimensions;
+    public uint RegionX;
+    public uint RegionY;
+    public uint RegionWidth;
+    public uint RegionHeight;
+    public byte RegionEnabled;
 }
 
 [StructLayout(LayoutKind.Sequential)]

@@ -74,3 +74,6 @@ already-open session) and a facade-level convenience
 session-open cost every call — do not loop it to build a recorder).
 Hardware-verified against the real DXGI backend. See
 [capture-once](capture-once.md).
+
+DXGI cannot draw the pointer or crop: `CursorCapture::Included` and `region: Some(_)` are
+`CaptureError::Unsupported` here, never silently ignored (ADR-0008, ADR-0009).

@@ -28,8 +28,8 @@ caller → write_audio_frame(&AudioFrame)
                                                                 NOT abort)
 ```
 
-- **No second generic parameter.** `EncodeSession<E: VideoEncoder>` stays as-is;
-  the audio side is `Option<AudioTrack>` holding a `Box<dyn AudioEncoder>` —
+- **No second *encoder* generic parameter.** `EncodeSession<E: VideoEncoder>` stays as-is
+  (it has since gained a muxer parameter `M`, `crates/mediaway/adr/0007`); the audio side is `Option<AudioTrack>` holding a `Box<dyn AudioEncoder>` —
   same `Box<dyn Trait>`-over-second-generic reasoning as
   [frame-filter-hook](frame-filter-hook.md)'s `Box<dyn FrameFilter>`.
 - **`open_with_audio`, not `add_audio_track` after `open`.** `mp4::Muxer` is

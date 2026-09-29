@@ -32,7 +32,7 @@ Rust media stack: **high-level pipelines** built from **first-class low-level** 
 
 Design: [docs/spec/vision.md](docs/spec/vision.md).
 
-Covers device capture (camera, mic, screen), encode/decode, containers, and FFI / WASM bindings across Windows, Web, Linux, other. Layout: sans-io cores, facade crates with OS backends as `#[cfg]`-gated modules (e.g. `mediaway-device` contains `windows`/`linux`/`web`). C ABI: a single `mediaway-ffi` facade — [docs/spec/c-ffi.md](docs/spec/c-ffi.md) · [docs/spec/crate-packaging.md](docs/spec/crate-packaging.md).
+Covers device capture (camera, mic, screen, window, desktop audio), encode/decode, containers, and FFI / WASM bindings across Windows, Web, Linux, other. Layout: sans-io cores, facade crates with OS backends as `#[cfg]`-gated modules (e.g. `mediaway-device` contains `windows`/`linux`/`web`). C ABI: a single `mediaway-ffi` facade — [docs/spec/c-ffi.md](docs/spec/c-ffi.md) · [docs/spec/crate-packaging.md](docs/spec/crate-packaging.md).
 
 ### Verified Windows slice
 
@@ -347,6 +347,9 @@ What `mediaway-device` backends target (camera, mic, **screen**, **window**). Sa
 | Microphone       | ✅      | 🆗  | 🆗   | 🆗    | 🆗      |
 | Screen / display | ✅       | 🆗  | 🆗   | 🆗    | 🆗      |
 | Window           | ⚡      | 🆗  | 🆗   | 🆗    | ❌      |
+| Desktop audio (system loopback / per-process) | ✅ | — | — | — | — |
+
+**Window ⚡** holds for an uncropped window, or a capture `region` at the origin. A region anywhere else costs one GPU copy per frame (`GpuCopy`, not ⚡), and only WGC accepts a region at all — the other backends refuse it with `Unsupported`. Desktop audio is WASAPI-only today; per-process loopback needs Windows 10 2004+.
 
 <!-- ANCHOR_END: device-capture -->
 
@@ -368,7 +371,7 @@ What `mediaway-device` backends target (camera, mic, **screen**, **window**). Sa
 | `mpeg-ts-core`             | MPEG-2 Transport Stream mux + demux core |
 | `rtp-core`                 | RTP payloadization for H.264/HEVC (RFC 3550/6184/7798) |
 | `rtmp`                     | RTMP publish-client handshake + chunk stream + AMF0 command mux |
-| `mediaway-container`       | Container facade: shared traits + typed `mp4`/`webm`/`wav`/`adts`/`mp3`/`ogg`/`flv`/`ts` |
+| `mediaway-container`       | Container facade: shared traits + typed `mp4`/`webm`/`wav`/`adts`/`mp3`/`ogg`/`flv`/`ts`, plus a `replay` ring of encoded packets |
 | `mediaway-encoder`         | Encode traits + `auto` selection; Windows WMF / NVENC / QuickSync / Vulkan / WebCodecs / VA-API backends |
 | `mediaway-decoder`         | Decode traits; Windows WMF (HW, DX11 Zero-Copy) / Vulkan / WebCodecs backends |
 | `mediaway-device`          | Capture + playback traits; Windows DXGI/WGC/WASAPI, Linux portal+PipeWire+V4L2, Web getUserMedia/getDisplayMedia |

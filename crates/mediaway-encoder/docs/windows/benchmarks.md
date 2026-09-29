@@ -44,6 +44,14 @@ pipeline-throughput ceiling, not a natural-video encode benchmark. Audio not inc
 
 ## Why `zc_wmf_h264_dx11` is N/A on the available test hardware
 
+> **Correction (2026-09-18) — the cause below is retired.** The N/A was real, but the
+> explanation was wrong: NVIDIA *does* register an H.264 encode MFT — every NVIDIA encoder
+> MFT is **async**, and three sequencing bugs made every DX11 Zero-Copy open fail
+> ([ADR-0012](../../adr/windows/0012-async-mft-zero-copy-sequencing.md); wiki
+> `encode/async-mft.md`). It now encodes H.264 and HEVC at 1920×1080 on this RTX 4090. This
+> cell has **not been re-measured**; the text below is kept as the record of what was
+> observed and believed at the time.
+
 This crate's own pre-existing unit tests (`open_dx11_zero_copy_or_skip_without_hw`,
 `open_hevc_av1_vp9_dx11_or_skip`) already skip gracefully in this exact way on the
 same hardware — this is not a bug introduced by the bench. The bench enumerates **every**

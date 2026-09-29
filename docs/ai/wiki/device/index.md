@@ -4,8 +4,8 @@
 |-----|---------|
 | [scaffold](scaffold.md) | Facade `mediaway-device`; backends `mediaway-device::windows` / `mediaway-device::web` / … |
 | [windows-capture](windows-capture.md) | DXGI DDA screen Zero-Copy |
-| [windows-window](windows-window.md) | WGC single-window capture (≠ screen) |
-| [windows-audio](windows-audio.md) | WASAPI mic / loopback capture + shared-mode render playback (CPU ⚡ later) |
+| [windows-window](windows-window.md) | WGC single-window capture (≠ screen) — cursor choice, hidden border, even-crop, capture region (a region off the origin is a GPU copy) |
+| [windows-audio](windows-audio.md) | WASAPI mic / loopback capture (process loopback fixed; `ExcludeProcessTree`) + shared-mode render playback (CPU ⚡ later) |
 | [windows-camera](windows-camera.md) | Media Foundation camera capture — real, hardware-verified, CPU-only |
 | [camera-device-handle](camera-device-handle.md) | Why `CaptureSource::Camera.device` stays untyped (ADR-0013) — resolved as an enumeration index, superseded by [selection](selection.md) |
 | [selection](selection.md) | `DeviceId` / `Select` / `DeviceInfo` (ADR-0005, Accepted) — replaces raw device indices; Windows `enumerate` + `DeviceLost` + `WindowsDeviceHotplug` (Microphone/Loopback) all done |
@@ -17,9 +17,9 @@
 | [android-capture](android-capture.md) | Camera (Camera2 NDK) + mic (AAudio) + screen (`MediaProjection` + JNI) — implemented, zero compile verification until CI; window capture genuinely blocked (no OS API) |
 | [apple-capture](apple-capture.md) | Camera (`AVCaptureSession`) + mic (`AVAudioEngine`) + screen (`ScreenCaptureKit`/`ReplayKit`, incl. iOS Broadcast Extension sink) + macOS window (`ScreenCaptureKit`) — implemented, zero compile verification until CI |
 | [capabilities](capabilities.md) | `DeviceKind`/`Support`/`PermissionState` — live capability + OS permission probe, separate from opening a session |
-| [ffi-c-abi](ffi-c-abi.md) | `mediaway-ffi` — C ABI over Camera + Screen (GPU handle, ADR-0003) video + Microphone/Loopback/ProcessLoopback audio; Window deferred |
+| [ffi-c-abi](ffi-c-abi.md) | `mediaway-ffi` — C ABI over Camera + Screen (GPU handle, ADR-0003) video + Microphone/Loopback/ProcessLoopback audio (`include_target_process_tree`); Window deferred |
 | [gpu-device-factory-ffi](gpu-device-factory-ffi.md) | `mediaway-ffi` — GPU adapter enumeration + device create/close C ABI (ADR-0007); closes the "no C caller can reach Screen capture" gap |
-| [hotplug-ffi](hotplug-ffi.md) | `mediaway-ffi` hotplug — callback + poll event delivery (ADR-0002, Accepted; real Windows `open`/`poll_event` wired in and hardware-confirmed; `close()` has an unresolved real-hardware crash, `mediaway-device::windows` follow-up) |
+| [hotplug-ffi](hotplug-ffi.md) | `mediaway-ffi` hotplug — callback + poll event delivery (ADR-0002, Accepted; real Windows `open`/`poll_event`/`close` wired in and hardware-confirmed; the `close()` crash was root-caused and fixed 2026-07-31) |
 
 Support matrix: root [README § Device](../../../../README.md#device).
 

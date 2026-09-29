@@ -16,8 +16,8 @@ handles (`{ogg,adts,flv,ts,mp3,wav}`, `wav` mux-only — see below). ADRs:
 - `MuxerHandle { poisoned, state: MuxerState::{Mp4Open,Mp4Live,WebmOpen,WebmLive} }`;
   `DemuxerHandle { poisoned, inner: DemuxerState::{Mp4,Webm} }` — both `Demux`, so
   `as_demux_mut()` returns `&mut dyn Demux` once instead of duplicating
-  `push_bytes`/`streams`/`poll_packet` per variant (muxer's `add_track`/`begin` aren't part
-  of any shared trait, so it can't). `Open → Live` via `std::mem::take`. `_create()` stays
+  `push_bytes`/`streams`/`poll_packet` per variant (the muxer's `add_track`/`begin` phase is
+  `MuxOpen`, but its associated types differ per format, so no `dyn`). `Open → Live` via `std::mem::take`. `_create()` stays
   MP4-only, zero-arg (source compat); `_create_for_format(format)` is the sibling taking
   `mediaway_container_format_t` — ADR-0003 § Decision 1 on why not a parameter instead.
 - `MediawayStatus` (`#[repr(C)]`, 11 values): `InvalidArgument`/`InvalidState` are FFI-only;

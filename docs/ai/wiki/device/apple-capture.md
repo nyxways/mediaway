@@ -80,6 +80,9 @@ concept, so `AppleWindowCapture` is `#[cfg(target_os = "macos")]`-only (plus the
 
 ## Cross-cutting
 
+Cursor: `config.cursor` → `setShowsCursor` (screencapturekit.rs). macOS used to always show the
+pointer and now hides it by default (`CursorCapture::Excluded`); iOS rejects `Included`. `region` is `Unsupported`.
+
 Minimum OS floor is not verifiable from local `objc2` source (no `@available` annotations in the
 generated bindings, unlike Android's `api-level-26` Cargo-feature proof) — `ScreenCaptureKit`'s
 public macOS 12.3+ floor is the strictest domain if confirmed. `apple-macos`/`apple-ios` CI jobs

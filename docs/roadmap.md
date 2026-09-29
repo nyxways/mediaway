@@ -67,6 +67,14 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
       clean-compiling header for the whole crate; the three real `include/mediaway/*.h` headers
       are still hand-written, per-header migration tracked separately (see
       `crates/mediaway-ffi/docs/*/roadmap.md`).
+- [x] **`EncodeSession` streaming + container choice (2026-09-18)**: generic over its muxer
+      (`open_in`, `MuxOpen`, `ContainerError`; `crates/mediaway/adr/0007`) and `poll_bytes` /
+      `finish_into` drain bytes during a session (`adr/0006`). `platform::WindowCapture` /
+      `DesktopAudio` added, returning concrete per-target types (`adr/0002`).
+- [ ] **Bindings parity for post-v0.1.8 Rust features**: the C ABI does not yet expose window
+      capture (`cursor`/`region`/border), `EncodeSession` byte streaming, AAC decode,
+      `ReplayRing` + mux placements, or `encoder_support_at`
+      ([wiki](ai/wiki/bindings/status.md) § Open items).
 - [ ] **Game Engine & Seamless DX Wrappers**: `mediaway::wgpu` exists (Windows DX12 only) — encode
       bridge hardware-verified, decode bridge construction-only (no pixel round trip yet); no
       `Three.js`/WebGPU or Godot wrapper exists.
@@ -113,7 +121,8 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
       (`crates/mediaway-encoder/src/windows/mod.rs`).
 - [x] **Opus Audio Codec Integration (decode)**: `mediaway-decoder` gained an `AudioDecoder`
       trait mirroring `VideoDecoder` (ADR-0003), implemented for `WmfOpusDecoder` (Windows) and
-      `mediaway-sw`'s `SwOpusAudioDecoder` (cross-platform). No audio `auto`-dispatch
+      `mediaway-sw`'s `SwOpusAudioDecoder` (cross-platform); `WmfAacDecoder` (Windows AAC, ADR-0006)
+      and Apple's `AacDecoder`/`OpusDecoder` implement it too. No audio `auto`-dispatch
       (`WindowsAudioDecoder`-style backend switcher) exists yet — same follow-up gap as video's
       D3D12 decode integration.
 - [ ] **Pure Rust SW Codec Extensions**: Add CABAC, P-slice, and B-slice decoding to `mediaway-sw` H.264 decoder (currently Baseline CAVLC I-slice only).
@@ -203,8 +212,8 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
       `AacEncoder` (Float32 PCM in, no conversion needed — a real quality win over Windows' own
       F32→S16 downconvert) and `AppleAudioEncoder` (`Aac`/`Opus` dispatch, mirrors
       `WindowsAudioEncoder`'s `AudioBackend` shape). `mediaway-decoder::apple` gains `AacDecoder` —
-      **the first AAC decoder in this whole workspace**, ahead of Windows (which only ever had an
-      encoder). `AudioConverterFillComplexBuffer` is pull-based and fully synchronous (confirmed
+      the first AAC decoder in this workspace when it landed (Windows only had an encoder
+      until `WmfAacDecoder`, 2026-09-18). `AudioConverterFillComplexBuffer` is pull-based and fully synchronous (confirmed
       from its own doc comment) — unlike every `VideoToolbox` backend, no cross-thread
       synchronization is needed anywhere in either backend. Both require raw (non-ADTS)
       `AudioSpecificConfig`-bearing streams; decode requires the ASC supplied at `open()` (no
@@ -256,6 +265,13 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
       `mediaway-decoder/adr/apple/0006-videotoolbox-prores-decode.md`.
 
 ### 3. Media Containers, Protocols & Image Formats
+- [x] **HEVC in MP4 (2026-09-18, #98)**: `hvcC` built from the escape-aware RBSP, Annex-B → length-prefixed
+      in the muxer, WMF path builds a real `hvcC`; no HEVC MP4 written before this was playable
+      (`crates/iso-bmff/adr/0006`). Opus now writes `Opus`/`dOps` instead of AAC's `esds` (ADR-0005).
+- [x] **Replay ring (2026-09-20/25)**: `mediaway_container::replay::ReplayRing<P>` keeps the last
+      *N* seconds of packets and cuts at a keyframe in decode order; `StoredPayload` holds file
+      locations only; `iso_bmff::Muxer::with_placements` supplies them
+      (`crates/mediaway-container/adr/0004`, `crates/iso-bmff/adr/0007`).
 - [ ] **Static Image Containers & Codecs**: Expand facade traits and container cores to support image formats (**AVIF**, **HEIC**, **WebP**, **PNG**, **JPEG**, **GIF**).
 - [ ] **RTMP Server Verification**: handshake digest math is cross-checked against 3 reference
       implementations (FFmpeg/librtmp/SRS) only — a live handshake/connect/publish smoke test
@@ -264,6 +280,10 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
       `Cluster` lookahead closed (`ebml-webm` adr/0004, 2026-08-05).
 
 ### 4. Device Capture & Audio DSP
+- [x] **Window capture options + process loopback fixes (2026-09-18/19)**: `CursorCapture`,
+      WGC border hiding, `EvenCropped`, and `CaptureRegion` (`mediaway-device` ADR-0008/0009);
+      WASAPI process loopback opens for the first time and `ProcessOnly` is renamed
+      `ExcludeProcessTree` (ADR-windows/0002 § Correction).
 - [x] **Windows Camera Public Integration**: `IMFSourceReader` camera capture wired into the
       `mediaway-device` facade (`camera` module), hardware-verified against a real USB webcam.
 - [x] **Single-Shot Zero-Copy Capture (`capture_once`)**: `capture_video_once` implemented

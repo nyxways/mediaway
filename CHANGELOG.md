@@ -6,7 +6,7 @@ at release time (`/release-notes <version>`). The most recent section is also
 the skeleton source for the next release note (Overview / Platforms / Codecs /
 Bindings / Maturity bar).
 
-## [0.2.0] - 2026-09-29
+## [0.2.1] - 2026-09-30
 
 ### What's new
 
@@ -15,6 +15,7 @@ Bindings / Maturity bar).
 - Window capture over the C ABI (C, C++, C#, Python, Node.js): record one window with a chosen pointer, a cropped region, a hidden capture border and even-cropped frames, Windows only
 - Streaming fMP4 bytes over the pipeline C ABI (`mediaway_encode_session_poll_bytes`) so a long capture's memory is bounded by poll cadence
 - AAC decode over the pipeline C ABI (Windows Media Foundation, Apple AudioToolbox) given the stream's `AudioSpecificConfig`
+- macOS CI runs the Apple audio backends on a real runner for the first time, instead of only linting them
 - Encoder and decoder capability probes over the pipeline C ABI (`mediaway_encoder_support_at`, `mediaway_decoder_support`), both costly because they open throwaway sessions
 - Replay ring over the container C ABI: keep the last N seconds of encoded packets and cut a standalone clip at a keyframe, holding payloads or only file locations
 - MP4 payload placements over the container C ABI (`mediaway_muxer_create_with_placements`) to find every sample's bytes in the output file
@@ -35,6 +36,8 @@ Bindings / Maturity bar).
 
 #### Fixed
 
+- The Apple AAC decoder never opened on a real Mac (`AudioConverter` answered `'!dat'` to the bare `AudioSpecificConfig` it was given as the magic cookie); it now wraps it in the `esds` descriptor Core Audio requires and decodes a real stream back to PCM
+- The Apple AAC encoder handed out Core Audio's 39-byte `esds` descriptor as the stream's `extra_data`, so an MP4 track built from it wrapped the descriptor twice; it now exposes the bare two-byte `AudioSpecificConfig`
 - HEVC in MP4 was never playable: the `hvcC` record, the Annex-B to length-prefixed conversion and the Windows encoder's missing `hvcC` are all fixed, including on macOS
 - HEVC read back out of an MP4 decoded zero frames on Windows and now decodes every frame
 - Opus in MP4 was written as AAC and is now a real `Opus`/`dOps` track; files written by earlier versions are invalid and must be remuxed
@@ -73,6 +76,13 @@ capability probes, the replay ring) and fixes a run of Windows encode/decode
 defects found by testing the container round trip end to end. `iso-bmff` moves
 to 0.1.2 because the HEVC and Opus fixes and the new placements API live there.
 
+`v0.2.0` reached crates.io only. Its release pipeline stopped at the macOS RC gate, before any npm,
+NuGet, PyPI or GitHub release existed, because the Apple AAC decoder did not open on a real
+Mac and the Apple AAC encoder exposed the wrong `extra_data` (both under **Fixed**). Both were
+authored without ever running, which is why nothing had noticed since v0.1.8. Everything shipped
+as `0.2.1`, the same way v0.1.8 followed a v0.1.7 that got no further than crates.io. The 0.2.0
+crates on crates.io are complete but contain those two defects; use 0.2.1.
+
 ### Platforms
 
 - Windows (win64): primary target and where this release's changes were verified,
@@ -84,13 +94,14 @@ to 0.1.2 because the HEVC and Opus fixes and the new placements API live there.
 - Linux: unchanged this release. VA-API, DMA-BUF Zero-Copy and the AMF encode
   backend are compile/test-verified on WSL2 only, with no real VA-API or AMD GPU
   hardware available. A capture region is refused with `Unsupported`.
-- macOS / iOS: unchanged apart from the HEVC `hvcC` fix, which corrects every
-  HEVC file produced there (it shared the broken builder), and the macOS capture
-  pointer now hidden by default. `mediaway-encoder`/`decoder`/`device` compile on
-  real CI runners; no macOS device runs any actual encode, decode or capture in
-  CI. The C ABI's new Apple AAC decode arm compiles and passes clippy for
-  `aarch64-apple-darwin` and `aarch64-apple-ios`, but CI does not compile
-  `mediaway-ffi` for Apple and **it has never run**.
+- macOS / iOS: AAC now runs on a real Mac. On a `macos-14` runner the Apple AAC decoder opens and
+  decodes, the encoder exposes the bare `AudioSpecificConfig`, and an encode-to-decode round trip
+  returns real PCM (40 packets to 40960 samples, mean square 0.474 on a unit sine); CI now runs
+  those tests. Also changed: the HEVC `hvcC` fix corrects every HEVC file produced there (it
+  shared the broken builder), and the macOS capture pointer is hidden by default. **Every other
+  Apple backend (VideoToolbox H.264/HEVC/VP9/AV1/ProRes, camera, screen, Opus) is still compile-
+  and lint-verified only and has never run in CI; this release showed what that is worth**, so
+  assume the same class of defect until each is run.
 - Android: unchanged. NDK `AMediaCodec` decode and Camera2/AAudio/`MediaProjection`
   capture remain authored without a device or emulator, and are not in CI.
 - Web (wasm32): unchanged. `@mediaway/browser` ships `iso-bmff-wasm` and WebCodecs
@@ -110,10 +121,10 @@ to 0.1.2 because the HEVC and Opus fixes and the new placements API live there.
   (keyframe-only, untested), D3D12 (keyframe-only, sans-io only), Apple
   (unverified); ProRes — Apple (unverified).
 - Audio: Opus — Windows decode via Media Foundation, cross-platform software
-  encode/decode (`unsafe-libopus`), native Apple encode/decode (unverified), and a
+  encode/decode (`unsafe-libopus`), native Apple encode/decode (unverified for Opus), and a
   real `Opus`/`dOps` MP4 track; AAC — Windows encode and now decode via Media
   Foundation (hardware-verified round trip), software encode (C# `AudioEncoder`),
-  Apple encode/decode (unverified); audio processing module (sonora). AAC decode
+  Apple encode/decode (verified on a real macOS runner: round trip to PCM); audio processing module (sonora). AAC decode
   and the Opus decode session are both reachable from all five native bindings
   through one C ABI call, but AAC is the OS's own decoder, so its samples can
   differ between hosts, unlike the software Opus decoder.
@@ -127,12 +138,13 @@ to 0.1.2 because the HEVC and Opus fixes and the new placements API live there.
 Every package below ships native libs for Windows x64, Linux x86_64 and macOS
 (x86_64 + arm64) (ADR-0024). Linux is verified for the container capability only;
 the device and pipeline capabilities, including everything new in this release,
-are Windows-hardware-verified. Window capture, streaming, AAC decode, the probes and the
+are Windows-hardware-verified, and the macOS gate ran the C#, Python, Node and C round trips
+on a real Apple Silicon runner (the pipeline capability there is Apple AAC and VideoToolbox). Window capture, streaming, AAC decode, the probes and the
 replay ring reached every binding below and were re-run against the real native library.
 The C ABI still has no video-packet source, so a replay ring is fed demuxer packets,
 audio-encoder packets or packets from an encoder you drive yourself.
 
-- C: [`mediaway_ffi.h`](https://github.com/nyxways/mediaway/releases/tag/v0.2.0)
+- C: [`mediaway_ffi.h`](https://github.com/nyxways/mediaway/releases/tag/v0.2.1)
   + one CMake/CPack archive per platform (GitHub Release assets) — device ABI 2,
   pipeline ABI 7, container ABI 8; recompile against the new headers.
 - C#: [`Mediaway.*`](https://www.nuget.org/packages/Mediaway.Common) packages
@@ -177,10 +189,12 @@ hardware through the real native library** (C ABI and each binding), and those
 tests are named in the notes above; treat every path without an explicit
 "hardware-verified" tag as unverified. The exceptions are the ones to read twice:
 
-- **Apple AAC decode through the C ABI has never run.** It compiles and passes
-  clippy for `aarch64-apple-darwin` and `aarch64-apple-ios`, but CI does not build
-  `mediaway-ffi` for Apple, so macOS CI is its first real check.
-- **Apple, Android, Linux VA-API/AMF and the D3D12 decode paths** are authored and
+- **The Apple audio backends were unrun until this release and were broken.** AAC decode and
+  AAC encode both had a defect that only a real Mac could show, found by the release
+  pipeline's RC gate rather than by any test. They are fixed and verified on a `macos-14`
+  runner (Apple Silicon), and CI now runs them. Treat this as evidence about the rest of the
+  Apple surface, which has no such run.
+- **Apple VideoToolbox, Android, Linux VA-API/AMF and the D3D12 decode paths** are authored and
   compile- or test-verified only, with no real-hardware run, as in v0.1.8.
 - **Bindings on Linux and macOS** are verified for the container capability at most;
   the new device and pipeline surface was exercised on Windows only.

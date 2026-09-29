@@ -2,9 +2,9 @@
 
 ## Status (2026-08)
 
-Package versions (v0.2.0, 2026-09-29): npm `@mediaway/*` · NuGet `Mediaway.*` · PyPI
+Package versions (v0.2.1, 2026-09-30): npm `@mediaway/*` · NuGet `Mediaway.*` · PyPI
 `mediaway` · crates.io `mediaway-*` family · CPack `Mediaway-<v>-win64` are stamped from the
-workspace version (0.2.0) at release; freestanding cores keep their own (`iso-bmff` 0.1.2, the
+workspace version (0.2.1) at release; freestanding cores keep their own (`iso-bmff` 0.1.2, the
 rest 0.1.1, `ebml-webm` 0.2.1). C ABI versions: container 8 · pipeline 7 · device 2.
 
 | Language | Mechanism | Status |

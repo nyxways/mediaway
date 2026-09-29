@@ -212,9 +212,9 @@ fn the_decoder_builds_the_cookie_the_os_accepted() {
 }
 
 /// The Apple AAC encoder and this decoder, end to end: PCM in, AAC out, PCM back. This is the check
-/// that `open` succeeding is not enough — and it also reports what the encoder exposes as the
-/// stream's `extra_data`, because the decoder takes the bare `AudioSpecificConfig` and Core Audio's
-/// encoder-side magic cookie may be the wrapped `esds` form instead.
+/// that `open` succeeding is not enough. It also pins that the encoder's `extra_data` is the bare
+/// `AudioSpecificConfig` (Core Audio's own cookie is the wrapped `esds` form, which the encoder
+/// unwraps).
 #[test]
 fn an_apple_encoded_stream_decodes_back_to_pcm() {
     use mediaway_common::{AudioFrame, CodecKind, SampleFormat, StreamInfo};
@@ -278,10 +278,13 @@ fn an_apple_encoded_stream_decodes_back_to_pcm() {
     );
     assert!(!packets.is_empty(), "the encoder produced no packets");
 
-    // What the decoder is given is the bare ASC. If the encoder handed back the wrapped form, unwrap
-    // the DecoderSpecificInfo (tag 0x05) so the decode half is still exercised, and report it.
-    let asc = bare_asc(&extra_data);
-    eprintln!("ASC used for decode: {asc:02x?}");
+    // The encoder hands out the bare AudioSpecificConfig, which is what the decoder takes.
+    assert_eq!(
+        &extra_data[..],
+        &ASC,
+        "the encoder's extra_data must be the bare ASC"
+    );
+    let asc = extra_data.to_vec();
 
     let decoder_config =
         AacDecoderConfig::new(RATE, channels, Rational::new(1, RATE), Bytes::from(asc));
@@ -313,31 +316,4 @@ fn an_apple_encoded_stream_decodes_back_to_pcm() {
         mean_square > 0.05,
         "decoded audio is near-silent (mean square {mean_square})"
     );
-}
-
-/// The bare `AudioSpecificConfig` inside `extra_data`, whichever form the encoder exposes: already
-/// bare, or an `esds` descriptor whose `DecoderSpecificInfo` (tag 0x05) carries it.
-fn bare_asc(extra_data: &[u8]) -> Vec<u8> {
-    if extra_data.first() != Some(&0x03) {
-        return extra_data.to_vec();
-    }
-    // Walk to the first 0x05 tag and read its (single- or multi-byte) length.
-    let mut i = 0;
-    while i + 1 < extra_data.len() {
-        if extra_data[i] == 0x05 {
-            let mut len = 0usize;
-            let mut j = i + 1;
-            while j < extra_data.len() {
-                len = (len << 7) | usize::from(extra_data[j] & 0x7f);
-                let more = extra_data[j] & 0x80 != 0;
-                j += 1;
-                if !more {
-                    break;
-                }
-            }
-            return extra_data[j..j + len].to_vec();
-        }
-        i += 1;
-    }
-    extra_data.to_vec()
 }

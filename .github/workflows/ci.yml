@@ -342,6 +342,7 @@ jobs:
       - name: Test the Apple audio backends on real macOS
         run: |
           cargo test -p mediaway-decoder --lib apple::audiotoolbox -- --nocapture --test-threads=1
+          cargo test -p mediaway-encoder --lib apple::audiotoolbox -- --nocapture --test-threads=1
 
   apple-ios:
     name: apple compile (iOS cross-compile, mediaway-encoder, mediaway-decoder, mediaway-device)

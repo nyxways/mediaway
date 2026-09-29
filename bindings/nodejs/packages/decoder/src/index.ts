@@ -1,5 +1,5 @@
 /**
- * @mediaway/decoder — pipeline capability: auto video decode + Opus audio decode.
+ * @mediaway/decoder — pipeline capability: auto video decode + Opus and AAC audio decode.
  *
  * Implements the DX contract in bindings/nodejs/README.md over the
  * mediaway-ffi C ABI (via @mediaway/ffi). Split out of @mediaway/encoder into
@@ -12,6 +12,7 @@
  */
 
 import {
+  PIPELINE_CODEC,
   pipeline,
   copyBytes,
   type RawAudioDecodeConfig,
@@ -43,7 +44,7 @@ function checkPipeline(
     1: "invalid argument",
     2: "handle poisoned by an earlier panic",
     4: "codec/pixel-format/geometry not supported",
-    5: "bad dimensions, rates, or frame metadata",
+    5: "bad dimensions, rates, codec config (e.g. an empty AAC AudioSpecificConfig) or frame metadata",
     6: "encoder backend OS/API failure",
     7: "session already finished or not open",
     8: "muxer rejected the encoder's stream info",
@@ -79,8 +80,10 @@ export interface DecodePacket {
   dts?: number;
   duration?: number;
   keyframe?: boolean;
-  /** For audio: an empty payload is Opus's packet-loss-concealment hint for
-   * a lost frame, not an error — pass it whenever a frame is known lost. */
+  /** For Opus audio: an empty payload is the packet-loss-concealment hint for
+   * a lost frame, not an error — pass it whenever a frame is known lost. For
+   * AAC an empty payload is refused (`MediawayError` status 5): AAC has no
+   * such convention. */
   payload: Buffer;
 }
 
@@ -186,40 +189,91 @@ export class DecodeSession {
   }
 }
 
+/** Audio codecs `AudioDecodeSession` opens. */
+export type AudioDecodeCodec = "opus" | "aac";
+
 /**
- * An Opus audio decode session — the handle IS the decoder (adr/pipeline/0006,
- * mirrors `DecodeSession`'s video shape; no muxer to wire, no consumption
- * trap). Cross-platform (mediaway-sw, no OS dependency), unlike
- * `DecodeSession`'s Windows-only WMF backend.
+ * Config for `AudioDecodeSession.open()`.
+ *
+ * **Opus** is the software decoder: identical output on every host, no `extraData`, and
+ * `timeBase` (the frame duration, also the per-frame sample cap) is required.
+ *
+ * **AAC** is the *operating system's* decoder (Media Foundation on Windows, AudioToolbox on
+ * macOS/iOS; `DecoderUnavailableError` elsewhere), so its samples **can differ between hosts and
+ * OS versions**. `extraData` — the raw AudioSpecificConfig, e.g. an MP4's `esds`
+ * DecoderSpecificInfo — is **required**: an empty one is refused (`MediawayError` status 5)
+ * because a synthesised default would decode SBR/PS streams to quietly wrong output. Raw AAC
+ * only; strip ADTS headers first (`@mediaway/container`'s ADTS demuxer). `timeBase` defaults to
+ * `1 / sampleRate`, so packet and frame `pts`/`duration` are sample counts. The Apple decode path
+ * is compile-checked but has not been run yet.
+ */
+export interface AudioDecodeConfig {
+  codec: AudioDecodeCodec;
+  sampleRate: number;
+  channels: number;
+  timeBase?: Rational;
+  /** AAC: the AudioSpecificConfig. Ignored for Opus. */
+  extraData?: Buffer;
+}
+
+/**
+ * An audio decode session (Opus or AAC) — the handle IS the decoder (adr/pipeline/0006 and
+ * adr/pipeline/0007, mirrors `DecodeSession`'s video shape; no muxer to wire, no consumption
+ * trap). Opus is cross-platform (mediaway-sw, no OS dependency); AAC needs the OS decoder — see
+ * `AudioDecodeConfig`, and `decoderSupport("aac")` to learn whether it exists here.
  */
 export class AudioDecodeSession {
+  readonly codec: AudioDecodeCodec;
   readonly sampleRate: number;
   readonly channels: number;
 
   private handle: unknown;
 
-  private constructor(handle: unknown, sampleRate: number, channels: number) {
+  private constructor(handle: unknown, codec: AudioDecodeCodec, sampleRate: number, channels: number) {
     this.handle = handle;
+    this.codec = codec;
     this.sampleRate = sampleRate;
     this.channels = channels;
   }
 
-  /** Open an Opus decode session. Throws DecoderUnavailableError when no
+  /** Open an audio decode session. Throws DecoderUnavailableError when no
    * decode backend exists on this machine. */
-  static async open(sampleRate: number, channels: number, timeBase: Rational): Promise<AudioDecodeSession> {
-    const raw: RawAudioDecodeConfig = pipeline.audioDecodeConfigOpus(sampleRate, channels, {
-      num: BigInt(timeBase.num),
-      den: timeBase.den,
-    } satisfies RawRational);
+  static async open(config: AudioDecodeConfig): Promise<AudioDecodeSession>;
+  /** Open an Opus decode session (the original positional form). */
+  static async open(sampleRate: number, channels: number, timeBase: Rational): Promise<AudioDecodeSession>;
+  static async open(
+    first: AudioDecodeConfig | number,
+    channels?: number,
+    timeBase?: Rational
+  ): Promise<AudioDecodeSession> {
+    const config: AudioDecodeConfig =
+      typeof first === "number"
+        ? { codec: "opus", sampleRate: first, channels: channels ?? 0, timeBase }
+        : first;
+    const tb = config.timeBase ?? (config.codec === "aac" ? { num: 1, den: config.sampleRate } : undefined);
+    if (!tb) throw new MediawayError(5, "Opus decode needs a timeBase (the frame duration)");
+    const rawTimeBase = { num: BigInt(tb.num), den: tb.den } satisfies RawRational;
+
+    const raw: RawAudioDecodeConfig =
+      config.codec === "aac"
+        ? pipeline.audioDecodeConfigAac(config.sampleRate, config.channels, rawTimeBase, null, 0)
+        : pipeline.audioDecodeConfigOpus(config.sampleRate, config.channels, rawTimeBase);
+    if (config.codec === "aac" && config.extraData && config.extraData.length > 0) {
+      // The ASC is BORROWED by native code for the open() call only. Assigning the Buffer here
+      // (rather than passing it to the constructor) lets koffi pin it for exactly that call.
+      raw.extra_data = config.extraData;
+      raw.extra_data_len = config.extraData.length;
+    }
     const out: [unknown] = [null];
     checkPipeline(pipeline.audioDecodeSessionOpen(raw, out), DecoderUnavailableError);
     if (!out[0]) throw new MediawayError(11, "audio decode session open returned no handle");
-    return new AudioDecodeSession(out[0], sampleRate, channels);
+    return new AudioDecodeSession(out[0], config.codec, config.sampleRate, config.channels);
   }
 
-  /** Push one compressed Opus packet. An empty payload is Opus's
-   * packet-loss-concealment hint for a lost frame, not an error. May produce
-   * zero or more frames (drain via pollFrame()). */
+  /** Push one compressed packet. For Opus an empty payload is the
+   * packet-loss-concealment hint for a lost frame, not an error; for AAC an
+   * empty payload is refused (status 5). May produce zero or more frames
+   * (drain via pollFrame()). */
   async pushPacket(packet: DecodePacket): Promise<void> {
     const raw: RawDecodePacketView = {
       stream_id: 0,
@@ -264,4 +318,33 @@ export class AudioDecodeSession {
       this.handle = null;
     }
   }
+}
+
+// ── Capability probe (ABI v7, adr/pipeline/0007 §3) ─────────────────────────────
+
+/** A codec `decoderSupport()` accepts. */
+export type DecodeProbeCodec = VideoCodec | "aac" | "opus";
+
+/** Whether decoding a codec is usable right now. */
+export type DecodeSupportState = "supported" | "not-implemented" | "no-device" | "unknown";
+
+const SUPPORT_STATES: Record<number, DecodeSupportState> = {
+  0: "supported",
+  1: "not-implemented",
+  2: "no-device",
+};
+
+/**
+ * Whether decoding `codec` is usable on this machine right now.
+ *
+ * Decode has one implementation per platform, so this is one state, not a list. It is how a
+ * caller learns whether AAC decode exists here (`"aac"`) without opening a session.
+ *
+ * **Costly:** it opens a throwaway session. Call it when a settings screen opens, never per
+ * frame or in a loop.
+ */
+export async function decoderSupport(codec: DecodeProbeCodec): Promise<DecodeSupportState> {
+  const out: [number] = [255];
+  checkPipeline(pipeline.decoderSupport(PIPELINE_CODEC[codec], out));
+  return SUPPORT_STATES[out[0]] ?? "unknown";
 }

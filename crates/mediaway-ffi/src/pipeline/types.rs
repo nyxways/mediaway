@@ -350,10 +350,10 @@ pub struct MediawayDecodedVideoFrame {
 /// Config for [`crate::pipeline::mediaway_audio_decode_session_open`] — plain value
 /// struct, no handle, no free function.
 ///
-/// `codec` is `Opus` only today; passing any other kind is a runtime
-/// [`crate::pipeline::MediawayPipelineStatus::Unsupported`]. Output PCM is always
-/// `F32` (`unsafe-libopus`'s `opus_decode_float`) — no `sample_format` field to
-/// mismatch, unlike [`MediawayAudioEncodeConfig`].
+/// `codec` is `Opus` (software, identical on every host) or `Aac` (the OS's own decoder:
+/// Windows and Apple only, and its samples can differ between hosts); any other kind is a
+/// runtime [`crate::pipeline::MediawayPipelineStatus::Unsupported`]. Output PCM is always
+/// `F32` — no `sample_format` field to mismatch, unlike [`MediawayAudioEncodeConfig`].
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MediawayAudioDecodeConfig {
@@ -366,6 +366,13 @@ pub struct MediawayAudioDecodeConfig {
     /// Frame duration timebase — also the upper bound on one decoded frame's PCM
     /// sample count (`crate::opus::OpusDecoder::push_packet`'s costly-path doc).
     pub time_base: MediawayRational,
+    /// AAC only: the raw `AudioSpecificConfig`, **borrowed**, valid for the
+    /// `mediaway_audio_decode_session_open` call only. `NULL` iff `extra_data_len == 0`;
+    /// Opus passes that. Required for AAC (`INVALID_INPUT` when empty).
+    /// Added by `adr/pipeline/0007-stream-bytes-aac-decode-support-probe.md` §2.
+    pub extra_data: *const u8,
+    /// Length of `extra_data` in bytes.
+    pub extra_data_len: usize,
 }
 
 /// Output of [`crate::pipeline::mediaway_audio_decode_session_poll_frame`] — OWNED;

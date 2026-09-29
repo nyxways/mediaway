@@ -80,6 +80,35 @@ const mp4 = await session.finish(); // terminal: complete fMP4 bytes
 // -> write `mp4` to a file / stream
 ```
 
+## Streaming a long recording
+
+`finish()` alone holds the whole recording in RAM. Call `pollBytes()` as you go and append each
+chunk to a file: memory is then bounded by the poll cadence, not the recording's length.
+`finish()` afterwards returns only the tail that was not polled yet.
+
+```ts
+const out = openSync("recording.mp4", "w");
+for (let i = 0; i < frames; i++) {
+  await session.writeFrame(frame(i));
+  writeSync(out, await session.pollBytes()); // empty buffer when nothing is ready
+}
+writeSync(out, await session.finish()); // the tail — concatenated, the file is complete
+```
+
+## Probing backends
+
+`encoderSupport(codec, width, height)` reports every backend's availability **at the size you will
+encode** — hardware encoders have minimum and maximum dimensions, so there is no resolution-free
+form. Each row is `{ backend, state, pathClass }` (`pathClass` is `null` unless `state` is
+`"supported"`). **It is costly**: it opens a throwaway session per backend, so call it when a
+settings screen opens, never per frame.
+
+```ts
+for (const row of await encoderSupport("h264", 1920, 1080)) {
+  console.log(row.backend, row.state, row.pathClass); // "nvenc" "supported" "cpu-upload"
+}
+```
+
 ## API
 
 | Member | Notes |
@@ -89,7 +118,9 @@ const mp4 = await session.finish(); // terminal: complete fMP4 bytes
 | `openAutoEncoder(config)` | resolves a hardware backend or throws `EncoderUnavailableError` |
 | `EncodeSession.writeFrame(frame)` | async; the frame is copied — reuse the buffer |
 | `EncodeSession.writeFrameFromCameraCapture(capture)` / `writeFrameFromDesktopCapture(capture)` | async; polls+pushes a capture session directly, `false` if nothing was ready |
-| `EncodeSession.finish()` | terminal; returns the complete fMP4 `Buffer` |
+| `EncodeSession.pollBytes()` | async; the fMP4 bytes ready now (empty `Buffer` when none) — the streaming exit; never ends the session |
+| `EncodeSession.finish()` | terminal; returns the fMP4 `Buffer` **not yet taken by `pollBytes()`** — the whole file if never polled, only the tail if it was |
+| `encoderSupport(codec, width, height)` | async, **costly**; per-backend `{ backend, state, pathClass }` at that resolution |
 
 ## License
 

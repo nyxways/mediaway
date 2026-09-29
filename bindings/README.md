@@ -50,6 +50,7 @@ sector subfolders (`container/`, `pipeline/`, `device/`), one file per scenario:
 |---|---|---|---|
 | `container/mux_roundtrip.*` | [`examples/container/mux_demux_mp4.rs`](../examples/container/mux_demux_mp4.rs) | sans-io container mux + demux roundtrip | ✅ |
 | `pipeline/encode_to_mp4.*` | [`examples/pipeline/encode_to_mp4.rs`](../examples/pipeline/encode_to_mp4.rs) | auto video encoder → fragmented MP4 | ✅ |
+| `pipeline/stream_encode.*` | (streaming sibling of `encode_to_mp4`) | H.264 encode, `poll_bytes` drains fMP4 into a file while encoding, `finish` appends the tail (ADR-0007) | ✅ C, C++, C#, Python, Node.js — bounded memory; the streamed file is the same size as an unpolled one |
 | `pipeline/encode_audio.*` | (synthetic-PCM sibling of the audio encode ABI) | auto AAC encoder → audio-only fragmented MP4 | ✅ |
 | `pipeline/screen_record.*` | [`examples/pipeline/screen_record.rs`](../examples/pipeline/screen_record.rs) | screen + mic capture → encode → MP4 | ✅ C, C#, C++, Python, Node.js / native (browser) — every binding |
 | `device/camera_record.*` | [`examples/device/capture_camera.rs`](../examples/device/capture_camera.rs) | camera + mic capture → H.264 + AAC → ONE two-track MP4 | ✅ (video-only fallback without mic/audio backend) |

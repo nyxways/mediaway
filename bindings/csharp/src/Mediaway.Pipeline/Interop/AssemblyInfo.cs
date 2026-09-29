@@ -1,5 +1,10 @@
-#if NET8_0_OR_GREATER
 using System.Runtime.CompilerServices;
+
+// The test project pins the native struct layouts and the ABI version against the real header
+// (StreamAacAndProbeTests), which needs the otherwise-internal structs and NativeMethods.
+[assembly: InternalsVisibleTo("Mediaway.Pipeline.Tests")]
+
+#if NET8_0_OR_GREATER
 
 // Every native struct in this assembly (NativeStructs.cs) is deliberately kept fully
 // blittable (native `bool` would be a `byte` field, not `bool` — this ABI's structs happen

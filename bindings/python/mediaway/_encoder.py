@@ -107,8 +107,10 @@ class EncodeSession:
     """Registers the encoder's stream as an MP4 track and begins streaming.
 
     Takes ownership of `encoder` unconditionally (success or failure). Use
-    `finish()` to flush and collect the complete fMP4 bytes — it consumes the
-    session; `close()` after it is a no-op.
+    `finish()` to flush and collect the fMP4 bytes — it consumes the session;
+    `close()` after it is a no-op. For a long recording call `poll_bytes()` as
+    you go (see there) so memory is bounded by the poll cadence, not the
+    recording's length; `finish()` then returns only the unpolled tail.
     """
 
     def __init__(self, encoder: AutoVideoEncoder):
@@ -168,8 +170,35 @@ class EncodeSession:
         )
         return bool(wrote.value)
 
+    def poll_bytes(self) -> bytes:
+        """Take the fMP4 bytes that are ready now, without ending the session
+        (adr/pipeline/0007 §1) — the streaming exit.
+
+        Call it as often as you like: after every `push_frame`, on a timer, or
+        never. Returns `b""` when nothing is ready, which is indistinguishable
+        from "already drained". Polling never finishes the stream; the last
+        fragments only appear in `finish()`.
+        """
+        out_data = _ffi.U8P()
+        out_len = c_size_t(0)
+        _check_pipeline(
+            _ffi.pipeline.dll.mediaway_encode_session_poll_bytes(self._handle, byref(out_data), byref(out_len))
+        )
+        length = out_len.value
+        if length == 0:
+            return b""
+        data = _copy(out_data, length)
+        _ffi.pipeline.dll.mediaway_pipeline_ffi_buffer_free(out_data, out_len)
+        return data
+
     def finish(self) -> bytes:
-        """Flush the encoder + muxer and return the complete fMP4 bytes. Terminal."""
+        """Flush the encoder + muxer and return the fMP4 bytes **not yet taken
+        by `poll_bytes()`**. Terminal.
+
+        For a session that was never polled that is the complete recording;
+        for one that was, it is only the tail — concatenate every polled chunk
+        and then this.
+        """
         out_data = _ffi.U8P()
         out_len = c_size_t(0)
         _check_pipeline(_ffi.pipeline.dll.mediaway_encode_session_finish(self._handle, byref(out_data), byref(out_len)))

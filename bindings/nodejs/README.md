@@ -35,16 +35,23 @@ detail in [`../c/README.md`](../c/README.md)):
    formats run-verified.
 2. **Pipeline — auto video encode → fMP4** (`@mediaway/encoder`): one call picks the
    best available OS/GPU encoder for a config, wires it into an internal MP4 muxer;
-   `finish()` returns complete MP4 bytes. The audio encoder is separate (ABI v2,
+   `finish()` returns the MP4 bytes not yet taken by `pollBytes()` (the whole file for a
+   session never polled). `pollBytes()` (adr/pipeline/0007) is the streaming exit: call it
+   as you go and append each chunk to a file so memory stays bounded by the poll cadence,
+   not the recording's length. `encoderSupport(codec, width, height)` probes every backend
+   at the size you will encode (costly — opens throwaway sessions). The audio encoder is separate (ABI v2,
    adr/0003): `AudioEncoder.open()` streams AAC packets for the caller's own muxer.
    `EncodeSession.writeFrameFromCameraCapture()`/`writeFrameFromDesktopCapture()` push a
    `@mediaway/device` capture session's polled frame straight into the encoder — no
    intermediate `VideoFrame`, no CPU copy for Screen's GPU frames (adr/pipeline/0005).
    **Decode** is its own peer package, `@mediaway/decoder` (adr/0004, adr/pipeline/0006):
    `DecodeSession` wraps the best available video decoder (CPU output only; Windows/WMF
-   today), `AudioDecodeSession` wraps the cross-platform Opus decoder — both single-step
-   handles (the handle IS the decoder), `NO_BACKEND` throws `DecoderUnavailableError`
-   gracefully.
+   today), `AudioDecodeSession` wraps the Opus decoder (software, identical on every host)
+   and — since ABI v7 — the OS's AAC decoder (Windows/WMF and Apple/AudioToolbox; samples can
+   differ between hosts; needs the raw AudioSpecificConfig as `extraData`; the Apple arm is
+   compile-checked but not yet run) — both single-step handles (the handle IS the decoder),
+   `NO_BACKEND` throws `DecoderUnavailableError` gracefully. `decoderSupport(codec)` tells you
+   whether a codec (AAC especially) can be decoded here before you open a session.
 3. **Device — capture**: camera (CPU frames), Screen (GPU-only, Zero-Copy), microphone/
    loopback (PCM). `@mediaway/device` now includes the GPU device factory
    (`listGpuAdapters`/`GpuDevice`, `mediaway-device` ADR-0007): `openScreenCapture()`
@@ -110,6 +117,7 @@ aspirational):
 |---|---|---|
 | `container/mux-roundtrip.ts` | mux 90 fake video + audio packets → fMP4 → demux back, count packets | ✅ run verified |
 | `pipeline/encode-to-mp4.ts` | auto H.264 encode of 90 synthetic NV12 frames → `out.mp4` | ✅ run verified |
+| `pipeline/stream-encode.ts` | auto H.264 encode streamed to disk with `pollBytes()` (300 frames, chunks appended as they arrive, tail at `finish()`; demuxed back to prove every frame is there) | ✅ run verified |
 | `pipeline/encode-audio.ts` | auto AAC encode of 96 synthetic F32 stereo frames → audio-only fMP4 (ABI v2) | ✅ run verified |
 | `pipeline/decode-roundtrip.ts` | auto H.264 decode (encode→mux→demux→decode) + Opus audio decode round trip | ✅ run verified |
 | `device/camera-record.ts` | camera + mic → H.264 + AAC → ONE two-track MP4 (remuxed; audio track registered with the encoder's AudioSpecificConfig) | ✅ run verified on real hardware; video-only fallback without mic/audio backend |

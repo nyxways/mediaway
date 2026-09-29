@@ -135,9 +135,38 @@ public sealed class EncodeSession : IDisposable
         MediawayPipelineException.ThrowIfError(NativeMethods.mediaway_encode_session_set_bitrate(_handle, bitrateBps));
 
     /// <summary>
-    /// Flush the encoder and muxer, returning the complete fMP4 byte stream — Zero-Copy over
-    /// the native buffer; dispose the returned owner to release it. Consumes this session
-    /// unconditionally (success or failure); it must not be used again afterward.
+    /// Take the fMP4 bytes that are ready now, without ending the session
+    /// (<c>adr/pipeline/0007-stream-bytes-aac-decode-support-probe.md</c> §1). The streaming
+    /// exit: call it as often as you like — after every <see cref="WriteFrame"/>, on a timer,
+    /// or never — and the session's memory stays bounded by the poll cadence instead of the
+    /// recording's length. Write each chunk out (a file, a socket) and dispose it.
+    /// </summary>
+    /// <returns>
+    /// A Zero-Copy owner over the native buffer — dispose it to release it. An empty owner
+    /// (<c>Memory.Length == 0</c>, nothing to free) means nothing was ready, which is
+    /// indistinguishable from "already drained". Polling never finishes the stream: the last
+    /// fragments appear only in <see cref="Finish"/>'s result.
+    /// </returns>
+    public IMemoryOwner<byte> PollBytes()
+    {
+        MediawayPipelineException.ThrowIfError(
+            NativeMethods.mediaway_encode_session_poll_bytes(_handle, out nint data, out nuint len));
+
+        if (data == 0 || len == 0)
+        {
+            return EmptyMemoryOwner<byte>.Instance;
+        }
+
+        return new NativeOwnedMemoryManager(
+            data, len, static (ptr, l) => NativeMethods.mediaway_pipeline_ffi_buffer_free(ptr, l));
+    }
+
+    /// <summary>
+    /// Flush the encoder and muxer, returning the fMP4 bytes <b>not yet taken by
+    /// <see cref="PollBytes"/></b> — the whole stream for a session that was never polled,
+    /// only its tail for one that was (concatenate every polled chunk, then this). Zero-Copy
+    /// over the native buffer; dispose the returned owner to release it. Consumes this
+    /// session unconditionally (success or failure); it must not be used again afterward.
     /// </summary>
     public IMemoryOwner<byte> Finish()
     {

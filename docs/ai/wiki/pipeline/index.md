@@ -11,5 +11,6 @@
 | [audio-track-and-apm](audio-track-and-apm.md) | Optional audio track + `mediaway-sw::apm` (AEC/NS/AGC2/VAD) on `EncodeSession` (implemented, ADR-0003) |
 | [c-ffi](c-ffi.md) | Per-capability `*-ffi` + optional feature umbrella |
 | [ffi-c-abi](ffi-c-abi.md) | `mediaway-ffi` — auto-encode → fMP4 C ABI, GPU frame input reachable from C (ADR-0001/0002) |
+| [ffi-stream-aac-probe](ffi-stream-aac-probe.md) | C ABI 7: `poll_bytes` streaming (`finish` = unpolled tail), AAC decode (OS codec, host-dependent), costly capability probes (ADR-0007) |
 | [screen-record-av](screen-record-av.md) | Screen + mic → H.264 + AAC → two-track fMP4, via `EncodeSession::open_with_audio` |
 | [trim-and-splice](trim-and-splice.md) | Decode → trim → splice → re-encode; found the AVCC/Annex-B mux gap |

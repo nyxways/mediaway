@@ -9,8 +9,9 @@ catch-and-continue on missing hardware instead of crashing:
   - EncoderUnavailableError  — no encode backend compiled in / openable
   - DeviceUnavailableError   — no capture backend / device present
   - CaptureUnsupportedError  — the ABI returned UNSUPPORTED for this config
-    (today: Window capture — has no C constructor this pass; Screen capture
-    is real, see `GpuDevice`/`VideoCapture.open(source="screen")`)
+    (e.g. Window capture off Windows, or a cursor/region option the DXGI
+    Screen backend cannot honour)
+  - RegionOutOfBoundsError   — a capture region does not fit the surface
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ __all__ = [
     "DecoderUnavailableError",
     "DeviceUnavailableError",
     "CaptureUnsupportedError",
+    "RegionOutOfBoundsError",
     "InvalidStateError",
 ]
 
@@ -66,10 +68,20 @@ class DeviceUnavailableError(MediawayError):
 class CaptureUnsupportedError(MediawayError):
     """The ABI rejected this capture configuration as unsupported.
 
-    Maps the device ABI's UNSUPPORTED outcome — today this is Window capture
-    (`VideoCapture.open(source="window")`, no C constructor this pass). Not a
-    bug: a documented capability gap. Screen capture is real (see `GpuDevice`)
-    and does not raise this.
+    Maps the device ABI's UNSUPPORTED outcome: Window capture on a platform
+    with no `HWND` source, or an option the backend cannot honour (the DXGI
+    Screen backend cannot draw the pointer or crop, so `cursor="included"` and
+    `region=...` raise this rather than being ignored). Not a bug: a
+    documented capability gap.
+    """
+
+
+class RegionOutOfBoundsError(MediawayError):
+    """The requested capture `region` does not fit the captured surface.
+
+    Raised at open, or from a later poll when the window shrank below the
+    region. A runtime condition, not a malformed config: retry with a smaller
+    region (adr/device/0005-window-capture-c-abi.md §4).
     """
 
 

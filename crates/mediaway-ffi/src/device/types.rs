@@ -120,27 +120,68 @@ pub struct MediawayCameraFrame {
 /// Desktop video capture source selection — mirrors
 /// `mediaway_device::desktop::DesktopCaptureSource`'s two variants.
 ///
-/// Only `Screen` is reachable via [`crate::device::desktop_video::mediaway_desktop_capture_open`]
-/// in this pass; `Window` deterministically returns
-/// [`crate::device::MediawayDeviceStatus::Unsupported`] (`adr/0001-capture-c-abi.md` § Finding 2,
-/// § Deferred) — kept so the full real source enum stays representable in C.
+/// `Screen` is DXGI and `Window` is WGC by `HWND`; both are Windows-only. On any other
+/// platform `Window` returns [`crate::device::MediawayDeviceStatus::Unsupported`]
+/// (`adr/device/0005-window-capture-c-abi.md` §5).
 #[cfg(feature = "desktop")]
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediawayDesktopCaptureSourceKind {
-    /// DXGI Desktop Duplication / display output — supported this pass.
+    /// DXGI Desktop Duplication / display output.
     Screen = 0,
-    /// Window capture — no C constructor exposed this pass either (needs an `HWND`
-    /// input shape not designed here).
+    /// One window by `HWND` (`MediawayDesktopCaptureConfig::window_handle`), via WGC.
     Window = 1,
+}
+
+/// Whether the mouse pointer is drawn into frames. Zero is the default.
+/// Mirrors `mediaway_device::desktop::CursorCapture`.
+#[cfg(feature = "desktop")]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediawayCaptureCursor {
+    /// Not drawn — the default. Every backend supports this.
+    Excluded = 0,
+    /// Drawn where it overlaps the source. DXGI screen capture and iOS answer
+    /// `UNSUPPORTED` rather than record without it.
+    Included = 1,
+}
+
+/// Whether Windows draws its capture border around a captured window. Window only.
+/// Mirrors `mediaway_device::windows_desktop::CaptureBorder`.
+#[cfg(feature = "desktop")]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediawayCaptureBorder {
+    /// Leave the OS default: the border is shown.
+    Shown = 0,
+    /// Ask the OS not to draw it (Windows 11 build 22000+). A refusal is not an error;
+    /// read the outcome with `mediaway_desktop_capture_border_hidden`.
+    Hidden = 1,
+}
+
+/// How frame dimensions relate to the window's. Window only.
+/// Mirrors `mediaway_device::windows_desktop::FrameDimensions`.
+#[cfg(feature = "desktop")]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediawayFrameDimensions {
+    /// Exactly the window's size, odd or not.
+    Native = 0,
+    /// Each odd axis loses its last column or row, so any hardware encoder accepts the
+    /// frames. Costs nothing on WGC.
+    EvenCropped = 1,
 }
 
 /// Config for [`crate::device::desktop_video::mediaway_desktop_capture_open`] — plain value
 /// struct, no handle, no heap allocation, no free function.
 ///
-/// `gpu_device` is mandatory for `Screen` (`adr/0003-gpu-handle-c-abi.md` §4) —
+/// `gpu_device` is mandatory for `Screen` and `Window` (`adr/0003-gpu-handle-c-abi.md` §4) —
 /// [`crate::device::desktop_video::mediaway_desktop_capture_open`] rejects a
 /// `NONE`/malformed one with `INVALID_INPUT` rather than silently ignoring it.
+///
+/// Every field after `gpu_device` was added by `adr/device/0005-window-capture-c-abi.md`
+/// and is **zero-means-previous-behaviour**: a zero-initialised value captures the whole
+/// surface, with no pointer, the OS default border and native dimensions.
 #[cfg(feature = "desktop")]
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -153,6 +194,26 @@ pub struct MediawayDesktopCaptureConfig {
     pub time_base: MediawayRational,
     /// GPU device backing this session.
     pub gpu_device: MediawayGpuDeviceHandle,
+    /// `Window` only: the `HWND` bits. Caller-owned; `0` is `INVALID_INPUT`. A `uint64_t`
+    /// (not `uintptr_t`) so the layout is the same on 32- and 64-bit.
+    pub window_handle: u64,
+    /// Whether the pointer is drawn. `Screen` (DXGI) rejects `Included` with `UNSUPPORTED`.
+    pub cursor: MediawayCaptureCursor,
+    /// `Window` only. A non-default value on a `Screen` config is `INVALID_INPUT`.
+    pub border: MediawayCaptureBorder,
+    /// `Window` only. A non-default value on a `Screen` config is `INVALID_INPUT`.
+    pub dimensions: MediawayFrameDimensions,
+    /// Region left edge, in surface pixels. Read only when `region_enabled`.
+    pub region_x: u32,
+    /// Region top edge, in surface pixels. Read only when `region_enabled`.
+    pub region_y: u32,
+    /// Region width. Zero with `region_enabled` set is `INVALID_INPUT`.
+    pub region_width: u32,
+    /// Region height. Zero with `region_enabled` set is `INVALID_INPUT`.
+    pub region_height: u32,
+    /// Record only the region. **WGC only, and a region away from the window's origin costs
+    /// one GPU copy per frame** (not Zero-Copy). DXGI screen capture answers `UNSUPPORTED`.
+    pub region_enabled: bool,
 }
 
 /// One physical GPU adapter this machine's DXGI factory reports — output of

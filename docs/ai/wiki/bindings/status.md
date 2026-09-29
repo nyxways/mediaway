@@ -33,7 +33,7 @@ bindings were then implemented to satisfy those examples. Examples mirror the Ru
   camera_record now produces ONE two-track MP4 (H.264 + AAC, remuxed) on real hardware.
   C# gained its own `Mediaway.Pipeline.AudioEncoder` wrapper (previously Node-only) —
   hardware-verified, matching Node's own output to within container-padding noise.
-- **Screen capture not from C**: needs a live `ID3D11Device*`, no CPU fallback; Screen + `NONE` gpu → `INVALID_INPUT`, Window → `UNSUPPORTED`. Browser host: `getDisplayMedia` is native and real.
+- **Screen capture not from C**: needs a live `ID3D11Device*`, no CPU fallback; Screen + `NONE` gpu → `INVALID_INPUT`. Window (`HWND`, WGC, device ABI 2, ADR-0005) is real in every binding, Windows only. Browser host: `getDisplayMedia` is native and real.
 - **C# Screen capture hardware-verified** — `CaptureTests` gained a test-only raw
   `D3D11CreateDevice` P/Invoke polling real GPU-backed 2560×1440 frames end to end.
 

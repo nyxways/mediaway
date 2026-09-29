@@ -47,6 +47,14 @@ detail in [`../c/README.md`](../c/README.md) and `docs/spec/c-ffi.md`):
    `device::ScreenCapture::open()` takes the resulting handle. There is no CPU
    pixel readback path for Screen frames; real pixels only ever move through
    `encoder::EncodeSession::writeFrameFromDesktopCapture` (adr/pipeline/0005).
+   **Window capture is real too** (WGC by `HWND`, adr/device/0005):
+   `device::WindowCapture::open(WindowCaptureConfig)` takes a caller-owned `HWND` and the
+   same `GpuDevice` handle, with typed `CursorCapture` / `CaptureBorder` /
+   `FrameDimensions` options and an optional `CaptureRegion` (a region off the window's
+   origin costs one GPU copy per frame, not Zero-Copy). `borderHidden()` reports what the
+   OS actually did with `CaptureBorder::Hidden`. A region the window cannot hold throws
+   `Error(Status::RegionOutOfBounds)`. The same `writeFrameFromDesktopCapture` bridge
+   accepts a `WindowCapture`.
 
 ## The real ABI beneath (what the wrapper wraps)
 
@@ -115,6 +123,8 @@ aspirational):
 | `device/capture_microphone.cpp` | microphone capture, raw PCM | ✅ link+run verified (real mic) |
 | `pipeline/screen_record.cpp` | screen + mic → encode → MP4, via `GpuDevice` + the capture-to-encode bridge | ✅ link+run verified on real hardware (GPU-input encode gracefully skips as a known driver/encoder limitation, not a bug); mic PCM drained, not muxed — see `camera_record.cpp` for two-track remux |
 | `device/capture_screen.cpp` | screen capture only, via `GpuDevice` | ✅ link+run verified on real hardware |
+| `device/capture_window.cpp` | one window by `HWND` (default: the foreground window), hidden border + even-cropped frames, via `GpuDevice` | ✅ link+run verified on real hardware (a static window delivers one frame — WGC only sends on change) |
+| `tests/window_config.cpp` | pins `mediaway_desktop_capture_config_t`'s layout (`static_assert`), the zero-means-previous defaults, the device ABI version and the `RegionOutOfBounds` mapping | ✅ compile+run, no hardware needed |
 
 ## Rules
 

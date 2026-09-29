@@ -10,12 +10,12 @@
  * Hand-written (not cbindgen-generated) — see adr/0001-capture-c-abi.md §10 and
  * adr/0004-domain-feature-split.md. Design rules: docs/spec/c-ffi.md (ADR-0004).
  *
- * SCOPE: Camera (video, CPU-only), Screen (video, GPU-only, Windows), and
- * Microphone / Loopback / ProcessLoopback (audio) can all open a session.
- * Window capture is still real in Rust but has NO C constructor this pass
- * (needs a native HWND input with no consumer-facing use yet — adr/0001 §
- * Deferred): `mediaway_desktop_capture_open()` on a Window-kind config ALWAYS
- * returns MEDIAWAY_DEVICE_STATUS_UNSUPPORTED.
+ * SCOPE: Camera (video, CPU-only), Screen and Window (video, GPU-only, Windows),
+ * and Microphone / Loopback / ProcessLoopback (audio) can all open a session.
+ * Window capture takes a caller-owned HWND (WGC) plus cursor / region / border /
+ * dimensions options (adr/0005-window-capture-c-abi.md); on other platforms
+ * `mediaway_desktop_capture_open()` on a Window-kind config returns
+ * MEDIAWAY_DEVICE_STATUS_UNSUPPORTED.
  *
  * Screen capture requires a live GPU device handle
  * (`mediaway_gpu_device_handle_t`, MEDIAWAY_GPU_DEVICE_DIRECTX11 on Windows)
@@ -101,7 +101,7 @@
 #ifndef MEDIAWAY_DEVICE_H
 #define MEDIAWAY_DEVICE_H
 
-#define MEDIAWAY_DEVICE_FFI_ABI_VERSION 1 /* post domain-feature-split (adr/0004) */
+#define MEDIAWAY_DEVICE_FFI_ABI_VERSION 2 /* 2: desktop capture config grew (adr/0005) */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -138,7 +138,7 @@ typedef enum mediaway_device_status {
     MEDIAWAY_DEVICE_STATUS_OK               = 0,
     MEDIAWAY_DEVICE_STATUS_INVALID_ARGUMENT = 1,  /* null pointer, mismatched ptr/len */
     MEDIAWAY_DEVICE_STATUS_HANDLE_POISONED  = 2,  /* a previous call on this handle panicked */
-    MEDIAWAY_DEVICE_STATUS_UNSUPPORTED      = 3,  /* Window this pass; capture_once on a Desktop config */
+    MEDIAWAY_DEVICE_STATUS_UNSUPPORTED      = 3,  /* Window off Windows; DXGI + cursor/region; capture_once on a Desktop config */
     MEDIAWAY_DEVICE_STATUS_NO_BACKEND       = 4,  /* no capture backend compiled in — expected/graceful */
     MEDIAWAY_DEVICE_STATUS_INVALID_INPUT    = 5,  /* bad config (e.g. zero-denominator time base) */
     MEDIAWAY_DEVICE_STATUS_BACKEND_FAILURE  = 6,  /* OS/API failure inside the capture backend */
@@ -149,6 +149,7 @@ typedef enum mediaway_device_status {
     MEDIAWAY_DEVICE_STATUS_CALLBACK_ALREADY_REGISTERED = 11,
     MEDIAWAY_DEVICE_STATUS_CALLBACK_MODE_ACTIVE        = 12,
     MEDIAWAY_DEVICE_STATUS_TIMEOUT                     = 13, /* poll_frame_blocking / capture_once deadline */
+    MEDIAWAY_DEVICE_STATUS_REGION_OUT_OF_BOUNDS        = 14, /* capture region does not fit the surface, at open or after a window shrank (adr/0005) */
 } mediaway_device_status_t;
 
 /* ── Shared value types ──────────────────────────────────────────────────────────── */
@@ -241,19 +242,54 @@ mediaway_device_status_t mediaway_camera_capture_release_frame(mediaway_camera_c
 mediaway_device_status_t mediaway_camera_capture_close(mediaway_camera_capture_t *capture);
 void mediaway_camera_frame_free(mediaway_camera_frame_t *frame);
 
-/* ── Desktop (Screen video, GPU-only, Windows) ───────────────────────────────────── */
+/* ── Desktop (Screen + Window video, GPU-only, Windows) ──────────────────────────── */
 
 typedef enum mediaway_desktop_capture_source_kind {
-    MEDIAWAY_DESKTOP_CAPTURE_SOURCE_SCREEN = 0, /* supported this pass */
-    MEDIAWAY_DESKTOP_CAPTURE_SOURCE_WINDOW = 1, /* no C constructor; open() returns UNSUPPORTED */
+    MEDIAWAY_DESKTOP_CAPTURE_SOURCE_SCREEN = 0, /* DXGI Desktop Duplication */
+    MEDIAWAY_DESKTOP_CAPTURE_SOURCE_WINDOW = 1, /* one HWND via WGC; other platforms: UNSUPPORTED */
 } mediaway_desktop_capture_source_kind_t;
 
-/* Plain value; no free. gpu_device is mandatory for Screen (adr/0003 §4). */
+typedef enum mediaway_capture_cursor {
+    MEDIAWAY_CAPTURE_CURSOR_EXCLUDED = 0, /* default */
+    MEDIAWAY_CAPTURE_CURSOR_INCLUDED = 1, /* DXGI screen capture answers UNSUPPORTED */
+} mediaway_capture_cursor_t;
+
+/* Window only. */
+typedef enum mediaway_capture_border {
+    MEDIAWAY_CAPTURE_BORDER_SHOWN  = 0, /* OS default */
+    MEDIAWAY_CAPTURE_BORDER_HIDDEN = 1, /* Windows 11 build 22000+; a refusal is NOT an error —
+                                         * read the outcome with mediaway_desktop_capture_border_hidden */
+} mediaway_capture_border_t;
+
+/* Window only. */
+typedef enum mediaway_frame_dimensions {
+    MEDIAWAY_FRAME_DIMENSIONS_NATIVE       = 0, /* exactly the window's size, odd or not */
+    MEDIAWAY_FRAME_DIMENSIONS_EVEN_CROPPED = 1, /* odd axis loses its last column/row so any HW encoder
+                                                 * accepts the frames; costs nothing on WGC */
+} mediaway_frame_dimensions_t;
+
+/* Plain value; no free. gpu_device is mandatory for Screen and Window (adr/0003 §4).
+ *
+ * Every field after gpu_device (adr/0005) is zero-means-previous-behaviour: a zero-initialised
+ * value captures the whole surface, with no pointer, the OS default border and native
+ * dimensions. Build the config with a constructor, then assign the options you want. */
 typedef struct mediaway_desktop_capture_config {
     mediaway_desktop_capture_source_kind_t source_kind;
-    uint32_t source_index; /* display output ordinal (0 = primary) */
+    uint32_t source_index; /* Screen: display output ordinal (0 = primary) */
     mediaway_rational_t time_base;
     mediaway_gpu_device_handle_t gpu_device;
+    uint64_t window_handle; /* Window: the HWND bits, caller-owned; 0 -> INVALID_INPUT. uint64_t (not
+                             * uintptr_t) so the layout is identical on 32- and 64-bit. */
+    mediaway_capture_cursor_t cursor;    /* Screen (DXGI): INCLUDED -> UNSUPPORTED */
+    mediaway_capture_border_t border;    /* Window only; non-default on Screen -> INVALID_INPUT */
+    mediaway_frame_dimensions_t dimensions; /* Window only; non-default on Screen -> INVALID_INPUT */
+    uint32_t region_x;      /* region_* are read only when region_enabled */
+    uint32_t region_y;
+    uint32_t region_width;  /* 0 with region_enabled -> INVALID_INPUT */
+    uint32_t region_height;
+    bool region_enabled;    /* Window (WGC) only; DXGI -> UNSUPPORTED. A region away from the
+                             * window's origin costs one GPU copy per frame (NOT Zero-Copy).
+                             * A window that later shrinks below it: REGION_OUT_OF_BOUNDS. */
 } mediaway_desktop_capture_config_t;
 
 /* mediaway_video_frame_storage_kind_t comes from common.h (CPU: data/data_len valid;
@@ -276,9 +312,17 @@ typedef struct mediaway_desktop_frame {
 
 mediaway_desktop_capture_config_t mediaway_desktop_capture_config_screen(
     uint32_t output_index, mediaway_rational_t time_base, mediaway_gpu_device_handle_t gpu_device);
+/* hwnd is caller-owned and must outlive the session. Set cursor/border/dimensions/region_* on the
+ * returned value before mediaway_desktop_capture_open. */
+mediaway_desktop_capture_config_t mediaway_desktop_capture_config_window(
+    uint64_t hwnd, mediaway_rational_t time_base, mediaway_gpu_device_handle_t gpu_device);
 
 mediaway_device_status_t mediaway_desktop_capture_open(
     const mediaway_desktop_capture_config_t *config, mediaway_desktop_capture_t **out_capture);
+/* Whether the OS actually hid the capture border of a Window session (after border = HIDDEN).
+ * UNSUPPORTED for a Screen session. */
+mediaway_device_status_t mediaway_desktop_capture_border_hidden(
+    const mediaway_desktop_capture_t *capture, bool *out_hidden);
 mediaway_device_status_t mediaway_desktop_capture_geometry(
     const mediaway_desktop_capture_t *capture, uint32_t *out_width, uint32_t *out_height);
 mediaway_device_status_t mediaway_desktop_capture_poll_frame(

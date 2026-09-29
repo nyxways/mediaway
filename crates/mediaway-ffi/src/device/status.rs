@@ -51,6 +51,11 @@ pub enum MediawayDeviceStatus {
     /// (`adr/0003-gpu-handle-c-abi.md` §6). Not necessarily a failure on an
     /// already-open, delta-based session — see those functions' docs.
     Timeout = 13,
+    /// [`CaptureError::RegionOutOfBounds`] — the requested capture region does not fit the
+    /// surface, at open or because the window later shrank
+    /// (`adr/0005-window-capture-c-abi.md` §4). A runtime condition, not a malformed config:
+    /// distinct from [`Self::InvalidInput`] so a caller can retry with a smaller region.
+    RegionOutOfBounds = 14,
 }
 
 impl From<CaptureError> for MediawayDeviceStatus {
@@ -65,6 +70,7 @@ impl From<CaptureError> for MediawayDeviceStatus {
             CaptureError::Closed => Self::Closed,
             CaptureError::AccessDenied => Self::AccessDenied,
             CaptureError::Timeout => Self::Timeout,
+            CaptureError::RegionOutOfBounds { .. } => Self::RegionOutOfBounds,
             _ => Self::UnknownError,
         }
     }

@@ -63,6 +63,7 @@ windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Graphics_Direct3D",
     "Win32_Graphics_Direct3D11",
+    "Win32_System_LibraryLoader",
     "Win32_UI_WindowsAndMessaging",
 ] }
 

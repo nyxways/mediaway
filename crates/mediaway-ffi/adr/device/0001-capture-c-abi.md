@@ -657,4 +657,11 @@ directly.
 - [`docs/spec/caveats-and-clarity.md`](../../../docs/spec/caveats-and-clarity.md) — honest-copy-path / honest-scope / blocking-close documentation requirement
 - [`docs/ai/wiki/device/{windows-capture.md,windows-window.md,windows-audio.md,camera-device-handle.md}`](../../../docs/ai/wiki/device) — capture backend knowledge; `camera-device-handle.md` corrected as part of this ADR's wiki upkeep
 
+## Addendum (2026-09-29): Window capture is no longer deferred
+
+Every "Window is deferred" statement above is superseded by
+[ADR-0005](0005-window-capture-c-abi.md): a Window source takes a caller-owned `HWND` through
+`mediaway_desktop_capture_config_window`, with cursor / region / border / even-crop options, and
+`MEDIAWAY_DEVICE_FFI_ABI_VERSION` is 2.
+
 ADRs are **English**. Numbering is local to this `adr/` folder.

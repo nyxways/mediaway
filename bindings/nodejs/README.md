@@ -51,8 +51,11 @@ detail in [`../c/README.md`](../c/README.md)):
    creates a device internally (or accepts a caller-supplied one) instead of throwing.
    `ScreenSession.pollFrame()` proves frames arrive but never copies pixels out (no CPU
    readback path in the wrapped backend) — real pixels move through
-   `EncodeSession.writeFrameFromDesktopCapture()`'s Zero-Copy bridge instead. Hotplug has
-   no Node wrapper yet.
+   `EncodeSession.writeFrameFromDesktopCapture()`'s Zero-Copy bridge instead.
+   `openWindowCapture()` records one window by `HWND` (Windows, WGC) with the same GPU-only
+   frames, plus `cursor`, `border`, `dimensions: "even-cropped"` and a `region` (a region off
+   the window's origin is one GPU copy per frame, not Zero-Copy) — device ABI 2, mediaway-ffi
+   ADR-0005. Hotplug has no Node wrapper yet.
 
 ## The real ABI beneath (what the wrapper wraps)
 
@@ -116,6 +119,7 @@ aspirational):
 | `device/capture-microphone.ts` | microphone capture, raw PCM | ✅ run verified (real mic) |
 | `pipeline/screen-record.ts` | GPU device factory → screen + mic capture → encode (bridge) → MP4 | ✅ run verified on real hardware (GPU-input H.264 encode gracefully skips as a known driver/encoder limitation, not a bug) |
 | `device/capture-screen.ts` | GPU device factory → screen capture only | ✅ run verified on real hardware |
+| `device/capture-window.ts` | GPU device factory → one window (HWND) capture with cursor / hidden border / even-crop | ✅ run verified on real hardware (Windows 11) |
 
 ## Rules
 

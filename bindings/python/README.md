@@ -47,8 +47,15 @@ detail in [`../c/README.md`](../c/README.md) and `docs/spec/c-ffi.md`):
    `GpuDevice` factory (adr/0007-gpu-device-factory.md) — `VideoCapture.open(source=
    "screen")` builds one internally, or share your own with an encoder. There is no
    CPU pixel readback path for Screen frames; real pixels only ever move through
-   `EncodeSession.write_frame_from_desktop_capture` (adr/pipeline/0005). Window
-   capture is still `UNSUPPORTED` from C (no constructor this pass) — an honest gap.
+   `EncodeSession.write_frame_from_desktop_capture` (adr/pipeline/0005). **Window
+   capture is real on Windows** (WGC, adr/device/0005): `VideoCapture.open(source=
+   "window", window=<HWND>, ...)` takes the same `GpuDevice`, plus `cursor="included"`,
+   `border="hidden"` (read the outcome from `capture.border_hidden`),
+   `dimensions="even_cropped"` and `region=(x, y, w, h)`. A region away from the window's
+   origin is one GPU copy per frame — not Zero-Copy — and a window that shrinks below it
+   raises `RegionOutOfBoundsError`. DXGI Screen capture cannot draw the pointer or crop, so
+   `cursor="included"` / `region=` on `source="screen"` raise `CaptureUnsupportedError`.
+   Other platforms raise `CaptureUnsupportedError` for Window.
 
 ## The real ABI beneath (what the wrapper wraps)
 
@@ -112,6 +119,7 @@ aspirational):
 | `device/capture_microphone.py` | microphone capture, raw PCM | ✅ run verified (real mic) |
 | `pipeline/screen_record.py` | screen + mic → encode → MP4, via `GpuDevice` + the capture-to-encode bridge | ✅ run verified on real hardware (GPU-input encode gracefully skips as a known driver/encoder limitation, not a bug); mic PCM drained, not muxed — see `camera_record.py` for two-track remux |
 | `device/capture_screen.py` | screen capture only, via `GpuDevice` | ✅ run verified on real hardware |
+| `device/capture_window.py` | one window by `HWND`: cursor, hidden border, even-crop | ✅ run verified on real hardware (Windows 11) |
 
 ## Rules
 

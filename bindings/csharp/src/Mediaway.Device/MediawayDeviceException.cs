@@ -36,8 +36,8 @@ public class MediawayDeviceException : MediawayException
         MediawayDeviceStatus.InvalidArgument => "Null pointer, or mismatched pointer/length pair.",
         MediawayDeviceStatus.HandlePoisoned => "A previous call already poisoned this handle.",
         MediawayDeviceStatus.Unsupported =>
-            "This capture source is not reachable from this binding yet (e.g. Window capture, " +
-            "or Screen capture via the single-shot convenience call).",
+            "The capture backend cannot do what the config asks (e.g. Window capture off Windows, " +
+            "a cursor or capture region on DXGI screen capture, or the single-shot call on Screen).",
         MediawayDeviceStatus.InvalidInput =>
             "Invalid config (e.g. a zero-denominator time base, or a mismatched GPU device).",
         MediawayDeviceStatus.BackendFailure => "An OS/API failure occurred inside the capture backend.",
@@ -50,6 +50,8 @@ public class MediawayDeviceException : MediawayException
         MediawayDeviceStatus.CallbackModeActive =>
             "PollEvent() was called while a hotplug callback is registered on this handle.",
         MediawayDeviceStatus.Timeout => "The capture deadline elapsed with no frame.",
+        MediawayDeviceStatus.RegionOutOfBounds =>
+            "The capture region does not fit the surface (or the window shrank below it).",
         _ => $"Unknown mediaway-ffi status ({(int)status}).",
     };
 }

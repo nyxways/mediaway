@@ -146,6 +146,15 @@ public:
         return wrote;
     }
 
+    /// The same bridge for a single-window (WGC) capture - one desktop-capture
+    /// ABI handle serves both Screen and Window. Same GPU-device rule.
+    bool writeFrameFromDesktopCapture(device::WindowCapture& capture) {
+        bool wrote = false;
+        detail::checkPipeline(mediaway_encode_session_write_frame_from_desktop_capture(
+            handle_.get(), capture.rawHandle(), &wrote));
+        return wrote;
+    }
+
     /// Flush the encoder + muxer; returns the complete fMP4 bytes. Consumes
     /// the session — the ABI frees the handle inside finish(), so it is
     /// released here (even on failure), never closed (double-free otherwise).

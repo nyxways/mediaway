@@ -8,6 +8,8 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("Mediaway.Device.Desktop")]
 [assembly: InternalsVisibleTo("Mediaway.Device.Audio")]
 [assembly: InternalsVisibleTo("Mediaway.Device.Hotplug")]
+// The integration suite asserts the status -> exception mapping directly.
+[assembly: InternalsVisibleTo("Mediaway.Device.Tests")]
 
 #if NET8_0_OR_GREATER
 // This package now has its own P/Invoke surface too (the GPU device factory,

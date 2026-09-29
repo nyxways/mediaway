@@ -18,9 +18,8 @@
  *
  * Capability truth (bindings/README.md truth table): container mux/demux
  * (all 8 formats) and the auto video encode -> fMP4 pipeline are real;
- * camera/mic capture are real (CPU frames); Screen capture is not
- * representable from C today — ScreenCapture::open() throws
- * Error(Status::Unsupported).
+ * camera/mic capture are real (CPU frames); Screen and Window (WGC, by HWND)
+ * capture are real on Windows, GPU-only, and need a GpuDevice.
  */
 
 #ifndef MEDIAWAY_MEDIAWAY_HPP

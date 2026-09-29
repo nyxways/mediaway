@@ -9,9 +9,9 @@ below do.
 
 ## Encode to MP4
 
-`EncodeSession` wraps one `VideoEncoder` + a single-track `mp4::Muxer`,
-draining `poll_packet` into the muxer on every `write_frame` call so you
-don't hand-write that loop:
+`EncodeSession` wraps one `VideoEncoder` + a muxer (fragmented MP4 by
+default), draining `poll_packet` into the muxer on every `write_frame` call
+so you don't hand-write that loop:
 
 ```rust,ignore
 let encoder = platform::AutoEncoder::open(&config)?;
@@ -21,22 +21,29 @@ session.write_frame(&frame)?;
 let mp4_bytes = session.finish()?; // flush + mux flush + poll_bytes
 ```
 
-`EncodeSession` is generic over the encoder type — no `Box`/`dyn` overhead
+A long recording need not sit in RAM until `finish()`: call
+`session.poll_bytes()` as you go and `finish_into(sink)` at the end, so memory
+is bounded by poll cadence rather than duration. To write another container —
+or set muxer options the facade doesn't mirror, like
+`mp4::Muxer::with_fragment_batch` — hand the session a muxer of your own with
+`EncodeSession::open_in(webm::Muxer::new(), encoder)`.
+
+`EncodeSession` is generic over the encoder and muxer types — no `Box`/`dyn` overhead
 beyond whatever `platform::AutoEncoder::open` itself returns. It's a
 convenience layer, not a gate: the manual push/poll/mux loop from the
 [Container](./container.md) and [Encode](./encode.md) guides stays fully
-usable if you need something `EncodeSession` doesn't do (e.g. a second
-track — see below).
+usable if you need something `EncodeSession` doesn't do.
 
 Try it: `cargo run --example encode_to_mp4` —
 [`examples/pipeline/encode_to_mp4.rs`](https://github.com/nyxways/mediaway/blob/main/examples/pipeline/encode_to_mp4.rs).
 
 ## Screen Recording — video + audio
 
-`EncodeSession` is deliberately video-only, single-track — adding a second
-(audio) track means composing it yourself against a shared `mp4::Muxer`,
-the same pattern the workspace's own hardware-verified integration test
-uses:
+`EncodeSession::open_with_audio` attaches a second (audio) track. The example
+below instead composes both tracks by hand against a shared `mp4::Muxer` —
+the same low-level pattern the workspace's own hardware-verified integration
+test uses, and the one to reach for when you need control the session
+doesn't expose:
 
 ```rust,ignore
 let mut open = Muxer::with_fragment_batch(2);
@@ -54,7 +61,7 @@ mux.poll_bytes(&mut bytes);
 
 Screen and microphone capture come from `platform::ScreenCapture` /
 `platform::Microphone`; audio encode has no cross-platform dispatcher yet,
-so the example reaches for `mediaway_encoder_windows::WindowsAudioEncoder`
+so the example reaches for `mediaway_encoder::windows::WindowsAudioEncoder`
 directly (it compiles everywhere, degrading gracefully off Windows — see
 [Device](./device.md) for the same pattern applied to camera).
 

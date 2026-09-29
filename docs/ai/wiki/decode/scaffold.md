@@ -17,7 +17,8 @@
   and convert both `extra_data` and AVCC-framed packet payloads before reaching the MFT —
   per-packet Annex-B start-code probe, since a direct encoder feed already emits Annex-B
   packets with an avcC `extra_data` (that mismatch was the CPU-decode bug above) — see
-  ADR-0001 and `mediaway`'s `tests/trim_and_splice_windows.rs` for the real
+  ADR-0001 (H.264; HEVC follows the same rule, see § Bitstream framing below) and
+  `mediaway`'s `tests/trim_and_splice_windows.rs` for the real
   encode→mux→demux→decode proof that found this gap
 - README: OS · GPU / D3D11 decode 🆗; CPU path 🆗 (SW, no HW offload)
 - Windows HEVC/AV1/VP9 CPU decode: `wmf/video_cpu.rs`'s `WmfMultiCodecCpuDecoder` — real,

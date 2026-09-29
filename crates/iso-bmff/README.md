@@ -58,7 +58,9 @@ Status marks: ✅ first-class (tests for claimed scope) · ⚡ Zero-Copy path (n
 | Demux (fMP4 + unfragmented `stbl`, mdat-before-moov) | ✅ | |
 | Edit lists (`edts`/`elst`), discard / negative first PTS | ✅ | |
 | ClearKey CENC (`tenc`/`senc`) | ✅ | Via `iso-cenc` |
-| Sample entries | ✅ | H.264 (`avc1`), HEVC (`hvc1`/`hvcC`), AV1 (`av01`/`av1C`), VP9 (`vp09`/`vpcC`) |
+| Sample entries | ✅ | H.264 (`avc1`), HEVC (`hvc1`/`hvcC`), AV1 (`av01`/`av1C`), VP9 (`vp09`/`vpcC`), AAC (`mp4a`/`esds`), Opus (`Opus`/`dOps`; demux yields an `OpusHead` in `extra_data`, ADR-0005) |
+| HEVC / H.264 Annex-B input | ✅ | Muxer converts Annex-B to length-prefixed samples and backfills `hvcC`/`avcC` (HEVC: ADR-0006 — no HEVC MP4 was playable before 2026-09-18) |
+| Payload placements | ✅ | Opt-in `Muxer::with_placements` → `poll_placements`: absolute offset + length of every written sample; no work when off (ADR-0007) |
 | More codecs / sample-entry variants (`hev1`, Dolby Vision, …) | 🛠️ | As needed |
 
 ## Docs

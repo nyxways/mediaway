@@ -2,9 +2,10 @@
 
 ## Status (2026-08)
 
-Package versions (v0.1.2, 2026-08-04): npm `@mediaway/*` 0.1.2 · NuGet `Mediaway.*`
-0.1.2 · PyPI `mediaway` 0.1.2 · crates.io `mediaway-*` family 0.1.2,
-freestanding cores 0.1.1 (`ebml-webm` 0.2.1) · CPack `Mediaway-0.1.2-win64`.
+Package versions (v0.1.8, 2026-08-21): npm `@mediaway/*` · NuGet `Mediaway.*` · PyPI
+`mediaway` · crates.io `mediaway-*` family · CPack `Mediaway-<v>-win64` are stamped from the
+workspace version (0.1.8) at release; freestanding cores keep their own (0.1.1, `ebml-webm`
+0.2.1). C ABI versions: container 7 · pipeline 6 · device 1.
 
 | Language | Mechanism | Status |
 |---|---|---|
@@ -72,5 +73,10 @@ bindings were then implemented to satisfy those examples. Examples mirror the Ru
   C# is covered now (Capability truth) — the C gap still needs the live GPU-device-handle ADR.
 - GOP/CBR/`set_bitrate` reach the C ABI + C# now (ABI v6), no-op through auto-select
   until Vulkan joins it — [gop-cbr-set-bitrate](gop-cbr-set-bitrate.md).
+- **Not in the C ABI yet (Rust-only since v0.1.8):** `EncodeSession`
+  `poll_bytes`/`finish_into`, AAC decode (audio decode C ABI is Opus-only), `ReplayRing`
+  + mux placements, `encoder_support_at`. Window capture landed in device ABI 2 (ADR-0005). The
+  `include_child_processes` → `include_target_process_tree` rename (same layout) was done in
+  C/C#/Python; C++/Node do not bind desktop audio.
 - Android AAR/Maven Central distribution: ADR-0025 (Proposed) — design-only,
   no code yet — [android-status](android-status.md).

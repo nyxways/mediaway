@@ -3,7 +3,7 @@
 Four capture sources share two traits — `VideoCapture` (screen, window,
 camera) and `AudioCapture` (microphone) — both a poll loop over frames, no
 encoding involved. What differs per source is how much of it is wired into
-`mediaway_pipeline::platform`'s cross-platform dispatch versus needing a
+`mediaway::platform`'s cross-platform dispatch versus needing a
 platform-specific type directly.
 
 ## Screen — fully dispatched
@@ -55,7 +55,7 @@ let config = VideoCaptureConfig {
     output: CaptureOutputPreference::CpuFramesOk,
     gpu_device: None,
 };
-let mut camera = mediaway_device_windows::WindowsCameraCapture::open(&config)?;
+let mut camera = mediaway_device::windows_camera::WindowsCameraCapture::open(&config)?;
 ```
 
 Try it: `cargo run --example capture_camera` —
@@ -63,15 +63,19 @@ Try it: `cargo run --example capture_camera` —
 
 ## Window — needs a caller-owned GPU device
 
-Window capture (`WinRT` Graphics Capture) is the one source with **no
+Window capture (`WinRT` Graphics Capture) is the one Windows source with **no
 CPU-only path** — `open()` requires both a live `HWND` and a caller-owned
 `ID3D11Device` handed in as `gpu_device: Some(GpuDeviceHandle::DirectX11(handle))`.
 Obtaining either means calling raw Win32/WinRT FFI, which is `unsafe` — out
 of scope for a plain example, so
 [`examples/device/capture_window.rs`](https://github.com/nyxways/mediaway/blob/main/examples/device/capture_window.rs)
-only shows the config shape. For a complete, hardware-tested version with
+only shows the config shape. Off Windows, `platform::WindowCapture::open`
+returns the concrete per-target capture type (WGC, portal, ScreenCaptureKit).
+The config also takes `cursor` (`CursorCapture::Excluded` by default) and an
+optional `region` — WGC only, and a region away from the window's origin costs
+one GPU copy per frame. For a complete, hardware-tested version with
 the `unsafe` fully contained and documented, see
-`crates/mediaway-device-windows/src/lib_tests.rs`'s
+`crates/mediaway-device/src/windows_desktop/lib_tests.rs`'s
 `open_window_capture_foreground_or_skip` test in the repository.
 
 ## What's available where

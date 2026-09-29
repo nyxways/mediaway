@@ -23,7 +23,7 @@ use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance};
 
 use super::codec::{is_supported_video_codec, video_subtype};
 use super::dx11::{self, Dx11Session};
-use super::runtime::to_hns;
+use super::runtime::{sample_duration_hns, to_hns};
 use super::shared::{
     Drain, begin_streaming, bitrate_and_fps, configure_types, nv12_size, output_buffer_hint,
     process_one_output,
@@ -232,12 +232,7 @@ impl WmfVideoEncoder {
         }
         unsafe { sample.AddBuffer(&buffer) }.map_err(|_| EncodeError::Backend)?;
         let hns = to_hns(frame.pts, self.time_base_num, self.time_base_den);
-        let dur = to_hns(
-            i64::try_from(frame.duration).unwrap_or(0),
-            self.time_base_num,
-            self.time_base_den,
-        )
-        .max(1);
+        let dur = sample_duration_hns(frame.duration, self.time_base_num, self.time_base_den);
         unsafe {
             sample
                 .SetSampleTime(hns)

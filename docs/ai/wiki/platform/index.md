@@ -6,7 +6,7 @@
 | [windows-encode](windows-encode.md) | WMF + DX11 encoder backend status |
 | [windows-encode-d3d12](windows-encode-d3d12.md) | D3D12 native Video Encode API: H.264/HEVC/AV1 all-intra, GOP, row-based intra refresh — hardware findings |
 | [windows-encode-gpu-input](windows-encode-gpu-input.md) | D3D12 encoder GPU-input Zero-Copy design (wgpu + native capture callers) — Proposed, no code |
-| [windows-timestamps](windows-timestamps.md) | WMF `hns` round trip (rounds to nearest; HEVC collapsed, H.264 got `dts > pts`) · video `dts` comes from `drain_output`'s counter, open VFR divergence · reading ffmpeg's dts warning |
+| [windows-timestamps](windows-timestamps.md) | WMF `hns` round trip (rounds to nearest; HEVC collapsed, H.264 got `dts > pts`) · video `dts` is the MFT's own decode timestamp clamped to `pts` (VFR durations fixed, #110) · reading ffmpeg's dts warning |
 | [windows-decode](windows-decode.md) | WMF + DX11 decoder Zero-Copy out; D3D12 native decode (H.264 implemented, **paused** on a real GPU-TDR hang) |
 | [windows-decode-d3d12-hevc](windows-decode-d3d12-hevc.md) | D3D12 native HEVC decode (ADR-0004) — **implemented, sans-io-verified only**; zero real GPU hardware run, deliberately |
 | [windows-decode-d3d12-av1](windows-decode-d3d12-av1.md) | D3D12 native AV1 decode (ADR-0005) — **implemented, sans-io-verified only**, `KEY_FRAME`-only; zero real GPU hardware run, deliberately; open bitstream-source question for any future hardware attempt |
@@ -17,7 +17,7 @@
 | [android-decode](android-decode.md) | NDK `AMediaCodec` H.264 CPU-output decode — **implemented, zero compile/runtime verification**; general-GOP (not IDR-only), decoder-chosen output layout |
 | [apple-encode](apple-encode.md) | `VideoToolbox` `VTCompressionSession` H.264/HEVC CPU-upload **and Zero-Copy** encode — implemented, zero compile verification until CI; VP9/AV1 permanently unsupported (no VideoToolbox compression API) |
 | [apple-decode](apple-decode.md) | `VideoToolbox` `VTDecompressionSession` H.264/HEVC/VP9/AV1 general-GOP CPU-output **and Zero-Copy** decode — implemented, wired into `mediaway::platform`, zero compile verification |
-| [apple-audio](apple-audio.md) | `AudioToolbox` `AudioConverter` AAC-LC + **native Opus** encode + decode — implemented, zero compile verification; first AAC decoder in this workspace, Opus now native (not the SW fallback) on Apple |
+| [apple-audio](apple-audio.md) | `AudioToolbox` `AudioConverter` AAC-LC + **native Opus** encode + decode — implemented, zero compile verification; Opus now native (not the SW fallback) on Apple |
 | [apple-prores](apple-prores.md) | `VideoToolbox` ProRes 422/4444 (6 profiles) encode + decode — implemented, zero compile verification; ProRes RAW permanently unsupported (encode: no compression API at all; decode: needs a separate unimplemented `VTRAWProcessingSession`) |
 | [vulkan-encode](vulkan-encode.md) | Vulkan Video H.264 encode: capability probe + real minimal session, hardware-verified |
 | [vulkan-decode](vulkan-decode.md) | Vulkan Video decode: H.264 **hardware-verified** (first general-GOP backend in workspace); HEVC IDR decode **hardware-verified** too (P/B deferred) |

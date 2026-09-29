@@ -42,7 +42,7 @@ detail in [`../c/README.md`](../c/README.md) and `docs/spec/c-ffi.md`):
    Windows/WMF today), `AudioDecodeSession` wraps the cross-platform Opus decoder —
    both single-step handles (the handle IS the decoder), `NO_BACKEND` raises
    `DecoderUnavailableError` gracefully.
-3. **Device — capture**: camera (CPU frames), microphone/loopback (PCM), hotplug.
+3. **Device — capture**: camera (CPU frames), microphone/loopback (PCM), hotplug. `AudioCapture.open(source="process_loopback", process_id=…, include_target_process_tree=…)` records that process tree, or with `False` everything the desktop renders *except* it — Windows has no "target process alone" mode.
    **Screen capture is real** (GPU-backed, DXGI Desktop Duplication) via the
    `GpuDevice` factory (adr/0007-gpu-device-factory.md) — `VideoCapture.open(source=
    "screen")` builds one internally, or share your own with an encoder. There is no

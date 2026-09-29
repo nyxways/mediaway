@@ -70,7 +70,7 @@ AAC flush buffering) found only reachable on a real browser.
 `iso-bmff` now writes a real `vp09`/`vpcC` sample entry for VP9 (crate-local
 [ADR-0002](../../../crates/iso-bmff/adr/0002-vp9-sample-entry.md)) — see
 [container/mp4-sample-entries](../container/mp4-sample-entries.md) for full coverage
-(HEVC/AV1 still fall back to a mislabeled `avc1`). `tools/e2e-web/tests/wasm-mux-roundtrip.spec.ts`
+(HEVC/AV1 now have their own `hvc1`/`av01` entries). `tools/e2e-web/tests/wasm-mux-roundtrip.spec.ts`
 proves the container-level VP9 mux→demux round trip in-browser via `iso-bmff-wasm`'s pure
 sans-io logic — independent of this Chromium build's real WebCodecs VP9 support.
 `decode-trim-splice.spec.ts` still proves the encode→decode→trim→splice→re-encode→decode

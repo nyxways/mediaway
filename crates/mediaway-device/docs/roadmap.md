@@ -43,6 +43,11 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 - [x] Add `mediaway-device-windows` workspace member
 - [x] Screen capture (DXGI Desktop Duplication Zero-Copy)
 - [x] Window capture (WGC / `WindowsWindowCapture`)
+- [x] Capture options across backends: `CursorCapture` (`Excluded` default), WGC border hiding,
+      `FrameDimensions::EvenCropped` ([ADR-0008](../adr/0008-cursor-capture-and-wgc-border.md)),
+      `DesktopVideoCaptureConfig::region` + `CaptureError::RegionOutOfBounds`
+      ([ADR-0009](../adr/0009-capture-region.md)); `CaptureError::BackendCode` carries the
+      platform status code. DXGI/Linux/macOS/iOS refuse a region with `Unsupported`.
 - [x] WASAPI mic + system + process loopback (`WindowsWasapiCapture`)
 - [x] WASAPI shared-mode render playback (`WindowsWasapiPlayback`,
       [ADR-0004](../adr/0004-audio-playback-traits.md))

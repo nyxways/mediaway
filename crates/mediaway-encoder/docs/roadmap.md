@@ -30,8 +30,8 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 - [x] WMF AV1 `av1C` config-record correctness — `refresh_extradata` is now codec-aware:
       `iso_bmff::bitstream::av1::to_av1c` (new, sans-io, unit-tested incl. a real
       `ffmpeg`/`libaom-av1` oracle test) builds a real `AV1CodecConfigurationRecord` from the
-      Sequence Header OBU; H.264 keeps `avc::to_avcc`, HEVC/VP9 keep the pre-existing
-      raw-bytes-verbatim fallback (known separate gap, not fixed here) — ADR-0010 implemented.
+      Sequence Header OBU; H.264 keeps `avc::to_avcc`, HEVC now builds a real `hvcC` via
+      `to_hvcc` (#98), only VP9 keeps the raw-bytes-verbatim fallback — ADR-0010 implemented.
       Profile/level/tier bitfields stay zero (deferred per ADR-0010, no confirmed real MFT
       output to verify field population against yet).
 - [x] Real `MFTEnumEx(MFT_CATEGORY_VIDEO_ENCODER, …)` encoder probe
@@ -45,14 +45,14 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
       (`HEVCVideoExtensionEncoder`/`VP9VideoExtensionEncoder`) in that same unfiltered set,
       AV1 has none. Net effect: `open_hevc_av1_vp9_cpu_or_skip`'s AV1 branch still gets
       `Unsupported` (no non-hardware-flagged MFT to enumerate), and
-      `open_hevc_av1_vp9_dx11_or_skip`'s AV1 branch finds the hardware MFT but still fails
-      with `EncodeError::Backend` further downstream (D3D11-aware/type-negotiation stage) —
-      same pre-existing failure class already observed there for HEVC/VP9 DX11 on this host,
-      not a new bug and out of this ADR's scope to fix. So the `av1C` fix above stays
+      `open_hevc_av1_vp9_dx11_or_skip`'s AV1 branch found the hardware MFT but failed
+      with `EncodeError::Backend` further downstream at the time — that failure class was the
+      async-MFT sequencing bugs, fixed for H.264/HEVC in ADR-windows/0012 (2026-09-18); AV1 was
+      not re-measured. So the `av1C` fix above stays
       sans-io-unit-tested-only on this host; the extended `open_hevc_av1_vp9_*_or_skip` av1C
       assertions are live but never yet exercised end-to-end here. This refines (does not
-      contradict) the earlier H.264-only "no encode HW MFT on either GPU" wiki finding — that
-      finding was about H.264 specifically, not "no HW MFTs for any codec".
+      contradict) the earlier H.264-only "no encode HW MFT on either GPU" wiki finding — which
+      is itself retired: NVIDIA's H.264 MFT exists but is async (ADR-windows/0012).
 
 ### 1b — Umbrella (optional)
 

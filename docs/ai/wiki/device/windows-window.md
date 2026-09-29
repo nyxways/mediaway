@@ -8,7 +8,8 @@
   `wgc_tests.rs`): real win32 test window + real D3D11 device + real WGC session, bounded poll
   loop, asserts a genuine `GpuBufferHandle::DirectX11` frame — closes `adr/windows/0004`'s own
   "prove capture" acceptance criterion. README Window/Windows cell is now **⚡**.
-- Audio pair: `AudioCaptureSource::ProcessLoopback` for same-app sound
+- Audio pair: `ProcessLoopback` with `ProcessTreeScope::IncludeChildren` for same-app sound
+  ([windows-audio](windows-audio.md)); `ExcludeProcessTree` records everything *else*
 - Overlay: `exclude_window_from_capture` so HUD is omitted from DDA/WGC
 - Resize: `poll_frame` detects a `Frame.ContentSize` mismatch and calls
   `Direct3D11CaptureFramePool::Recreate` at the new size before delivering the frame

@@ -53,7 +53,7 @@ Status marks: ✅ first-class (tests for claimed scope) · ⚡ Zero-Copy path (n
 
 | Format | Module | Status | Notes |
 | ------ | ------ | ------ | ----- |
-| MP4 / fMP4 | `mp4` | ✅ | Mux + demux + ClearKey CENC |
+| MP4 / fMP4 | `mp4` | ✅ | Mux + demux + ClearKey CENC; `Muxer::with_placements` records each sample's payload offset + length; HEVC and Opus (`dOps`) tracks are written correctly |
 | WebM | `webm` | ✅ | Mux + demux (full Matroska-profile demux) |
 | WAV / RIFF (PCM) | `wav` | ✅ | Mux + demux; own method shape (size known up front) |
 | ADTS (raw AAC) | `adts` | ✅ | `Mux`/`Demux` traits |
@@ -61,7 +61,9 @@ Status marks: ✅ first-class (tests for claimed scope) · ⚡ Zero-Copy path (n
 | Ogg | `ogg` | ✅ | `Mux`/`Demux`; codec from `OpusHead`/Vorbis id header |
 | FLV | `flv` | ✅ | Codec-aware mux + demux (AVC video, AAC/MP3 audio) |
 | MPEG-TS | `ts` | ✅ | `Demux` only; mux exposes per-PID `write_access_unit` |
-| VP8 `CodecKind` mapping | — | ❌ | Recognized structurally in WebM, not representable yet |
+| VP8 `CodecKind` mapping | — | ✅ | `CodecKind::Vp8` exists; WebM VP8 demux/mux is wired |
+| Replay ring | `replay` | ✅ | `ReplayRing<P = Bytes>` keeps the last *N* seconds of encoded packets and cuts the last *M* at a keyframe, in decode order, as a rebased packet sequence a fresh muxer writes standalone. `StoredPayload` keeps only file locations, not payloads (ADR-0004) |
+| Muxer open phase | `MuxOpen` | ✅ | Names the `add_track` → `begin` phase every muxer has, plus `FIRST_TRACK_ID`, `Mux::set_track_extra_data` (a no-op for containers that commit headers at `begin`, e.g. WebM) and `ContainerError` |
 
 ## Docs
 

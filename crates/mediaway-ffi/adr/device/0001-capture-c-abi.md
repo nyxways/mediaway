@@ -657,4 +657,14 @@ directly.
 - [`docs/spec/caveats-and-clarity.md`](../../../docs/spec/caveats-and-clarity.md) — honest-copy-path / honest-scope / blocking-close documentation requirement
 - [`docs/ai/wiki/device/{windows-capture.md,windows-window.md,windows-audio.md,camera-device-handle.md}`](../../../docs/ai/wiki/device) — capture backend knowledge; `camera-device-handle.md` corrected as part of this ADR's wiki upkeep
 
+## Addendum (2026-09-18): `include_child_processes` → `include_target_process_tree`
+
+The sketches above still show `include_child_processes`. The shipped header and structs name it
+`include_target_process_tree`, because `false` never meant "the process without its children":
+Windows has only `INCLUDE_TARGET_PROCESS_TREE` and `EXCLUDE_TARGET_PROCESS_TREE` (everything
+*else*), and the Rust `ProcessTreeScope::ProcessOnly` this field used to map to selected the
+exclude mode. Same polarity and struct layout, so `MEDIAWAY_DEVICE_FFI_ABI_VERSION` stays `1`;
+only source references change (C#/Python parameter names follow). See
+`mediaway-device` `adr/windows/0002-wasapi-capture.md` § Correction.
+
 ADRs are **English**. Numbering is local to this `adr/` folder.

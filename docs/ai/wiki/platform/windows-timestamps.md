@@ -20,7 +20,7 @@ flowchart LR
   end
   subgraph encoder["WmfVideoEncoder"]
     D["pts = from_hns, nearest"]
-    E["dts = decode-order counter<br/>(drain_output)"]
+    E["dts = MFT DecodeTimestamp, clamped to pts<br/>(= pts if the MFT sets none)"]
   end
   A -->|to_hns, truncates| B --> C --> D
   C -.->|emission order| E

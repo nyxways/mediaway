@@ -10,7 +10,8 @@ Workspace index: [`docs/roadmap.md`](../../../docs/roadmap.md).
 
 - [x] Crate + `docs/` / `adr/`
 - [x] Workspace ADR-0014: crate exists, `EncodeSession` shape, platform dispatch migration
-- [x] `EncodeSession<E: VideoEncoder>` — open / write_frame / finish
+- [x] `EncodeSession<E: VideoEncoder, M: MuxOpen = mp4::Muxer<mp4::Open>>` — open / write_frame / finish
+      (generic over its muxer since 2026-09-18, stage 8)
 - [x] `WindowCapture` + `DesktopAudio` markers (2026-09-19) — the two capabilities a
       single-app recorder is built on were reachable only by naming backend types. First
       entry points shaped per ADR-0002 (concrete per-target type, `Infallible` where there

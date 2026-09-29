@@ -51,15 +51,15 @@ Status marks: ✅ first-class (tests for claimed scope) · ⚡ Zero-Copy path (n
 | ---- | ------ | ----- |
 | Capture/playback traits + capability probing | ✅ | `DeviceKind`, `Support`, `PermissionState` |
 | Windows screen capture (DXGI) | ✅ ⚡ | Zero-Copy out |
-| Windows window capture (WGC) | ✅ | |
-| Windows mic + system/process loopback (WASAPI) | ✅ | |
+| Windows window capture (WGC) | ✅ | Cursor choice (`CursorCapture`), hidden border, `EvenCropped` frames, and a capture `region` — a region off the origin costs one GPU copy per frame, so it is not ⚡ (ADR-0008, ADR-0009) |
+| Windows mic + system/process loopback (WASAPI) | ✅ | Process loopback only opened from 2026-09-18 (ADR-0002 § Correction); `ProcessTreeScope::ExcludeProcessTree` records everything *except* the target tree |
 | Windows audio playback (WASAPI shared mode) | ✅ | |
 | Device enumeration (`DeviceId`/`Select`) | ✅ | Hardware-verified |
-| Windows camera (Media Foundation) | 🛠️ | Planned |
-| Windows hotplug (`IMMNotificationClient`) | 🛠️ | Trait declared; backend pending |
+| Windows camera (Media Foundation) | ✅ | Hardware-verified, CPU frames only |
+| Windows hotplug (`IMMNotificationClient`) | ✅ | Microphone/Loopback events; `open` → `poll_event` → `close` hardware-confirmed (the `close()` crash was fixed 2026-07-31) |
 | Web capture (`getUserMedia`/`getDisplayMedia`) | ✅ | Picker only; no programmatic selection |
 | Linux capture (portal + PipeWire + V4L2) | 👻 | Implemented; hardware verification pending |
-| Single-shot capture (`capture_video_once`) | 🛠️ | Design done (ADR-0006), not implemented |
+| Single-shot capture (`capture_video_once`) | ✅ | ADR-0006; refuses GPU-backed frames (would dangle once the session drops) |
 
 ## Docs
 

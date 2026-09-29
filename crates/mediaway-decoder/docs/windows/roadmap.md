@@ -56,7 +56,8 @@ Platform order: **Windows first**. Workspace index: [`docs/roadmap.md`](../../..
 - [x] `AudioDecoder` trait added to `mediaway-decoder` (crate `adr/0003-audio-decoder-trait.md`),
       mirroring `VideoDecoder`. `WmfOpusDecoder` now `impl`s it (`src/wmf/opus.rs`) in addition
       to its existing inherent methods. Still not wired into any `WindowsAudioDecoder`-style
-      backend switcher — no such type exists (Opus is the only Windows audio decode path).
+      backend switcher — no such type exists. Stage 7 added AAC as a second Windows audio
+      decode path (`WmfAacDecoder`).
 
 ### 4 — HEVC / AV1 / VP9 CPU decode (research + real MFT sessions, not yet wired into a public API)
 
@@ -80,9 +81,9 @@ honestly (`DecodeError::Unsupported` from `open_sw_decoder`, no fabricated fallb
 - [x] `src/wmf/video_cpu.rs` — `WmfMultiCodecCpuDecoder`, a self-contained CPU (software)
       decode session for HEVC/AV1/VP9 mirroring `h264.rs`'s CPU-only path (`open_sw_decoder`
       + `configure_decode_types` + direct `ProcessInput`/`ProcessOutput`), but without
-      H.264's DX11 Zero-Copy branch or its AVCC→Annex-B `extra_data`/NAL conversion (these
-      codecs' packets/`extra_data` are used as produced by `mediaway-encoder-windows`
-      as-is). Gated behind the existing `video` feature; kept unregistered from
+      H.264's DX11 Zero-Copy branch. *(Superseded 2026-09-21: it originally used packets and
+      `extra_data` as produced by the encoder, as-is. That is wrong for HEVC read out of an
+      MP4 — see Stage 8.)* Gated behind the existing `video` feature; kept unregistered from
       `src/lib.rs` (declared in `src/wmf/mod.rs` only, no `pub(crate) use`) — same
       not-yet-wired posture as `src/wmf/opus.rs`, since `mediaway-decoder`'s Windows
       backend dispatches every codec through `WmfH264Decoder` today.
@@ -301,3 +302,24 @@ CPU↔GPU query-poll stall per frame), not Zero-Copy.
       there being no working H.264 decode HW MFT available (same limitation
       ADR-0001's own test already hits); `copy_from_decoded` itself remains
       unverified against real decode output.
+
+### 7 — WMF AAC decode (ADR-0006)
+
+- [x] `WmfAacDecoder` (+ `AacDecoderConfig`) over the inbox `CMSAACDecMFT`, Float32 PCM out,
+      `impl AudioDecoder`, wired into `mediaway::platform::decoder_support(Aac)`.
+- [x] Hardware-verified sample-exact round trip: 4096 PCM samples/channel → 4 AAC-LC packets →
+      4096 samples back, real signal not silence.
+- [x] The stream's `AudioSpecificConfig` is **required** at open (`extra_data`); an empty one is
+      `DecodeError::Unsupported` rather than a synthesized default, which would decode SBR/PS
+      streams to quietly wrong output. Raw AAC only — ADTS input is de-headered first.
+
+### 8 — HEVC read back out of a container (2026-09-21)
+
+- [x] `WmfMultiCodecCpuDecoder` now converts `extra_data` that parses as `hvcC` into an Annex-B
+      VPS/SPS/PPS sequence header and probes each packet's framing (`resolve_framing` /
+      `NalFraming`), exactly as the H.264 path always did. Before, every MP4 HEVC packet was
+      accepted and **zero frames** came out, with no error.
+- [x] `tests/mp4_roundtrip.rs` encodes → **muxes to MP4** → demuxes → decodes. The earlier
+      round-trip test fed the decoder straight from the encoder, so the container — the whole
+      difference — was never in the loop.
+

@@ -14,7 +14,7 @@ Canonical: [`docs/spec/sans-io.md`](../../../docs/spec/sans-io.md). Naming v1: [
 - `smallvec`: tracks ≤4 inline, fragment sample rows ≤32; byte sinks stay `Vec`.
 - Errors: `thiserror` in `iso-bmff` ([errors](../meta/errors.md)).
 - Demux: fMP4 `moof`/`mdat`, unfragmented `stbl`, and `edts`/`elst` sample expansion.
-- Sample-entry codec coverage (`avc1`/`vp09`/`mp4a`, HEVC/AV1 still mislabeled): [mp4-sample-entries](mp4-sample-entries.md).
+- Sample-entry codec coverage (every codec has a correct sample entry; HEVC samples are length-prefixed with a backfilled `hvcC` — `iso-bmff/adr/0006`): [mp4-sample-entries](mp4-sample-entries.md).
 - Mux timing: sample durations derive from consecutive `dts` deltas (no silent zero-duration trun — players stutter on it); `Sample::duration` optional, trusted only for the last sample of a fragment — `iso-bmff/adr/0004` (2026-08-04).
 - Mux placements (opt-in, `Muxer::with_placements` → `poll_placements`): absolute output offset + written length of every sample, for callers that read payloads back from the file — `iso-bmff/adr/0007` (2026-09-25).
 - Edit-list remap: `dts' = dts - media_time + base` (signed); out-of-window samples set `is_discard`.

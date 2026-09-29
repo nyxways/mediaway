@@ -50,7 +50,9 @@ Status marks: ✅ first-class (tests for claimed scope) · ⚡ Zero-Copy path (n
 | Area | Status | Notes |
 | ---- | ------ | ----- |
 | `VideoEncoder` / `AudioEncoder` traits | ✅ | Streaming push/poll API |
-| Windows WMF H.264 encode | ✅ | CPU upload + DX11 texture Zero-Copy; AAC encode |
+| Windows WMF H.264 encode | ✅ | CPU upload + DX11 texture Zero-Copy (works on NVIDIA's async MFTs since 2026-09-18, ADR-0012); AAC encode. `hns` timestamps round-trip exactly and `dts` comes from the MFT (ADR-0013). Dropping an async hardware encoder waits 50 ms before releasing the MFT |
+| `finish(self)` | ✅ | Flush and collect every remaining packet in one call; dropping an unflushed encoder silently discards in-flight frames (ADR-0006) |
+| Capability probe `support` / `support_at` | ✅ | Support is resolution-dependent — probe at the size you will encode (ADR-0005) |
 | NVIDIA NVENC | ✅ | Hardware-verified H.264 / HEVC / AV1 (CPU upload) |
 | Intel Quick Sync (oneVPL) | ✅ | Hardware-verified H.264 / HEVC; AV1 not supported on tested iGPU |
 | Vulkan Video encode | ✅ | Hardware-verified H.264 + HEVC; AV1 implemented, driver-blocked |

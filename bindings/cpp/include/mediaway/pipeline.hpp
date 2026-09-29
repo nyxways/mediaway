@@ -124,10 +124,11 @@ public:
     EncodeSession& operator=(const EncodeSession&) = delete;
 
     /// `duration` is the frame's length in the stream timebase; 0 means unknown
-    /// (the default). NOTE: with the auto encoder on Windows an unknown duration
-    /// makes the encoder emit colliding presentation timestamps (0,2,2,5,5,...),
-    /// and a player then shows only ~3/4 of the frames. Pass the real duration
-    /// (e.g. 1 for a {1,30} timebase at a constant 30 fps) whenever you know it.
+    /// (the default) and is treated as one tick, the nominal frame interval. Before
+    /// v0.2.0 the Windows encoder handed the MFT a 100 ns sample for it, which made
+    /// the encoder emit colliding presentation timestamps (0,2,2,5,5,...) so a player
+    /// showed only ~3/4 of the frames (mediaway-encoder ADR-windows/0013 addendum).
+    /// Pass the real duration whenever you know it, e.g. under a variable frame rate.
     void writeFrame(const VideoFrame& frame, std::uint64_t duration = 0) {
         mediaway_video_frame_t raw{};
         raw.pts = frame.pts;

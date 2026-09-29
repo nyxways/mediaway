@@ -54,8 +54,8 @@ int main(int argc, char** argv) {
     std::size_t streamed = 0;
     int chunks = 0;
     for (std::int64_t i = 0; i < kFrameCount; ++i) {
-      // duration = 1 tick at {1,30}: frames of unknown duration get colliding
-      // timestamps from the encoder and a player drops some of them.
+      // duration = 1 tick at {1,30}: the frame's real length. (0 also works now, as
+      // one tick; older Windows encoders gave such frames colliding timestamps.)
       session.writeFrame({mediaway::PixelFormat::Nv12, kWidth, kHeight, i, grey}, 1);
 
       // Whatever fMP4 bytes are ready now - often none between fragments.

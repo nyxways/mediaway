@@ -33,6 +33,20 @@ detail in [`../c/README.md`](../c/README.md) and `docs/spec/c-ffi.md`):
    `wav_parse()` function, not a class at all. These 6 formats use `RawPacket`
    (ABI-native integer pts/dts, not `Rational` seconds) since none of them have MP4's
    per-track time base to convert against. Fully real, all formats run-verified.
+   **Replay ring + MP4 payload placements** (ABI 8, adr/container/0009):
+   `ReplayRing(anchor_stream_id, anchor_time_base, window)` keeps the last *N* seconds of
+   `Packet`s and `clip_last(span)` cuts a `ReplayClip` at a keyframe, in decode order, with
+   timestamps rebased to zero — up to one keyframe interval *earlier* than asked, never
+   later. A clip is an **owned snapshot**: it stays valid after further `push` calls and
+   after the ring is closed, and `entry.payload` is a copy. Write it by pushing
+   `entry.to_packet()` through a `Muxer` (there is deliberately no one-shot "save clip"
+   call; track ids must match the ring's stream ids). `payload="stored"` rings hold only
+   `StoredPayload(file, offset, length)` for a caller that already writes packets to a file,
+   fed from `Muxer.create_with_placements()` → `LiveMuxer.poll_placements()`. **Limit:** the
+   C ABI has no video-packet source — `EncodeSession` muxes its encoder's packets
+   internally — so feed the ring packets from a `Demuxer`, from `AudioEncoder`, or from an
+   encoder you drive yourself. Ring failures are `UnknownStreamError` and
+   `OutOfOrderPacketError` (the packet was not added; drop it and carry on).
 2. **Pipeline — auto video encode → fMP4, plus decode**: one call picks the best
    available OS/GPU encoder for a config, wires it into an internal MP4 muxer;
    `finish()` returns complete MP4 bytes. The audio encoder is separate (ABI v2,
@@ -121,6 +135,7 @@ aspirational):
 | File | Capability | Real today? |
 |---|---|---|
 | `container/mux_roundtrip.py` | mux 90 fake video + audio packets → fMP4 → demux back, count packets | ✅ run verified |
+| `container/replay_ring.py` | synthetic packets → `ReplayRing` → `clip_last` → `Muxer` → standalone MP4, demuxed back (ABI 8) | ✅ run verified |
 | `pipeline/encode_to_mp4.py` | auto H.264 encode of 90 synthetic NV12 frames → `out.mp4` | ✅ run verified |
 | `pipeline/encode_audio.py` | auto AAC encode of 96 synthetic F32 stereo frames → audio-only fMP4 (ABI v2) | ✅ run verified |
 | `pipeline/stream_encode.py` | streams 300 synthetic NV12 frames to a file with `poll_bytes()`, appends the `finish()` tail, demuxes the result | ✅ run verified |

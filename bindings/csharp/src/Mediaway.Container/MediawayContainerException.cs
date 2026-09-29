@@ -37,10 +37,12 @@ public sealed class MediawayContainerException : MediawayException
             "Invalid argument (null pointer, out-of-range index, or mismatched pointer/length).",
         MediawayContainerStatus.InvalidState =>
             "Invalid muxer/demuxer state for this operation (e.g. adding a track after " +
-            "streaming began).",
+            "streaming began, polling placements on a muxer that records none, or pushing the " +
+            "wrong payload kind into a replay ring).",
         MediawayContainerStatus.InvalidTrack => "Invalid or duplicate track id.",
         MediawayContainerStatus.InvalidPacket =>
-            "Packet does not match a registered track, or has bad framing.",
+            "Packet does not match a registered track, has bad framing, or (replay ring) its " +
+            "decode timestamp went backwards within its stream.",
         MediawayContainerStatus.InvalidData => "Truncated or malformed ISOBMFF data.",
         MediawayContainerStatus.InternalPanic =>
             "The native call caught a Rust panic; this handle is now poisoned.",

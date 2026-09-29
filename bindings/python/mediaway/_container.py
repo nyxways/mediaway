@@ -16,9 +16,9 @@ import ctypes
 import math
 from ctypes import byref, c_bool, c_size_t, c_ubyte, cast, create_string_buffer
 
-from . import _ffi
+from . import _ffi, _ffi_replay
 from ._errors import InvalidStateError, MediawayError
-from ._types import AudioStreamInfo, Codec, ContainerFormat, Packet, Rational, VideoStreamInfo
+from ._types import AudioStreamInfo, Codec, ContainerFormat, Packet, Placement, Rational, VideoStreamInfo
 
 __all__ = ["Muxer", "LiveMuxer", "Demuxer"]
 
@@ -76,9 +76,18 @@ class Muxer:
     begin" a Python AttributeError instead of the ABI's INVALID_STATE.
     """
 
-    def __init__(self, fragment_batch: int | None = None, format: ContainerFormat = ContainerFormat.MP4):
+    def __init__(
+        self,
+        fragment_batch: int | None = None,
+        format: ContainerFormat = ContainerFormat.MP4,
+        placements: bool = False,
+    ):
         dll = _ffi.container.dll
-        if fragment_batch is not None:
+        if placements:
+            if fragment_batch is not None or format != ContainerFormat.MP4:
+                raise ValueError("placements are recorded by the default MP4 muxer only")
+            self._handle = dll.mediaway_muxer_create_with_placements()
+        elif fragment_batch is not None:
             self._handle = dll.mediaway_muxer_create_with_fragment_batch(fragment_batch)
         elif format == ContainerFormat.MP4:
             self._handle = dll.mediaway_muxer_create()
@@ -88,6 +97,18 @@ class Muxer:
             raise MediawayError(_ffi.MEDIAWAY_STATUS_INTERNAL_PANIC, "muxer creation panicked")
         self._next_id = 1
         self._time_bases: dict[int, Rational] = {}  # stream id -> ABI time base
+
+    @classmethod
+    def create_with_placements(cls) -> "Muxer":
+        """An MP4 muxer that also records where every sample's payload lands.
+
+        For a caller that writes the polled bytes to a file and wants to find any
+        packet's bytes in it later — what a `payload="stored"` `ReplayRing` is fed
+        with. The output bytes are identical to a plain `Muxer()`'s; the only cost
+        is one small record per sample. Take the records from the `LiveMuxer` with
+        `poll_placements()`.
+        """
+        return cls(placements=True)
 
     def _assign_id(self) -> int:
         track_id = self._next_id
@@ -204,6 +225,35 @@ class LiveMuxer:
         data = _copy_bytes(out_data, length)
         _ffi.container.dll.mediaway_buffer_free(out_data, out_len)
         return data
+
+    def poll_placements(self) -> list[Placement]:
+        """Take the placements recorded since the last call, in write order.
+
+        Each says where one sample's payload landed in the bytes `poll_bytes()`
+        returned (see `Placement`). Empty when none were recorded, which is also
+        what a plain MP4 `Muxer()` returns (it records none, and says so with an
+        empty list, not an error). A WebM muxer cannot record placements at all and
+        raises `InvalidStateError`.
+        """
+        rows = _ffi.POINTER(_ffi_replay.Placement)()
+        count = c_size_t(0)
+        _check_container(
+            _ffi.container.dll.mediaway_muxer_poll_placements(self._handle, byref(rows), byref(count))
+        )
+        out: list[Placement] = []
+        for i in range(count.value):
+            row = rows[i]
+            out.append(
+                Placement(
+                    stream_index=row.track_id,
+                    dts=_from_units(row.dts, self._time_bases.get(row.track_id, Rational(1, 30))),
+                    offset=row.offset,
+                    length=row.len,
+                )
+            )
+        if count.value:
+            _ffi.container.dll.mediaway_placements_free(rows, count)
+        return out
 
     def __enter__(self) -> "LiveMuxer":
         return self

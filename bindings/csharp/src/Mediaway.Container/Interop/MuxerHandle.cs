@@ -34,6 +34,13 @@ internal sealed class MuxerHandle : SafeHandleZeroOrMinusOneIsInvalid
         return instance;
     }
 
+    internal static MuxerHandle CreateWithPlacements()
+    {
+        var instance = new MuxerHandle();
+        instance.SetHandle(NativeMethods.mediaway_muxer_create_with_placements());
+        return instance;
+    }
+
     protected override bool ReleaseHandle()
     {
         NativeMethods.mediaway_muxer_close(handle);

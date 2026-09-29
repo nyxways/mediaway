@@ -48,6 +48,7 @@ sector subfolders (`container/`, `pipeline/`, `device/`), one file per scenario:
 
 | File (name varies by language convention) | Mirrors | Capability | Real via C ABI? |
 |---|---|---|---|
+| `container/replay_ring.*` | (C ABI 8, ADR-0009; Rust: `mediaway_container::replay`) | rolling buffer of the last N seconds of packets, cut at a keyframe into a standalone MP4; Stored + placements variant keeps only file locations | ✅ C, C++, C#, Python, Node.js — no C video-packet source yet: feed demuxer, audio-encoder or your own encoder's packets |
 | `container/mux_roundtrip.*` | [`examples/container/mux_demux_mp4.rs`](../examples/container/mux_demux_mp4.rs) | sans-io container mux + demux roundtrip | ✅ |
 | `pipeline/encode_to_mp4.*` | [`examples/pipeline/encode_to_mp4.rs`](../examples/pipeline/encode_to_mp4.rs) | auto video encoder → fragmented MP4 | ✅ |
 | `pipeline/stream_encode.*` | (streaming sibling of `encode_to_mp4`) | H.264 encode, `poll_bytes` drains fMP4 into a file while encoding, `finish` appends the tail (ADR-0007) | ✅ C, C++, C#, Python, Node.js — bounded memory; the streamed file is the same size as an unpolled one |

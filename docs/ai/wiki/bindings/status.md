@@ -73,9 +73,9 @@ bindings were then implemented to satisfy those examples. Examples mirror the Ru
   C# is covered now (Capability truth) — the C gap still needs the live GPU-device-handle ADR.
 - GOP/CBR/`set_bitrate` reach the C ABI + C# now (ABI v6), no-op through auto-select
   until Vulkan joins it — [gop-cbr-set-bitrate](gop-cbr-set-bitrate.md).
-- **Not in the C ABI yet (Rust-only since v0.1.8):** `ReplayRing` + mux placements. Window capture
-  landed in device ABI 2 (ADR-0005); streaming bytes, AAC decode and the capability probes in
-  pipeline ABI 7 (ADR-0007). The
+- **Rust-only features since v0.1.8 now reach the C ABI:** window capture in device ABI 2 (ADR-0005),
+  streaming bytes, AAC decode and the capability probes in pipeline ABI 7 (ADR-0007), the replay
+  ring and MP4 placements in container ABI 8 (ADR-0009; no C video-packet source yet). The
   `include_child_processes` → `include_target_process_tree` rename (same layout) was done in
   C/C#/Python; C++/Node do not bind desktop audio.
 - Android AAR/Maven Central distribution: ADR-0025 (Proposed) — design-only,

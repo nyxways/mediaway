@@ -24,6 +24,18 @@ namespace container {
 /// typestated add_track/begin/push_packet/poll_bytes shape.
 enum class Format { Mp4, Webm };
 
+/// Where one sample's payload landed in an MP4 muxer's output
+/// (adr/container/0009-replay-ring-c-abi.md §4). `offset` counts from the first byte
+/// LiveMuxer::pollBytes ever returned, so it is the file offset when every polled byte is written
+/// sequentially from 0. `len` is the payload AS WRITTEN: H.264/HEVC Annex-B becomes
+/// length-prefixed and AAC loses its ADTS header, so it can differ from the pushed length.
+struct Placement {
+    TrackId trackId;  ///< the packet's trackId
+    std::int64_t dts;  ///< as pushed
+    std::uint64_t offset;
+    std::uint32_t len;
+};
+
 class LiveMuxer;
 
 /// A muxer in the track-registration (Open) state. begin() (rvalue-only)
@@ -47,6 +59,12 @@ public:
     Muxer& operator=(Muxer&&) = default;
     Muxer(const Muxer&) = delete;
     Muxer& operator=(const Muxer&) = delete;
+
+    /// An MP4 muxer that also records where every sample's payload lands, for a caller that
+    /// writes the polled bytes to a file and later finds any packet's bytes in it: what a Stored
+    /// ReplayRing is fed with. The output bytes are identical to Muxer()'s; the only cost is one
+    /// small record per sample. Take them with LiveMuxer::pollPlacements(). MP4 only.
+    static Muxer withPlacements() { return Muxer(PlacementsTag{}); }
 
     /// Register a video track. The id is assigned by the muxer in
     /// registration order; the return value is authoritative.
@@ -84,6 +102,14 @@ public:
 
 private:
     friend class LiveMuxer;
+    struct PlacementsTag {};
+    explicit Muxer(PlacementsTag)
+        : handle_(mediaway_muxer_create_with_placements(), &mediaway_muxer_close) {
+        if (!handle_) {
+            detail::throwError(Status::Panic, MEDIAWAY_STATUS_INTERNAL_PANIC,
+                               "muxer creation panicked");
+        }
+    }
     std::unique_ptr<mediaway_muxer_t, void (*)(mediaway_muxer_t*)> handle_;
     // Starts at 1, not 0: WebM/Matroska's TrackNumber element must not be 0 (found via a
     // real end-to-end failure while wiring the Format::Webm constructor — MP4 tolerates 0
@@ -125,6 +151,23 @@ public:
         if (len == 0) return {};
         Bytes out(data, data + len);
         mediaway_buffer_free(data, len);
+        return out;
+    }
+
+    /// The placements recorded since the last call, in write order; empty when none. Only a muxer
+    /// from Muxer::withPlacements() records any: any other (WebM included) throws
+    /// Error(Status::InvalidState). A placement's bytes are available from pollBytes() by the
+    /// time the placement is.
+    std::vector<Placement> pollPlacements() {
+        mediaway_placement_t* rows = nullptr;
+        std::size_t count = 0;
+        detail::checkContainer(mediaway_muxer_poll_placements(handle_.get(), &rows, &count));
+        std::vector<Placement> out;
+        out.reserve(count);
+        for (std::size_t i = 0; i < count; ++i) {
+            out.push_back(Placement{rows[i].track_id, rows[i].dts, rows[i].offset, rows[i].len});
+        }
+        mediaway_placements_free(rows, count);
         return out;
     }
 

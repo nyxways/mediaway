@@ -28,7 +28,7 @@
 #ifndef MEDIAWAY_CONTAINER_H
 #define MEDIAWAY_CONTAINER_H
 
-#define MEDIAWAY_CONTAINER_FFI_ABI_VERSION 7 /* bump on any breaking change; pre-1.0, no stability promise */
+#define MEDIAWAY_CONTAINER_FFI_ABI_VERSION 8 /* bump on any breaking change; pre-1.0, no stability promise */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -46,6 +46,10 @@ extern "C" {
  * notice pre-1.0. Always access through the functions below. */
 typedef struct mediaway_muxer mediaway_muxer_t;
 typedef struct mediaway_demuxer mediaway_demuxer_t;
+
+/* Replay ring and its clip snapshot (adr/container/0009-replay-ring-c-abi.md). */
+typedef struct mediaway_replay_ring mediaway_replay_ring_t;
+typedef struct mediaway_replay_clip mediaway_replay_clip_t;
 
 /* Dedicated Ogg handles (adr/0004-ogg-adts-c-abi.md) -- NOT reachable through
  * mediaway_muxer_t/mediaway_demuxer_t or mediaway_container_format_t: ogg::Muxer has no
@@ -244,6 +248,145 @@ typedef struct mediaway_wave_format {
     uint32_t sample_rate;
     uint16_t bits_per_sample;
 } mediaway_wave_format_t;
+
+/* ── Replay ring and MP4 payload placements (adr/container/0009-replay-ring-c-abi.md) ── */
+
+/* A rolling buffer of the last N milliseconds of encoded packets that cuts "the last M
+ * milliseconds" at a keyframe, in decode order, as a packet sequence rebased to zero. Push the
+ * clip's packets through a muxer (mediaway_muxer_add_*_track once per stream, then
+ * mediaway_muxer_push_packet per entry) to write it as a standalone file.
+ *
+ * LIMIT: this ABI has no video-packet source. mediaway_encode_session muxes its encoder's packets
+ * internally; packet-level output exists only for the audio encoder. Feed the ring demuxer
+ * packets, audio-encoder packets, or packets from an encoder you drive yourself.
+ *
+ * Status codes are the shared mediaway_status_t: UNKNOWN_STREAM (stream never added),
+ * INVALID_PACKET (that stream's dts went backwards: the packet is not added, carry on),
+ * INVALID_TRACK (duplicate stream), INVALID_ARGUMENT (bad timebase), INVALID_STATE (push on a
+ * ring of the other payload kind). */
+
+typedef enum mediaway_replay_payload_kind {
+    MEDIAWAY_REPLAY_PAYLOAD_BYTES  = 0, /* payload copied in by mediaway_replay_ring_push */
+    MEDIAWAY_REPLAY_PAYLOAD_STORED = 1, /* only where the bytes are (mediaway_replay_ring_push_stored) */
+} mediaway_replay_payload_kind_t;
+
+/* Plain value; no free. */
+typedef struct mediaway_replay_ring_config {
+    uint32_t anchor_stream_id;         /* the stream whose keyframes decide where a clip may start */
+    mediaway_rational_t anchor_time_base;
+    uint64_t window_ms;                /* history to keep */
+    uint64_t max_bytes;                /* 0 = no ceiling; else evict oldest GOP first past this many
+                                        * payload bytes. The newest GOP is always kept. */
+    mediaway_replay_payload_kind_t payload_kind;
+} mediaway_replay_ring_config_t;
+
+/* A packet's metadata without its payload (input to mediaway_replay_ring_push_stored). */
+typedef struct mediaway_packet_meta {
+    uint32_t stream_id;
+    int64_t pts;
+    int64_t dts;       /* must not go backwards within a stream */
+    uint64_t duration;
+    bool is_keyframe;
+    bool is_discard;
+} mediaway_packet_meta_t;
+
+/* Where a packet's payload was stored on the caller's disk. */
+typedef struct mediaway_stored_payload {
+    uint32_t file;     /* the caller's own id for the file */
+    uint64_t offset;   /* byte offset of the payload in that file */
+    uint32_t len;
+} mediaway_stored_payload_t;
+
+/* One packet of a clip. pts/dts are rebased so the cut keyframe decodes at zero. For a BYTES ring
+ * payload/payload_len are BORROWED from the clip and valid until mediaway_replay_clip_free; for a
+ * STORED ring they are NULL/0 and stored_* say where the bytes are. */
+typedef struct mediaway_replay_clip_entry {
+    uint32_t stream_id;
+    int64_t pts;
+    int64_t dts;
+    uint64_t duration;
+    bool is_keyframe;
+    bool is_discard;
+    mediaway_replay_payload_kind_t payload_kind;
+    const uint8_t *payload;
+    size_t payload_len;
+    uint32_t stored_file;
+    uint64_t stored_offset;
+    uint32_t stored_len;
+} mediaway_replay_clip_entry_t;
+
+/* Create a ring. *out_ring is NULL on failure. */
+mediaway_status_t mediaway_replay_ring_create(
+    const mediaway_replay_ring_config_t *config, mediaway_replay_ring_t **out_ring);
+
+/* Carry another stream (e.g. audio), cut by time to match the anchor. */
+mediaway_status_t mediaway_replay_ring_add_stream(
+    mediaway_replay_ring_t *ring, uint32_t stream_id, mediaway_rational_t time_base);
+
+/* BYTES ring: add a packet, then evict what fell out of the window. The payload is COPIED in (the
+ * view is borrowed for the call only); every clip then shares that copy by reference count.
+ * Anchor packets before the anchor's first keyframe are dropped without error. */
+mediaway_status_t mediaway_replay_ring_push(
+    mediaway_replay_ring_t *ring, const mediaway_packet_view_t *packet);
+
+/* STORED ring: add a packet's metadata and where its bytes are. The ring never reads the file and
+ * holds a few dozen bytes per packet. Take file/offset/len from mediaway_muxer_poll_placements. */
+mediaway_status_t mediaway_replay_ring_push_stored(
+    mediaway_replay_ring_t *ring, const mediaway_packet_meta_t *meta,
+    const mediaway_stored_payload_t *stored);
+
+/* The longest clip mediaway_replay_ring_clip_last can return now, in ms; 0 before the anchor's
+ * first keyframe. */
+mediaway_status_t mediaway_replay_ring_span_ms(mediaway_replay_ring_t *ring, uint64_t *out_span_ms);
+
+/* Cut the last span_ms of every stream, starting at the latest anchor keyframe at or before
+ * newest - span_ms: up to one keyframe interval EARLIER than asked, never later; with less than
+ * span_ms held it starts at the oldest keyframe. *out_has == false (and *out_clip == NULL) until
+ * the anchor's first keyframe has been pushed. The clip is an OWNED SNAPSHOT: keep pushing while
+ * you read it, and release it with mediaway_replay_clip_free. */
+mediaway_status_t mediaway_replay_ring_clip_last(
+    mediaway_replay_ring_t *ring, uint64_t span_ms, mediaway_replay_clip_t **out_clip,
+    bool *out_has);
+
+size_t mediaway_replay_clip_packet_count(const mediaway_replay_clip_t *clip); /* 0 for NULL */
+mediaway_status_t mediaway_replay_clip_duration_ms(
+    const mediaway_replay_clip_t *clip, uint64_t *out_ms);
+/* Packet `index`, in decode order across streams. INVALID_ARGUMENT when out of range. */
+mediaway_status_t mediaway_replay_clip_packet_at(
+    const mediaway_replay_clip_t *clip, size_t index, mediaway_replay_clip_entry_t *out_entry);
+/* Always safe, including with NULL. Invalidates every payload pointer read from the clip. */
+void mediaway_replay_clip_free(mediaway_replay_clip_t *clip);
+/* Always safe, including with NULL. Clips taken from the ring stay valid. */
+void mediaway_replay_ring_close(mediaway_replay_ring_t *ring);
+
+/* Where one sample's payload landed in an MP4 muxer's output. offset counts from the first byte
+ * mediaway_muxer_poll_bytes ever returned, so it is the file offset when every polled byte is
+ * written sequentially from 0. len is the payload AS WRITTEN (H.264/HEVC Annex-B becomes
+ * length-prefixed; AAC loses its ADTS header), so it can differ from the pushed length. */
+typedef struct mediaway_placement {
+    uint32_t track_id;  /* the packet's stream_id */
+    int64_t dts;        /* as pushed */
+    uint64_t offset;
+    uint32_t len;
+} mediaway_placement_t;
+
+/* An MP4 muxer that also records where every sample landed. Output bytes are identical to
+ * mediaway_muxer_create's. NULL only if a panic was caught. */
+mediaway_muxer_t *mediaway_muxer_create_with_placements(void);
+/* Take the placements recorded since the last call, in WRITE order, as an owned array (free with
+ * mediaway_placements_free). Nothing recorded is *out_rows == NULL, *out_count == 0.
+ * INVALID_STATE on an Open muxer (call mediaway_muxer_begin first) and on a WebM muxer, which
+ * never records. A plain MP4 muxer, one not created by mediaway_muxer_create_with_placements,
+ * records nothing and so returns an empty array: that is indistinguishable from "nothing new
+ * yet", which is the same answer the Rust API gives.
+ *
+ * WRITE order is not push order once there are two tracks: a fragment writes its samples grouped
+ * by track, so placements[i] does not correspond to the i-th packet pushed. Match a placement to
+ * its packet by (track_id, dts), never by position. */
+mediaway_status_t mediaway_muxer_poll_placements(
+    mediaway_muxer_t *muxer, mediaway_placement_t **out_rows, size_t *out_count);
+/* (NULL, 0) is always safe. */
+void mediaway_placements_free(mediaway_placement_t *rows, size_t count);
 
 /* ── ABI version ─────────────────────────────────────────────────────────────────── */
 

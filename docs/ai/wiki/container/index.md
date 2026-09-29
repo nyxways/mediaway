@@ -8,6 +8,7 @@
 | [opus-in-mp4](opus-in-mp4.md) | `Opus`/`dOps` sample entry — replaced a silent `mp4a`/`esds` AAC mislabel (ADR-0005) |
 | [audio-containers](audio-containers.md) | `riff-wave-core`/`adts-core`/`mpeg-audio`/`ogg-core` — audio-only formats, all facade-wired |
 | [general-containers](general-containers.md) | `flv-core`/`mpeg-ts-core` — general containers, all facade-wired |
+| [ffi-replay-ring](ffi-replay-ring.md) | C ABI 8: replay ring (Bytes / Stored), owned clip snapshots, MP4 placements — no C video-packet source yet (ADR-0009) |
 | [rtmp](rtmp.md) | `rtmp` — publish-client protocol core (implemented, handshake unverified against a real server), reuses FLV tag-body byte shapes |
 | [rtp](rtp.md) | `rtp-core` — RTP payloadization for H.264/HEVC (implemented); no aggregation packets/RTCP/SRTP yet |
 | [webm](webm.md) | `ebml-webm` core + `mediaway-container::webm` — mux + demux, deferred items |

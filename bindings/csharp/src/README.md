@@ -18,7 +18,7 @@ on Linux is untested here. Pre-1.0: APIs may change.
 | Package | What it does |
 | --- | --- |
 | `Mediaway.Common` | Shared types (`Rational`, stream/packet info) used by all packages |
-| `Mediaway.Container` | Mux/demux for all 8 `mediaway-container` formats: MP4/WebM (`Muxer`/`Demuxer`), Ogg/ADTS/FLV/MPEG-TS/MP3 (dedicated classes), WAV (mux-only + `WavContainer.Parse`) |
+| `Mediaway.Container` | Mux/demux for all 8 `mediaway-container` formats: MP4/WebM (`Muxer`/`Demuxer`), Ogg/ADTS/FLV/MPEG-TS/MP3 (dedicated classes), WAV (mux-only + `WavContainer.Parse`); plus `ReplayRing`/`ReplayClip` (keep the last N seconds of encoded packets, cut "the last M" at a keyframe, write it as a standalone file) and `Muxer.CreateWithPlacements()` (where each MP4 sample's payload landed). The C ABI has no video-packet source: feed the ring demuxer packets, audio-encoder packets, or packets from an encoder you drive yourself |
 | `Mediaway.Device` | Camera, microphone, and screen capture |
 | `Mediaway.Device.Camera` | Camera capture (`Mediaway.Device.Camera`) |
 | `Mediaway.Device.Audio` | Microphone capture (`Mediaway.Device.Audio`) |

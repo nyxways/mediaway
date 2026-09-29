@@ -56,5 +56,46 @@ public sealed class MuxerSession : IDisposable
             data, len, static (ptr, l) => NativeMethods.mediaway_buffer_free(ptr, l));
     }
 
+    /// <summary>
+    /// Take the placements recorded since the last call, in write order: where each sample's payload
+    /// landed in the bytes <see cref="PollBytes"/> returned. Empty when nothing was recorded.
+    /// A placement's bytes are available from <see cref="PollBytes"/> by the time the placement is.
+    /// </summary>
+    /// <remarks>
+    /// Write order is not push order once there are two tracks: a fragment writes its samples
+    /// grouped by track. Match a placement to its packet by (<see cref="Placement.TrackId"/>, dts),
+    /// never by position.
+    /// </remarks>
+    /// <exception cref="MediawayContainerException"><see cref="MediawayContainerStatus.InvalidState"/>
+    /// on a WebM muxer, which never records. A plain MP4 muxer (not created by
+    /// <see cref="Muxer.CreateWithPlacements"/>) records nothing and returns an empty list, the same
+    /// answer the Rust API gives.</exception>
+    public unsafe IReadOnlyList<Placement> PollPlacements()
+    {
+        MediawayContainerException.ThrowIfError(
+            NativeMethods.mediaway_muxer_poll_placements(_handle, out var rows, out var count));
+
+        if (rows == 0 || count == 0)
+        {
+            return Array.Empty<Placement>();
+        }
+
+        try
+        {
+            var native = new ReadOnlySpan<NativePlacement>((void*)rows, checked((int)count));
+            var result = new Placement[native.Length];
+            for (var i = 0; i < result.Length; i++)
+            {
+                result[i] = new Placement(native[i].TrackId, native[i].Dts, native[i].Offset, native[i].Len);
+            }
+
+            return result;
+        }
+        finally
+        {
+            NativeMethods.mediaway_placements_free(rows, count);
+        }
+    }
+
     public void Dispose() => _handle.Dispose();
 }

@@ -32,7 +32,12 @@ detail in [`../c/README.md`](../c/README.md)):
    each format's own C ABI shape — see each module's (`ogg.ts`/`adts.ts`/`flv.ts`/
    `ts.ts`/`mp3.ts`) top comment. WAV is mux-only (`WavMuxer`, consuming `finish()`);
    demux is the one-shot `parseWav()` function, not a class at all. Fully real, all
-   formats run-verified.
+   formats run-verified. Also a **replay ring** (`ReplayRing`, container ABI 8): keeps the
+   last N ms of encoded packets (or only their locations on disk) and cuts "the last M ms"
+   at a keyframe as an owned `ReplayClip` a fresh `Muxer` writes as a standalone MP4;
+   `Muxer.createWithPlacements()` supplies those locations. The C ABI has no video-packet
+   source, so feed the ring `Demuxer` packets, audio-encoder packets or packets from an
+   encoder you drive yourself.
 2. **Pipeline — auto video encode → fMP4** (`@mediaway/encoder`): one call picks the
    best available OS/GPU encoder for a config, wires it into an internal MP4 muxer;
    `finish()` returns the MP4 bytes not yet taken by `pollBytes()` (the whole file for a
@@ -119,6 +124,7 @@ aspirational):
 | File | Capability | Real today? |
 |---|---|---|
 | `container/mux-roundtrip.ts` | mux 90 fake video + audio packets → fMP4 → demux back, count packets | ✅ run verified |
+| `container/replay-ring.ts` | 8 s of fake packets → `ReplayRing` (3 s window) → `clipLast(2000)` → `Muxer` → standalone MP4 → demux back | ✅ run verified |
 | `pipeline/encode-to-mp4.ts` | auto H.264 encode of 90 synthetic NV12 frames → `out.mp4` | ✅ run verified |
 | `pipeline/stream-encode.ts` | auto H.264 encode streamed to disk with `pollBytes()` (300 frames, chunks appended as they arrive, tail at `finish()`; demuxed back to prove every frame is there) | ✅ run verified |
 | `pipeline/encode-audio.ts` | auto AAC encode of 96 synthetic F32 stereo frames → audio-only fMP4 (ABI v2) | ✅ run verified |

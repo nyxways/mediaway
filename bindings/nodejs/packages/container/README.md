@@ -89,6 +89,44 @@ demuxer.close();
 WebM works the same way — pass `"webm"` to the `Muxer`/`Demuxer` constructor:
 `new Muxer("webm")` / `new Demuxer("webm")`.
 
+## Replay ring
+
+`ReplayRing` keeps the last N milliseconds of encoded packets and cuts "the last M
+milliseconds" at a keyframe of an anchor stream, in decode order, as a packet sequence
+rebased to zero that a fresh `Muxer` writes as a standalone file. Other streams (audio) are
+cut by time to match. Times are milliseconds.
+
+```ts
+import { ReplayRing, Muxer } from "@mediaway/container";
+
+const ring = ReplayRing.create({
+  anchorStreamId: 1, anchorTimeBase: { num: 1, den: 30 }, windowMs: 30_000, payload: "bytes",
+});
+ring.addStream(2, { num: 1, den: 48_000 });
+ring.push({ streamId: 1, pts, dts, duration: 1, key, data });   // copies `data` in
+
+const clip = ring.clipLast(10_000);   // null until the anchor's first keyframe
+// clip.entries(): { streamId, pts, dts (rebased), duration, isKeyframe, kind, payload }
+// -> muxer.addVideoTrack / addAudioTrack once, then muxer.push({ ..., dts }) per entry
+clip.close();
+```
+
+- A **clip is an owned snapshot**: it stays valid while the ring keeps taking packets and
+  after the ring is closed. A `"bytes"` entry's `payload` is a **copy** out of the clip.
+- It can start up to one keyframe interval **earlier** than asked, never later.
+- `payload: "stored"` keeps only where the bytes are: `pushStored(meta, { file, offset,
+  length })`, with locations from `Muxer.createWithPlacements()` + `pollPlacements()` (the
+  offsets are file offsets when every `pollBytes` chunk is written sequentially from 0).
+- Errors are distinct classes: `ReplayOutOfOrderError` (a stream's `dts` went backwards; the
+  packet was not added, drop it and carry on), `ReplayUnknownStreamError`,
+  `ReplayPayloadKindError` (`push` on a stored ring or `pushStored` on a bytes ring).
+- **Limit:** the C ABI has no video-packet source (`EncodeSession` muxes its encoder's packets
+  internally; packet-level output exists only for the audio encoder). Feed the ring `Demuxer`
+  packets, audio-encoder packets, or packets from an encoder you drive yourself.
+
+`Packet` now carries an optional `dts` (defaults to `pts` when pushing; always set on demuxed
+packets), which a clip with B-frames needs.
+
 ## Other formats
 
 Ogg/ADTS/FLV/MPEG-TS/MP3/WAV are exported from the same package but have their own

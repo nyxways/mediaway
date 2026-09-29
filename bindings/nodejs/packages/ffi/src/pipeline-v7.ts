@@ -65,7 +65,10 @@ export const pipelineV7 = {
  * layout in a test. `fields` are read in the order given.
  */
 export function structLayout(type: unknown, fields: readonly string[]): { size: number; offsets: Record<string, number> } {
+  // `type` stays `unknown` so callers can pass whatever `koffi.struct` returned; `koffi.d.ts`
+  // types the pair strictly (`TypeObject`), so narrow it once here.
+  const registered = type as Parameters<typeof koffi.offsetof>[0];
   const offsets: Record<string, number> = {};
-  for (const field of fields) offsets[field] = koffi.offsetof(type, field);
-  return { size: koffi.sizeof(type), offsets };
+  for (const field of fields) offsets[field] = koffi.offsetof(registered, field);
+  return { size: koffi.sizeof(registered), offsets };
 }

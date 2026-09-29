@@ -23,6 +23,10 @@ __all__ = [
     "AudioStreamInfo",
     "Packet",
     "RawPacket",
+    "PacketMeta",
+    "StoredPayload",
+    "ReplayClipEntry",
+    "Placement",
     "VideoFrame",
     "DecodePacket",
     "DecodedVideoFrame",
@@ -218,6 +222,89 @@ class Packet:
     dts: Rational | None = None
     key: bool = False  # sync sample / keyframe
     duration: Rational | None = None  # Rational seconds; None = unknown
+
+
+@dataclass(frozen=True)
+class PacketMeta:
+    """A packet without its payload — input to `ReplayRing.push_stored`, for a
+    caller that keeps the payload bytes on disk itself. Same timestamp rules as
+    `Packet`: Rational seconds, `dts` defaulting to `pts`."""
+
+    stream_index: int
+    pts: Rational
+    dts: Rational | None = None
+    key: bool = False
+    duration: Rational | None = None  # Rational seconds; None = unknown
+    discard: bool = False  # outside the active edit window
+
+
+@dataclass(frozen=True)
+class StoredPayload:
+    """Where a packet's payload was stored on the caller's disk.
+
+    `file` is the caller's own id for a file; the ring never opens it.
+    `offset`/`length` locate the payload's bytes in that file, e.g. from
+    `LiveMuxer.poll_placements()`.
+    """
+
+    file: int
+    offset: int
+    length: int
+
+
+@dataclass(frozen=True)
+class ReplayClipEntry:
+    """One packet of a `ReplayClip`.
+
+    `pts`/`dts` are Rational seconds rebased so the cut keyframe decodes at
+    zero. Exactly one of `payload`/`stored` is set: a Bytes ring gives
+    `payload` (a COPY of the clip's bytes), a Stored ring gives `stored` (where
+    the bytes are).
+    """
+
+    stream_index: int
+    pts: Rational
+    dts: Rational
+    key: bool
+    discard: bool
+    duration: Rational | None = None
+    payload: bytes | None = None
+    stored: StoredPayload | None = None
+
+    def to_packet(self) -> Packet:
+        """This entry as a `Packet`, ready for `LiveMuxer.push_packet`.
+
+        Only a Bytes-ring entry has its payload; for a Stored-ring entry read
+        the bytes from `stored` yourself and build the `Packet` from them.
+        """
+        if self.payload is None:
+            raise ValueError("a Stored-ring entry carries no payload; read it from `stored`")
+        return Packet(
+            stream_index=self.stream_index,
+            pts=self.pts,
+            payload=self.payload,
+            dts=self.dts,
+            key=self.key,
+            duration=self.duration,
+        )
+
+
+@dataclass(frozen=True)
+class Placement:
+    """Where one sample's payload landed in an MP4 muxer's output.
+
+    From `LiveMuxer.poll_placements()` on a muxer made with
+    `Muxer.create_with_placements()`. `offset` counts from the first byte
+    `poll_bytes()` ever returned, so it is the file offset when every polled
+    byte is written sequentially from 0. `length` is the payload AS WRITTEN
+    (H.264/HEVC Annex-B becomes length-prefixed, AAC loses its ADTS header), so
+    it can differ from the pushed payload's length.
+    """
+
+    stream_index: int
+    dts: Rational  # as pushed
+    offset: int
+    length: int
 
 
 @dataclass(frozen=True)

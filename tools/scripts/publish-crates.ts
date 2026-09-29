@@ -137,7 +137,11 @@ for (const name of order) {
     // reports "no matching package named X found". That is the expected
     // first-release gap, not a packaging error — log and continue.
     const out = res.stdout.toString() + res.stderr.toString();
-    const missing = out.match(/no matching package named `([^`]+)` found/);
+    // A minor bump (0.1 -> 0.2) words the same gap differently: the dep exists on the index, but
+    // only at older versions, so cargo says "failed to select a version for the requirement `X =`".
+    const missing =
+      out.match(/no matching package named `([^`]+)` found/) ??
+      out.match(/failed to select a version for the requirement `([^` ]+) =/);
     if (dryRun && missing && dryRunPassed.has(missing[1])) {
       console.log(`expected dry-run gap: ${name} needs ${missing[1]} (only dry-run-published so far)`);
       dryRunPassed.add(name);

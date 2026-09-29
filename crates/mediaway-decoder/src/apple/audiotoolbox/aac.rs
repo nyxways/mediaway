@@ -96,6 +96,56 @@ pub struct AacDecoder {
 // Context, shared with the encoder ADR).
 unsafe impl Send for AacDecoder {}
 
+/// Writes a descriptor length the way ISO/IEC 14496-1 does: seven bits per byte, most significant
+/// first, every byte but the last with its high bit set. Descriptors under 128 bytes take one byte.
+fn push_descriptor_len(out: &mut Vec<u8>, len: usize) {
+    let mut groups = [0u8; 4];
+    let mut count = 0;
+    let mut rest = len;
+    loop {
+        // The low seven bits, so the conversion cannot fail.
+        groups[count] = u8::try_from(rest & 0x7f).unwrap_or(0x7f);
+        count += 1;
+        rest >>= 7;
+        if rest == 0 || count == groups.len() {
+            break;
+        }
+    }
+    for (i, group) in groups[..count].iter().enumerate().rev() {
+        out.push(if i == 0 { *group } else { group | 0x80 });
+    }
+}
+
+/// Appends `tag`, its length and `body` to `out`.
+fn push_descriptor(out: &mut Vec<u8>, tag: u8, body: &[u8]) {
+    out.push(tag);
+    push_descriptor_len(out, body.len());
+    out.extend_from_slice(body);
+}
+
+/// The `esds` payload Core Audio's MPEG-4 AAC magic cookie uses: an `ES_Descriptor` wrapping a
+/// `DecoderConfigDescriptor` whose `DecoderSpecificInfo` is the `AudioSpecificConfig`, plus the
+/// default `SLConfigDescriptor`. `asc` is the bare `AudioSpecificConfig`, as an MP4's `esds`
+/// carries it and as this decoder's config takes it.
+fn esds_cookie(asc: &[u8]) -> Vec<u8> {
+    let mut decoder_specific = Vec::new();
+    push_descriptor(&mut decoder_specific, 0x05, asc);
+
+    // objectTypeIndication 0x40 (MPEG-4 audio), streamType 0x15 (audio, upstream = 0), then
+    // bufferSizeDB (3 bytes), maxBitrate and avgBitrate (4 bytes each), all left unknown.
+    let mut decoder_config = vec![0x40, 0x15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    decoder_config.extend_from_slice(&decoder_specific);
+
+    // ES_ID (2 bytes) and the stream-dependence/URL/OCR flags byte, all zero.
+    let mut es = vec![0, 0, 0];
+    push_descriptor(&mut es, 0x04, &decoder_config);
+    push_descriptor(&mut es, 0x06, &[0x02]);
+
+    let mut cookie = Vec::new();
+    push_descriptor(&mut cookie, 0x03, &es);
+    cookie
+}
+
 impl AacDecoder {
     /// Open an `AudioConverter` AAC-LC decode session for `config`.
     ///
@@ -144,12 +194,16 @@ impl AacDecoder {
             return Err(DecodeError::Backend);
         }
 
-        let mut cookie = config.extra_data.to_vec();
-        // SAFETY: `converter` is a valid, just-created `AudioConverterRef`;
-        // `kAudioConverterDecompressionMagicCookie`'s documented value is the raw
-        // `AudioSpecificConfig` bytes, matching `cookie`'s own shape (`config.extra_data`,
-        // required non-empty by `validate` above); `cookie` is a valid, live buffer for this
-        // one synchronous call.
+        // The cookie is the MPEG-4 ES descriptor (`esds` payload) that carries the
+        // `AudioSpecificConfig`, NOT the bare ASC. Measured on a real `macos-14` runner
+        // (`aac_tests`): `AudioConverterNew` accepts the source format either way, but
+        // `AudioConverterSetProperty(kAudioConverterDecompressionMagicCookie)` answers `'!dat'`
+        // (560226676) for the bare ASC and succeeds for the wrapped one, whatever the source
+        // format flags. An earlier comment here claimed the documented value was the raw ASC; it
+        // was never run, and it was wrong.
+        let mut cookie = esds_cookie(&config.extra_data);
+        // SAFETY: `converter` is a valid, just-created `AudioConverterRef`; `cookie` is a valid,
+        // live buffer holding the ES descriptor for this one synchronous call.
         let status = unsafe {
             AudioConverterSetProperty(
                 converter,

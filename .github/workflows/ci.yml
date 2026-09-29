@@ -335,6 +335,14 @@ jobs:
         run: |
           cargo clippy -p mediaway-device --all-features --all-targets -- -D warnings
 
+      # The one place the Apple audio backends actually RUN. They were lint-only until the v0.2.0
+      # release pipeline's RC gate found `AacDecoder::open` failing on a real runner, so there is
+      # no other CI evidence they work. `--nocapture` because the tests print the `OSStatus` the
+      # OS answers, which `DecodeError::Backend` does not carry.
+      - name: Test the Apple audio backends on real macOS
+        run: |
+          cargo test -p mediaway-decoder --lib apple::audiotoolbox -- --nocapture --test-threads=1
+
   apple-ios:
     name: apple compile (iOS cross-compile, mediaway-encoder, mediaway-decoder, mediaway-device)
     runs-on: macos-14

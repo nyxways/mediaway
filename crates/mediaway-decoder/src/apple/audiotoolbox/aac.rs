@@ -447,3 +447,7 @@ fn stream_info_from(config: &AacDecoderConfig) -> StreamInfo {
         channels: config.channels,
     }
 }
+
+#[cfg(test)]
+#[path = "aac_tests.rs"]
+mod tests;

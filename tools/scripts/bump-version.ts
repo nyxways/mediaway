@@ -83,6 +83,22 @@ function main(): void {
   }
 
   writeFileSync(cargoTomlPath, lines.join("\n"));
+
+  // `mediaway-ffi` spells out its `mediaway-container` dependency instead of inheriting it (Cargo
+  // forbids `default-features = false` on an inherited entry that does not say so), so the
+  // workspace pin above never reaches it. A stale requirement fails `cargo check --workspace`.
+  const ffiManifestPath = join(import.meta.dir, "..", "..", "crates", "mediaway-ffi", "Cargo.toml");
+  const ffiOriginal = readFileSync(ffiManifestPath, "utf8");
+  const ffiRe = /^(mediaway-container = \{ path = "\.\.\/mediaway-container", version = ")([\d.]+)(")/m;
+  const ffiMatch = ffiRe.exec(ffiOriginal);
+  if (!ffiMatch) {
+    console.error("error: mediaway-ffi's mediaway-container requirement not found");
+    process.exit(1);
+  }
+  if (ffiMatch[2] !== newReq) {
+    writeFileSync(ffiManifestPath, ffiOriginal.replace(ffiRe, `$1${newReq}$3`));
+    console.log(`  mediaway-ffi's mediaway-container requirement: ${ffiMatch[2]} -> ${newReq}`);
+  }
   console.log("\nNext: cargo check --workspace   (refreshes Cargo.lock)");
   console.log("Then: /release-notes " + newVersion);
 }

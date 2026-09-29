@@ -20,7 +20,8 @@ mediaway-common = { workspace = true }
 # explicit feature pin is spelled out directly (same path/version as the workspace entry).
 # Features are propagated from this crate's own `mux`/`demux` (see [features] below)
 # rather than hardcoded, so a `demux`-only build doesn't also link `iso-bmff`'s mux path.
-mediaway-container = { path = "../mediaway-container", version = "0.1.0", default-features = false }
+# The version below is rewritten by `tools/scripts/bump-version.ts` (lockstep with the workspace).
+mediaway-container = { path = "../mediaway-container", version = "0.2", default-features = false }
 
 # Needed for `FrameHeader`/`MpegVersion`/`ChannelMode` (MP3 C ABI,
 # adr/container/0007-mp3-c-abi.md) — `mediaway-container` already pulls this in

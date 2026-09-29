@@ -24,7 +24,7 @@ on Linux is untested here. Pre-1.0: APIs may change.
 | `Mediaway.Device.Audio` | Microphone capture (`Mediaway.Device.Audio`) |
 | `Mediaway.Device.Desktop` | Screen and single-window capture (`DesktopScreenCapture`, `DesktopWindowCapture` — cursor, hidden border, even-cropped frames, capture region), loopback audio |
 | `Mediaway.Device.Hotplug` | Device add/remove events (`Mediaway.Device.Hotplug`) |
-| `Mediaway.Pipeline` | End-to-end capture → encode → mux pipeline |
+| `Mediaway.Pipeline` | End-to-end capture → encode → mux pipeline, streaming fMP4 output, AAC/Opus audio decode, encoder/decoder capability probes |
 
 ## Install
 
@@ -67,6 +67,31 @@ muxer.Close();
 ```
 
 The muxer is sans-io: it never touches files — you own every byte of I/O.
+
+## Streaming encode, AAC decode and capability probes (`Mediaway.Pipeline`)
+
+```csharp
+using Mediaway.Pipeline;
+
+// Bounded-memory recording: take the fMP4 bytes that are ready now instead of holding the
+// whole file until Finish(). An empty owner means "nothing ready yet".
+using IMemoryOwner<byte> chunk = session.PollBytes();
+if (chunk.Memory.Length > 0) file.Write(chunk.Memory.Span);
+// ...and Finish() returns only the tail that was not polled.
+
+// AAC decode: the OS's own decoder (Media Foundation / AudioToolbox), so its samples can
+// differ between hosts. The AudioSpecificConfig is required; raw AAC only (no ADTS).
+using var decoder = AudioDecodeSession.OpenAac(48_000, 2, new Rational(1, 48_000), audioSpecificConfig);
+
+// Probes open throwaway sessions: call them once, never per frame. Encoder support depends on
+// resolution, so ask for the size you will encode.
+IReadOnlyList<EncoderCapability> rows = EncoderSupport.Query(VideoCodec.H264, 1920, 1080);
+SupportState aac = DecoderSupport.Query(CodecKind.Aac);
+```
+
+See `examples/Pipeline/StreamToMp4.cs` for the full streaming example
+(`adr/pipeline/0007-stream-bytes-aac-decode-support-probe.md`). The AAC decode arm on Apple
+platforms is compile-checked but has not been run.
 
 ## License
 

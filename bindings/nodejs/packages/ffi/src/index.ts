@@ -16,15 +16,16 @@
 
 import koffi, { type TypeObject } from "koffi";
 import { findLibrary, containerLib, pipelineLib, deviceLib } from "./loader.js";
+import { MwRational } from "./rational.js";
+// Pipeline ABI v7 (streaming bytes, AAC decode, capability probes) lives in its own module for
+// the 1000-line source cap. Importing it first also registers `MwAudioDecodeConfig`, which the
+// `pipeline` object's prototype strings below name.
+import { pipelineV7 } from "./pipeline-v7.js";
 
-export { findLibrary, containerLib, pipelineLib, deviceLib };
+export { findLibrary, containerLib, pipelineLib, deviceLib, MwRational };
+export * from "./pipeline-v7.js";
 
 // ── Structs (layouts mirror the headers exactly) ───────────────────────────────
-
-export const MwRational = koffi.struct("MwRational", {
-  num: "uint64",
-  den: "uint32",
-});
 
 export const MwVideoTrackInfo = koffi.struct("MwVideoTrackInfo", {
   id: "uint32",
@@ -290,12 +291,7 @@ export const MwDecodedVideoFrame = koffi.struct("MwDecodedVideoFrame", {
   data_len: "size_t",
 });
 
-export const MwAudioDecodeConfig = koffi.struct("MwAudioDecodeConfig", {
-  codec: "int32", // Opus only today
-  sample_rate: "uint32",
-  channels: "uint16",
-  time_base: MwRational,
-});
+// `MwAudioDecodeConfig` (Opus + AAC) is defined in pipeline-v7.ts.
 
 export const MwDecodedAudioFrame = koffi.struct("MwDecodedAudioFrame", {
   pts: "int64",
@@ -574,6 +570,9 @@ export const pipeline = {
   decodedAudioFrameFree: pipelineLib.func(
     "void mediaway_decoded_audio_frame_free(MwDecodedAudioFrame *frame)"
   ),
+
+  // ── ABI v7: streaming bytes, AAC decode config, capability probes (pipeline-v7.ts) ──
+  ...pipelineV7,
 
   // ── Capture-to-encode bridge (adr/pipeline/0005-capture-encode-bridge-c-abi.md) ──
   // Pushes one polled frame from a device.h capture handle straight into a
@@ -931,12 +930,14 @@ export interface RawDecodedVideoFrame {
   data_len: number;
 }
 
-/** `mediaway_audio_decode_config_t` (Opus only today). */
+/** `mediaway_audio_decode_config_t` (Opus or AAC; AAC needs `extra_data`, the ASC). */
 export interface RawAudioDecodeConfig {
   codec: number;
   sample_rate: number;
   channels: number;
   time_base: RawRational;
+  extra_data: unknown;
+  extra_data_len: number;
 }
 
 /** `mediaway_decoded_audio_frame_t` (audio decode session output; always F32). */

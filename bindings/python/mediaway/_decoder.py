@@ -1,7 +1,7 @@
-"""Pipeline capability: auto video decode + Opus audio decode.
+"""Pipeline capability: auto video decode + Opus/AAC audio decode.
 
 Wraps the `mediaway-ffi` C ABI's decode sessions (adr/0004-auto-decode-c-abi.md,
-adr/pipeline/0006-audio-decode-c-abi.md) — the exact same "C ABI real, no
+adr/pipeline/0006-audio-decode-c-abi.md, adr/pipeline/0007 for AAC) — the exact same "C ABI real, no
 language binding wired" gap the container format series closed for mux/demux,
 closed here for decode. Both sessions mirror `AutoVideoEncoder`/`AudioEncoder`'s
 single-step shape (the handle IS the decoder, no consumption trap); `NO_BACKEND`
@@ -126,10 +126,16 @@ class DecodeSession:
 
 
 class AudioDecodeSession:
-    """An Opus audio decode session — the handle IS the decoder
+    """An Opus or AAC audio decode session — the handle IS the decoder
     (adr/pipeline/0006, mirrors `DecodeSession`'s video shape; no muxer to
-    wire, no consumption trap). Cross-platform (`mediaway-sw`, no OS
-    dependency), unlike `DecodeSession`'s Windows-only WMF backend.
+    wire, no consumption trap).
+
+    **Opus** is the software decoder (`mediaway-sw`): identical output on every
+    host. **AAC** (adr/pipeline/0007 §2) is the OS's own decoder — Media
+    Foundation on Windows, AudioToolbox on macOS/iOS, unavailable elsewhere —
+    so, unlike Opus, its samples can differ between hosts and OS versions.
+    The Apple arm is compile-checked in this workspace but has not been run.
+    Call `decoder_support(Codec.AAC)` to learn whether it exists here.
     """
 
     def __init__(self, handle: int, sample_rate: int, channels: int, time_base: Rational):
@@ -139,17 +145,45 @@ class AudioDecodeSession:
         self._time_base = time_base
 
     @classmethod
-    def open(cls, *, sample_rate: int, channels: int, time_base: Rational) -> "AudioDecodeSession":
-        """Open an Opus decode session. Raises `DecoderUnavailableError`
-        when no decode backend exists."""
-        raw = _ffi.pipeline.dll.mediaway_audio_decode_config_opus(
-            sample_rate, channels, _ffi.Rational(time_base.num, time_base.den)
-        )
+    def open(
+        cls,
+        *,
+        sample_rate: int,
+        channels: int,
+        time_base: Rational,
+        codec: Codec = Codec.OPUS,
+        extra_data: bytes = b"",
+    ) -> "AudioDecodeSession":
+        """Open an Opus (default) or AAC decode session.
+
+        For `Codec.AAC`, `extra_data` is the stream's raw `AudioSpecificConfig`
+        (an MP4's `esds` DecoderSpecificInfo, i.e. `AudioStreamInfo.extra_data`)
+        and is **required**: an empty one raises `MediawayError` with
+        `PIPELINE_INVALID_INPUT`, because a synthesised default would decode
+        SBR/PS streams to quietly wrong output. Raw AAC only — de-header ADTS
+        first. `time_base` is normally `Rational(1, sample_rate)`, so packet
+        and frame timestamps are sample counts. Opus takes no `extra_data`.
+
+        Raises `DecoderUnavailableError` when no decode backend exists, which
+        includes AAC on a platform with no OS AAC decoder.
+        """
+        tb = _ffi.Rational(time_base.num, time_base.den)
+        # The borrowed ASC must stay alive until open() returns (`buf` is a local).
+        buf = create_string_buffer(extra_data, len(extra_data)) if extra_data else None
+        if codec == Codec.OPUS:
+            raw = _ffi.pipeline.dll.mediaway_audio_decode_config_opus(sample_rate, channels, tb)
+        elif codec == Codec.AAC:
+            raw = _ffi.pipeline.dll.mediaway_audio_decode_config_aac(
+                sample_rate, channels, tb, cast(buf, _ffi.U8P) if buf else None, len(extra_data)
+            )
+        else:
+            raise DecoderUnavailableError(_ffi.PIPELINE_UNSUPPORTED, f"audio decode supports Opus and AAC, not {codec!r}")
         out = c_void_p()
-        _check_pipeline(
-            _ffi.pipeline.dll.mediaway_audio_decode_session_open(byref(raw), byref(out)),
-            no_backend_error=DecoderUnavailableError,
-        )
+        status = _ffi.pipeline.dll.mediaway_audio_decode_session_open(byref(raw), byref(out))
+        if codec == Codec.AAC and status == _ffi.PIPELINE_UNSUPPORTED:
+            # No OS AAC decoder on this platform: an expected, catch-and-continue outcome.
+            raise DecoderUnavailableError(status, "no AAC decoder on this platform")
+        _check_pipeline(status, no_backend_error=DecoderUnavailableError)
         if not out.value:
             raise DecoderUnavailableError(
                 _ffi.PIPELINE_UNKNOWN_ERROR, "audio decode session open returned no handle"
@@ -157,9 +191,10 @@ class AudioDecodeSession:
         return cls(out.value, sample_rate, channels, time_base)
 
     def push_packet(self, packet: DecodePacket) -> None:
-        """Push one compressed Opus packet. An empty `payload` is Opus's
-        packet-loss-concealment hint for a lost frame, not an error. May
-        produce zero or more frames (drain via `poll_frame()`)."""
+        """Push one compressed packet. For Opus an empty `payload` is the
+        packet-loss-concealment hint for a lost frame, not an error; for AAC
+        it means nothing and raises `MediawayError` (`PIPELINE_INVALID_INPUT`).
+        May produce zero or more frames (drain via `poll_frame()`)."""
         raw = _ffi.DecodePacketView(
             stream_id=0,
             pts=_to_units(packet.pts, self._time_base),

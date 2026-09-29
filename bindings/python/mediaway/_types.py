@@ -118,6 +118,50 @@ class SampleFormat(enum.IntEnum):
     F32 = 2
 
 
+class EncodeBackend(enum.IntEnum):
+    """Which encode backend a probe row describes (mirror of `mediaway_encode_backend`)."""
+
+    OS = 0  # the platform's own media API (Media Foundation, VideoToolbox, VA-API)
+    NVENC = 1
+    QUICKSYNC = 2
+    AMF = 3
+    VULKAN = 4
+    SOFTWARE = 5
+    UNKNOWN = 255  # added after this binding's ABI version
+
+
+class SupportState(enum.IntEnum):
+    """Whether a backend or codec is usable right now (mirror of `mediaway_support_state`)."""
+
+    SUPPORTED = 0
+    NOT_IMPLEMENTED = 1  # no code path for this combination on this platform
+    NO_DEVICE = 2  # real code, but the driver/device did not answer right now
+    UNKNOWN = 255
+
+
+class EncodePathClass(enum.IntEnum):
+    """The cheapest data path a supported encoder reached (mirror of `mediaway_encode_path_class`)."""
+
+    NONE = 0  # the row is not SUPPORTED
+    ZERO_COPY = 1  # GPU handle accepted, no copy or readback
+    GPU_COPY = 2  # GPU-to-GPU copy / cross-API share; no CPU round trip
+    CPU_UPLOAD = 3  # CPU planes uploaded into a hardware encoder
+    READBACK = 4  # GPU-to-CPU readback, then encode (costly)
+    SOFTWARE = 5
+    UNKNOWN = 255
+
+
+@dataclass(frozen=True)
+class EncoderCapability:
+    """One row of `encoder_support()`: a backend, whether it is usable right
+    now, and — only when `state` is `SupportState.SUPPORTED` — its data-path
+    cost (`path_class` is `EncodePathClass.NONE` otherwise)."""
+
+    backend: EncodeBackend
+    state: SupportState
+    path_class: EncodePathClass
+
+
 @dataclass(frozen=True)
 class Rational:
     """num/den seconds. `den` must be non-zero."""

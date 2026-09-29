@@ -42,10 +42,10 @@ GPU input:
   a `staticlib`; two crates exporting the identical global symbol name is a
   guaranteed duplicate-symbol link error if both are ever statically linked
   into one consumer.
-- ABI version `MEDIAWAY_PIPELINE_FFI_ABI_VERSION` is `6`: `0`→`1` ADR-0002 struct growth,
+- ABI version `MEDIAWAY_PIPELINE_FFI_ABI_VERSION` is `7`: `0`→`1` ADR-0002 struct growth,
   `1`→`2` ADR-0003 audio encode, `2`→`3` ADR-0004 decode, `3`→`4` ADR-0005 capture-to-encode
-  bridge, `4`→`5` ADR-pipeline/0006 Opus decode + Opus-in-encode, `5`→`6` ADR-0001's
-  2026-08-07 addendum (GOP / CBR / `set_bitrate`).
+  bridge, `4`→`5` ADR-pipeline/0006 Opus decode + Opus-in-encode, `5`→`6` ADR-0001's 2026-08-07
+  addendum (GOP / CBR / `set_bitrate`), `6`→`7` ADR-0007 ([stream/AAC/probe](ffi-stream-aac-probe.md)).
 - `mediaway_decode_session_t` (ADR-0004): single-step, like audio encode — the
   handle IS the decoder, no muxer to wire, no consumption trap.
   `mediaway_auto_video_decode_config_t.extra_data` is required at **open** time

@@ -198,7 +198,70 @@ pub unsafe extern "C" fn mediaway_encode_session_set_bitrate(
     }
 }
 
-/// Flush the encoder and muxer, returning the complete fMP4 byte stream.
+/// Take the fMP4 bytes that are ready now, without ending the session.
+///
+/// The streaming exit (`adr/pipeline/0007-stream-bytes-aac-decode-support-probe.md` §1).
+/// Call it as often as you like — after every `write_frame`, on a timer, or never — and the
+/// session's memory stays bounded by the poll cadence instead of the recording's length.
+/// Nothing ready is `*out_data == NULL` and `*out_len == 0`, with no allocation; that is
+/// indistinguishable from "already drained". Otherwise release the buffer with
+/// [`mediaway_pipeline_ffi_buffer_free`](crate::pipeline::mediaway_pipeline_ffi_buffer_free).
+///
+/// Polling never finishes the stream: the last fragments appear only in
+/// [`mediaway_encode_session_finish`]'s output.
+///
+/// # Safety
+///
+/// `session` must be a live pointer returned by [`mediaway_encode_session_open`]. `out_data`
+/// and `out_len` must be valid, writable, non-null out-parameters.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mediaway_encode_session_poll_bytes(
+    session: *mut EncodeSessionHandle,
+    out_data: *mut *mut u8,
+    out_len: *mut usize,
+) -> MediawayPipelineStatus {
+    if session.is_null() || out_data.is_null() || out_len.is_null() {
+        return MediawayPipelineStatus::InvalidArgument;
+    }
+    // SAFETY: both are checked non-null above and writable per the function contract.
+    unsafe {
+        out_data.write(std::ptr::null_mut());
+        out_len.write(0);
+    }
+    // SAFETY: caller guarantees `session` is a valid, live handle pointer (function contract).
+    let handle = unsafe { &mut *session };
+    if handle.poisoned {
+        return MediawayPipelineStatus::HandlePoisoned;
+    }
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let mut bytes = Vec::new();
+        handle.inner.poll_bytes(&mut bytes);
+        bytes
+    }));
+
+    match result {
+        Ok(bytes) if bytes.is_empty() => MediawayPipelineStatus::Ok,
+        Ok(bytes) => {
+            let (ptr, len) = leak_boxed_slice(bytes);
+            // SAFETY: `out_data`/`out_len` are checked non-null above (function contract).
+            unsafe {
+                out_data.write(ptr);
+                out_len.write(len);
+            }
+            MediawayPipelineStatus::Ok
+        }
+        Err(_) => {
+            handle.poisoned = true;
+            MediawayPipelineStatus::InternalPanic
+        }
+    }
+}
+
+/// Flush the encoder and muxer, returning the fMP4 bytes not yet taken by polling.
+///
+/// That is the whole stream for a session that was never polled and only its tail for one
+/// that was ([`mediaway_encode_session_poll_bytes`]).
 ///
 /// Consumes `session` **unconditionally** — success, failure, or a caught
 /// panic — because `EncodeSession::finish` takes `self` by value in Rust. The

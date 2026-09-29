@@ -630,6 +630,12 @@ class VideoFrame(Structure):  # borrowed input
 
 _H = pipeline.dll
 
+# MEDIAWAY_PIPELINE_FFI_ABI_VERSION this binding's struct mirrors were written against.
+# 7: mediaway_audio_decode_config_t grew extra_data/extra_data_len (AAC decode), plus
+# mediaway_encode_session_poll_bytes and the capability probes
+# (adr/pipeline/0007-stream-bytes-aac-decode-support-probe.md).
+PIPELINE_ABI_VERSION = 7
+
 _H.mediaway_pipeline_ffi_abi_version.restype = c_uint32
 _H.mediaway_pipeline_ffi_abi_version.argtypes = []
 
@@ -649,6 +655,9 @@ _H.mediaway_encode_session_write_frame.restype = c_int32
 _H.mediaway_encode_session_write_frame.argtypes = [c_void_p, POINTER(VideoFrame)]
 _H.mediaway_encode_session_finish.restype = c_int32
 _H.mediaway_encode_session_finish.argtypes = [c_void_p, POINTER(U8P), POINTER(c_size_t)]
+# adr/pipeline/0007 §1: owned buffer (free with mediaway_pipeline_ffi_buffer_free); NULL/0 when idle.
+_H.mediaway_encode_session_poll_bytes.restype = c_int32
+_H.mediaway_encode_session_poll_bytes.argtypes = [c_void_p, POINTER(U8P), POINTER(c_size_t)]
 _H.mediaway_encode_session_close.restype = None
 _H.mediaway_encode_session_close.argtypes = [c_void_p]
 
@@ -791,11 +800,15 @@ class DecodedVideoFrame(Structure):  # owned output
 
 
 class AudioDecodeConfig(Structure):
+    # Layout pinned against the real header with a gcc offsetof probe (size 48; extra_data at
+    # 32, extra_data_len at 40) — tests/test_stream_aac_probe.py.
     _fields_ = [
-        ("codec", c_int32),  # Opus only today
+        ("codec", c_int32),  # Opus or AAC
         ("sample_rate", c_uint32),
         ("channels", c_uint16),
         ("time_base", Rational),
+        ("extra_data", U8P),  # AAC: BORROWED AudioSpecificConfig, valid for open() only
+        ("extra_data_len", c_size_t),
     ]
 
 
@@ -829,6 +842,8 @@ _H.mediaway_decoded_video_frame_free.argtypes = [POINTER(DecodedVideoFrame)]
 
 _H.mediaway_audio_decode_config_opus.restype = AudioDecodeConfig
 _H.mediaway_audio_decode_config_opus.argtypes = [c_uint32, c_uint16, Rational]
+_H.mediaway_audio_decode_config_aac.restype = AudioDecodeConfig
+_H.mediaway_audio_decode_config_aac.argtypes = [c_uint32, c_uint16, Rational, U8P, c_size_t]
 
 _H.mediaway_audio_decode_session_open.restype = c_int32
 _H.mediaway_audio_decode_session_open.argtypes = [POINTER(AudioDecodeConfig), POINTER(c_void_p)]
@@ -842,6 +857,52 @@ _H.mediaway_audio_decode_session_close.restype = None
 _H.mediaway_audio_decode_session_close.argtypes = [c_void_p]
 _H.mediaway_decoded_audio_frame_free.restype = None
 _H.mediaway_decoded_audio_frame_free.argtypes = [POINTER(DecodedAudioFrame)]
+
+
+# ── pipeline.h: capability probes (adr/pipeline/0007 §3) ─────────────────────
+
+ENCODE_BACKEND_OS = 0
+ENCODE_BACKEND_NVENC = 1
+ENCODE_BACKEND_QUICKSYNC = 2
+ENCODE_BACKEND_AMF = 3
+ENCODE_BACKEND_VULKAN = 4
+ENCODE_BACKEND_SOFTWARE = 5
+ENCODE_BACKEND_UNKNOWN = 255
+
+SUPPORT_STATE_SUPPORTED = 0
+SUPPORT_STATE_NOT_IMPLEMENTED = 1
+SUPPORT_STATE_NO_DEVICE = 2
+SUPPORT_STATE_UNKNOWN = 255
+
+ENCODE_PATH_NONE = 0
+ENCODE_PATH_ZERO_COPY = 1
+ENCODE_PATH_GPU_COPY = 2
+ENCODE_PATH_CPU_UPLOAD = 3
+ENCODE_PATH_READBACK = 4
+ENCODE_PATH_SOFTWARE = 5
+ENCODE_PATH_UNKNOWN = 255
+
+
+class EncoderCapability(Structure):  # plain value, no owned fields (size 12)
+    _fields_ = [
+        ("backend", c_int32),
+        ("state", c_int32),
+        ("path_class", c_int32),  # meaningful only when state == SUPPORTED
+    ]
+
+
+_H.mediaway_encoder_support_at.restype = c_int32
+_H.mediaway_encoder_support_at.argtypes = [
+    c_int32,
+    c_uint32,
+    c_uint32,
+    POINTER(POINTER(EncoderCapability)),
+    POINTER(c_size_t),
+]
+_H.mediaway_encoder_support_free.restype = None
+_H.mediaway_encoder_support_free.argtypes = [POINTER(EncoderCapability), c_size_t]
+_H.mediaway_decoder_support.restype = c_int32
+_H.mediaway_decoder_support.argtypes = [c_int32, POINTER(c_int32)]
 
 
 # ── device.h: status codes ────────────────────────────────────────────────────

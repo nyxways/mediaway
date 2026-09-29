@@ -22,6 +22,7 @@ from ._container_ogg import OggDemuxer, OggMuxer
 from ._container_ts import TsDemuxer, TsMuxer
 from ._container_wav import WavMuxer
 from ._container_wav import parse as wav_parse
+from ._capability import decoder_support, encoder_support
 from ._decoder import AudioDecodeSession, DecodeSession
 from ._device import AudioCapture, GpuDevice, VideoCapture
 from ._encoder import AudioEncoder, AutoVideoEncoder, EncodeSession
@@ -43,6 +44,9 @@ from ._types import (
     DecodedAudioFrame,
     DecodedVideoFrame,
     DecodePacket,
+    EncodeBackend,
+    EncoderCapability,
+    EncodePathClass,
     GpuAdapter,
     Mp3FrameHeader,
     MpegVersion,
@@ -51,6 +55,7 @@ from ._types import (
     Rational,
     RawPacket,
     SampleFormat,
+    SupportState,
     TsElementaryStream,
     VideoFrame,
     VideoStreamInfo,
@@ -90,6 +95,12 @@ __all__ = [
     "AudioEncoder",
     "DecodeSession",
     "AudioDecodeSession",
+    "encoder_support",
+    "decoder_support",
+    "EncoderCapability",
+    "EncodeBackend",
+    "SupportState",
+    "EncodePathClass",
     "VideoCapture",
     "AudioCapture",
     "GpuDevice",

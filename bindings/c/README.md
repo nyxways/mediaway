@@ -36,7 +36,14 @@ A streaming-first media stack. The C surface currently covers three capabilities
    packets into a fragmented MP4 muxer internally, and hands the caller complete MP4
    bytes from `finish()`. **Video only.** The audio encoder is separate (ABI v2,
    adr/0003): `mediaway_audio_encoder_open` returns a session that streams AAC
-   packets for the caller's own muxer.
+   packets for the caller's own muxer. Since ABI 7 (adr/pipeline/0007):
+   `mediaway_encode_session_poll_bytes` drains ready fMP4 bytes during the session so
+   memory is bounded by the poll cadence (`finish()` then returns only the unpolled
+   tail); `mediaway_audio_decode_config_aac` opens the OS AAC decoder (Windows,
+   Apple; the raw `AudioSpecificConfig` is required, samples are host-dependent, the
+   Apple arm is compile-checked but not yet run); and `mediaway_encoder_support_at` /
+   `mediaway_decoder_support` probe what this machine can encode/decode (both
+   costly, encoder support is resolution-dependent).
 3. **Device — capture** (`<mediaway/device.h>`): Camera video capture (CPU frames),
    Screen video capture (GPU-only, Zero-Copy), Microphone/Loopback/ProcessLoopback
    audio capture (PCM), and device hotplug (poll or callback mode). Screen capture
@@ -106,6 +113,7 @@ file must state what is real vs. aspirational.
 |---|---|---|
 | `container/mux_roundtrip.c` | container mux + demux roundtrip (90 video + 90 audio fake packets → fMP4 → demux back) | ✅ link+run verified |
 | `pipeline/encode_to_mp4.c` | auto H.264 encode of 90 synthetic NV12 frames → `out.mp4` bytes | ✅ link+run verified |
+| `pipeline/stream_encode.c` | auto H.264 encode of 150 synthetic NV12 frames streamed to a file with `poll_bytes` (5 polls + tail); output identical to the unpolled stream | ✅ link+run verified |
 | `pipeline/encode_audio.c` | auto AAC encode of 96 synthetic F32 stereo frames → audio-only fMP4 (ABI v2) | ✅ link+run verified |
 | `device/camera_record.c` | camera + mic capture → H.264 + AAC → ONE two-track MP4 (remuxed; audio track registered with the encoder's AudioSpecificConfig) | ✅ link+run verified on real hardware; video-only fallback without mic/audio backend |
 | `device/capture_microphone.c` | microphone capture, raw PCM (no encode) | ✅ link+run verified (real mic) |

@@ -150,12 +150,29 @@ internal unsafe struct NativeDecodedVideoFrame
 }
 
 [StructLayout(LayoutKind.Sequential)]
-internal struct NativeAudioDecodeConfig
+internal unsafe struct NativeAudioDecodeConfig
 {
-    public CodecKind Codec; // Opus only today; anything else is a runtime UNSUPPORTED
+    public CodecKind Codec; // Opus or Aac; anything else is a runtime UNSUPPORTED
     public uint SampleRate;
     public ushort Channels;
     public NativeRational TimeBase;
+    // Added by adr/pipeline/0007 §2. AAC only: the raw AudioSpecificConfig, BORROWED, valid for
+    // the open call only. NULL iff ExtraDataLen == 0 (what Opus passes).
+    public byte* ExtraData;
+    public nuint ExtraDataLen;
+}
+
+// ── Capability probes (adr/pipeline/0007-stream-bytes-aac-decode-support-probe.md §3) ─────
+//
+// mediaway_encoder_capability_t: three 4-byte enums, 12 bytes, align 4 (checked against the
+// real header with gcc — see StreamAacAndProbeTests' layout pin).
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeEncoderCapability
+{
+    public EncodeBackend Backend;
+    public SupportState State;
+    public EncodePathClass PathClass; // meaningful only when State == Supported
 }
 
 [StructLayout(LayoutKind.Sequential)]

@@ -27,6 +27,7 @@
 mod audio;
 mod audio_decoder;
 mod buffer;
+mod capability;
 #[cfg(any(feature = "camera", feature = "desktop"))]
 mod capture_bridge;
 mod config;
@@ -50,14 +51,20 @@ pub use audio_decoder::{
     mediaway_decoded_audio_frame_free,
 };
 pub use buffer::mediaway_pipeline_ffi_buffer_free;
+pub use capability::{
+    MediawayEncodeBackend, MediawayEncodePathClass, MediawayEncoderCapability,
+    MediawaySupportState, mediaway_decoder_support, mediaway_encoder_support_at,
+    mediaway_encoder_support_free,
+};
 #[cfg(feature = "camera")]
 pub use capture_bridge::mediaway_encode_session_write_frame_from_camera_capture;
 #[cfg(feature = "desktop")]
 pub use capture_bridge::mediaway_encode_session_write_frame_from_desktop_capture;
 pub use config::{
-    mediaway_audio_decode_config_opus, mediaway_audio_encode_config_aac,
-    mediaway_audio_encode_config_opus, mediaway_auto_video_decode_config_new,
-    mediaway_auto_video_encode_config_h264, mediaway_auto_video_encode_config_new,
+    mediaway_audio_decode_config_aac, mediaway_audio_decode_config_opus,
+    mediaway_audio_encode_config_aac, mediaway_audio_encode_config_opus,
+    mediaway_auto_video_decode_config_new, mediaway_auto_video_encode_config_h264,
+    mediaway_auto_video_encode_config_new,
 };
 pub use decoder::{
     DecodeSessionHandle, mediaway_decode_session_close, mediaway_decode_session_flush,
@@ -67,8 +74,8 @@ pub use decoder::{
 pub use encoder::{AutoEncoderHandle, mediaway_auto_encoder_close, mediaway_auto_encoder_open};
 pub use session::{
     EncodeSessionHandle, mediaway_encode_session_close, mediaway_encode_session_finish,
-    mediaway_encode_session_open, mediaway_encode_session_set_bitrate,
-    mediaway_encode_session_write_frame,
+    mediaway_encode_session_open, mediaway_encode_session_poll_bytes,
+    mediaway_encode_session_set_bitrate, mediaway_encode_session_write_frame,
 };
 pub use status::MediawayPipelineStatus;
 pub use types::{
@@ -101,7 +108,10 @@ pub use types::{
 /// `mediaway_encode_session_set_bitrate` (D3D12 native GOP + CBR support) — the
 /// header macro was bumped in that change but this runtime counterpart was
 /// missed until now.
+/// Bumped `6` -> `7`: `mediaway_audio_decode_config_t` gained `extra_data`/`extra_data_len`
+/// (AAC decode), plus `mediaway_encode_session_poll_bytes` and the capability probes
+/// (`adr/pipeline/0007-stream-bytes-aac-decode-support-probe.md`).
 #[unsafe(no_mangle)]
 pub const extern "C" fn mediaway_pipeline_ffi_abi_version() -> u32 {
-    6
+    7
 }

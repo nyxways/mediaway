@@ -10,6 +10,7 @@ Crate-local C ABI surface decisions live here.
 | [0004](0004-auto-decode-c-abi.md) | Auto video decode C ABI — `AutoDecoder` reachable from C |
 | [0005](0005-capture-encode-bridge-c-abi.md) | Capture-to-encode bridge C ABI |
 | [0006](0006-audio-decode-c-abi.md) | Opus audio decode C ABI + Opus wired into audio encode C ABI |
+| [0007](0007-stream-bytes-aac-decode-support-probe.md) | Streaming fMP4 bytes, AAC decode and encoder/decoder capability probes — ABI 6 → 7 |
 
 Workspace C-FFI policy: [`docs/adr/0004-c-ffi.md`](../../../docs/adr/0004-c-ffi.md).
 Workspace packaging: [`docs/adr/0003-crate-packaging.md`](../../../docs/adr/0003-crate-packaging.md).

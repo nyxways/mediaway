@@ -18,8 +18,9 @@ public sealed record DecodePacket
     public bool IsKeyframe { get; init; }
 
     /// <summary>
-    /// For audio: an empty payload is Opus's packet-loss-concealment hint for a lost
-    /// frame, not an error — pass it whenever a frame is known lost.
+    /// For Opus audio: an empty payload is the packet-loss-concealment hint for a lost frame,
+    /// not an error — pass it whenever a frame is known lost. For AAC an empty payload means
+    /// nothing and is <see cref="MediawayPipelineStatus.InvalidInput"/>.
     /// </summary>
     public required ReadOnlyMemory<byte> Payload { get; init; }
 }

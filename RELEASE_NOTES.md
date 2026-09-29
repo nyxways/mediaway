@@ -143,6 +143,18 @@
   per frame. Hardware-verified end to end through the C ABI on a real WGC session
   (`crates/mediaway-ffi/adr/device/0005-window-capture-c-abi.md`).
 
+- **Streaming, AAC decode and capability probes over the pipeline C ABI** (C, C++, C#, Python,
+  Node.js): `mediaway_encode_session_poll_bytes` drains fMP4 bytes during a session, so a long
+  capture is bounded by poll cadence instead of recording length (`finish` then returns only the
+  unpolled tail). `mediaway_audio_decode_session_open` now opens AAC (Windows `CMSAACDecMFT`,
+  Apple `AudioConverter`) given the stream's `AudioSpecificConfig`; unlike the software Opus
+  decoder its samples can differ between hosts, and the Apple arm is compile-checked but not yet
+  run. `mediaway_encoder_support_at(codec, width, height)` and `mediaway_decoder_support(codec)`
+  report what is usable before a session is opened (both open throwaway sessions, so they are
+  costly). Hardware-verified on Windows: a sample-exact AAC round trip through the C ABI
+  (48 packets to 49152 samples) and a streamed recording byte-for-byte the size of an unpolled
+  one (`crates/mediaway-ffi/adr/pipeline/0007-stream-bytes-aac-decode-support-probe.md`).
+
 - **`mediaway_container::replay::ReplayRing`**: keeps the last *N* seconds of encoded packets
   in memory and cuts "the last *M* seconds" at a keyframe, as a packet sequence rebased to
   zero that a fresh muxer writes as a standalone file. Cuts are in decode order, so B-frames
@@ -288,6 +300,11 @@
   instead of pinning them: `cursor = INCLUDED` or a region on DXGI is `UNSUPPORTED`, and a
   Window-only option (`border`, `dimensions`) on a Screen config is `INVALID_INPUT`. Nothing could
   set those before, so no existing caller changes behaviour.
+
+- **`MEDIAWAY_PIPELINE_FFI_ABI_VERSION` 6 → 7: `mediaway_audio_decode_config_t` grew.**
+  `extra_data` and `extra_data_len` were appended. It is passed by value, so C/C++ callers must
+  recompile and every binding's struct mirror changed. Both new fields are `NULL`/`0` for Opus,
+  so an Opus config behaves as before.
 
 - **`DesktopVideoCaptureConfig` gains `region: Option<CaptureRegion>`**; struct literals add
   `region: None` (the constructors set it). `CaptureError` gains `RegionOutOfBounds`

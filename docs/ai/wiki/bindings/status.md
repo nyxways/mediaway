@@ -34,7 +34,7 @@ bindings were then implemented to satisfy those examples. Examples mirror the Ru
   camera_record now produces ONE two-track MP4 (H.264 + AAC, remuxed) on real hardware.
   C# gained its own `Mediaway.Pipeline.AudioEncoder` wrapper (previously Node-only) —
   hardware-verified, matching Node's own output to within container-padding noise.
-- **Screen capture not from C**: needs a live `ID3D11Device*`, no CPU fallback; Screen + `NONE` gpu → `INVALID_INPUT`, Window → `UNSUPPORTED`. Browser host: `getDisplayMedia` is native and real.
+- **Screen capture not from C**: needs a live `ID3D11Device*`, no CPU fallback; Screen + `NONE` gpu → `INVALID_INPUT`. Window (`HWND`, WGC, device ABI 2, ADR-0005) is real in every binding, Windows only. Browser host: `getDisplayMedia` is native and real.
 - **C# Screen capture hardware-verified** — `CaptureTests` gained a test-only raw
   `D3D11CreateDevice` P/Invoke polling real GPU-backed 2560×1440 frames end to end.
 
@@ -73,11 +73,10 @@ bindings were then implemented to satisfy those examples. Examples mirror the Ru
   C# is covered now (Capability truth) — the C gap still needs the live GPU-device-handle ADR.
 - GOP/CBR/`set_bitrate` reach the C ABI + C# now (ABI v6), no-op through auto-select
   until Vulkan joins it — [gop-cbr-set-bitrate](gop-cbr-set-bitrate.md).
-- **Not in the C ABI yet (Rust-only since v0.1.8):** window capture (Window source,
-  `cursor`/`region`/border — the FFI pins `Excluded`/`None`), `EncodeSession`
+- **Not in the C ABI yet (Rust-only since v0.1.8):** `EncodeSession`
   `poll_bytes`/`finish_into`, AAC decode (audio decode C ABI is Opus-only), `ReplayRing`
-  + mux placements, `encoder_support_at`. The only ABI-visible change in that range was the
-  `include_child_processes` → `include_target_process_tree` rename (same layout, done in
-  C/C#/Python; C++/Node do not bind desktop audio).
+  + mux placements, `encoder_support_at`. Window capture landed in device ABI 2 (ADR-0005). The
+  `include_child_processes` → `include_target_process_tree` rename (same layout) was done in
+  C/C#/Python; C++/Node do not bind desktop audio.
 - Android AAR/Maven Central distribution: ADR-0025 (Proposed) — design-only,
   no code yet — [android-status](android-status.md).

@@ -45,8 +45,12 @@ A streaming-first media stack. The C surface currently covers three capabilities
    explicit index; `mediaway-device` ADR-0007), then passes its
    `mediaway_gpu_device_handle_t` into `mediaway_desktop_capture_config_screen()`.
    `mediaway_gpu_adapter_list()` enumerates every adapter DXGI reports for a caller
-   that wants to pick explicitly. A Window-kind config still returns
-   `MEDIAWAY_DEVICE_STATUS_UNSUPPORTED` (not yet implemented).
+   that wants to pick explicitly. Window capture (Windows, WGC) takes a caller-owned
+   `HWND` through `mediaway_desktop_capture_config_window()` and the same GPU device;
+   the returned config's `cursor`, `region_*`, `border` and `dimensions` fields choose the
+   pointer, a cropped region (a region off the origin is one GPU copy per frame, not
+   Zero-Copy), the capture border and even-cropped frames. Off Windows a Window-kind
+   config returns `MEDIAWAY_DEVICE_STATUS_UNSUPPORTED`.
 
 ## The real ABI (what examples must call)
 
@@ -107,6 +111,7 @@ file must state what is real vs. aspirational.
 | `device/capture_microphone.c` | microphone capture, raw PCM (no encode) | ✅ link+run verified (real mic) |
 | `pipeline/screen_record.c` | GPU device factory → screen + mic capture → encode (bridge) → MP4 | ✅ link+run verified on real hardware (GPU-input H.264 encode gracefully skips on this dev machine's current encoder/driver — a known limitation, not a bug) |
 | `device/capture_screen.c` | GPU device factory → screen capture only | ✅ link+run verified on real hardware |
+| `device/capture_window.c` | GPU device factory → one window by `HWND` (default: the foreground window), hidden border read back with `mediaway_desktop_capture_border_hidden`, even-cropped frames | ✅ link+run verified on real hardware (a static window delivers one frame — WGC only sends on change) |
 
 No C example exercises Ogg/ADTS/FLV/MPEG-TS/MP3/WAV/WebM yet — `mux_roundtrip.c` covers
 MP4 only. Those formats are covered by the C++/C#/Python/Node bindings' examples instead.

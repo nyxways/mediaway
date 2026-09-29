@@ -75,6 +75,35 @@ readback path for Screen). For real pixel data, feed the session straight
 into an encoder with `EncodeSession.writeFrameFromDesktopCapture()`
 (`@mediaway/encoder`), Zero-Copy end to end — see that package's README.
 
+## Window capture
+
+One window by `HWND` (Windows, WGC) — GPU-only and Zero-Copy exactly like Screen, and
+`pollFrame()`'s `data` is likewise always empty (`mediaway-ffi` ADR-0005). `WindowSession` also
+feeds `EncodeSession.writeFrameFromDesktopCapture()`.
+
+```ts
+import { openWindowCapture } from "@mediaway/device";
+
+const win = await openWindowCapture({
+  hwnd,                          // bigint | number, caller-owned; 0 is rejected
+  timeBase: { num: 1, den: 30 },
+  cursor: "included",            // default "excluded"
+  border: "hidden",              // default "shown"; Windows 11 build 22000+
+  dimensions: "even-cropped",    // default "native"; any hardware encoder accepts even frames
+  region: { x: 0, y: 0, width: 640, height: 360 }, // optional
+});
+console.log(win.width, win.height, win.borderHidden);
+await win.close();
+```
+
+- `borderHidden` reports what Windows *did*: a refusal is not an error, so check it after
+  asking for `border: "hidden"`.
+- A `region` at the window's origin is free; one anywhere else costs one GPU copy per frame
+  (not Zero-Copy). A window that is or becomes smaller than the region throws
+  `RegionOutOfBoundsError` — distinct from the bad-config error, so it can be retried with a
+  smaller region.
+- Off Windows, `CaptureUnavailableError`.
+
 ## GPU device factory
 
 ```ts
@@ -100,6 +129,7 @@ adapter DXGI reports.
 | `openCamera({ index, timeBase })` | `CameraSession` (`width`, `height`, `pixelFormat` = `"nv12"`) | `pollFrame(): VideoFrame \| null` |
 | `openMicrophone({ sampleRate, channels })` | `MicSession` (`sampleRate`, `channels`) | `pollFrame(): AudioFrame \| null` |
 | `openScreenCapture({ timeBase, monitorIndex?, gpuDevice? })` | `ScreenSession` | `pollFrame(): VideoFrame \| null` (`data` always empty) |
+| `openWindowCapture({ hwnd, timeBase, gpuDevice?, cursor?, border?, dimensions?, region? })` | `WindowSession` (`ScreenSession`'s fields + `borderHidden`) | `pollFrame(): VideoFrame \| null` (`data` always empty) |
 | `listGpuAdapters()` | — | `GpuAdapterInfo[]` |
 | `GpuDevice.create({ adapterIndex?, videoSupport?, debugLayer? })` | `GpuDevice` | — |
 

@@ -75,8 +75,9 @@ pub use types::{MediawayAudioCaptureConfig, MediawayDeviceAudioFrame};
 pub use types::{MediawayCameraCaptureConfig, MediawayCameraFrame};
 #[cfg(feature = "desktop")]
 pub use types::{
-    MediawayDesktopAudioCaptureConfig, MediawayDesktopAudioFrame, MediawayDesktopAudioSourceKind,
-    MediawayDesktopCaptureConfig, MediawayDesktopCaptureSourceKind, MediawayDesktopFrame,
+    MediawayCaptureBorder, MediawayCaptureCursor, MediawayDesktopAudioCaptureConfig,
+    MediawayDesktopAudioFrame, MediawayDesktopAudioSourceKind, MediawayDesktopCaptureConfig,
+    MediawayDesktopCaptureSourceKind, MediawayDesktopFrame, MediawayFrameDimensions,
     MediawayGpuAdapterInfo, MediawayGpuAdapterSelect, MediawayGpuAdapterSelectKind,
     MediawayGpuDeviceOptions, MediawayVideoFrameStorageKind,
 };
@@ -107,7 +108,8 @@ pub use desktop_audio::{
 };
 #[cfg(feature = "desktop")]
 pub use desktop_video::{
-    DesktopCaptureHandle, mediaway_desktop_capture_close, mediaway_desktop_capture_config_screen,
+    DesktopCaptureHandle, mediaway_desktop_capture_border_hidden, mediaway_desktop_capture_close,
+    mediaway_desktop_capture_config_screen, mediaway_desktop_capture_config_window,
     mediaway_desktop_capture_geometry, mediaway_desktop_capture_open,
     mediaway_desktop_capture_poll_frame, mediaway_desktop_capture_poll_frame_blocking,
     mediaway_desktop_capture_release_frame, mediaway_desktop_frame_free,
@@ -132,5 +134,5 @@ pub use hotplug::{
 /// header can call this to assert the loaded library matches what it was built against.
 #[unsafe(no_mangle)]
 pub const extern "C" fn mediaway_device_ffi_abi_version() -> u32 {
-    1
+    2
 }

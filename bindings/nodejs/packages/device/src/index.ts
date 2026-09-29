@@ -25,6 +25,7 @@ import {
   type RawAudioFrame,
   type RawCameraFrame,
   type RawDesktopFrame,
+  type RawDesktopConfig,
   type RawGpuAdapterInfo,
   type RawGpuDeviceHandle,
 } from "@mediaway/ffi";
@@ -62,13 +63,25 @@ export interface AudioFrame {
  * not hard failures. */
 export class CaptureUnavailableError extends MediawayError {}
 
-function checkDevice(status: number): void {
-  if (status === 0) return;
+/** A window capture region does not fit the captured window — at open, or because the
+ * window later shrank. A runtime condition a caller can retry with a smaller region,
+ * so it is distinct from the bad-config error (`status` 5). */
+export class RegionOutOfBoundsError extends MediawayError {}
+
+/**
+ * @internal The error a non-zero device status maps to, or `undefined` for `0`. Exported
+ * only so the status mapping is testable without provoking every native failure.
+ */
+export function deviceStatusError(status: number): MediawayError | undefined {
+  if (status === 0) return undefined;
+  if (status === 14) {
+    return new RegionOutOfBoundsError(status, "capture region does not fit the window");
+  }
   if (status === 4 || status === 6 || status === 8) {
-    throw new CaptureUnavailableError(status, "no capture backend or device available");
+    return new CaptureUnavailableError(status, "no capture backend or device available");
   }
   if (status === 3) {
-    throw new CaptureUnavailableError(status, "this capture configuration is unsupported by the ABI");
+    return new CaptureUnavailableError(status, "this capture configuration is unsupported by the ABI");
   }
   const names: Record<number, string> = {
     1: "invalid argument",
@@ -81,7 +94,12 @@ function checkDevice(status: number): void {
     12: "callback mode active (poll disabled)",
     13: "timed out waiting for a frame",
   };
-  throw new MediawayError(status, names[status] ?? "unknown device error");
+  return new MediawayError(status, names[status] ?? "unknown device error");
+}
+
+function checkDevice(status: number): void {
+  const err = deviceStatusError(status);
+  if (err !== undefined) throw err;
 }
 
 // ── Camera ─────────────────────────────────────────────────────────────────────
@@ -301,19 +319,13 @@ export class GpuDevice {
   }
 }
 
-// ── Screen ───────────────────────────────────────────────────────────────────
+// ── Desktop capture (Screen + Window) ────────────────────────────────────────
 
 /**
- * A Screen capture session — GPU-only, Zero-Copy (`adr/0003-gpu-handle-c-abi.md`
- * §4: no CPU fallback exists in the wrapped Rust backend, so unlike Camera
- * there is no CPU pixel readback path here either). `pollFrame()` proves
- * frames are genuinely arriving (real `pts`/geometry) but its `VideoFrame.data`
- * is always empty — it does not copy pixels out. For real pixel data, feed
- * the session straight into the encoder with
- * `EncodeSession.writeFrameFromDesktopCapture()` (`@mediaway/encoder`), which
- * moves the GPU texture Zero-Copy with no CPU round trip at all.
+ * State and behaviour shared by Screen and Window capture sessions: both are the same
+ * `mediaway_desktop_capture_t*` handle, GPU-only and Zero-Copy.
  */
-export class ScreenSession {
+export abstract class DesktopSession {
   readonly width: number;
   readonly height: number;
   readonly pixelFormat = "bgra8" as const;
@@ -322,7 +334,7 @@ export class ScreenSession {
   private handle: unknown;
   private readonly ownsGpuDevice: GpuDevice | undefined;
 
-  /** Wrap a native desktop capture handle. Prefer the openScreenCapture() factory. */
+  /** @internal Wrap a native desktop capture handle. Use the open*Capture() factories. */
   constructor(
     handle: unknown,
     width: number,
@@ -338,16 +350,16 @@ export class ScreenSession {
   }
 
   /** Poll the next frame; null when nothing is ready yet. Sync, never blocks.
-   * `data` is always empty — see the class doc. */
+   * `data` is always empty — see the `ScreenSession` class doc. */
   pollFrame(): VideoFrame | null {
     const raw = {} as RawDesktopFrame;
     const has: [boolean] = [false];
     checkDevice(device.desktopPollFrame(this.handle, raw, has));
     if (!has[0]) return null;
-    // storage_kind is always GPU (1) for Screen — the frame lives in
-    // gpu_buffer, a BORROWED handle released below (never freed via
-    // desktopFrameFree, which would double-release it; there is nothing to
-    // copy out of raw.data/data_len, which stay empty for GPU storage).
+    // storage_kind is always GPU (1) — the frame lives in gpu_buffer, a BORROWED
+    // handle released below (never freed via desktopFrameFree, which would
+    // double-release it; there is nothing to copy out of raw.data/data_len, which
+    // stay empty for GPU storage).
     checkDevice(device.desktopReleaseFrame(this.handle));
     return {
       pts: Number(raw.pts),
@@ -376,6 +388,21 @@ export class ScreenSession {
     return this.handle;
   }
 }
+
+/** Either kind of desktop capture session — what `EncodeSession.writeFrameFromDesktopCapture` takes. */
+export type DesktopCaptureSession = ScreenSession | WindowSession;
+
+/**
+ * A Screen capture session — GPU-only, Zero-Copy (`adr/0003-gpu-handle-c-abi.md`
+ * §4: no CPU fallback exists in the wrapped Rust backend, so unlike Camera
+ * there is no CPU pixel readback path here either). `pollFrame()` proves
+ * frames are genuinely arriving (real `pts`/geometry) but its `VideoFrame.data`
+ * is always empty — it does not copy pixels out. For real pixel data, feed
+ * the session straight into the encoder with
+ * `EncodeSession.writeFrameFromDesktopCapture()` (`@mediaway/encoder`), which
+ * moves the GPU texture Zero-Copy with no CPU round trip at all.
+ */
+export class ScreenSession extends DesktopSession {}
 
 /**
  * Open Screen capture for output `monitorIndex` (default the primary
@@ -406,6 +433,101 @@ export async function openScreenCapture(options: {
     const height: [number] = [0];
     checkDevice(device.desktopGeometry(out[0], width, height));
     return new ScreenSession(out[0], width[0], height[0], options.timeBase, ownsGpuDevice);
+  } catch (err) {
+    ownsGpuDevice?.close();
+    throw err;
+  }
+}
+
+// ── Window (ADR-0005) ────────────────────────────────────────────────────────
+
+/** A rectangle of the captured window to record instead of all of it, in window pixels. */
+export interface CaptureRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface WindowCaptureOptions {
+  /** The window to capture, as its `HWND` bits. Caller-owned: the session does not
+   * extend its lifetime. `0` is rejected as a bad config (`status` 5). */
+  hwnd: bigint | number;
+  timeBase: Rational;
+  /** Share a device with an encoder, or pick an adapter; omitted, one is created and
+   * closed with the session (same rule as `openScreenCapture`). */
+  gpuDevice?: GpuDevice;
+  /** Draw the mouse pointer into frames. Default `"excluded"`. */
+  cursor?: "excluded" | "included";
+  /** Ask Windows 11 (build 22000+) not to draw the capture border. Default `"shown"`.
+   * A refusal is not an error — read `WindowSession.borderHidden` for what happened. */
+  border?: "shown" | "hidden";
+  /** `"even-cropped"` drops an odd axis's last column/row so any hardware encoder
+   * accepts the frames; free on WGC. Default `"native"`. */
+  dimensions?: "native" | "even-cropped";
+  /** Record only this rectangle. A region at the window's origin is free; one anywhere
+   * else costs one GPU copy per frame (not Zero-Copy). A window that shrinks below it
+   * throws `RegionOutOfBoundsError`. */
+  region?: CaptureRegion;
+}
+
+/**
+ * A Window capture session (Windows, WGC) — GPU-only, Zero-Copy, exactly like
+ * `ScreenSession`; see its doc for why `pollFrame()` returns no pixel data.
+ */
+export class WindowSession extends DesktopSession {
+  /** Whether Windows actually hid the capture border. Meaningful with
+   * `border: "hidden"`; `false` otherwise, and on builds before Windows 11 22000. */
+  readonly borderHidden: boolean;
+
+  /** @internal Use openWindowCapture(). */
+  constructor(
+    handle: unknown,
+    width: number,
+    height: number,
+    timeBase: Rational,
+    ownsGpuDevice: GpuDevice | undefined,
+    borderHidden: boolean
+  ) {
+    super(handle, width, height, timeBase, ownsGpuDevice);
+    this.borderHidden = borderHidden;
+  }
+}
+
+/**
+ * Open Window capture for `options.hwnd`. Creates a `GpuDevice` internally unless
+ * `options.gpuDevice` is supplied. Throws `CaptureUnavailableError` off Windows or with
+ * no usable GPU, `RegionOutOfBoundsError` when the region does not fit the window.
+ */
+export async function openWindowCapture(options: WindowCaptureOptions): Promise<WindowSession> {
+  const ownsGpuDevice = options.gpuDevice === undefined ? await GpuDevice.create() : undefined;
+  const gpuDevice = options.gpuDevice ?? ownsGpuDevice;
+  if (gpuDevice === undefined) throw new MediawayError(9, "no GPU device available");
+  try {
+    const config: RawDesktopConfig = device.desktopConfigWindow(
+      BigInt(options.hwnd),
+      { num: BigInt(options.timeBase.num), den: options.timeBase.den },
+      gpuDevice[NATIVE_HANDLE]()
+    );
+    config.cursor = options.cursor === "included" ? 1 : 0;
+    config.border = options.border === "hidden" ? 1 : 0;
+    config.dimensions = options.dimensions === "even-cropped" ? 1 : 0;
+    if (options.region !== undefined) {
+      config.region_enabled = true;
+      config.region_x = options.region.x;
+      config.region_y = options.region.y;
+      config.region_width = options.region.width;
+      config.region_height = options.region.height;
+    }
+    const out: [unknown] = [null];
+    checkDevice(device.desktopOpen(config, out));
+    if (!out[0]) throw new MediawayError(9, "capture open returned no handle");
+    const width: [number] = [0];
+    const height: [number] = [0];
+    checkDevice(device.desktopGeometry(out[0], width, height));
+    const hidden: [boolean] = [false];
+    checkDevice(device.desktopBorderHidden(out[0], hidden));
+    return new WindowSession(out[0], width[0], height[0], options.timeBase, ownsGpuDevice, hidden[0]);
   } catch (err) {
     ownsGpuDevice?.close();
     throw err;

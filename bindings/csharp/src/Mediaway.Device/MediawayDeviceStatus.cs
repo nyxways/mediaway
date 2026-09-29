@@ -12,8 +12,8 @@ public enum MediawayDeviceStatus
     HandlePoisoned = 2,
 
     /// <summary>
-    /// Window capture this pass, or <c>capture_once</c> on a Screen-kind config — a real
-    /// capability with no C ABI path for this case yet, not "not implemented".
+    /// The backend cannot do what the config asks: Window capture off Windows, a cursor or
+    /// region on DXGI Screen capture, or <c>capture_once</c> on a Screen-kind config.
     /// </summary>
     Unsupported = 3,
 
@@ -31,4 +31,11 @@ public enum MediawayDeviceStatus
 
     /// <summary><c>poll_frame_blocking</c>/<c>capture_once</c>'s deadline elapsed with no frame.</summary>
     Timeout = 13,
+
+    /// <summary>
+    /// The requested capture region does not fit the surface — at open, or because the window
+    /// later shrank below it. A runtime condition, distinct from <see cref="InvalidInput"/>: retry
+    /// with a smaller region.
+    /// </summary>
+    RegionOutOfBounds = 14,
 }

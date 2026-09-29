@@ -71,10 +71,10 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
       (`open_in`, `MuxOpen`, `ContainerError`; `crates/mediaway/adr/0007`) and `poll_bytes` /
       `finish_into` drain bytes during a session (`adr/0006`). `platform::WindowCapture` /
       `DesktopAudio` added, returning concrete per-target types (`adr/0002`).
-- [ ] **Bindings parity for post-v0.1.8 Rust features**: the C ABI does not yet expose window
-      capture (`cursor`/`region`/border), `EncodeSession` byte streaming, AAC decode,
-      `ReplayRing` + mux placements, or `encoder_support_at`
-      ([wiki](ai/wiki/bindings/status.md) § Open items).
+- [ ] **Bindings parity for post-v0.1.8 Rust features**: the C ABI does not yet expose
+      `EncodeSession` byte streaming, AAC decode, `ReplayRing` + mux placements, or
+      `encoder_support_at` (window capture landed in device ABI 2, ADR-0005;
+      [wiki](ai/wiki/bindings/status.md) § Open items).
 - [ ] **Game Engine & Seamless DX Wrappers**: `mediaway::wgpu` exists (Windows DX12 only) — encode
       bridge hardware-verified, decode bridge construction-only (no pixel round trip yet); no
       `Three.js`/WebGPU or Godot wrapper exists.

@@ -8,24 +8,24 @@
 //! `mediaway-device-windows-desktop`, **not** through the `mediaway-device-windows`
 //! orchestrator crate — that crate unconditionally depends on the Camera/Audio backends
 //! too, which would defeat this feature's isolation. Screen is opened against the real
-//! backend (`adr/0003-gpu-handle-c-abi.md`); Window deterministically returns
-//! [`CaptureError::Unsupported`] regardless of platform (still § Deferred — a separate
-//! HWND-input gap, unaffected by that ADR).
+//! backend (`adr/0003-gpu-handle-c-abi.md`); Window is WGC by `HWND` on Windows and
+//! [`CaptureError::Unsupported`] elsewhere (`adr/0005-window-capture-c-abi.md`).
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Duration;
 
 use mediaway_common::VideoFrameStorage;
 use mediaway_device::desktop::{
-    CaptureOutputPreference, CaptureSharing, DesktopCaptureSource, DesktopVideoCapture,
-    DesktopVideoCaptureConfig,
+    CaptureOutputPreference, CaptureRegion, CaptureSharing, CursorCapture, DesktopCaptureSource,
+    DesktopVideoCapture, DesktopVideoCaptureConfig,
 };
 use mediaway_device::{CaptureError, Select};
 
 use crate::device::buffer::{leak_boxed_slice, reclaim_boxed_slice};
 use crate::device::status::MediawayDeviceStatus;
 use crate::device::types::{
-    MediawayDesktopCaptureConfig, MediawayDesktopCaptureSourceKind, MediawayDesktopFrame,
+    MediawayCaptureBorder, MediawayCaptureCursor, MediawayDesktopCaptureConfig,
+    MediawayDesktopCaptureSourceKind, MediawayDesktopFrame, MediawayFrameDimensions,
     MediawayGpuBufferKind, MediawayGpuDeviceHandle, MediawayRational,
     MediawayVideoFrameStorageKind,
 };
@@ -58,6 +58,35 @@ pub struct DesktopCaptureHandle {
     // to C callers regardless of Rust-level visibility.
     pub(crate) poisoned: bool,
     pub(crate) inner: Box<dyn DesktopVideoCapture>,
+    /// `Some` for a Window session: whether the OS actually hid the capture border,
+    /// read once at open (`adr/0005-window-capture-c-abi.md` §3). `None` for Screen.
+    border_hidden: Option<bool>,
+}
+
+/// Builds a config with every field added by `adr/0005-window-capture-c-abi.md` at its zero
+/// value, i.e. the behaviour before those fields existed.
+const fn config_with(
+    source_kind: MediawayDesktopCaptureSourceKind,
+    source_index: u32,
+    window_handle: u64,
+    time_base: MediawayRational,
+    gpu_device: MediawayGpuDeviceHandle,
+) -> MediawayDesktopCaptureConfig {
+    MediawayDesktopCaptureConfig {
+        source_kind,
+        source_index,
+        time_base,
+        gpu_device,
+        window_handle,
+        cursor: MediawayCaptureCursor::Excluded,
+        border: MediawayCaptureBorder::Shown,
+        dimensions: MediawayFrameDimensions::Native,
+        region_x: 0,
+        region_y: 0,
+        region_width: 0,
+        region_height: 0,
+        region_enabled: false,
+    }
 }
 
 /// Build a Screen capture config for output ordinal `output_index`.
@@ -70,19 +99,41 @@ pub const extern "C" fn mediaway_desktop_capture_config_screen(
     time_base: MediawayRational,
     gpu_device: MediawayGpuDeviceHandle,
 ) -> MediawayDesktopCaptureConfig {
-    MediawayDesktopCaptureConfig {
-        source_kind: MediawayDesktopCaptureSourceKind::Screen,
-        source_index: output_index,
+    config_with(
+        MediawayDesktopCaptureSourceKind::Screen,
+        output_index,
+        0,
         time_base,
         gpu_device,
-    }
+    )
+}
+
+/// Build a Window capture config for `hwnd`.
+///
+/// `hwnd` is caller-owned and must stay valid for the session; `0` is rejected by
+/// [`mediaway_desktop_capture_open`] as `INVALID_INPUT`. `gpu_device` must be a live
+/// `MEDIAWAY_GPU_DEVICE_DIRECTX11`. Set `cursor`, `region_*`, `border` and `dimensions` on the
+/// returned value before opening — see `adr/0005-window-capture-c-abi.md`.
+#[unsafe(no_mangle)]
+pub const extern "C" fn mediaway_desktop_capture_config_window(
+    hwnd: u64,
+    time_base: MediawayRational,
+    gpu_device: MediawayGpuDeviceHandle,
+) -> MediawayDesktopCaptureConfig {
+    config_with(
+        MediawayDesktopCaptureSourceKind::Window,
+        0,
+        hwnd,
+        time_base,
+        gpu_device,
+    )
 }
 
 /// Open a desktop video capture session for `config`.
 ///
-/// `Screen` configs can succeed (`adr/0003-gpu-handle-c-abi.md`); `Window` still
-/// deterministically returns [`MediawayDeviceStatus::Unsupported`] (separate HWND-input
-/// gap, § Deferred). `gpu_device` is enforced, not merely documented: a
+/// `Screen` and (on Windows) `Window` configs can succeed
+/// (`adr/0003-gpu-handle-c-abi.md`, `adr/0005-window-capture-c-abi.md`); `Window` is
+/// [`MediawayDeviceStatus::Unsupported`] on other platforms. `gpu_device` is enforced, not merely documented: a
 /// `NONE`/malformed one returns [`MediawayDeviceStatus::InvalidInput`]
 /// (`adr/0003-gpu-handle-c-abi.md` §4). Three outcomes: (1) `Ok` — builds the handle,
 /// writes it to `*out_capture`; (2) a normal `Err` — no handle exists, `*out_capture`
@@ -110,10 +161,11 @@ pub unsafe extern "C" fn mediaway_desktop_capture_open(
     let result = catch_unwind(AssertUnwindSafe(|| open_desktop_capture(config)));
 
     match result {
-        Ok(Ok(capture)) => {
+        Ok(Ok((capture, border_hidden))) => {
             let handle = Box::new(DesktopCaptureHandle {
                 poisoned: false,
                 inner: capture,
+                border_hidden,
             });
             // SAFETY: `out_capture` is checked non-null above (function contract).
             unsafe { out_capture.write(Box::into_raw(handle)) };
@@ -124,14 +176,27 @@ pub unsafe extern "C" fn mediaway_desktop_capture_open(
     }
 }
 
+/// An open session plus the border outcome (`Some` only for Window).
+type Opened = (Box<dyn DesktopVideoCapture>, Option<bool>);
+
 /// Dispatch shared by [`mediaway_desktop_capture_open`] — resolves `config` to an open
 /// session against the matching backend.
-fn open_desktop_capture(
-    config: MediawayDesktopCaptureConfig,
-) -> Result<Box<dyn DesktopVideoCapture>, CaptureError> {
+fn open_desktop_capture(config: MediawayDesktopCaptureConfig) -> Result<Opened, CaptureError> {
+    let region = region_of(&config)?;
+    let cursor = match config.cursor {
+        MediawayCaptureCursor::Excluded => CursorCapture::Excluded,
+        MediawayCaptureCursor::Included => CursorCapture::Included,
+    };
     match config.source_kind {
-        MediawayDesktopCaptureSourceKind::Window => Err(CaptureError::Unsupported),
+        MediawayDesktopCaptureSourceKind::Window => open_window_capture(&config, cursor, region),
         MediawayDesktopCaptureSourceKind::Screen => {
+            // `border` and `dimensions` are Window-only options: a non-default value here is a
+            // caller mistake, not something to drop silently (adr/0005 §6).
+            if config.border != MediawayCaptureBorder::Shown
+                || config.dimensions != MediawayFrameDimensions::Native
+            {
+                return Err(CaptureError::InvalidInput);
+            }
             // Not unwrapped/rejected here: `WindowsScreenCapture::open` already returns
             // `CaptureError::InvalidInput` for a `None` `gpu_device` internally —
             // letting it do so keeps this exactly the existing Rust-level rule, not a
@@ -145,14 +210,118 @@ fn open_desktop_capture(
                 // No C ABI knob for this yet — keep today's shareable-by-default behavior
                 // unchanged; see `mediaway-device` ADR-0008.
                 sharing: CaptureSharing::Shared,
-                // No C ABI knob for this either. `Excluded` keeps what every C caller got
-                // before the field existed; this path is DXGI, which cannot include it anyway.
-                cursor: mediaway_device::desktop::CursorCapture::Excluded,
-                region: None,
+                // DXGI cannot draw the pointer or crop, so `Included` and a region come back
+                // as `Unsupported` from the backend rather than being ignored (adr/0005 §6).
+                cursor,
+                region,
             };
-            open_screen_capture(&rust_config)
+            open_screen_capture(&rust_config).map(|capture| (capture, None))
         }
     }
+}
+
+/// The capture region a config asks for, or `None` for the whole surface.
+///
+/// # Errors
+///
+/// [`CaptureError::InvalidInput`] for an enabled region with a zero width or height. The
+/// backend refuses that too (`CaptureRegion` documents zero as never valid), but checking
+/// here keeps the error the same on platforms with no backend.
+const fn region_of(
+    config: &MediawayDesktopCaptureConfig,
+) -> Result<Option<CaptureRegion>, CaptureError> {
+    if !config.region_enabled {
+        return Ok(None);
+    }
+    if config.region_width == 0 || config.region_height == 0 {
+        return Err(CaptureError::InvalidInput);
+    }
+    Ok(Some(CaptureRegion {
+        x: config.region_x,
+        y: config.region_y,
+        width: config.region_width,
+        height: config.region_height,
+    }))
+}
+
+/// Window dispatch — WGC by `HWND`, Windows only (`adr/0005-window-capture-c-abi.md` §5).
+#[cfg(windows)]
+fn open_window_capture(
+    config: &MediawayDesktopCaptureConfig,
+    cursor: CursorCapture,
+    region: Option<CaptureRegion>,
+) -> Result<Opened, CaptureError> {
+    use mediaway_common::NativeHandle;
+    use mediaway_device::windows_desktop::{
+        CaptureBorder, FrameDimensions, WindowCaptureOptions, WindowsWindowCapture,
+    };
+
+    let bits = usize::try_from(config.window_handle).map_err(|_| CaptureError::InvalidInput)?;
+    let window = NativeHandle::new(bits).ok_or(CaptureError::InvalidInput)?;
+    let rust_config = DesktopVideoCaptureConfig {
+        source: DesktopCaptureSource::Window { window },
+        time_base: config.time_base.into(),
+        output: CaptureOutputPreference::ZeroCopyGpu,
+        gpu_device: config.gpu_device.to_common(),
+        sharing: CaptureSharing::Shared,
+        cursor,
+        region,
+    };
+    // `WindowCaptureOptions` is `#[non_exhaustive]`: start from `Default`, then assign.
+    let mut options = WindowCaptureOptions::default();
+    options.border = match config.border {
+        MediawayCaptureBorder::Shown => CaptureBorder::Shown,
+        MediawayCaptureBorder::Hidden => CaptureBorder::Hidden,
+    };
+    options.dimensions = match config.dimensions {
+        MediawayFrameDimensions::Native => FrameDimensions::Native,
+        MediawayFrameDimensions::EvenCropped => FrameDimensions::EvenCropped,
+    };
+    let capture = WindowsWindowCapture::open_with(&rust_config, options)?;
+    let border_hidden = capture.border_hidden();
+    Ok((Box::new(capture), Some(border_hidden)))
+}
+
+/// Window dispatch on a platform whose window source is not an `HWND`.
+#[cfg(not(windows))]
+fn open_window_capture(
+    config: &MediawayDesktopCaptureConfig,
+    cursor: CursorCapture,
+    region: Option<CaptureRegion>,
+) -> Result<Opened, CaptureError> {
+    let _ = (config, cursor, region);
+    Err(CaptureError::Unsupported)
+}
+
+/// Whether the OS actually hid the capture border of a Window session.
+///
+/// Meaningful after `border = HIDDEN`: a refusal is not an error at open (the border is drawn
+/// on screen, never into frames), so this is the only way to learn it happened. Returns
+/// [`MediawayDeviceStatus::Unsupported`] for a Screen session, which has no border.
+///
+/// # Safety
+///
+/// `capture` must be a live pointer returned by [`mediaway_desktop_capture_open`].
+/// `out_hidden` must be a valid, writable `bool` pointer.
+#[unsafe(no_mangle)]
+pub const unsafe extern "C" fn mediaway_desktop_capture_border_hidden(
+    capture: *const DesktopCaptureHandle,
+    out_hidden: *mut bool,
+) -> MediawayDeviceStatus {
+    if capture.is_null() || out_hidden.is_null() {
+        return MediawayDeviceStatus::InvalidArgument;
+    }
+    // SAFETY: caller guarantees `capture` is a valid, live handle pointer (function contract).
+    let handle = unsafe { &*capture };
+    if handle.poisoned {
+        return MediawayDeviceStatus::HandlePoisoned;
+    }
+    let Some(hidden) = handle.border_hidden else {
+        return MediawayDeviceStatus::Unsupported;
+    };
+    // SAFETY: `out_hidden` is checked non-null above (function contract).
+    unsafe { out_hidden.write(hidden) };
+    MediawayDeviceStatus::Ok
 }
 
 /// Resolve a C ABI `source_index` ordinal to a [`Select`] for Screen (ADR-0005): `0`

@@ -663,8 +663,15 @@ The sketches above still show `include_child_processes`. The shipped header and 
 `include_target_process_tree`, because `false` never meant "the process without its children":
 Windows has only `INCLUDE_TARGET_PROCESS_TREE` and `EXCLUDE_TARGET_PROCESS_TREE` (everything
 *else*), and the Rust `ProcessTreeScope::ProcessOnly` this field used to map to selected the
-exclude mode. Same polarity and struct layout, so `MEDIAWAY_DEVICE_FFI_ABI_VERSION` stays `1`;
+exclude mode. Same polarity and struct layout, so this rename needed no ABI version bump by itself;
 only source references change (C#/Python parameter names follow). See
 `mediaway-device` `adr/windows/0002-wasapi-capture.md` § Correction.
+
+## Addendum (2026-09-29): Window capture is no longer deferred
+
+Every "Window is deferred" statement above is superseded by
+[ADR-0005](0005-window-capture-c-abi.md): a Window source takes a caller-owned `HWND` through
+`mediaway_desktop_capture_config_window`, with cursor / region / border / even-crop options, and
+`MEDIAWAY_DEVICE_FFI_ABI_VERSION` is 2.
 
 ADRs are **English**. Numbering is local to this `adr/` folder.

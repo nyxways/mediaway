@@ -151,11 +151,22 @@ export const MwCameraFrame = koffi.struct("MwCameraFrame", {
   data_len: "size_t",
 });
 
+// Field order and widths mirror `mediaway_desktop_capture_config_t` in device.h
+// exactly (ADR-0005). Every field after `gpu_device` is zero-means-previous-behaviour.
 export const MwDesktopConfig = koffi.struct("MwDesktopConfig", {
   source_kind: "int32",
   source_index: "uint32",
   time_base: MwRational,
   gpu_device: MwGpuDeviceHandle,
+  window_handle: "uint64",
+  cursor: "int32", // 0 = excluded, 1 = included
+  border: "int32", // 0 = shown, 1 = hidden (Window only)
+  dimensions: "int32", // 0 = native, 1 = even-cropped (Window only)
+  region_x: "uint32",
+  region_y: "uint32",
+  region_width: "uint32",
+  region_height: "uint32",
+  region_enabled: "bool",
 });
 
 export const MwDesktopFrame = koffi.struct("MwDesktopFrame", {
@@ -600,6 +611,12 @@ export const device = {
   desktopConfigScreen: deviceLib.func(
     "MwDesktopConfig mediaway_desktop_capture_config_screen(uint32_t output_index, MwRational time_base, MwGpuDeviceHandle gpu_device)"
   ),
+  desktopConfigWindow: deviceLib.func(
+    "MwDesktopConfig mediaway_desktop_capture_config_window(uint64_t hwnd, MwRational time_base, MwGpuDeviceHandle gpu_device)"
+  ),
+  desktopBorderHidden: deviceLib.func(
+    "int mediaway_desktop_capture_border_hidden(void *capture, _Out_ bool *out_hidden)"
+  ),
   desktopOpen: deviceLib.func(
     "int mediaway_desktop_capture_open(MwDesktopConfig *config, _Out_ void **out_capture)"
   ),
@@ -809,6 +826,22 @@ export interface RawPipelineFrame {
 
 /** `mediaway_gpu_device_handle_t` (Screen capture / GPU-input encode input,
  * mediaway_gpu_device_handle()'s output). */
+export interface RawDesktopConfig {
+  source_kind: number;
+  source_index: number;
+  time_base: RawRational;
+  gpu_device: RawGpuDeviceHandle;
+  window_handle: bigint | number;
+  cursor: number;
+  border: number;
+  dimensions: number;
+  region_x: number;
+  region_y: number;
+  region_width: number;
+  region_height: number;
+  region_enabled: boolean;
+}
+
 export interface RawGpuDeviceHandle {
   kind: number;
   native: number | bigint;

@@ -157,6 +157,27 @@ Each came from reasoning about code without reading the caller (`drain_output`),
 attributing an effect to the change just made. The corrective change is the same PR that
 adds this section.
 
+## Addendum (2026-09-29): an unknown frame duration
+
+A frame with `duration: 0` — the documented "unknown", and what a C caller with no duration passes —
+was handed to the MFT as `to_hns(0).max(1)`: a sample **100 nanoseconds** long. The MFT derives its
+output timeline from the sample durations it is given, so the H.264 MFT answered 150 frames at
+`1/30` with `0, 2, 2, 5, 5, 8, 8, 11, …` (measured, RTX 4090 host). All 150 packets were delivered
+and nothing failed, but a reader dropped the repeated instants and saw 110 frames. The HEVC MFT
+echoes the hns it is given, so it was never affected; that is why the timestamp tests above, which
+always declared `duration: 1`, could not see it.
+
+Unknown is now **one tick of the time base**, the nominal frame interval since this encoder's time
+base is its frame rate. `runtime::sample_duration_hns` owns the rule for both the CPU-upload and
+DX11 paths, which each carried their own copy of the `.max(1)`. A duration too large for `i64`
+is treated as unknown rather than as zero.
+`wmf_timestamp_round_trip::{h264,hevc}_unknown_frame_duration_is_one_tick` asserts that `0` times
+frames exactly like `1`; the H.264 case fails on the old code.
+
+**Why it survived:** every timestamp test declared `duration: 1`. `0` is the value a language
+binding sends when it has no duration, so the bug was reachable from every non-Rust binding and was
+found by the C++ binding's streaming example reading fewer frames than it wrote.
+
 ## References
 
 - `crates/mediaway-encoder/src/windows/wmf/runtime.rs` — both directions, with the rationale

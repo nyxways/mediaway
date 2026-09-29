@@ -51,8 +51,14 @@ const FRAMES: i64 = 30;
 const WIDTH: u32 = 64;
 const HEIGHT: u32 = 64;
 
-/// Encode one frame per tick in `ticks`, or `None` if this machine has no such encoder.
+/// Encode one frame per tick in `ticks`, each declared one tick long, or `None` if this machine
+/// has no such encoder.
 fn encode(codec: CodecKind, ticks: &[i64]) -> Option<Vec<Packet>> {
+    encode_with_duration(codec, ticks, 1)
+}
+
+/// [`encode`] with an explicit `VideoFrame::duration`. `0` is the documented "unknown".
+fn encode_with_duration(codec: CodecKind, ticks: &[i64], duration: u64) -> Option<Vec<Packet>> {
     let config = VideoEncoderConfig {
         codec,
         width: WIDTH,
@@ -79,7 +85,7 @@ fn encode(codec: CodecKind, ticks: &[i64]) -> Option<Vec<Packet>> {
     for &pts in ticks {
         let frame = VideoFrame {
             pts,
-            duration: 1,
+            duration,
             width: WIDTH,
             height: HEIGHT,
             format: PixelFormat::Nv12,
@@ -155,6 +161,44 @@ fn h264_packets_each_carry_their_own_timestamp() {
     if let Some(packets) = encode(CodecKind::H264, &constant_rate()) {
         assert_timestamps_survive(CodecKind::H264, &packets);
     }
+}
+
+/// Regression for a frame whose duration is `0`, the documented "unknown" and the value a C
+/// caller passes when it has none (the C++ wrapper's `writeFrame` defaults to it).
+///
+/// The sample duration handed to the MFT used to be `to_hns(0).max(1)`, i.e. **one hundred
+/// nanoseconds**. The MFT derives its output timeline from the sample durations it is given, so
+/// 150 frames at `1/30` came back as `0, 2, 2, 5, 5, 8, 8, 11, …`: repeated instants and gaps.
+/// Every packet was still delivered, so nothing failed; a player or `ffprobe` dropped the
+/// repeated timestamps and read 110 of the 150 frames.
+///
+/// Unknown now means one time-base tick, which is what this encoder's time base is: the
+/// nominal frame interval. The output must be exactly what declaring `duration: 1` produces.
+fn assert_unknown_duration_matches_one_tick(codec: CodecKind) {
+    let ticks = constant_rate();
+    let (Some(unknown), Some(one_tick)) = (
+        encode_with_duration(codec, &ticks, 0),
+        encode_with_duration(codec, &ticks, 1),
+    ) else {
+        return;
+    };
+    assert_timestamps_survive(codec, &unknown);
+    let pts = |packets: &[Packet]| -> Vec<i64> { packets.iter().map(|p| p.pts).collect() };
+    assert_eq!(
+        pts(&unknown),
+        pts(&one_tick),
+        "{codec:?}: duration 0 must time frames like duration 1"
+    );
+}
+
+#[test]
+fn h264_unknown_frame_duration_is_one_tick() {
+    assert_unknown_duration_matches_one_tick(CodecKind::H264);
+}
+
+#[test]
+fn hevc_unknown_frame_duration_is_one_tick() {
+    assert_unknown_duration_matches_one_tick(CodecKind::Hevc);
 }
 
 fn constant_rate() -> Vec<i64> {

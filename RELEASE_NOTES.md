@@ -4,6 +4,18 @@
 
 ### Fixed
 
+- **A Windows H.264 frame with an unknown duration (`duration: 0`) scrambled the video's
+  timeline.** The WMF encoder handed the MFT a sample duration of `to_hns(0).max(1)`, one hundred
+  *nanoseconds*, and the MFT builds its output timeline from the durations it is given. 150 frames
+  at `1/30` came back with presentation times `0, 2, 2, 5, 5, 8, 8, 11, …`: every packet was
+  delivered, the repeated instants were dropped by whatever read the file, and a player or
+  `ffprobe` saw 110 of 150 frames. `0` is the documented "unknown" and is what a C caller with no
+  duration passes (the C++ wrapper's `writeFrame` defaulted to it), so this hit every binding.
+  Unknown now means one time-base tick, the nominal frame interval; a duration the caller gives is
+  used as before. The C++ encode example that read 70 of 90 frames now reads 90 of 90 and 3.0 s.
+  HEVC was never affected (its MFT echoes timestamps). The regression test fails on the old code
+  (`crates/mediaway-encoder/adr/windows/0013-wmf-timestamp-round-trip.md` § Addendum).
+
 - **HEVC read back out of a container decoded nothing at all.** The Windows HEVC/AV1/VP9 CPU
   decoder used packets and `extra_data` exactly as given, which is right for a bitstream handed
   straight over from this workspace's encoder (Annex-B) and wrong for MP4 samples, which are

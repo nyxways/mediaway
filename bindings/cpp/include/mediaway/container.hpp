@@ -16,6 +16,7 @@
 #include <mediaway/container/mp3.hpp>
 #include <mediaway/container/mp4_webm.hpp>
 #include <mediaway/container/ogg.hpp>
+#include <mediaway/container/replay.hpp>
 #include <mediaway/container/ts.hpp>
 #include <mediaway/container/wav.hpp>
 

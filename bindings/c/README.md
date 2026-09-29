@@ -31,6 +31,18 @@ A streaming-first media stack. The C surface currently covers three capabilities
    The core never touches files or sockets: the caller owns all byte I/O. MP4 demux also
    supports ClearKey decryption (one demuxer-wide 16-byte key; decrypt runs synchronously
    inside `push_bytes`; WebM has no CENC/ClearKey support and returns `UNSUPPORTED`).
+   **Replay ring** (container ABI 8, `adr/container/0009`): `mediaway_replay_ring_t` keeps the
+   last N milliseconds of encoded packets and `mediaway_replay_ring_clip_last` cuts "the last
+   M ms" at a keyframe, in decode order, as an **owned** `mediaway_replay_clip_t` snapshot with
+   pts/dts rebased to zero (keep pushing while you read it; it outlives the ring). A `BYTES`
+   ring copies each payload in once; a `STORED` ring keeps only `{file, offset, len}` for a
+   caller that already writes packets to disk, fed by `mediaway_muxer_create_with_placements` +
+   `mediaway_muxer_poll_placements` (MP4). Write a clip out by pushing its entries through an
+   ordinary muxer — there is deliberately no "mux this clip" function. **Limit:** this ABI has
+   no video-packet source (`mediaway_encode_session` muxes its encoder's packets internally),
+   so feed the ring demuxer packets, audio-encoder packets, or packets from an encoder you
+   drive yourself. Placements come back in **write** order (a fragment writes its samples
+   grouped by track), so with more than one track match them by `(track_id, dts)`.
 2. **Pipeline — auto video encode → fMP4** (`<mediaway/pipeline.h>`): opens the best
    available OS/GPU H.264 (or other codec) encoder for a config, wires its output
    packets into a fragmented MP4 muxer internally, and hands the caller complete MP4
@@ -101,6 +113,7 @@ file must state what is real vs. aspirational.
 | File | Capability | Real today? |
 |---|---|---|
 | `container/mux_roundtrip.c` | container mux + demux roundtrip (90 video + 90 audio fake packets → fMP4 → demux back) | ✅ link+run verified |
+| `container/replay_ring.c` | replay ring: 6 s of synthetic packets → keep 3 s → last-2 s clip → standalone MP4 (re-demuxed) → `STORED` ring fed by muxer placements reads back the same bytes | ✅ link+run verified |
 | `pipeline/encode_to_mp4.c` | auto H.264 encode of 90 synthetic NV12 frames → `out.mp4` bytes | ✅ link+run verified |
 | `pipeline/encode_audio.c` | auto AAC encode of 96 synthetic F32 stereo frames → audio-only fMP4 (ABI v2) | ✅ link+run verified |
 | `device/camera_record.c` | camera + mic capture → H.264 + AAC → ONE two-track MP4 (remuxed; audio track registered with the encoder's AudioSpecificConfig) | ✅ link+run verified on real hardware; video-only fallback without mic/audio backend |

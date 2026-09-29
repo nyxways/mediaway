@@ -121,6 +121,17 @@
 
 ### Added
 
+- **Replay ring over the container C ABI** (C, C++, C#, Python, Node.js): `mediaway_replay_ring_*` keeps
+  the last *N* milliseconds of encoded packets and `mediaway_replay_ring_clip_last` cuts the last *M* at a
+  keyframe, in decode order, rebased to zero, for a fresh muxer to write as a standalone file. A ring holds
+  either the payloads (`BYTES`) or only where they are (`STORED`, fed from the new
+  `mediaway_muxer_create_with_placements` / `mediaway_muxer_poll_placements`, which record where each MP4
+  sample landed). A clip is an owned snapshot, so pushing more or closing the ring cannot invalidate it. The
+  C ABI has no video-packet source yet (`mediaway_encode_session` muxes internally), so feed the ring demuxer
+  packets, audio-encoder packets or packets from your own encoder. `MEDIAWAY_CONTAINER_FFI_ABI_VERSION` is 8;
+  additions only, no existing struct changed. Hardware-verified on real H.264
+  (`crates/mediaway-ffi/adr/container/0009-replay-ring-c-abi.md`).
+
 - **`mediaway_container::replay::ReplayRing`**: keeps the last *N* seconds of encoded packets
   in memory and cuts "the last *M* seconds" at a keyframe, as a packet sequence rebased to
   zero that a fresh muxer writes as a standalone file. Cuts are in decode order, so B-frames

@@ -16,6 +16,30 @@ public sealed class Muxer : IDisposable
 
     public Muxer() => _handle = MuxerHandle.Create();
 
+    private Muxer(MuxerHandle handle) => _handle = handle;
+
+    /// <summary>
+    /// Create an MP4 muxer that also records where every sample's payload lands, for a caller that
+    /// writes the polled bytes to a file and wants to find any packet's bytes in it later — what a
+    /// <see cref="ReplayPayloadKind.Stored"/> <see cref="ReplayRing"/> is fed with. The output bytes
+    /// are identical to <see cref="Muxer()"/>'s; the only cost is one small record per sample. Take
+    /// the records from <see cref="MuxerSession.PollPlacements"/> after <see cref="Begin"/>.
+    /// </summary>
+    /// <exception cref="MediawayContainerException">The native call caught a panic while creating
+    /// the muxer (<see cref="MediawayContainerStatus.InternalPanic"/>).</exception>
+    public static Muxer CreateWithPlacements()
+    {
+        var handle = MuxerHandle.CreateWithPlacements();
+        if (handle.IsInvalid)
+        {
+            MediawayContainerException.Throw(
+                MediawayContainerStatus.InternalPanic,
+                "mediaway_muxer_create_with_placements returned NULL (a panic was caught during construction).");
+        }
+
+        return new Muxer(handle);
+    }
+
     /// <param name="format">
     /// Container format to open. WebM's TrackNumber element must not be <c>0</c> — unlike
     /// MP4, a video/audio track registered with <see cref="VideoTrackInfo.Id"/>/

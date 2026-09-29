@@ -16,12 +16,15 @@ import {
   MwAudioTrackInfo,
   container,
   copyBytes,
+  replay,
   type RawAudioTrackInfo,
   type RawPacket,
   type RawPacketView,
   type RawStreamInfo,
   type RawVideoTrackInfo,
 } from "@mediaway/ffi";
+import type { Placement } from "./replay.js";
+import { takePlacements } from "./replay.js";
 
 export interface Rational {
   num: number;
@@ -79,6 +82,11 @@ export interface Packet {
   data: Buffer;
   /** Ticks of the track's timeBase. */
   pts: number;
+  /**
+   * Decode timestamp, ticks of the track's timeBase. Optional on input (`Muxer.push` defaults it
+   * to `pts`, i.e. no B-frames); always set on demuxed packets.
+   */
+  dts?: number;
   /** Ticks of the track's timeBase. */
   duration: number;
   /** Sync sample / keyframe. */
@@ -91,6 +99,34 @@ export class MediawayError extends Error {
   constructor(status: number, message?: string) {
     super(message ?? `mediaway error (status ${status})`);
     this.status = status;
+  }
+}
+
+/**
+ * A replay ring refused a packet whose decode timestamp went backwards within its stream
+ * (status INVALID_PACKET). The packet was NOT added and the ring is still usable: drop it and
+ * carry on.
+ */
+export class ReplayOutOfOrderError extends MediawayError {
+  constructor() {
+    super(4, "replay ring: dts went backwards on this stream; packet not added");
+    this.name = "ReplayOutOfOrderError";
+  }
+}
+
+/** A packet for a stream that was never added to the replay ring (status UNKNOWN_STREAM). */
+export class ReplayUnknownStreamError extends MediawayError {
+  constructor() {
+    super(10, "replay ring: stream was never added");
+    this.name = "ReplayUnknownStreamError";
+  }
+}
+
+/** `push` on a `"stored"` ring, or `pushStored` on a `"bytes"` ring (status INVALID_STATE). */
+export class ReplayPayloadKindError extends MediawayError {
+  constructor() {
+    super(2, "replay ring: wrong payload kind for this call (push vs pushStored)");
+    this.name = "ReplayPayloadKindError";
   }
 }
 
@@ -146,10 +182,38 @@ export class Muxer {
   private handle: unknown;
   private nextIndex = 1;
 
-  constructor(format: ContainerFormat = "mp4") {
-    this.handle =
-      format === "mp4" ? container.muxerCreate() : container.muxerCreateForFormat(FORMAT_TO_ABI[format]);
+  /**
+   * @param options.placements MP4 only: also record where every sample's payload lands in the
+   *   output ({@link Muxer.pollPlacements}). The output bytes are identical; the only cost is
+   *   one small record per sample.
+   */
+  constructor(format: ContainerFormat = "mp4", options: { placements?: boolean } = {}) {
+    if (options.placements) {
+      if (format !== "mp4") throw new MediawayError(1, "placements are MP4-only");
+      this.handle = replay.muxerCreateWithPlacements();
+    } else {
+      this.handle =
+        format === "mp4" ? container.muxerCreate() : container.muxerCreateForFormat(FORMAT_TO_ABI[format]);
+    }
     if (!this.handle) throw new MediawayError(7, "muxer creation panicked");
+  }
+
+  /** An MP4 muxer that records payload placements — see {@link Muxer.pollPlacements}. */
+  static createWithPlacements(): Muxer {
+    return new Muxer("mp4", { placements: true });
+  }
+
+  /**
+   * Take the placements recorded since the last call, in write order: where each sample's
+   * payload landed in the bytes {@link pollBytes} returned. Feed them to
+   * {@link ReplayRing.pushStored}. A placement's bytes are available from `pollBytes` by the
+   * time the placement is.
+   *
+   * @throws {MediawayError} status 2 (INVALID_STATE) before `begin()`, and on a muxer that
+   *   records none (any not built with `placements`, WebM included).
+   */
+  pollPlacements(): Placement[] {
+    return takePlacements(this.handle);
   }
 
   addVideoTrack(info: VideoTrackInfo): number {
@@ -197,7 +261,7 @@ export class Muxer {
     const raw: RawPacketView = {
       stream_id: packet.trackIndex,
       pts: BigInt(packet.pts),
-      dts: BigInt(packet.pts), // dts defaults to pts (no B-frames in the DX contract)
+      dts: BigInt(packet.dts ?? packet.pts), // defaults to pts (no B-frames)
       duration: BigInt(packet.duration),
       is_keyframe: packet.key ?? false,
       is_discard: false,
@@ -300,6 +364,7 @@ export class Demuxer {
       trackIndex,
       data: payload,
       pts: Number(raw.pts),
+      dts: Number(raw.dts),
       duration: Number(raw.duration),
       key: raw.is_keyframe,
     };
@@ -318,6 +383,7 @@ export class Demuxer {
 // from MP4/WebM's Muxer/Demuxer (no track registration, out-buffer-per-call
 // mux, or a construction-time stream list) — see each module's own top comment.
 
+export * from "./replay.js";
 export * from "./ogg.js";
 export * from "./adts.js";
 export * from "./flv.js";

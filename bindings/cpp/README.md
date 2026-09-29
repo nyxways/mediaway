@@ -33,6 +33,21 @@ detail in [`../c/README.md`](../c/README.md) and `docs/spec/c-ffi.md`):
    see each header's top comment). WAV is mux-only as a class (`WavMuxer`,
    consuming `finish()`); demux is the one-shot `container::wavParse()` function,
    not a class at all. Fully real, all formats link+run verified.
+   **Replay ring** (container ABI 8, `adr/container/0009`): `container::ReplayRing` keeps the
+   last N milliseconds of encoded packets and `clipLast(span)` cuts "the last M ms" at a keyframe,
+   in decode order, as an **owned** `container::ReplayClip` snapshot (pts/dts rebased to zero;
+   keep pushing while you read it; it outlives the ring; iterate it with a range-for). A
+   `ReplayPayloadKind::Bytes` ring copies each payload in once, and `entry.payload` is a
+   `ByteView` **borrowed from the clip**; a `Stored` ring keeps only `{file, offset, len}`
+   for a caller that already writes packets to disk, fed by `Muxer::withPlacements()` +
+   `LiveMuxer::pollPlacements()` (MP4). Write a clip out by pushing `entry.toPacket()` through
+   an ordinary `Muxer` — there is deliberately no "mux this clip" function. `tryPush()` returns
+   `false` for a dts that went backwards (drop it and carry on) where `push()` throws; the
+   other refusals are `Error`s told apart by `rawCode()`. **Limit:** the C ABI has no
+   video-packet source (`encoder::EncodeSession` muxes its encoder's packets internally), so
+   feed the ring `Demuxer` packets, `AudioEncoder` packets, or packets from an encoder you drive
+   yourself. Placements come back in **write** order (a fragment writes its samples grouped by
+   track), so with more than one track match them by `(trackId, dts)`.
 2. **Pipeline — auto video encode → fMP4, plus decode**: one call picks the best
    available OS/GPU encoder for a config, wires it into an internal MP4 muxer;
    `finish()` returns complete MP4 bytes. The audio encoder is separate (ABI v2,
@@ -107,6 +122,7 @@ aspirational):
 | File | Capability | Real today? |
 |---|---|---|
 | `container/mux_roundtrip.cpp` | mux 90 fake video + audio packets → fMP4 → demux back, count packets | ✅ link+run verified |
+| `container/replay_ring.cpp` | `ReplayRing`/`ReplayClip`: 6 s of synthetic packets → keep 3 s → last-2 s clip → standalone MP4 (re-demuxed) → `Stored` ring fed by `Muxer::withPlacements()` reads back the same bytes | ✅ link+run verified |
 | `container/all_formats_smoke.cpp` | round-trip all 7 non-MP4 formats (WebM, Ogg, ADTS, FLV, MPEG-TS incl. `finish()`, MP3, WAV incl. `wavParse()`) | ✅ link+run verified |
 | `pipeline/encode_to_mp4.cpp` | auto H.264 encode of 90 synthetic NV12 frames → `out.mp4` | ✅ link+run verified |
 | `pipeline/encode_audio.cpp` | auto AAC encode of 96 synthetic F32 stereo frames → audio-only fMP4 (ABI v2) | ✅ link+run verified |
@@ -115,6 +131,8 @@ aspirational):
 | `device/capture_microphone.cpp` | microphone capture, raw PCM | ✅ link+run verified (real mic) |
 | `pipeline/screen_record.cpp` | screen + mic → encode → MP4, via `GpuDevice` + the capture-to-encode bridge | ✅ link+run verified on real hardware (GPU-input encode gracefully skips as a known driver/encoder limitation, not a bug); mic PCM drained, not muxed — see `camera_record.cpp` for two-track remux |
 | `device/capture_screen.cpp` | screen capture only, via `GpuDevice` | ✅ link+run verified on real hardware |
+
+`tests/replay_ring.cpp` is a hermetic behaviour test for `ReplayRing`/`ReplayClip` and `Muxer::withPlacements()` that also pins the C struct layouts the wrapper depends on (`static_assert`, 64-bit) and the container ABI version. Build it like an example: `g++ -std=c++17 -Ibindings/cpp/include -Icrates/mediaway-ffi/include bindings/cpp/tests/replay_ring.cpp -L<dll dir> -lmediaway_ffi`.
 
 ## Rules
 

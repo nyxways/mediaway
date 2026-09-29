@@ -1,5 +1,9 @@
-#if NET8_0_OR_GREATER
 using System.Runtime.CompilerServices;
+
+// Layout-pin and ABI-version tests read the internal native structs directly.
+[assembly: InternalsVisibleTo("Mediaway.Container.Tests")]
+
+#if NET8_0_OR_GREATER
 
 // Every native struct in this assembly (NativeStructs.cs) is deliberately kept fully
 // blittable (native `bool` is a `byte` field, not `bool`) precisely so this attribute is

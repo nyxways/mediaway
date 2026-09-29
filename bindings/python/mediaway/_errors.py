@@ -22,6 +22,8 @@ __all__ = [
     "DeviceUnavailableError",
     "CaptureUnsupportedError",
     "InvalidStateError",
+    "UnknownStreamError",
+    "OutOfOrderPacketError",
 ]
 
 
@@ -78,4 +80,21 @@ class InvalidStateError(MediawayError):
 
     Maps the container ABI's INVALID_STATE outcome. The wrappers make most of
     these unrepresentable, but defensive examples may still hit them.
+    """
+
+
+class UnknownStreamError(MediawayError):
+    """A packet's stream id was never added to the `ReplayRing`.
+
+    Maps the container ABI's UNKNOWN_STREAM outcome. Call
+    `ReplayRing.add_stream` for the stream first.
+    """
+
+
+class OutOfOrderPacketError(MediawayError):
+    """A `ReplayRing` stream's decode timestamp went backwards.
+
+    Maps the container ABI's INVALID_PACKET outcome for the replay ring. The
+    ring is decode-ordered per stream, so the packet was NOT added; the caller
+    can drop it and carry on. The ring itself is unharmed.
     """

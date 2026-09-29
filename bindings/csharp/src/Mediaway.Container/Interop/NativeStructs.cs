@@ -113,3 +113,62 @@ internal struct NativeWaveFormat
     public uint SampleRate;
     public ushort BitsPerSample;
 }
+
+// -- Replay ring and placements (adr/container/0009-replay-ring-c-abi.md) --------------
+// Offsets/sizes (64-bit) verified against the real container.h with a gcc probe and pinned by
+// ReplayLayoutTests: config 48, packet meta 40, stored payload 24, clip entry 80, placement 32.
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeReplayRingConfig
+{
+    public uint AnchorStreamId;
+    public NativeRational AnchorTimeBase;
+    public ulong WindowMs;
+    public ulong MaxBytes;
+    public int PayloadKind;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativePacketMeta
+{
+    public uint StreamId;
+    public long Pts;
+    public long Dts;
+    public ulong Duration;
+    public byte IsKeyframe;
+    public byte IsDiscard;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeStoredPayload
+{
+    public uint File;
+    public ulong Offset;
+    public uint Len;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeReplayClipEntry
+{
+    public uint StreamId;
+    public long Pts;
+    public long Dts;
+    public ulong Duration;
+    public byte IsKeyframe;
+    public byte IsDiscard;
+    public int PayloadKind;
+    public nint Payload;
+    public nuint PayloadLen;
+    public uint StoredFile;
+    public ulong StoredOffset;
+    public uint StoredLen;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativePlacement
+{
+    public uint TrackId;
+    public long Dts;
+    public ulong Offset;
+    public uint Len;
+}

@@ -16,6 +16,9 @@
 
 import koffi, { type TypeObject } from "koffi";
 import { findLibrary, containerLib, pipelineLib, deviceLib } from "./loader.js";
+import { createReplayBindings, replayLayout } from "./container-replay.js";
+
+export * from "./container-replay.js";
 
 export { findLibrary, containerLib, pipelineLib, deviceLib };
 
@@ -642,6 +645,15 @@ export const device = {
   ),
   gpuDeviceClose: deviceLib.func("void mediaway_gpu_device_close(void *device)"),
 };
+
+// ── Replay ring + payload placements (adr/container/0009) ────────────────────
+// Declared in container-replay.ts (this file is near the 1000-line cap). Called here, after
+// `MwRational` and `MwPacketView` exist, because the signatures name them.
+
+export const replay = createReplayBindings(MwRational);
+
+/** koffi's sizeof/offsetof for the replay structs — pinned by test/replay-ring.test.ts. */
+export const replayStructLayout = (): ReturnType<typeof replayLayout> => replayLayout(replay.structs);
 
 // ── Copy helpers ───────────────────────────────────────────────────────────────
 

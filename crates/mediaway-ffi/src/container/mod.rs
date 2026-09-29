@@ -37,6 +37,7 @@ mod muxer;
 mod ogg_demuxer;
 #[cfg(feature = "mux")]
 mod ogg_muxer;
+mod replay;
 #[cfg(feature = "demux")]
 mod ts_demuxer;
 #[cfg(feature = "mux")]
@@ -102,10 +103,11 @@ pub use mp3_muxer::{
 };
 #[cfg(feature = "mux")]
 pub use muxer::{
-    MuxerHandle, mediaway_muxer_add_audio_track, mediaway_muxer_add_video_track,
+    MediawayPlacement, MuxerHandle, mediaway_muxer_add_audio_track, mediaway_muxer_add_video_track,
     mediaway_muxer_begin, mediaway_muxer_close, mediaway_muxer_create,
     mediaway_muxer_create_for_format, mediaway_muxer_create_with_fragment_batch,
-    mediaway_muxer_flush, mediaway_muxer_poll_bytes, mediaway_muxer_push_packet,
+    mediaway_muxer_create_with_placements, mediaway_muxer_flush, mediaway_muxer_poll_bytes,
+    mediaway_muxer_poll_placements, mediaway_muxer_push_packet, mediaway_placements_free,
 };
 #[cfg(feature = "demux")]
 pub use ogg_demuxer::{
@@ -117,6 +119,14 @@ pub use ogg_demuxer::{
 pub use ogg_muxer::{
     OggMuxerHandle, mediaway_ogg_muxer_close, mediaway_ogg_muxer_create, mediaway_ogg_muxer_flush,
     mediaway_ogg_muxer_poll_bytes, mediaway_ogg_muxer_push_packet,
+};
+pub use replay::{
+    MediawayPacketMeta, MediawayReplayClipEntry, MediawayReplayPayloadKind,
+    MediawayReplayRingConfig, MediawayStoredPayload, ReplayClipHandle, ReplayRingHandle,
+    mediaway_replay_clip_duration_ms, mediaway_replay_clip_free, mediaway_replay_clip_packet_at,
+    mediaway_replay_clip_packet_count, mediaway_replay_ring_add_stream,
+    mediaway_replay_ring_clip_last, mediaway_replay_ring_close, mediaway_replay_ring_create,
+    mediaway_replay_ring_push, mediaway_replay_ring_push_stored, mediaway_replay_ring_span_ms,
 };
 #[cfg(feature = "demux")]
 pub use ts_demuxer::{
@@ -152,7 +162,9 @@ pub use wav_muxer::{
 /// `adr/0006-mpeg-ts-c-abi.md`), then `6` (MP3, `adr/0007-mp3-c-abi.md`), then `7` (WAV's
 /// dedicated `mediaway_wav_muxer_t` + one-shot `mediaway_wav_parse`,
 /// `adr/0008-wav-c-abi.md`) — the last of all 8 `mediaway-container` formats.
+/// Bumped `7` -> `8`: added the replay ring and MP4 payload placements
+/// (`adr/0009-replay-ring-c-abi.md`).
 #[unsafe(no_mangle)]
 pub const extern "C" fn mediaway_container_ffi_abi_version() -> u32 {
-    7
+    8
 }

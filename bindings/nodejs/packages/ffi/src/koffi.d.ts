@@ -34,6 +34,12 @@ declare module "koffi" {
   /** Load a native library (DLL) by path or name. */
   export function load(path: string): LibraryHandle;
 
+  /** Size in bytes of a C type, as koffi lays it out. */
+  export function sizeof(type: string | TypeObject): number;
+
+  /** Byte offset of a struct member, as koffi lays it out. */
+  export function offsetof(type: TypeObject, member: string): number;
+
   /** Decode bytes at a pointer into a JS value of the given C type. */
   export function decode(ptr: unknown, type: string | TypeObject, length?: number): Uint8Array;
 
@@ -42,6 +48,8 @@ declare module "koffi" {
     struct: typeof struct;
     load: typeof load;
     decode: typeof decode;
+    sizeof: typeof sizeof;
+    offsetof: typeof offsetof;
   };
 
   export default koffi;

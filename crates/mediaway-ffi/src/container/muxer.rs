@@ -431,3 +431,135 @@ pub unsafe extern "C" fn mediaway_muxer_close(muxer: *mut MuxerHandle) {
         drop(unsafe { Box::from_raw(muxer) });
     }));
 }
+
+/// Where one sample's payload landed in the muxer's output stream — an element of the array
+/// [`mediaway_muxer_poll_placements`] returns.
+///
+/// `offset` counts from the first byte [`mediaway_muxer_poll_bytes`] ever returned, so it is the
+/// file offset when every polled byte is written sequentially from 0. `len` is the payload **as
+/// written**: H.264/HEVC Annex-B becomes length-prefixed and AAC loses its ADTS header, so it can
+/// differ from the pushed payload's length.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct MediawayPlacement {
+    /// The packet's `stream_id` (the caller's id, not the ISOBMFF `track_ID`).
+    pub track_id: u32,
+    /// The sample's decode timestamp, as pushed.
+    pub dts: i64,
+    /// Absolute byte offset of the payload in the muxer's output.
+    pub offset: u64,
+    /// Payload length in bytes, as written.
+    pub len: u32,
+}
+
+/// Create an MP4 muxer that also records where every sample's payload lands.
+///
+/// For a caller that writes the polled bytes to a file and wants to find any packet's bytes in it
+/// later, which is what a `STORED` replay ring is fed with
+/// (`adr/container/0009-replay-ring-c-abi.md` §4). The output bytes are identical to
+/// [`mediaway_muxer_create`]'s; the only cost is one small record per sample. Take the records
+/// with [`mediaway_muxer_poll_placements`].
+///
+/// Returns null only if a panic was caught during construction.
+#[unsafe(no_mangle)]
+pub extern "C" fn mediaway_muxer_create_with_placements() -> *mut MuxerHandle {
+    let built = catch_unwind(AssertUnwindSafe(|| MuxerHandle {
+        poisoned: false,
+        state: MuxerState::Mp4Open(mp4::mux::Muxer::new().with_placements()),
+    }));
+    built.map_or(std::ptr::null_mut(), |handle| {
+        Box::into_raw(Box::new(handle))
+    })
+}
+
+/// Take the placements recorded since the last call, in write order, as an owned array; release it
+/// with [`mediaway_placements_free`]. Nothing recorded is `*out_rows == NULL`, `*out_count == 0`.
+///
+/// A placement's bytes are available from [`mediaway_muxer_poll_bytes`] by the time the placement
+/// is. `INVALID_STATE` on an `Open` muxer (call [`mediaway_muxer_begin`] first) and on a `WebM`
+/// muxer, which never records. A plain MP4 muxer, one not created by
+/// [`mediaway_muxer_create_with_placements`], records nothing and returns an empty array:
+/// indistinguishable from "nothing new yet", the same answer the Rust API gives.
+///
+/// Placements are in **write** order, which is not push order once there are two tracks: a
+/// fragment writes its samples grouped by track. Match a placement to its packet by
+/// `(track_id, dts)`, never by position.
+///
+/// # Safety
+///
+/// `muxer` must be a live pointer returned by [`mediaway_muxer_create_with_placements`].
+/// `out_rows` and `out_count` must be valid, writable, non-null out-parameters.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mediaway_muxer_poll_placements(
+    muxer: *mut MuxerHandle,
+    out_rows: *mut *mut MediawayPlacement,
+    out_count: *mut usize,
+) -> MediawayStatus {
+    if muxer.is_null() || out_rows.is_null() || out_count.is_null() {
+        return MediawayStatus::InvalidArgument;
+    }
+    // SAFETY: both are checked non-null above and writable per the function contract.
+    unsafe {
+        out_rows.write(std::ptr::null_mut());
+        out_count.write(0);
+    }
+    // SAFETY: caller guarantees `muxer` is a valid, live handle pointer (function contract).
+    let handle = unsafe { &mut *muxer };
+    if handle.poisoned {
+        return MediawayStatus::HandlePoisoned;
+    }
+
+    let result = catch_unwind(AssertUnwindSafe(|| match &mut handle.state {
+        MuxerState::Mp4Live(live) => {
+            let mut placements = Vec::new();
+            live.poll_placements(&mut placements);
+            Ok(placements
+                .into_iter()
+                .map(|p| MediawayPlacement {
+                    track_id: p.track_id,
+                    dts: p.dts,
+                    offset: p.offset,
+                    len: p.len,
+                })
+                .collect::<Vec<_>>())
+        }
+        MuxerState::Mp4Open(_) | MuxerState::WebmOpen(_) | MuxerState::WebmLive(_) => {
+            Err(MediawayStatus::InvalidState)
+        }
+    }));
+
+    match result {
+        Ok(Ok(rows)) if rows.is_empty() => MediawayStatus::Ok,
+        Ok(Ok(rows)) => {
+            let boxed = rows.into_boxed_slice();
+            let count = boxed.len();
+            let ptr = Box::into_raw(boxed).cast::<MediawayPlacement>();
+            // SAFETY: both are checked non-null above (function contract).
+            unsafe {
+                out_rows.write(ptr);
+                out_count.write(count);
+            }
+            MediawayStatus::Ok
+        }
+        Ok(Err(status)) => status,
+        Err(_) => {
+            handle.poisoned = true;
+            MediawayStatus::InternalPanic
+        }
+    }
+}
+
+/// Free an array from [`mediaway_muxer_poll_placements`]. `(NULL, 0)` is always safe.
+///
+/// # Safety
+///
+/// `rows`/`count` must be exactly the pair that function wrote, not already freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mediaway_placements_free(rows: *mut MediawayPlacement, count: usize) {
+    if rows.is_null() {
+        return;
+    }
+    // SAFETY: `rows`/`count` came from `Box::into_raw` of a boxed slice of exactly `count`
+    // elements in `mediaway_muxer_poll_placements` (function contract).
+    drop(unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(rows, count)) });
+}

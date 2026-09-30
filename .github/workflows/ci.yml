@@ -358,16 +358,13 @@ jobs:
         run: |
           cargo test -p mediaway-ffi --features pipeline --test aac_decode_smoke -- --nocapture --test-threads=1
 
-      # DISCOVERY: the Apple `*_tests.rs` files exist but no CI job ever ran them, and the two audio
-      # backends that were finally run both had defects. This runs every library test of the Apple
-      # backends and reports; failures do not fail the job yet, they are the list of what to fix.
-      - name: Run every encoder and decoder test on real macOS (discovery)
+      # The Apple `*_tests.rs` files were never run by any CI job until the first real macOS run,
+      # which found two stale assertions (HEVC and Zero-Copy input had since been implemented).
+      # `--test-threads=1` because these tests open real VideoToolbox / AudioToolbox sessions.
+      - name: Run every encoder and decoder test on real macOS
         timeout-minutes: 15
-        continue-on-error: true
         run: |
-          cargo test -p mediaway-encoder -p mediaway-decoder --lib --no-fail-fast -- --test-threads=1 2>&1 | tee apple-tests.log
-          echo "=== summary ==="
-          grep -E "^test result|^test .* FAILED|^failures:" apple-tests.log || true
+          cargo test -p mediaway-encoder -p mediaway-decoder --lib --no-fail-fast -- --test-threads=1
 
   apple-ios:
     name: apple compile (iOS cross-compile, mediaway-encoder, mediaway-decoder, mediaway-device)

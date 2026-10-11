@@ -8,6 +8,8 @@
 
 ### Added
 
+- Capture a whole monitor through Windows Graphics Capture (`DesktopCaptureSource::Monitor`, `DesktopVideoCaptureConfig::monitor`), so a screen region can be cropped on the GPU with the pointer drawn in, which the DXGI screen path cannot do
+
 ### Changed
 
 ### Fixed

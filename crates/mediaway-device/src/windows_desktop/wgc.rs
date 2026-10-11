@@ -1,4 +1,6 @@
-//! Windows Graphics Capture (WGC) for a single window — separate from DXGI screen.
+//! Windows Graphics Capture (WGC) for a single window or a whole monitor — separate from DXGI
+//! screen. A monitor through WGC can be cropped to a region on the GPU and include the pointer,
+//! which DXGI Desktop Duplication here can do neither of.
 
 #![allow(unsafe_code)]
 
@@ -26,12 +28,20 @@ use windows::Win32::Graphics::Direct3D11::{
     ID3D11Texture2D,
 };
 use windows::Win32::Graphics::Dxgi::IDXGIDevice;
+use windows::Win32::Graphics::Gdi::HMONITOR;
 use windows::Win32::System::WinRT::Direct3D11::{
     CreateDirect3D11DeviceFromDXGIDevice, IDirect3DDxgiInterfaceAccess,
 };
 use windows::Win32::System::WinRT::Graphics::Capture::IGraphicsCaptureItemInterop;
 use windows::Win32::System::WinRT::{RO_INIT_MULTITHREADED, RoInitialize};
 use windows::core::{Interface, factory};
+
+/// What a session captures: one window, or one whole monitor.
+#[derive(Clone, Copy)]
+enum Target {
+    Window(NativeHandle),
+    Monitor(NativeHandle),
+}
 
 struct HeldFrame {
     /// `None` when the delivered texture is a crop-ring slot: the WGC frame it was copied
@@ -92,9 +102,11 @@ pub struct WindowsWindowCapture {
 }
 
 impl WindowsWindowCapture {
-    /// Open a WGC session for [`DesktopCaptureSource::Window`].
+    /// Open a WGC session for [`DesktopCaptureSource::Window`] or
+    /// [`DesktopCaptureSource::Monitor`].
     ///
-    /// Requires a live `HWND` (`config.source`) and caller `gpu_device` for Zero-Copy.
+    /// Requires a live `HWND` or `HMONITOR` (`config.source`) and caller `gpu_device` for
+    /// Zero-Copy.
     /// Pair with process loopback audio when recording one app’s picture + sound.
     ///
     /// # Errors
@@ -129,8 +141,10 @@ impl WindowsWindowCapture {
         config: &DesktopVideoCaptureConfig,
         options: WindowCaptureOptions,
     ) -> Result<Self, CaptureError> {
-        let DesktopCaptureSource::Window { window } = config.source else {
-            return Err(CaptureError::Unsupported);
+        let target = match config.source {
+            DesktopCaptureSource::Window { window } => Target::Window(window),
+            DesktopCaptureSource::Monitor { monitor } => Target::Monitor(monitor),
+            _ => return Err(CaptureError::Unsupported),
         };
         if config.output != CaptureOutputPreference::ZeroCopyGpu {
             return Err(CaptureError::Unsupported);
@@ -161,10 +175,20 @@ impl WindowsWindowCapture {
 
         let interop = factory::<GraphicsCaptureItem, IGraphicsCaptureItemInterop>()
             .map_err(|_| CaptureError::Backend)?;
-        let hwnd = HWND(window.get() as *mut _);
-        // SAFETY: CreateForWindow requires a capturable top-level HWND.
-        let item: GraphicsCaptureItem =
-            unsafe { interop.CreateForWindow(hwnd) }.map_err(|_| CaptureError::AccessDenied)?;
+        let item: GraphicsCaptureItem = match target {
+            Target::Window(window) => {
+                let hwnd = HWND(window.get() as *mut _);
+                // SAFETY: CreateForWindow requires a capturable top-level HWND.
+                unsafe { interop.CreateForWindow(hwnd) }
+            }
+            Target::Monitor(monitor) => {
+                let hmonitor = HMONITOR(monitor.get() as *mut _);
+                // SAFETY: CreateForMonitor requires a live HMONITOR; a stale one is refused
+                // with an error, not undefined behaviour.
+                unsafe { interop.CreateForMonitor(hmonitor) }
+            }
+        }
+        .map_err(|_| CaptureError::AccessDenied)?;
 
         let item_size = item.Size().map_err(|_| CaptureError::Backend)?;
         let content_w = u32::try_from(item_size.Width).map_err(|_| CaptureError::Backend)?;

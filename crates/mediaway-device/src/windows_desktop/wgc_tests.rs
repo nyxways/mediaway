@@ -207,6 +207,97 @@ mod hardware {
         );
     }
 
+    /// A whole monitor through WGC (`DesktopCaptureSource::Monitor`), cropped to a region away
+    /// from its origin, with the pointer included: the frame comes back at the region's size as a
+    /// Zero-Copy texture.
+    ///
+    /// `#[ignore]`d: capturing a monitor makes Windows draw its capture border around that
+    /// monitor while the session lives (hidden where borderless capture is granted), which is a
+    /// change to the screen (`docs/conventions/testing.md` § Tests that manipulate the desktop).
+    ///
+    /// ```text
+    /// cargo nextest run -p mediaway-device --run-ignored all -E 'test(wgc_monitor_capture)'
+    /// ```
+    #[test]
+    #[ignore = "captures the primary monitor (Windows may draw a capture border); run explicitly"]
+    fn wgc_monitor_capture_crops_a_region_with_the_pointer_or_skip() {
+        use crate::desktop::CaptureRegion;
+        use windows::Win32::Foundation::POINT;
+        use windows::Win32::Graphics::Gdi::{MONITOR_DEFAULTTOPRIMARY, MonitorFromPoint};
+
+        let _guard = crate::windows_desktop::HARDWARE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // SAFETY: plain lookup; the primary monitor always exists while a session does.
+        let monitor = unsafe { MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY) };
+        let Some(monitor_handle) = NativeHandle::new(monitor.0 as usize) else {
+            eprintln!("skip: no primary monitor");
+            return;
+        };
+        let device = match GpuDevice::create(GpuDeviceOptions::default()) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("skip: GpuDevice::create failed ({e:?})");
+                return;
+            }
+        };
+
+        let mut cfg = DesktopVideoCaptureConfig::monitor(monitor_handle, Rational::new(1, 30));
+        cfg.gpu_device = Some(device.handle());
+        cfg.cursor = CursorCapture::Included;
+        cfg.region = Some(CaptureRegion {
+            x: 16,
+            y: 16,
+            width: 320,
+            height: 240,
+        });
+        let options = WindowCaptureOptions {
+            border: CaptureBorder::Hidden,
+            ..WindowCaptureOptions::default()
+        };
+        let mut capture = match WindowsWindowCapture::open_with(&cfg, options) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("skip: WindowsWindowCapture::open_with failed ({e:?})");
+                return;
+            }
+        };
+
+        // A monitor delivers a first frame without any change on screen.
+        let mut delivered = None;
+        for _ in 0..50 {
+            match capture.poll_frame() {
+                Ok(Some(frame)) => {
+                    delivered = Some(frame);
+                    break;
+                }
+                Ok(None) => std::thread::sleep(std::time::Duration::from_millis(20)),
+                Err(e) => {
+                    eprintln!("skip: poll_frame failed ({e:?})");
+                    return;
+                }
+            }
+        }
+        let Some(frame) = delivered else {
+            eprintln!("skip: no frame delivered within the bounded poll window");
+            return;
+        };
+        assert_eq!((frame.width, frame.height), (320, 240));
+        assert!(
+            matches!(
+                frame.storage,
+                VideoFrameStorage::Gpu(GpuBufferHandle::DirectX11 { .. })
+            ),
+            "expected a Zero-Copy DirectX11 handle, got {:?}",
+            frame.storage
+        );
+        let _ = capture.release_frame();
+        eprintln!(
+            "wgc monitor capture: 320x240 region delivered, border hidden: {}",
+            capture.border_hidden()
+        );
+    }
+
     /// The cursor, border and even-crop options, applied to a real WGC session.
     ///
     /// Opening with [`CursorCapture::Included`] succeeding is the cursor check: `open` fails
@@ -461,4 +552,20 @@ fn a_region_that_even_crops_to_nothing_is_invalid_input() {
     .err()
     .expect("empty after cropping");
     assert_eq!(err, CaptureError::InvalidInput);
+}
+
+/// A DXGI-style `Screen` source is not something the WGC backend opens: it answers
+/// `Unsupported` before touching any device, so callers can fall back.
+#[test]
+fn a_screen_source_is_unsupported_by_the_wgc_backend() {
+    use crate::Select;
+    use crate::desktop::DesktopVideoCaptureConfig;
+    use crate::windows_desktop::WindowsWindowCapture;
+    use mediaway_common::Rational;
+
+    let cfg = DesktopVideoCaptureConfig::screen(Select::Default, Rational::new(1, 30));
+    assert!(matches!(
+        WindowsWindowCapture::open(&cfg),
+        Err(CaptureError::Unsupported)
+    ));
 }

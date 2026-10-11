@@ -29,7 +29,7 @@ pub enum CaptureOutputPreference {
 ///
 /// | Backend | `Excluded` | `Included` |
 /// |---|---|---|
-/// | Windows WGC (window) | ✅ | ✅ `SetIsCursorCaptureEnabled` |
+/// | Windows WGC (window, monitor) | ✅ | ✅ `SetIsCursorCaptureEnabled` |
 /// | Windows DXGI (screen) | ✅ | ❌ DDA returns the pointer separately; not composited |
 /// | Linux portal (screen, window) | ✅ | ✅ `CursorMode::Embedded` |
 /// | macOS `ScreenCaptureKit` | ✅ | ✅ `showsCursor` |
@@ -59,7 +59,7 @@ pub enum CursorCapture {
 ///
 /// | Backend | Region support | Cost |
 /// |---|---|---|
-/// | Windows WGC (window) | ✅ | free at origin `(0, 0)`; otherwise one GPU→GPU region copy per frame |
+/// | Windows WGC (window, monitor) | ✅ | free at origin `(0, 0)`; otherwise one GPU→GPU region copy per frame |
 /// | Windows DXGI (screen) | ❌ rejected | — |
 /// | Linux portal, macOS `ScreenCaptureKit`, iOS | ❌ rejected | — |
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -142,6 +142,18 @@ pub enum DesktopCaptureSource {
         /// Opaque HWND / window token as a native handle (never null/unset by construction).
         window: NativeHandle,
     },
+    /// One whole monitor through the window-capture backend (Windows Graphics Capture
+    /// `CreateForMonitor`), which, unlike [`Self::Screen`] on DXGI, can crop to a
+    /// [`CaptureRegion`] on the GPU and draw the pointer into frames.
+    ///
+    /// | Backend | Support |
+    /// |---|---|
+    /// | Windows WGC ([`crate::windows_desktop::WindowsWindowCapture`]) | ✅ |
+    /// | Windows DXGI, Linux, macOS, iOS | ❌ rejected ([`crate::CaptureError::Unsupported`]) |
+    Monitor {
+        /// The monitor's `HMONITOR` as a native handle (never null by construction).
+        monitor: NativeHandle,
+    },
 }
 
 /// Parameters for opening a desktop video capture session.
@@ -186,6 +198,20 @@ impl DesktopVideoCaptureConfig {
         }
     }
 
+    /// Whole-monitor capture through the window-capture backend for `HMONITOR` bits; see
+    /// [`DesktopCaptureSource::Monitor`]. Prefer setting fields explicitly.
+    #[must_use]
+    pub const fn monitor(monitor: NativeHandle, time_base: Rational) -> Self {
+        Self {
+            source: DesktopCaptureSource::Monitor { monitor },
+            time_base,
+            output: CaptureOutputPreference::ZeroCopyGpu,
+            gpu_device: None,
+            sharing: CaptureSharing::Shared,
+            cursor: CursorCapture::Excluded,
+            region: None,
+        }
+    }
     /// Window capture for opaque `HWND` / window token bits. Prefer setting fields explicitly.
     #[must_use]
     pub const fn window(window: NativeHandle, time_base: Rational) -> Self {

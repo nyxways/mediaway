@@ -5,7 +5,7 @@
 | [sans-io](sans-io.md) | `iso-bmff` core + `mediaway-container` facade |
 | [scaffold](scaffold.md) | Crate map for MP4 + WebM |
 | [mp4-sample-entries](mp4-sample-entries.md) | Codec coverage per sample entry — H.264/VP9/HEVC/AV1 all real; HEVC framing + `hvcC` fixed in ADR-0006 |
-| [mp4-progressive](mp4-progressive.md) | `write_progressive`: a non-fragmented head (`ftyp`, `moov` with sample tables and edit lists, `mdat` header) for samples known up front; why FFmpeg needs it for an edit list (ADR-0008) |
+| [mp4-progressive](mp4-progressive.md) | `write_progressive` and `write_indexed_moov` (hybrid MP4): a non-fragmented head (`ftyp`, `moov` with sample tables and edit lists, `mdat` header) for samples known up front; why FFmpeg needs it for an edit list (ADR-0008) |
 | [opus-in-mp4](opus-in-mp4.md) | `Opus`/`dOps` sample entry — replaced a silent `mp4a`/`esds` AAC mislabel (ADR-0005) |
 | [audio-containers](audio-containers.md) | `riff-wave-core`/`adts-core`/`mpeg-audio`/`ogg-core` — audio-only formats, all facade-wired |
 | [general-containers](general-containers.md) | `flv-core`/`mpeg-ts-core` — general containers, all facade-wired |

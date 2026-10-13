@@ -3,7 +3,7 @@
 #![cfg(test)]
 #![allow(clippy::unwrap_used, reason = "unit tests")]
 
-use super::{ProgressiveTrack, write_progressive};
+use super::{ProgressiveTrack, write_indexed_moov, write_progressive};
 use crate::isobmff::{EditListEntry, FourCc, StblSample, parse_edts, parse_header, parse_moov};
 use crate::types::{Bytes, Codec, Rational, Track};
 
@@ -253,4 +253,137 @@ fn a_track_that_starts_late_has_an_empty_edit_first() {
         .unwrap()
         .1;
     assert_eq!(parse_edts(edts), vec![wait, play]);
+}
+
+/// Two tracks as a fragmented file lays them out: runs of samples, one run to a fragment, the
+/// tracks taking turns, other boxes between. Offsets are absolute.
+fn fragments() -> (Vec<StblSample>, Vec<StblSample>) {
+    let v = vec![
+        sample(1_000, 100, 0, 40_000, 80_000, true),
+        sample(1_100, 20, 40_000, 40_000, -40_000, false),
+        sample(1_120, 30, 80_000, 40_000, 0, false),
+        // The next video fragment: after the sound's, and a record box.
+        sample(2_000, 50, 120_000, 40_000, 0, false),
+        sample(2_050, 60, 160_000, 40_000, 0, false),
+    ];
+    let a = vec![
+        sample(1_500, 200, 0, 21_333, 0, true),
+        sample(1_700, 100, 21_333, 21_333, 0, true),
+    ];
+    (v, a)
+}
+
+#[test]
+fn an_indexed_moov_is_only_a_moov_and_points_at_samples_where_they_are() {
+    let (v, a) = fragments();
+    let (video, audio) = (video(), audio());
+    let mut moov = Vec::new();
+    write_indexed_moov(
+        &mut moov,
+        &[
+            ProgressiveTrack {
+                track: &video,
+                samples: &v,
+                edits: &[],
+            },
+            ProgressiveTrack {
+                track: &audio,
+                samples: &a,
+                edits: &[],
+            },
+        ],
+    );
+    let top = boxes(&moov);
+    assert_eq!(top.len(), 1, "a moov and nothing else");
+    assert_eq!(top[0].0, FourCc(*b"moov"));
+    let tracks = moov_of(&moov);
+    assert_eq!(tracks[0].samples, v);
+    assert_eq!(tracks[1].samples, a);
+    // No `mvex`: this is the non-fragmented movie.
+    assert!(!boxes(top[0].1).iter().any(|(t, _)| *t == FourCc(*b"mvex")));
+}
+
+#[test]
+fn an_indexed_moov_shares_a_chunk_between_adjacent_samples() {
+    let (v, _) = fragments();
+    let video = video();
+    let mut moov = Vec::new();
+    write_indexed_moov(
+        &mut moov,
+        &[ProgressiveTrack {
+            track: &video,
+            samples: &v,
+            edits: &[],
+        }],
+    );
+    // Two fragments: a chunk of three samples, then one of two.
+    let stbl = find_path(&moov, &[b"moov", b"trak", b"mdia", b"minf", b"stbl"]);
+    let stsc = find_path(stbl, &[b"stsc"]);
+    let entries: Vec<u32> = stsc[8..]
+        .chunks(4)
+        .map(|c| u32::from_be_bytes(c.try_into().unwrap()))
+        .collect();
+    // (first chunk, samples per chunk, description) twice.
+    assert_eq!(entries, [1, 3, 1, 2, 2, 1]);
+    let stco = find_path(stbl, &[b"stco"]);
+    assert_eq!(u32::from_be_bytes(stco[4..8].try_into().unwrap()), 2);
+    assert_eq!(u32::from_be_bytes(stco[8..12].try_into().unwrap()), 1_000);
+    assert_eq!(u32::from_be_bytes(stco[12..16].try_into().unwrap()), 2_000);
+}
+
+/// The body of the box at the end of `path`, each a child of the one before (`bytes` is a run of
+/// boxes).
+fn find_path<'a>(bytes: &'a [u8], path: &[&[u8; 4]]) -> &'a [u8] {
+    let mut level = bytes;
+    for kind in path {
+        level = boxes(level)
+            .into_iter()
+            .find(|(t, _)| t.0 == **kind)
+            .unwrap()
+            .1;
+    }
+    level
+}
+
+#[test]
+fn an_indexed_moov_past_four_gigabytes_has_wide_offsets() {
+    let v = [
+        sample(1_000, 100, 0, 33_333, 0, true),
+        sample(4_500_000_000, 100, 33_333, 33_333, 0, false),
+    ];
+    let video = video();
+    let mut moov = Vec::new();
+    write_indexed_moov(
+        &mut moov,
+        &[ProgressiveTrack {
+            track: &video,
+            samples: &v,
+            edits: &[],
+        }],
+    );
+    let stbl = find_path(&moov, &[b"moov", b"trak", b"mdia", b"minf", b"stbl"]);
+    assert!(boxes(stbl).iter().any(|(t, _)| *t == FourCc(*b"co64")));
+    assert_eq!(moov_of(&moov)[0].samples[1].offset, 4_500_000_000);
+}
+
+#[test]
+fn a_track_longer_than_a_32_bit_count_of_ticks_has_a_64_bit_media_duration() {
+    // 80 minutes in microseconds is past u32::MAX.
+    let v = [
+        sample(0, 10, 0, 2_400_000_000, 0, true),
+        sample(10, 10, 2_400_000_000, 2_400_000_000, 0, true),
+    ];
+    let head = single(&video(), &v, &[], 20);
+    let mdhd = find_path(&head, &[b"moov", b"trak", b"mdia", b"mdhd"]);
+    assert_eq!(mdhd[0], 1);
+    // Version and flags, 64-bit creation and modification, timescale, 64-bit duration.
+    assert_eq!(
+        u32::from_be_bytes(mdhd[20..24].try_into().unwrap()),
+        1_000_000
+    );
+    assert_eq!(
+        u64::from_be_bytes(mdhd[24..32].try_into().unwrap()),
+        4_800_000_000
+    );
+    assert_eq!(moov_of(&head)[0].info.time_base.den, 1_000_000);
 }

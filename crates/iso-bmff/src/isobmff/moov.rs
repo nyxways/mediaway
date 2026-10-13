@@ -119,6 +119,29 @@ fn identity_matrix(b: &mut Vec<u8>) {
     }
 }
 
+/// The `mdhd`: the track's timescale and its media length in ticks. Version 1 (64-bit times) when
+/// the media is longer than a 32-bit count of ticks: a microsecond timescale passes it at 71
+/// minutes.
+fn write_mdhd(buf: &mut Vec<u8>, timescale: u32, media: u64) {
+    write_box(buf, tag::MDHD, |h| {
+        if let Ok(media) = u32::try_from(media) {
+            h.extend_from_slice(&0u32.to_be_bytes());
+            h.extend_from_slice(&0u32.to_be_bytes());
+            h.extend_from_slice(&0u32.to_be_bytes());
+            h.extend_from_slice(&timescale.to_be_bytes());
+            h.extend_from_slice(&media.to_be_bytes());
+        } else {
+            h.extend_from_slice(&(1u32 << 24).to_be_bytes());
+            h.extend_from_slice(&0u64.to_be_bytes());
+            h.extend_from_slice(&0u64.to_be_bytes());
+            h.extend_from_slice(&timescale.to_be_bytes());
+            h.extend_from_slice(&media.to_be_bytes());
+        }
+        h.extend_from_slice(&0x55C4u16.to_be_bytes());
+        h.extend_from_slice(&0u16.to_be_bytes());
+    });
+}
+
 /// A `trak`: for a fragmented file `tables` is `None` (its sample tables are empty and its
 /// durations zero), for a non-fragmented one the real tables, whose lengths the headers carry.
 pub(super) fn write_trak(
@@ -161,16 +184,11 @@ pub(super) fn write_trak(
             write_edts(b, edits);
         }
         write_box(b, tag::MDIA, |md| {
-            write_box(md, tag::MDHD, |h| {
-                h.extend_from_slice(&0u32.to_be_bytes());
-                h.extend_from_slice(&0u32.to_be_bytes());
-                h.extend_from_slice(&0u32.to_be_bytes());
-                h.extend_from_slice(&track.time_base.den.to_be_bytes());
-                let media = tables.map_or(0, Tables::media_duration);
-                h.extend_from_slice(&u32::try_from(media).unwrap_or(u32::MAX).to_be_bytes());
-                h.extend_from_slice(&0x55C4u16.to_be_bytes());
-                h.extend_from_slice(&0u16.to_be_bytes());
-            });
+            write_mdhd(
+                md,
+                track.time_base.den,
+                tables.map_or(0, Tables::media_duration),
+            );
             write_box(md, tag::HDLR, |h| {
                 h.extend_from_slice(&0u32.to_be_bytes());
                 h.extend_from_slice(&0u32.to_be_bytes());

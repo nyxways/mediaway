@@ -22,5 +22,5 @@ pub use fragment::{MoofInfo, TrunSample, parse_moof, write_fragment};
 pub use ftyp::write_ftyp;
 pub use header::{Header, parse_header, write_box};
 pub use moov::{MOVIE_TIMESCALE, MoovTrack, parse_moov, write_moov};
-pub use progressive::{ProgressiveTrack, write_progressive};
+pub use progressive::{ProgressiveTrack, write_indexed_moov, write_progressive};
 pub use stbl::{StblSample, parse_stbl_samples};

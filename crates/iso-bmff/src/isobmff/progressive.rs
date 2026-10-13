@@ -88,13 +88,48 @@ pub fn write_progressive(buf: &mut Vec<u8>, tracks: &[ProgressiveTrack<'_>], pay
     }
 }
 
+/// Write a `moov` with real sample tables for samples that are already in the file, wherever
+/// they are: no `ftyp`, no `mdat` header, nothing about where the box itself goes.
+///
+/// This is the second half of a "hybrid" MP4: a file written fragmented (so a crash leaves it
+/// playable) gets this `moov` appended once it is finished, and the front `moov` (the one with the
+/// `mvex`) is hidden, so a reader that wants sample tables finds them and the fragments' `moof`s
+/// are boxes it does not know and skips. `StblSample::offset` is the sample's **absolute** place in
+/// the file, so the samples may be anywhere in any number of `mdat` boxes; the `moov` does not
+/// depend on its own place. The `stts` is the durations as given, so a gap in a track's timeline
+/// is the caller's to put into a duration or an edit.
+///
+/// Samples whose bytes follow each other in a track (a fragment's run) share a chunk, so the chunk
+/// table is as long as the file's fragments, not its samples. The offsets are 64-bit (`co64`)
+/// when any chunk starts past 4 GiB and 32-bit (`stco`) otherwise. Durations, edit lists and the
+/// movie's length are as in [`write_progressive`].
+pub fn write_indexed_moov(buf: &mut Vec<u8>, tracks: &[ProgressiveTrack<'_>]) {
+    let wide = tracks
+        .iter()
+        .flat_map(|t| t.samples)
+        .any(|s| s.offset > u64::from(u32::MAX));
+    write_moov_with(buf, tracks, 0, wide, true);
+}
+
 /// `moov` with the sample tables: chunk offsets are `base` plus each sample's `offset`, `wide`
 /// for `co64`.
 fn write_moov(buf: &mut Vec<u8>, tracks: &[ProgressiveTrack<'_>], base: u64, wide: bool) {
+    write_moov_with(buf, tracks, base, wide, false);
+}
+
+/// [`write_moov`], with `chunked` for chunks of samples that follow each other in the file rather
+/// than one sample to a chunk.
+fn write_moov_with(
+    buf: &mut Vec<u8>,
+    tracks: &[ProgressiveTrack<'_>],
+    base: u64,
+    wide: bool,
+    chunked: bool,
+) {
     let movie = tracks
         .iter()
         .map(|t| {
-            let tables = Tables::new(t.samples, 0, false);
+            let tables = Tables::new(t.samples, 0, false, chunked);
             if t.edits.is_empty() {
                 tables.movie_duration(t.track.time_base.den)
             } else {
@@ -106,7 +141,7 @@ fn write_moov(buf: &mut Vec<u8>, tracks: &[ProgressiveTrack<'_>], base: u64, wid
     write_box(buf, tag::MOOV, |b| {
         write_mvhd(b, tracks.len(), u32::try_from(movie).unwrap_or(u32::MAX));
         for t in tracks {
-            let tables = Tables::new(t.samples, base, wide);
+            let tables = Tables::new(t.samples, base, wide, chunked);
             write_trak(b, t.track, t.edits, Some(&tables));
         }
     });
@@ -118,15 +153,34 @@ pub(super) struct Tables<'a> {
     samples: &'a [StblSample],
     base: u64,
     wide: bool,
+    /// Samples that follow each other in the file share a chunk.
+    chunked: bool,
 }
 
 impl<'a> Tables<'a> {
-    const fn new(samples: &'a [StblSample], base: u64, wide: bool) -> Self {
+    const fn new(samples: &'a [StblSample], base: u64, wide: bool, chunked: bool) -> Self {
         Self {
             samples,
             base,
             wide,
+            chunked,
         }
+    }
+
+    /// The chunks as `(index of the first sample, how many samples)`: one sample each, or, when
+    /// `chunked`, runs of samples whose bytes are adjacent in the file.
+    fn chunks(&self) -> Vec<(usize, u32)> {
+        let mut out: Vec<(usize, u32)> = Vec::new();
+        for (i, s) in self.samples.iter().enumerate() {
+            let joins = self.chunked
+                && i > 0
+                && self.samples[i - 1].offset + u64::from(self.samples[i - 1].size) == s.offset;
+            match out.last_mut() {
+                Some((_, n)) if joins => *n += 1,
+                _ => out.push((i, 1)),
+            }
+        }
+        out
     }
 
     /// The sum of the samples' durations, media ticks.
@@ -177,11 +231,19 @@ impl<'a> Tables<'a> {
                 }
             });
         }
-        // One sample to a chunk: the chunk offsets are the samples' own.
+        // Chunks: one sample each, or runs of adjacent samples (`stsc` has an entry where the
+        // samples per chunk change).
+        let chunks = self.chunks();
         write_box(st, FourCc(*b"stsc"), |b| {
-            full_box_header(b, 0, usize::from(count > 0));
-            if count > 0 {
-                for field in [1u32, 1, 1] {
+            let mut entries: Vec<(u32, u32)> = Vec::new();
+            for (n, &(_, samples)) in chunks.iter().enumerate() {
+                if entries.last().is_none_or(|&(_, per)| per != samples) {
+                    entries.push((u32::try_from(n + 1).unwrap_or(u32::MAX), samples));
+                }
+            }
+            full_box_header(b, 0, entries.len());
+            for (first_chunk, samples) in entries {
+                for field in [first_chunk, samples, 1] {
                     b.extend_from_slice(&field.to_be_bytes());
                 }
             }
@@ -196,9 +258,9 @@ impl<'a> Tables<'a> {
         });
         let tag = if self.wide { *b"co64" } else { *b"stco" };
         write_box(st, FourCc(tag), |b| {
-            full_box_header(b, 0, self.samples.len());
-            for s in self.samples {
-                let at = self.base.saturating_add(s.offset);
+            full_box_header(b, 0, chunks.len());
+            for &(first, _) in &chunks {
+                let at = self.base.saturating_add(self.samples[first].offset);
                 if self.wide {
                     b.extend_from_slice(&at.to_be_bytes());
                 } else {

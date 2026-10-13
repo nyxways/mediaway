@@ -58,6 +58,9 @@ windows = { workspace = true, features = [
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
     "Win32_System_LibraryLoader",
+    # `QueryPerformanceCounter`: the capture loop's "now" on the same QPC clock as
+    # `IAudioCaptureClient::GetBuffer`'s packet times (loopback idle fill, ADR-0002).
+    "Win32_System_Performance",
     "Win32_System_Variant",
     "Win32_System_WinRT",
     "Win32_System_WinRT_Direct3D11",

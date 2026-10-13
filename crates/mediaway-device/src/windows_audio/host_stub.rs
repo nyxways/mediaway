@@ -42,6 +42,21 @@ impl WindowsWasapiPlayback {
     pub const fn open(_config: &AudioPlaybackConfig) -> Result<Self, PlaybackError> {
         Err(PlaybackError::Unsupported)
     }
+
+    /// Unavailable off Windows: nothing ever plays.
+    #[must_use]
+    pub const fn played_frames(&self) -> u64 {
+        0
+    }
+
+    /// Unavailable off Windows.
+    ///
+    /// # Errors
+    ///
+    /// Always [`PlaybackError::Unsupported`].
+    pub const fn flush(&mut self) -> Result<(), PlaybackError> {
+        Err(PlaybackError::Unsupported)
+    }
 }
 
 impl AudioPlayback for WindowsWasapiPlayback {

@@ -20,6 +20,8 @@ mod wasapi_config;
 mod wasapi_playback;
 #[cfg(windows)]
 mod wasapi_process;
+#[cfg(windows)]
+mod wasapi_timeline;
 
 #[cfg(windows)]
 pub use wasapi::{

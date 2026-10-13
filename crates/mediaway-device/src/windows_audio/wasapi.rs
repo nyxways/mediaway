@@ -18,20 +18,22 @@ use windows::Win32::Devices::FunctionDiscovery::{
 };
 use windows::Win32::Foundation::PROPERTYKEY;
 use windows::Win32::Media::Audio::{
-    AUDCLNT_BUFFERFLAGS_SILENT, AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK,
-    DEVICE_STATE_ACTIVE, EDataFlow, IAudioCaptureClient, IAudioClient, IMMDevice,
-    IMMDeviceEnumerator, MMDeviceEnumerator, WAVEFORMATEX, WAVEFORMATEXTENSIBLE, eCapture,
-    eConsole, eRender,
+    AUDCLNT_BUFFERFLAGS_SILENT, AUDCLNT_BUFFERFLAGS_TIMESTAMP_ERROR, AUDCLNT_SHAREMODE_SHARED,
+    AUDCLNT_STREAMFLAGS_LOOPBACK, DEVICE_STATE_ACTIVE, EDataFlow, IAudioCaptureClient,
+    IAudioClient, IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator, WAVEFORMATEX,
+    WAVEFORMATEXTENSIBLE, eCapture, eConsole, eRender,
 };
 use windows::Win32::System::Com::StructuredStorage::{PropVariantClear, PropVariantToStringAlloc};
 use windows::Win32::System::Com::{
     CLSCTX_ALL, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
     CoTaskMemFree, CoUninitialize, STGM_READ,
 };
+use windows::Win32::System::Performance::{QueryPerformanceCounter, QueryPerformanceFrequency};
 use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
 use windows::core::GUID;
 
 use crate::windows_audio::wasapi_process;
+use crate::windows_audio::wasapi_timeline::SampleTimeline;
 
 const WAVE_FORMAT_IEEE_FLOAT: u16 = 0x0003;
 const WAVE_FORMAT_EXTENSIBLE: u16 = 0xFFFE;
@@ -39,6 +41,11 @@ const KSDATAFORMAT_SUBTYPE_IEEE_FLOAT: GUID =
     GUID::from_u128(0x0000_0003_0000_0010_8000_00aa_0038_9b71);
 
 const PCM_QUEUE_CAP: usize = 64;
+
+/// Source of every silent frame the capture loop delivers (`AUDCLNT_BUFFERFLAGS_SILENT`
+/// packets and filled gaps): sliced into `Bytes::from_static`, so silence costs no allocation
+/// or copy. 64 KiB of `.bss`; longer silence is delivered as several frames.
+static ZEROS: [u8; 65_536] = [0; 65_536];
 
 struct SharedQueue {
     frames: Mutex<VecDeque<AudioFrame>>,
@@ -67,6 +74,19 @@ struct SharedQueue {
 /// audio-engine overrun instead of graceful oldest-frame drop. That would trade a bounded,
 /// well-understood backpressure model for a strictly worse one to reach the same per-period
 /// byte count. One copy per period is the honest floor here (see `pump_capture_loop`).
+///
+/// # Timing
+///
+/// A frame's `pts` is the index of its first sample since `open`, in samples, and `pts` are
+/// contiguous (each frame starts where the last ended). Silence is delivered as frames of
+/// zeros, never skipped: `AUDCLNT_BUFFERFLAGS_SILENT` packets become zeros, and for
+/// **loopback** sources (endpoint and process) the sample index follows the wall clock —
+/// sample `n` is presented at the QPC time of `Start` plus `n / sample_rate`. An idle render
+/// endpoint delivers no packets at all; this capture fills that time with zeros as it passes,
+/// trailing the wall clock by up to 120 ms, and drops any captured frames that land in
+/// silence it already filled. Microphones are only counted (no wall-clock filling). Drift
+/// between the audio device's clock and QPC while sound plays is **not** corrected (that
+/// needs resampling). See `wasapi_timeline.rs` and ADR-0002 § Correction (2026-10-13).
 pub struct WindowsWasapiCapture {
     inner: Option<WasapiSession>,
 }
@@ -269,7 +289,12 @@ fn run_wasapi_worker(
     }
     let _com = ComGuard;
 
+    // Loopback sources follow the wall clock (gaps filled from QPC times); a microphone's
+    // frames are only counted. See `wasapi_timeline.rs`.
+    let loopback = !matches!(source, AudioCaptureSource::Microphone { .. });
     let (audio_client, capture, sample_rate, channels) = open_wasapi_client(source, tx_info)?;
+    // `Start` ran inside `open_wasapi_client` just now: frame 0 belongs here.
+    let timeline = SampleTimeline::new(sample_rate, qpc_now_hns(), loopback);
 
     let info = StreamInfo::Audio {
         id: 0,
@@ -281,7 +306,7 @@ fn run_wasapi_worker(
     };
     let _ = tx_info.send(Ok(info));
 
-    pump_capture_loop(&audio_client, &capture, sample_rate, channels, queue);
+    pump_capture_loop(&capture, timeline, sample_rate, channels, queue);
     let _ = unsafe { audio_client.Stop() };
     Ok(())
 }
@@ -346,14 +371,27 @@ fn open_wasapi_client(
     Ok((audio_client, capture, sample_rate, channels))
 }
 
+/// Moves captured packets into `queue` until stopped or the device fails.
+///
+/// A frame's `pts` is its first sample's index. `AUDCLNT_BUFFERFLAGS_SILENT` packets are
+/// delivered as zeros (they used to be dropped uncounted, so every later frame came early).
+/// For loopback sources `timeline` also keeps that index on the wall clock: silence is filled
+/// while an idle endpoint delivers nothing, and a packet whose QPC time shows a gap is
+/// preceded by silence for it — so sound after a silent stretch keeps its place against
+/// wall-clock video (ADR-0002 § Correction (2026-10-13)).
 fn pump_capture_loop(
-    _audio_client: &IAudioClient,
     capture: &IAudioCaptureClient,
+    mut timeline: SampleTimeline,
     sample_rate: u32,
     channels: u16,
     queue: &SharedQueue,
 ) {
-    let mut pts: i64 = 0;
+    let mut out = FrameSink {
+        queue,
+        pts: 0,
+        sample_rate,
+        channels,
+    };
     while !queue.stop.load(Ordering::Relaxed) {
         let Ok(packet_length) = (unsafe { capture.GetNextPacketSize() }) else {
             // A real WASAPI failure (e.g. `AUDCLNT_E_DEVICE_INVALIDATED` on
@@ -362,6 +400,11 @@ fn pump_capture_loop(
             break;
         };
         if packet_length == 0 {
+            if timeline.follows_wall_clock()
+                && let Some(now) = qpc_now_hns()
+            {
+                out.push_silence(timeline.idle(now));
+            }
             thread::sleep(std::time::Duration::from_millis(5));
             continue;
         }
@@ -369,6 +412,7 @@ fn pump_capture_loop(
         let mut data_ptr: *mut u8 = std::ptr::null_mut();
         let mut num_frames = 0u32;
         let mut flags = 0u32;
+        let mut qpc_position = 0u64;
         // SAFETY: WASAPI buffer pointers valid until ReleaseBuffer.
         if unsafe {
             capture.GetBuffer(
@@ -376,7 +420,7 @@ fn pump_capture_loop(
                 &raw mut num_frames,
                 &raw mut flags,
                 None,
-                None,
+                Some(&raw mut qpc_position),
             )
         }
         .is_err()
@@ -387,32 +431,89 @@ fn pump_capture_loop(
             break;
         }
 
+        let stamp_ok = (flags & AUDCLNT_BUFFERFLAGS_TIMESTAMP_ERROR.0 as u32) == 0;
+        let stamp = (stamp_ok && qpc_position != 0).then_some(qpc_position);
+        let now = if timeline.follows_wall_clock() {
+            qpc_now_hns()
+        } else {
+            None
+        };
+        let plan = timeline.packet(num_frames, stamp, now);
+        out.push_silence(plan.fill);
+
+        let kept = num_frames.saturating_sub(plan.skip);
         let silent = (flags & AUDCLNT_BUFFERFLAGS_SILENT.0 as u32) != 0;
-        if num_frames > 0 && !data_ptr.is_null() && !silent {
-            let samples = num_frames as usize * channels as usize;
-            let bytes = samples * 4;
-            // SAFETY: `data_ptr` is valid for `bytes` reads until `ReleaseBuffer` below;
-            // `bytes` is derived from `num_frames`/`channels`, the packet size WASAPI just
-            // reported via `GetBuffer`.
-            let pcm = unsafe { copy_pcm_buffer(data_ptr, bytes) };
-            let frame = AudioFrame {
-                pts,
-                duration: u64::from(num_frames),
-                sample_rate,
-                channels,
-                format: SampleFormat::F32,
-                data: Bytes::from(pcm),
-            };
-            pts = pts.saturating_add(i64::from(num_frames));
-            if let Ok(mut q) = queue.frames.lock() {
-                if q.len() >= PCM_QUEUE_CAP {
-                    let _ = q.pop_front();
-                }
-                q.push_back(frame);
+        if kept > 0 {
+            if silent || data_ptr.is_null() {
+                // `SILENT`: the buffer's contents are to be ignored; the frames still happened.
+                out.push_silence(u64::from(kept));
+            } else {
+                let frame_bytes = usize::from(channels) * 4;
+                let skip_bytes = plan.skip as usize * frame_bytes;
+                let bytes = kept as usize * frame_bytes;
+                // SAFETY: `data_ptr` is valid for `num_frames * frame_bytes` reads until
+                // `ReleaseBuffer` below (the packet size WASAPI just reported via `GetBuffer`),
+                // and `skip_bytes + bytes` is exactly that since `kept = num_frames - skip`.
+                let pcm = unsafe { copy_pcm_buffer(data_ptr.add(skip_bytes), bytes) };
+                out.push(kept, Bytes::from(pcm));
             }
         }
         let _ = unsafe { capture.ReleaseBuffer(num_frames) };
     }
+}
+
+/// Builds frames with consecutive `pts` and pushes them into the bounded, drop-oldest queue.
+struct FrameSink<'a> {
+    queue: &'a SharedQueue,
+    pts: i64,
+    sample_rate: u32,
+    channels: u16,
+}
+
+impl FrameSink<'_> {
+    fn push(&mut self, frames: u32, data: Bytes) {
+        let frame = AudioFrame {
+            pts: self.pts,
+            duration: u64::from(frames),
+            sample_rate: self.sample_rate,
+            channels: self.channels,
+            format: SampleFormat::F32,
+            data,
+        };
+        self.pts = self.pts.saturating_add(i64::from(frames));
+        if let Ok(mut q) = self.queue.frames.lock() {
+            if q.len() >= PCM_QUEUE_CAP {
+                let _ = q.pop_front();
+            }
+            q.push_back(frame);
+        }
+    }
+
+    /// `frames` frames of digital silence, as frames of at most `ZEROS.len()` bytes.
+    fn push_silence(&mut self, mut frames: u64) {
+        let frame_bytes = usize::from(self.channels).max(1) * 4;
+        let per_frame = u32::try_from(ZEROS.len() / frame_bytes).unwrap_or(u32::MAX);
+        while frames > 0 {
+            let n = u32::try_from(frames).unwrap_or(u32::MAX).min(per_frame);
+            self.push(n, Bytes::from_static(&ZEROS[..n as usize * frame_bytes]));
+            frames -= u64::from(n);
+        }
+    }
+}
+
+/// `QueryPerformanceCounter` in 100-ns units — the clock and unit of `GetBuffer`'s
+/// `pu64QPCPosition`. `None` if the counter cannot be read (never on Windows XP or later).
+fn qpc_now_hns() -> Option<u64> {
+    let mut counter = 0i64;
+    let mut frequency = 0i64;
+    // SAFETY: both calls only write the `i64` out-parameter they are given.
+    unsafe {
+        QueryPerformanceCounter(&raw mut counter).ok()?;
+        QueryPerformanceFrequency(&raw mut frequency).ok()?;
+    }
+    let counter = u128::try_from(counter).ok()?;
+    let frequency = u128::try_from(frequency).ok().filter(|&f| f > 0)?;
+    u64::try_from(counter * 10_000_000 / frequency).ok()
 }
 
 /// Copy `len` bytes out of a WASAPI-owned capture buffer into a freshly allocated,

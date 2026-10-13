@@ -17,8 +17,8 @@ use crate::Select;
 use crate::audio::{AudioPlayback, AudioPlaybackConfig, PlaybackError};
 use mediaway_common::{AudioFrame, Bytes, CodecKind, Rational, SampleFormat, StreamInfo};
 use windows::Win32::Media::Audio::{
-    AUDCLNT_BUFFERFLAGS_SILENT, AUDCLNT_SHAREMODE_SHARED, IAudioClient, IAudioRenderClient,
-    IMMDeviceEnumerator, MMDeviceEnumerator, eRender,
+    AUDCLNT_BUFFERFLAGS_SILENT, AUDCLNT_SHAREMODE_SHARED, IAudioClient, IAudioClock,
+    IAudioRenderClient, IMMDeviceEnumerator, MMDeviceEnumerator, eRender,
 };
 use windows::Win32::System::Com::{
     CLSCTX_ALL, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
@@ -34,6 +34,15 @@ const PLAYBACK_QUEUE_CAP: usize = 64;
 
 /// Render-side bytes-per-sample-frame bytes-per-sample for the only format v1 accepts.
 const BYTES_PER_SAMPLE_F32: usize = 4;
+
+/// Silence kept in the render buffer while nothing is queued: a fiftieth of a second (20 ms).
+/// Queued PCM is written behind whatever the buffer already holds, so this is also the most
+/// silence that can sit in front of the first frame written after a quiet stretch or a
+/// [`WindowsWasapiPlayback::flush`] (ADR-0005 § Updates 2026-10-13).
+const SILENCE_LEAD_DIVISOR: u32 = 50;
+
+/// How long [`WindowsWasapiPlayback::flush`] waits for the worker before giving up.
+const FLUSH_TIMEOUT: Duration = Duration::from_secs(1);
 
 struct PlaybackQueueState {
     frames: VecDeque<AudioFrame>,
@@ -51,6 +60,12 @@ struct PlaybackSharedQueue {
     /// `close()` — see ADR-0005 § `DeviceLost` (mirrors `wasapi.rs`'s
     /// `SharedQueue::device_lost`).
     device_lost: AtomicBool,
+    /// Queued PCM sample frames the endpoint has played since `open` or the last
+    /// [`WindowsWasapiPlayback::flush`]; silence the worker inserted is not counted.
+    played: AtomicU64,
+    /// Set by [`WindowsWasapiPlayback::flush`]; the worker stops, resets and restarts the
+    /// client, then clears it. While it is set the worker takes nothing from the queue.
+    flush_requested: AtomicBool,
 }
 
 /// Windows WASAPI shared-mode render (playback) session.
@@ -97,6 +112,8 @@ impl WindowsWasapiPlayback {
             stop: AtomicBool::new(false),
             underrun_count: AtomicU64::new(0),
             device_lost: AtomicBool::new(false),
+            played: AtomicU64::new(0),
+            flush_requested: AtomicBool::new(false),
         });
         // clone: Arc share with WASAPI render worker thread
         let queue_worker = Arc::clone(&queue);
@@ -125,6 +142,57 @@ impl WindowsWasapiPlayback {
                 worker: Some(worker),
             }),
         })
+    }
+
+    /// Sample frames of queued PCM the endpoint has played since `open` or the last
+    /// [`flush`](Self::flush), from `IAudioClock::GetPosition` (the position of the sample
+    /// playing through the endpoint, not of the last one handed to the engine). Silence the
+    /// worker inserts while the queue is empty is not counted, so this is a clock of the
+    /// caller's own audio: it stands still through an underrun. The worker updates it every
+    /// poll (about 5 ms).
+    #[must_use]
+    pub fn played_frames(&self) -> u64 {
+        self.inner
+            .as_ref()
+            .map_or(0, |s| s.queue.played.load(Ordering::Acquire))
+    }
+
+    /// Discards everything not yet played, queued or already in the render buffer
+    /// (`IAudioClient::Stop`, `Reset`, `Start`), and sets
+    /// [`played_frames`](Self::played_frames) back to 0. Frames written after this returns
+    /// play next. Blocks until the worker has reset the client (one poll, about 5 ms).
+    ///
+    /// # Errors
+    ///
+    /// [`PlaybackError::Closed`] after `close`, [`PlaybackError::DeviceLost`] if the device
+    /// went away, [`PlaybackError::Backend`] if the worker did not answer within a second.
+    pub fn flush(&mut self) -> Result<(), PlaybackError> {
+        let Some(session) = self.inner.as_ref() else {
+            return Err(PlaybackError::Closed);
+        };
+        let queue = &session.queue;
+        if queue.device_lost.load(Ordering::Relaxed) {
+            return Err(PlaybackError::DeviceLost);
+        }
+        {
+            let Ok(mut state) = queue.state.lock() else {
+                return Err(PlaybackError::Backend);
+            };
+            queue.flush_requested.store(true, Ordering::SeqCst);
+            state.frames.clear();
+            state.cursor = 0;
+        }
+        let asked = std::time::Instant::now();
+        while queue.flush_requested.load(Ordering::SeqCst) {
+            if queue.device_lost.load(Ordering::Relaxed) {
+                return Err(PlaybackError::DeviceLost);
+            }
+            if asked.elapsed() > FLUSH_TIMEOUT {
+                return Err(PlaybackError::Backend);
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+        Ok(())
     }
 }
 
@@ -209,6 +277,7 @@ fn run_wasapi_playback_worker(
 
     let (audio_client, render, sample_rate, channels, buffer_frame_count) =
         open_wasapi_render_client(select, tx_info)?;
+    let clock = DeviceClock::new(&audio_client, sample_rate).map_err(|e| notify_err(tx_info, e))?;
 
     let info = StreamInfo::Audio {
         id: 0,
@@ -220,7 +289,17 @@ fn run_wasapi_playback_worker(
     };
     let _ = tx_info.send(Ok(info));
 
-    pump_playback_loop(&audio_client, &render, channels, buffer_frame_count, queue);
+    pump_playback_loop(
+        &audio_client,
+        &render,
+        &clock,
+        &Format {
+            sample_rate,
+            channels,
+            buffer_frame_count,
+        },
+        queue,
+    );
     let _ = unsafe { audio_client.Stop() };
     Ok(())
 }
@@ -284,63 +363,197 @@ fn open_wasapi_render_client(
     ))
 }
 
+/// The endpoint's stream position (`IAudioClock`), in sample frames.
+struct DeviceClock {
+    clock: IAudioClock,
+    /// `IAudioClock::GetFrequency`: position units a second.
+    frequency: u64,
+    sample_rate: u32,
+}
+
+impl DeviceClock {
+    fn new(audio_client: &IAudioClient, sample_rate: u32) -> Result<Self, PlaybackError> {
+        // SAFETY: `GetService` on an initialized render client, the documented way to get its
+        // `IAudioClock`.
+        let clock: IAudioClock =
+            unsafe { audio_client.GetService() }.map_err(|_| PlaybackError::Backend)?;
+        // SAFETY: a plain getter on a live `IAudioClock`.
+        let frequency = unsafe { clock.GetFrequency() }.map_err(|_| PlaybackError::Backend)?;
+        Ok(Self {
+            clock,
+            frequency: frequency.max(1),
+            sample_rate,
+        })
+    }
+
+    /// Sample frames played since the client started or was last reset.
+    fn frames(&self) -> Option<u64> {
+        let mut position = 0u64;
+        // SAFETY: `position` is a live out-parameter for the call; the optional QPC
+        // out-parameter is not asked for.
+        unsafe { self.clock.GetPosition(&raw mut position, None) }.ok()?;
+        let frames =
+            u128::from(position) * u128::from(self.sample_rate) / u128::from(self.frequency);
+        Some(u64::try_from(frames).unwrap_or(u64::MAX))
+    }
+}
+
+/// The render format the pump works in.
+struct Format {
+    sample_rate: u32,
+    channels: u16,
+    buffer_frame_count: u32,
+}
+
+/// What the worker released to the render buffer, in order, until it has been played:
+/// stretches of the caller's PCM and of inserted silence, so that a stream position maps back
+/// to how much of the caller's PCM has played ([`WindowsWasapiPlayback::played_frames`]).
+///
+/// Pure and hardware-independent, exercised directly in `wasapi_playback_tests.rs`.
+#[derive(Debug, Default)]
+struct PlayedTracker {
+    /// Released stretches not fully played yet: start position, frames, the caller's PCM.
+    released: VecDeque<(u64, u64, bool)>,
+    /// The stream position after the last release.
+    end: u64,
+    /// The caller's PCM frames in stretches played and dropped from `released`.
+    played_before: u64,
+}
+
+impl PlayedTracker {
+    /// Records `frames` released after everything before: the caller's PCM, or silence.
+    fn release(&mut self, frames: u64, data: bool) {
+        if frames == 0 {
+            return;
+        }
+        match self.released.back_mut() {
+            Some(last) if last.2 == data => last.1 += frames,
+            _ => self.released.push_back((self.end, frames, data)),
+        }
+        self.end += frames;
+    }
+
+    /// The caller's PCM frames played once the stream is at `position`.
+    fn played(&mut self, position: u64) -> u64 {
+        while let Some(&(start, frames, data)) = self.released.front() {
+            if start + frames > position {
+                break;
+            }
+            if data {
+                self.played_before += frames;
+            }
+            self.released.pop_front();
+        }
+        let partial = match self.released.front() {
+            Some(&(start, _, true)) => position.saturating_sub(start),
+            _ => 0,
+        };
+        self.played_before + partial
+    }
+}
+
 fn pump_playback_loop(
     audio_client: &IAudioClient,
     render: &IAudioRenderClient,
-    channels: u16,
-    buffer_frame_count: u32,
+    clock: &DeviceClock,
+    format: &Format,
     queue: &PlaybackSharedQueue,
 ) {
-    let frame_size = usize::from(channels) * BYTES_PER_SAMPLE_F32;
+    let frame_size = usize::from(format.channels) * BYTES_PER_SAMPLE_F32;
+    let silence_lead = (format.sample_rate / SILENCE_LEAD_DIVISOR).max(1);
+    let mut tracker = PlayedTracker::default();
     while !queue.stop.load(Ordering::Relaxed) {
+        if queue.flush_requested.load(Ordering::SeqCst) {
+            // SAFETY: plain calls on the live client this thread owns; `Reset` is only valid
+            // on a stopped stream, hence the `Stop` before it.
+            let reset = unsafe { audio_client.Stop() }
+                .and_then(|()| unsafe { audio_client.Reset() })
+                .and_then(|()| unsafe { audio_client.Start() });
+            if reset.is_err() {
+                queue.device_lost.store(true, Ordering::SeqCst);
+                break;
+            }
+            tracker = PlayedTracker::default();
+            queue.played.store(0, Ordering::Release);
+            queue.flush_requested.store(false, Ordering::SeqCst);
+        }
         let Ok(padding) = (unsafe { audio_client.GetCurrentPadding() }) else {
             // A real WASAPI failure, not a caller-requested stop — see
             // ADR-0005 (mirrors `wasapi.rs::pump_capture_loop`).
             queue.device_lost.store(true, Ordering::SeqCst);
             break;
         };
-        let available_frames = buffer_frame_count.saturating_sub(padding);
-        if available_frames == 0 || frame_size == 0 {
+        if let Some(position) = clock.frames() {
+            queue
+                .played
+                .store(tracker.played(position), Ordering::Release);
+        }
+        let available_frames = format.buffer_frame_count.saturating_sub(padding);
+        let queued_frames = if frame_size == 0 {
+            0
+        } else {
+            queue.state.lock().map_or(0, |state| {
+                let bytes: usize = state.frames.iter().map(|f| f.data.len()).sum();
+                bytes.saturating_sub(state.cursor) / frame_size
+            })
+        };
+        // The caller's PCM goes in as far as it fits. With nothing queued, silence keeps a
+        // short lead in the buffer only (`SILENCE_LEAD_DIVISOR`): filling the whole buffer
+        // with it would put a buffer's length of silence in front of the next frame written.
+        let (frames, data) = if queued_frames > 0 {
+            (
+                available_frames.min(u32::try_from(queued_frames).unwrap_or(u32::MAX)),
+                true,
+            )
+        } else {
+            (
+                available_frames.min(silence_lead.saturating_sub(padding)),
+                false,
+            )
+        };
+        if frames == 0 {
             thread::sleep(Duration::from_millis(5));
             continue;
         }
 
-        // SAFETY: `available_frames` was just derived from `GetBufferSize`/
+        // SAFETY: `frames` is at most `available_frames`, derived from `GetBufferSize`/
         // `GetCurrentPadding`, so it never exceeds the render buffer's real capacity.
-        let Ok(data_ptr) = (unsafe { render.GetBuffer(available_frames) }) else {
+        let Ok(data_ptr) = (unsafe { render.GetBuffer(frames) }) else {
             // Same real-failure reasoning as the `GetCurrentPadding` break
             // above.
             queue.device_lost.store(true, Ordering::SeqCst);
             break;
         };
 
-        let need_bytes = available_frames as usize * frame_size;
-        // SAFETY: `data_ptr` is valid for `need_bytes` writes until the matching
-        // `ReleaseBuffer` below; `need_bytes` is derived from `available_frames` and
-        // `frame_size`, the exact packet size WASAPI just reported.
-        let dst = unsafe { std::slice::from_raw_parts_mut(data_ptr, need_bytes) };
-
-        let written = queue.state.lock().map_or(0, |mut state| {
-            let PlaybackQueueState { frames, cursor } = &mut *state;
-            fill_from_queue(frames, cursor, dst)
-        });
-
-        let flags = if written == 0 {
-            queue.underrun_count.fetch_add(1, Ordering::Relaxed);
-            AUDCLNT_BUFFERFLAGS_SILENT.0 as u32
-        } else {
+        let flags = if data {
+            let need_bytes = frames as usize * frame_size;
+            // SAFETY: `data_ptr` is valid for `need_bytes` writes until the matching
+            // `ReleaseBuffer` below; `need_bytes` is derived from `frames` and `frame_size`,
+            // the packet size just requested.
+            let dst = unsafe { std::slice::from_raw_parts_mut(data_ptr, need_bytes) };
+            let written = queue.state.lock().map_or(0, |mut state| {
+                if queue.flush_requested.load(Ordering::SeqCst) {
+                    // A flush came in after the queue was measured: what is queued now was
+                    // written after it and must not go into a buffer about to be reset.
+                    return 0;
+                }
+                let PlaybackQueueState { frames, cursor } = &mut *state;
+                fill_from_queue(frames, cursor, dst)
+            });
             if written < need_bytes {
-                // Partial underrun: WASAPI's SILENT flag applies to the whole
-                // packet, not a partial span, so the tail is explicitly zeroed.
+                // Only a flush shrinks the queue under the worker, and the buffer is about to
+                // be reset; the rest is zeroed rather than left as whatever was there.
                 dst[written..].fill(0);
-                queue.underrun_count.fetch_add(1, Ordering::Relaxed);
             }
             0
+        } else {
+            queue.underrun_count.fetch_add(1, Ordering::Relaxed);
+            AUDCLNT_BUFFERFLAGS_SILENT.0 as u32
         };
+        tracker.release(u64::from(frames), data);
 
-        // SAFETY: pairs with the `GetBuffer` call above; `available_frames` matches
-        // the count requested.
-        let _ = unsafe { render.ReleaseBuffer(available_frames, flags) };
+        // SAFETY: pairs with the `GetBuffer` call above; `frames` matches the count requested.
+        let _ = unsafe { render.ReleaseBuffer(frames, flags) };
     }
 }
 

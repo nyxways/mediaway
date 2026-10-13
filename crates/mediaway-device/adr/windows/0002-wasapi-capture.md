@@ -128,9 +128,71 @@ Verified on this machine (Windows 11 Pro 26100): the client opens, `poll_frame` 
 real 3840-byte PCM period, and `support(DeviceKind::ProcessLoopback)` now answers
 `Supported`. Reverting only the stream-flag line reproduces `0x88890021` in both tests.
 
+## Correction (2026-10-13): loopback sound after silence came early
+
+A frame's `pts` is its sample count, and a consumer that lays sound against wall-clock video
+(Recoway, `E:\NyxWays\gway\app\recoway`, timestamps audio exactly this way) needs that count
+to follow wall time. It did not, for two reasons found by reading `pump_capture_loop` and
+then measured on Windows 11 Pro 26300 (Razer headset as the default endpoint, a Virtual
+Audio Cable endpoint nothing plays to, and process loopback of the test process):
+
+1. **`AUDCLNT_BUFFERFLAGS_SILENT` packets were dropped without advancing `pts`.** The default
+   endpoint, open but playing nothing, sent 150 silent-flagged 10 ms packets in 1.5 s; none
+   was delivered or counted.
+2. **An idle render endpoint sends no packets at all.** Loopback of the Virtual Audio Cable
+   endpoint returned nothing for 1.5 s; the first packet came when a render stream opened,
+   flagged `DATA_DISCONTINUITY`, with its device position restarted at 480 and only its QPC
+   stamp (1 517 ms after `Start`) recording the gap. The Microsoft
+   [loopback recording](https://learn.microsoft.com/en-us/windows/win32/coreaudio/loopback-recording)
+   page does not state this; Chromium and OBS both work around it (§ References).
+
+Effect, measured by `lib_tests.rs::loopback_sample_clock_follows_wall_time_through_silence`
+on the code before this fix: 3.0 s of capture delivered 1.0 s of samples on both endpoints,
+and a tone played at 1.51 s was delivered at sample time 0.02 s — 1.49 s early.
+
+**Decision: deliver silence, and keep loopback's sample index on the QPC clock.**
+
+- Silent-flagged packets are delivered as zeros, for every source (microphones included).
+- For loopback (endpoint and process), a sans-IO [`wasapi_timeline.rs`](../../src/windows_audio/wasapi_timeline.rs)
+  anchors sample 0 at the QPC time of `Start` and compares each packet's `GetBuffer` QPC stamp
+  with where the next sample belongs: a gap over 4 ms is filled with zeros; while no packet is
+  waiting, zeros are filled up to 100 ms behind "now" in pieces of at least 20 ms; a packet
+  overlapping filled zeros loses its overlapping head. Each stamped packet re-anchors the
+  timeline, so device-clock drift never turns into inserted silence.
+- A stamp more than 500 ms off the QPC read beside it turns filling off for the session
+  (Chromium's rule) rather than inserting bogus silence.
+- Zeros come from one static 64 KiB buffer (`Bytes::from_static`): no allocation or copy.
+
+| Alternative | Why not |
+|-------------|---------|
+| Device position (`pu64DevicePosition`) instead of QPC | Measured useless for both gaps: it restarts after an idle stretch on endpoint loopback and is always 0 on process loopback. |
+| A silent render stream on the endpoint (OBS `ClearBuffer`, Chromium's loopback render client) so packets never stop | Keeps the endpoint's audio engine running for the whole capture whether or not anything plays (an energy cost no one measured here), only covers endpoint loopback, and still needs the silent-packet fix. QPC filling covers both sources with no extra stream. Revisit if a driver is found whose idle QPC stamps are unusable. |
+| Fill only when the next packet arrives (no live idle fill) | A consumer that cuts the stream by wall time (Recoway's pause drops samples polled while paused) would see the whole idle stretch arrive after the cut. |
+| Same wall-clock filling for microphones | Not needed for the reported defect, and OBS defaults device timing off for inputs; left as counting only. |
+
+Trade-offs stated: idle silence trails the wall clock by up to ~120 ms
+(`IDLE_LAG_HNS` + one piece), so a wall-clock cut through silence is off by up to that much
+silence; endpoint-loopback stamps are presentation times (measured 25-30 ms ahead of the
+read), so sample 0 maps to the moment `Start`'s audio would be heard, which is what aligns
+with a picture shown at the same moment; drift between the device clock and QPC while sound
+plays continuously is unchanged (needs resampling, out of scope).
+
+Verified after the fix: the same test delivers 2.91 s of 3.00 s (idle cable endpoint; the
+0.1 s short is the idle lag) and 3.03 s of 3.00 s (default endpoint; the leading presentation
+offset), with the tone's onset 41 ms and 52 ms after it was written — render latency. The
+timeline's rules are pinned by `wasapi_timeline_tests.rs` (13 tests, no hardware).
+
 ## References
 
 - Facade ADR-0001 · live-recorder / sound_capture (reference only)
 - [`AUDIOCLIENT_ACTIVATION_PARAMS`](https://learn.microsoft.com/en-us/windows/win32/api/audioclientactivationparams/ns-audioclientactivationparams-audioclient_activation_params)
   · [Application Loopback API sample](https://github.com/microsoft/Windows-classic-samples/tree/main/Samples/ApplicationLoopback)
   (MIT) — both process-loopback modes and the mandatory `AUDCLNT_STREAMFLAGS_LOOPBACK`
+- OBS Studio [`plugins/win-wasapi/win-wasapi.cpp`](https://github.com/obsproject/obs-studio/blob/master/plugins/win-wasapi/win-wasapi.cpp)
+  (GPL-2.0-or-later — ideas only, no code): `ClearBuffer` keeps endpoint loopback running
+  with a silent render stream; loopback audio is stamped with `GetBuffer`'s QPC time
+  (`OPT_USE_DEVICE_TIMING` defaults to on for output devices, off for inputs)
+- Chromium [`media/audio/win/audio_low_latency_input_win.cc`](https://source.chromium.org/chromium/chromium/src/+/main:media/audio/win/audio_low_latency_input_win.cc)
+  (BSD-3-Clause — ideas only): `PushSilence` for `AUDCLNT_BUFFERFLAGS_SILENT`; a separate
+  event-driven render client so endpoint loopback runs while nothing plays; QPC stamps more
+  than 500 ms off the wall clock replaced by "fake" timestamps (crbug.com/1439283)

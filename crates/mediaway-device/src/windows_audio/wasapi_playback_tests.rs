@@ -29,7 +29,7 @@ use mediaway_common::{AudioFrame, Bytes, CodecKind, Rational, SampleFormat, Stre
 use windows::Win32::Media::Audio::WAVEFORMATEX;
 
 use super::{
-    PLAYBACK_QUEUE_CAP, PlaybackQueueState, PlaybackSession, PlaybackSharedQueue,
+    PLAYBACK_QUEUE_CAP, PlaybackQueueState, PlaybackSession, PlaybackSharedQueue, PlayedTracker,
     WindowsWasapiPlayback, fill_from_queue,
 };
 use crate::windows_audio::wasapi::read_float_mix;
@@ -63,6 +63,8 @@ fn fake_session(sample_rate: u32, channels: u16) -> WindowsWasapiPlayback {
         stop: AtomicBool::new(false),
         underrun_count: AtomicU64::new(0),
         device_lost: AtomicBool::new(false),
+        played: AtomicU64::new(0),
+        flush_requested: AtomicBool::new(false),
     });
     let stream_info = StreamInfo::Audio {
         id: 0,
@@ -243,4 +245,59 @@ fn open_rejects_wrong_kind_device_id_select() {
     };
     let result = WindowsWasapiPlayback::open(&cfg);
     assert!(matches!(result, Err(PlaybackError::Unsupported)));
+}
+
+#[test]
+fn played_tracker_counts_only_the_callers_pcm() {
+    // 960 frames of silence lead, then 4800 of PCM, then 960 of silence, then 4800 more.
+    let mut tracker = PlayedTracker::default();
+    tracker.release(960, false);
+    tracker.release(4800, true);
+    tracker.release(960, false);
+    tracker.release(4800, true);
+    assert_eq!(tracker.played(0), 0);
+    assert_eq!(
+        tracker.played(960),
+        0,
+        "the silence lead is not the caller's"
+    );
+    assert_eq!(tracker.played(1960), 1000);
+    assert_eq!(tracker.played(5760), 4800);
+    assert_eq!(
+        tracker.played(6000),
+        4800,
+        "the clock stands still through inserted silence"
+    );
+    assert_eq!(tracker.played(6720), 4800);
+    assert_eq!(tracker.played(7720), 5800);
+    assert_eq!(tracker.played(11_520), 9600);
+}
+
+#[test]
+fn played_tracker_merges_adjacent_releases_of_one_kind() {
+    let mut tracker = PlayedTracker::default();
+    for _ in 0..100 {
+        tracker.release(480, true);
+    }
+    tracker.release(0, false);
+    assert_eq!(tracker.released.len(), 1);
+    assert_eq!(tracker.played(24_000), 24_000);
+}
+
+#[test]
+fn flush_on_a_closed_session_is_an_error() {
+    let mut playback = fake_session(48_000, 2);
+    assert!(playback.close().is_ok());
+    assert_eq!(playback.flush(), Err(PlaybackError::Closed));
+    assert_eq!(playback.played_frames(), 0);
+}
+
+#[test]
+fn played_frames_reflects_worker_updates() {
+    let playback = fake_session(48_000, 2);
+    assert_eq!(playback.played_frames(), 0);
+    if let Some(session) = playback.inner.as_ref() {
+        session.queue.played.store(4800, Ordering::Release);
+    }
+    assert_eq!(playback.played_frames(), 4800);
 }

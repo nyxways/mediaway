@@ -17,6 +17,7 @@
 ### Changed
 
 - Windows audio playback starts what is written within about 20 ms: with nothing to play it no longer fills its one-second buffer with silence that later sound had to wait behind
+- The Windows CPU H.264 encoder (the inbox software MFT, `VideoInputPreference::CpuUploadOk`) is asked for no B-frames: it used to reorder and stamp its first `pts` one frame late with the `dts` behind the `pts`, so an MP4 written from it started late and FFmpeg reported non-monotonic decode times at fragment boundaries. Its packets now have `pts == dts` and the first `pts` is the first input's time; on one 7 s 850x474 screen recording at the same target bitrate the file was 2 % smaller and 0.37 dB PSNR higher
 
 ### Fixed
 

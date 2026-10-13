@@ -4,6 +4,7 @@
 
 use crate::EncodeError;
 use mediaway_common::{Bytes, Packet, PixelFormat, StreamInfo};
+use windows::Win32::Media::MediaFoundation::{CODECAPI_AVEncMPVDefaultBPictureCount, ICodecAPI};
 use windows::Win32::Media::MediaFoundation::{
     IMFMediaBuffer, IMFSample, IMFTransform, MF_E_TRANSFORM_NEED_MORE_INPUT,
     MF_E_TRANSFORM_STREAM_CHANGE, MF_MT_AVG_BITRATE, MF_MT_FRAME_RATE, MF_MT_FRAME_SIZE,
@@ -13,7 +14,8 @@ use windows::Win32::Media::MediaFoundation::{
     MFT_MESSAGE_NOTIFY_END_STREAMING, MFT_MESSAGE_NOTIFY_START_OF_STREAM, MFT_OUTPUT_DATA_BUFFER,
     MFVideoFormat_ARGB32, MFVideoFormat_NV12, MFVideoInterlace_Progressive,
 };
-use windows::core::GUID;
+use windows::Win32::System::Variant::VARIANT;
+use windows::core::{GUID, Interface as _};
 
 // `from_hns` lives beside `to_hns` rather than here: they are only correct as a pair, and
 // keeping them in two files is how they drifted into not being inverses of each other.
@@ -116,6 +118,29 @@ pub(super) fn configure_types(
         last = EncodeError::Backend;
     }
     Err(last)
+}
+
+/// Asks the encoder for no B-frames (`CODECAPI_AVEncMPVDefaultBPictureCount` = 0), best effort: an
+/// MFT without the interface or the property keeps whatever it does.
+///
+/// The inbox software H.264 encoder otherwise reorders (I P B P B ...) and, measured, stamps the
+/// stream so that its first `pts` is a frame late and its `dts` runs behind its `pts`: a decoder
+/// has to wait for the B-frame's successor, and an MP4 needs a composition offset and an edit
+/// list to start at 0 (which a fragmented file's readers do not all apply). With no B-frames
+/// `pts == dts` and the first `pts` is the first input's time. What it gives up is the
+/// compression B-frames bring at a given bitrate; on one 7 s 850x474 screen recording at the same
+/// target bitrate (recoway's export, `docs/measurements.md`) that was nothing: the file came out
+/// 2 % smaller and 0.37 dB PSNR higher without them.
+///
+/// Must be called **before** the media types are set: set after them the value reads back as 0
+/// and the encoder keeps its B-frames (measured), so call it right after the MFT is created.
+pub(super) fn disable_b_frames(transform: &IMFTransform) {
+    let Ok(codec) = transform.cast::<ICodecAPI>() else {
+        return;
+    };
+    let none = VARIANT::from(0u32);
+    // SAFETY: a VT_UI4 variant that lives through the call; the GUID is a constant.
+    let _ = unsafe { codec.SetValue(&CODECAPI_AVEncMPVDefaultBPictureCount, &raw const none) };
 }
 
 pub(super) fn begin_streaming(transform: &IMFTransform) -> Result<(), EncodeError> {

@@ -4,7 +4,10 @@
 
 use crate::EncodeError;
 use mediaway_common::{Bytes, Packet, PixelFormat, StreamInfo};
-use windows::Win32::Media::MediaFoundation::{CODECAPI_AVEncMPVDefaultBPictureCount, ICodecAPI};
+use windows::Win32::Media::MediaFoundation::{
+    CODECAPI_AVEncCommonQuality, CODECAPI_AVEncCommonRateControlMode,
+    CODECAPI_AVEncMPVDefaultBPictureCount, ICodecAPI, eAVEncCommonRateControlMode_Quality,
+};
 use windows::Win32::Media::MediaFoundation::{
     IMFMediaBuffer, IMFSample, IMFTransform, MF_E_TRANSFORM_NEED_MORE_INPUT,
     MF_E_TRANSFORM_STREAM_CHANGE, MF_MT_AVG_BITRATE, MF_MT_FRAME_RATE, MF_MT_FRAME_SIZE,
@@ -141,6 +144,32 @@ pub(super) fn disable_b_frames(transform: &IMFTransform) {
     let none = VARIANT::from(0u32);
     // SAFETY: a VT_UI4 variant that lives through the call; the GUID is a constant.
     let _ = unsafe { codec.SetValue(&CODECAPI_AVEncMPVDefaultBPictureCount, &raw const none) };
+}
+
+/// Asks the encoder for constant-quality rate control instead of a bitrate target
+/// (`CODECAPI_AVEncCommonRateControlMode` = Quality, `CODECAPI_AVEncCommonQuality` = `quality`,
+/// 1 to 100, higher is better and larger), best effort: an MFT without the interface or a mode
+/// keeps its bitrate control. In this mode the inbox H.264 encoder spends bits to reach the
+/// quality, so the file's bitrate follows the picture instead of the target in
+/// `MF_MT_AVG_BITRATE` (which stays set, the types need one).
+///
+/// Measured (an MP4 export in a screen recorder, PSNR against the source frames): at a bitrate
+/// target of 0.1 bits per pixel the encoder gave 40 to 47 dB, the busy pictures starved at the low
+/// end; quality 95 gave 47 to 53 dB, with smaller files on still screens and larger ones on the
+/// busy pictures. A bitrate has to be guessed for a picture; the quality asks for the result.
+///
+/// Like [`disable_b_frames`], call it right after the MFT is created, before the media types.
+pub(super) fn set_constant_quality(transform: &IMFTransform, quality: u8) {
+    let Ok(codec) = transform.cast::<ICodecAPI>() else {
+        return;
+    };
+    let mode = VARIANT::from(eAVEncCommonRateControlMode_Quality.0 as u32);
+    let level = VARIANT::from(u32::from(quality.clamp(1, 100)));
+    // SAFETY: VT_UI4 variants that live through the calls; the GUIDs are constants.
+    unsafe {
+        let _ = codec.SetValue(&CODECAPI_AVEncCommonRateControlMode, &raw const mode);
+        let _ = codec.SetValue(&CODECAPI_AVEncCommonQuality, &raw const level);
+    }
 }
 
 pub(super) fn begin_streaming(transform: &IMFTransform) -> Result<(), EncodeError> {

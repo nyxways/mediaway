@@ -8,6 +8,7 @@
 | [windows-encode-gpu-input](windows-encode-gpu-input.md) | D3D12 encoder GPU-input Zero-Copy design (wgpu + native capture callers) — Proposed, no code |
 | [windows-timestamps](windows-timestamps.md) | WMF `hns` round trip (rounds to nearest; HEVC collapsed, H.264 got `dts > pts`) · video `dts` is the MFT's own decode timestamp clamped to `pts` (VFR durations fixed, #110) · reading ffmpeg's dts warning |
 | [windows-decode](windows-decode.md) | WMF + DX11 decoder Zero-Copy out; D3D12 native decode (H.264 implemented, **paused** on a real GPU-TDR hang) |
+| [windows-decode-h264-cpu-quirks](windows-decode-h264-cpu-quirks.md) | Inbox H.264 decoder MFT: AVCC packets with a 256-511-byte first NAL taken for Annex-B (frame silently dropped); a drained frame stamped 0 (`InFlight` repair); low-latency mode measured slower |
 | [windows-decode-d3d12-hevc](windows-decode-d3d12-hevc.md) | D3D12 native HEVC decode (ADR-0004) — **implemented, sans-io-verified only**; zero real GPU hardware run, deliberately |
 | [windows-decode-d3d12-av1](windows-decode-d3d12-av1.md) | D3D12 native AV1 decode (ADR-0005) — **implemented, sans-io-verified only**, `KEY_FRAME`-only; zero real GPU hardware run, deliberately; open bitstream-source question for any future hardware attempt |
 | [web-encode](web-encode.md) | WebCodecs + WASM mux (browser) |

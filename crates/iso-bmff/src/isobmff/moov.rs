@@ -174,7 +174,9 @@ pub(super) fn write_trak(
             tk.extend_from_slice(&[0u8; 8]);
             tk.extend_from_slice(&0u16.to_be_bytes());
             tk.extend_from_slice(&0u16.to_be_bytes());
-            tk.extend_from_slice(&0x0100u16.to_be_bytes());
+            // 14496-12 § 8.3.2: 1.0 (full volume) for an audio track, 0 for any other.
+            let volume: u16 = if audio { 0x0100 } else { 0 };
+            tk.extend_from_slice(&volume.to_be_bytes());
             tk.extend_from_slice(&0u16.to_be_bytes());
             identity_matrix(tk);
             tk.extend_from_slice(&(track.width << 16).to_be_bytes());

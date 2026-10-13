@@ -325,3 +325,180 @@ mod opus {
         assert_eq!(extra[9], 2, "fell back to the stereo placeholder");
     }
 }
+
+/// An AAC track whose `AudioSpecificConfig` is `asc`, counting time in `timescale` ticks a second.
+fn aac_track(asc: &'static [u8], timescale: u32) -> Track {
+    Track {
+        id: 1,
+        codec: Codec::Aac,
+        time_base: Rational::new(1, timescale),
+        width: 0,
+        height: 0,
+        extra_data: Bytes::from_static(asc),
+    }
+}
+
+/// The `mp4a` box of a written `stsd`: the 28 bytes of `AudioSampleEntry` and what follows them.
+fn mp4a_of(stsd: &[u8]) -> &[u8] {
+    let hdr = parse_header(stsd).expect("stsd header");
+    // version + flags + entry count, then the entry.
+    let entry = &stsd[hdr.header_len + 8..hdr.size];
+    let mp4a = parse_header(entry).expect("mp4a header");
+    assert_eq!(&entry[4..8], b"mp4a");
+    assert_eq!(
+        mp4a.size,
+        entry.len(),
+        "mp4a is the whole of the stsd entry"
+    );
+    &entry[mp4a.header_len..]
+}
+
+/// Reads one MPEG-4 Systems descriptor (ISO/IEC 14496-1 § 7.2.2.2 and § 8.3.3) off the front of
+/// `data` strictly: the tag, an expandable length of 1 to 4 bytes, and a body that is all there.
+/// Returns the tag, the body and what follows.
+fn descriptor(data: &[u8]) -> (u8, &[u8], &[u8]) {
+    let tag = data[0];
+    let mut len = 0usize;
+    let mut at = 1;
+    loop {
+        let byte = data[at];
+        at += 1;
+        len = (len << 7) | usize::from(byte & 0x7f);
+        if byte & 0x80 == 0 {
+            break;
+        }
+        assert!(at <= 4, "a descriptor length is at most 4 bytes");
+    }
+    assert!(
+        at + len <= data.len(),
+        "descriptor {tag:#x} declares {len} bytes but only {} follow",
+        data.len() - at
+    );
+    (tag, &data[at..at + len], &data[at + len..])
+}
+
+/// Checks the `esds` payload of an `mp4a` entry byte by byte and returns its
+/// `AudioSpecificConfig`: every declared length equals its bytes, and the descriptors are the four
+/// an MP4 audio track has, in order.
+fn check_esds(mp4a_body: &[u8]) -> Vec<u8> {
+    let esds_box = &mp4a_body[28..];
+    let hdr = parse_header(esds_box).expect("esds header");
+    assert_eq!(&esds_box[4..8], b"esds");
+    assert_eq!(
+        hdr.size,
+        esds_box.len(),
+        "esds is the whole of the entry's tail"
+    );
+    let body = &esds_box[hdr.header_len..];
+    assert_eq!(
+        &body[..4],
+        &[0; 4],
+        "esds is a full box, version 0, no flags"
+    );
+
+    let (tag, es, rest) = descriptor(&body[4..]);
+    assert_eq!(tag, 0x03, "ES_Descriptor");
+    assert!(rest.is_empty(), "nothing follows the ES_Descriptor");
+    // ES_ID (16), streamDependenceFlag, URL_Flag, OCRstreamFlag, streamPriority (all zero).
+    assert_eq!(es[2], 0, "no dependency, URL or OCR stream");
+    let (tag, dec, rest) = descriptor(&es[3..]);
+    assert_eq!(tag, 0x04, "DecoderConfigDescriptor");
+    assert_eq!(dec[0], 0x40, "MPEG-4 Audio");
+    assert_eq!(
+        dec[1], 0x15,
+        "audio stream, upstream flag clear, reserved bit set"
+    );
+    // The SLConfigDescriptor is mandatory in an MP4 and the ES_Descriptor ends with it.
+    let (tag, sl, rest) = descriptor(rest);
+    assert_eq!(tag, 0x06, "SLConfigDescriptor");
+    assert_eq!(sl, [0x02], "predefined = 2 (MP4)");
+    assert!(
+        rest.is_empty(),
+        "the ES_Descriptor ends with the SLConfigDescriptor"
+    );
+    // The DecoderConfigDescriptor: 13 bytes, then the DecoderSpecificInfo, nothing else.
+    let (tag, asc, rest) = descriptor(&dec[13..]);
+    assert_eq!(tag, 0x05, "DecoderSpecificInfo");
+    assert!(
+        rest.is_empty(),
+        "the DecoderConfigDescriptor ends with the config"
+    );
+    asc.to_vec()
+}
+
+fn write_aac(track: &Track) -> Vec<u8> {
+    let mut stsd = Vec::new();
+    write_stsd(&mut stsd, track);
+    stsd
+}
+
+#[test]
+fn an_aac_esds_is_well_formed_and_carries_the_config_and_an_sl_config() {
+    let stsd = write_aac(&aac_track(&[0x11, 0x90], 1_000_000));
+    assert_eq!(check_esds(mp4a_of(&stsd)), [0x11, 0x90]);
+}
+
+#[test]
+fn an_aac_esds_without_a_config_carries_the_default_one() {
+    let mut track = aac_track(&[], 44_100);
+    track.extra_data = Bytes::new();
+    let stsd = write_aac(&track);
+    assert_eq!(check_esds(mp4a_of(&stsd)), [0x12, 0x10]);
+}
+
+#[test]
+fn a_long_aac_config_gets_an_expandable_length_not_a_clipped_byte() {
+    // 200 bytes: past what one length byte (7 bits) can hold.
+    static LONG: [u8; 200] = {
+        let mut a = [0u8; 200];
+        a[0] = 0x11;
+        a[1] = 0x90;
+        a
+    };
+    let stsd = write_aac(&aac_track(&LONG, 48_000));
+    assert_eq!(check_esds(mp4a_of(&stsd)), LONG);
+}
+
+/// The `channelcount`, `samplesize` and `samplerate` fields of an `mp4a` entry.
+fn audio_fields(mp4a_body: &[u8]) -> (u16, u16, u32) {
+    (
+        u16::from_be_bytes([mp4a_body[16], mp4a_body[17]]),
+        u16::from_be_bytes([mp4a_body[18], mp4a_body[19]]),
+        u32::from_be_bytes([mp4a_body[24], mp4a_body[25], mp4a_body[26], mp4a_body[27]]),
+    )
+}
+
+#[test]
+fn the_mp4a_samplerate_is_the_audio_rate_not_the_track_timescale() {
+    // 48 kHz stereo, on a microsecond timescale: 1_000_000 << 16 used to be written, whose low 16
+    // bits are 16960 Hz.
+    let stsd = write_aac(&aac_track(&[0x11, 0x90], 1_000_000));
+    assert_eq!(audio_fields(mp4a_of(&stsd)), (2, 16, 0xBB80_0000));
+    // The same on the timescale of the rate.
+    let stsd = write_aac(&aac_track(&[0x11, 0x90], 48_000));
+    assert_eq!(audio_fields(mp4a_of(&stsd)), (2, 16, 0xBB80_0000));
+}
+
+#[test]
+fn the_mp4a_entry_follows_the_config_for_rate_and_channels() {
+    // AAC-LC, 44.1 kHz, mono.
+    let stsd = write_aac(&aac_track(&[0x12, 0x08], 1_000_000));
+    assert_eq!(audio_fields(mp4a_of(&stsd)), (1, 16, 44_100 << 16));
+    // AAC-LC, 22.05 kHz, 5.1.
+    let stsd = write_aac(&aac_track(&[0x13, 0xB0], 1_000_000));
+    assert_eq!(audio_fields(mp4a_of(&stsd)), (6, 16, 22_050 << 16));
+    // No config: the default, 44.1 kHz stereo.
+    let mut track = aac_track(&[], 1_000_000);
+    track.extra_data = Bytes::new();
+    assert_eq!(
+        audio_fields(mp4a_of(&write_aac(&track))),
+        (2, 16, 44_100 << 16)
+    );
+}
+
+#[test]
+fn a_rate_over_65535_hz_is_written_as_zero() {
+    // AAC-LC, 96 kHz (index 0), stereo: the 16.16 field cannot hold it; readers use the config.
+    let stsd = write_aac(&aac_track(&[0x10, 0x10], 96_000));
+    assert_eq!(audio_fields(mp4a_of(&stsd)), (2, 16, 0));
+}

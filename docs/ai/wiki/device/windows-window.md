@@ -30,5 +30,12 @@
   corner + `CopySubresourceRegion` into a 4-slot ring (WGC frame released right after the
   copy). With a region the pool never recreates on resize; a window smaller than the region
   is `RegionOutOfBounds`, never padded. ADR-0009.
+- Canvas (`windows_desktop::Canvas`, 2026-10-13, for Recoway): a fixed-size BGRA canvas a
+  picture of any size is placed on, centered (even offsets), black around it; a larger one is cut
+  around its center. One `CopySubresourceRegion` per frame into a 4-slot ring (the region copy's
+  reasoning); a slot is cleared (`ClearRenderTargetView`) only when the new picture does not cover
+  the old. Also `place_pixels` (upload), `read_last` (staging read-back, waits for the GPU) and
+  `put_canvas` (a whole canvas from memory) for an occasional still. Lets a window that changes
+  size feed an encoder of a fixed size. Tests: `canvas_tests.rs` (real D3D11 device, no window).
 - ADR: [0004](../../../../crates/mediaway-device/adr/windows/0004-wgc-window-capture.md) ·
   cursor/border [0008](../../../../crates/mediaway-device/adr/0008-cursor-capture-and-wgc-border.md)

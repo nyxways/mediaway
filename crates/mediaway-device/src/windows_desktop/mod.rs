@@ -10,6 +10,8 @@
 #![cfg_attr(not(windows), deny(unsafe_code))]
 
 #[cfg(windows)]
+mod canvas;
+#[cfg(windows)]
 mod capture_exclusion;
 #[cfg(windows)]
 mod desktop_audio;
@@ -25,6 +27,8 @@ mod wgc;
 mod options;
 pub use options::{CaptureBorder, FrameDimensions, WindowCaptureOptions};
 
+#[cfg(windows)]
+pub use canvas::{Canvas, CanvasFrame, CanvasPlacement};
 #[cfg(windows)]
 pub use capture_exclusion::exclude_window_from_capture;
 #[cfg(windows)]

@@ -156,3 +156,31 @@ stub, keeping the crate's public surface identical across host platforms.
 - [`docs/ai/wiki/device/windows-audio.md`](../../../docs/ai/wiki/device/windows-audio.md) — to be extended once implemented
 
 Crate-local only. Workspace ADRs: [`docs/adr/`](../../../docs/adr/).
+
+## Updates
+
+### 2026-10-13 — a played-frames clock, `flush`, and a short silence lead
+
+Asked for by Recoway's preview playback (gway `app/recoway/src/play_audio.rs`), which drives its
+picture from the sound's clock and must cut the sound at once on a seek or a pause.
+
+- **`WindowsWasapiPlayback::played_frames`** (inherent, not on the facade trait yet): sample frames
+  of the caller's PCM the endpoint has played, from `IAudioClock::GetPosition` (Microsoft's
+  reference: "the stream position of the sample that is currently playing through the speakers",
+  <https://learn.microsoft.com/en-us/windows/win32/api/audioclient/nf-audioclient-iaudioclock-getposition>).
+  The worker keeps the stretches it released (the caller's PCM or inserted silence) until they are
+  played, so the device position maps back to the caller's PCM and the clock stands still through
+  an underrun. Updated once a poll (about 5 ms).
+- **`WindowsWasapiPlayback::flush`**: drops the queue and the render buffer (`Stop`, `Reset`,
+  `Start`, done by the worker, which owns the client) and sets the clock back to 0; it blocks for
+  one poll. `close` + `open` would do the same at the cost of a thread and an `Initialize`.
+- **Silence is no longer written to fill the buffer.** The v1 table above released a whole
+  `available_frames` packet of silence on a full underrun, and zero-filled the tail of a partial
+  one. With the 1 s buffer this put up to a second of silence in front of the next PCM written:
+  a stream started on an empty queue played its first frame about a second late. Now the worker
+  releases exactly the queued frames, and with nothing queued keeps only a 20 ms silence lead in
+  the buffer (`SILENCE_LEAD_DIVISOR`) so the engine is never starved. `underrun_count` counts the
+  silence releases. What is given up: none measured; the lead is the engine period (10 ms) twice
+  over, and the timer poll is 5 ms.
+- Not changed: the 1 s buffer and the timer poll. A caller wanting low latency keeps its own
+  queue short (Recoway keeps 150 ms ahead of `played_frames`).

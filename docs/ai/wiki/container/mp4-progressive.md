@@ -16,3 +16,12 @@
 - **Costs:** the caller must know every sample up front; a file cut off while written has no `moov`;
   4 bytes of `stco` a sample.
 - **First caller:** Recoway's checkpoint clips (`app/recoway/crates/recoway-media/src/checkpoint.rs`).
+
+## `write_indexed_moov` — the second half of a hybrid MP4 (ADR-0009)
+
+- A `moov` only, for samples already in a file (absolute `StblSample::offset`s), appended after a
+  fragmented file's last fragment. Runs of adjacent samples share a chunk; `co64` past 4 GiB.
+- **FFmpeg needs the fragments inside an `mdat`**: with only the `moov` appended and the front one hidden it
+  stops at the first top-level `moof` ("trun track id unknown, no tfhd was found"). The caller turns a
+  16-byte `free` box into a 64-bit `mdat` header over the fragments (Recoway `hybrid.rs`).
+- `mdhd` is version 1 when the media passes `u32::MAX` ticks (71.6 min at 1 us) — also in `write_progressive`.

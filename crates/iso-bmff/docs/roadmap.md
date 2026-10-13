@@ -33,4 +33,8 @@ Freestanding ISOBMFF/MP4. Workspace index: [`docs/roadmap.md`](../../../docs/roa
       starts at the keyframe before the moment it should show from, FFmpeg trims it only in
       a non-fragmented file — [`adr/0008`](../adr/0008-progressive-mp4-head.md) — 2026-10-13.
       First caller: Recoway's checkpoint clips.
+- [x] `moov` for samples already in a file (`isobmff::write_indexed_moov`) and `mdhd` version 1:
+      the second half of a hybrid MP4 (fragments while recording, an ordinary MP4 when it ends) —
+      [`adr/0009`](../adr/0009-indexed-moov-for-existing-samples.md) — 2026-10-14. First caller:
+      Recoway's recordings and exports.
 - [ ] More codecs / sample entries as needed (`hev1` variant, `dvhe`/Dolby Vision, …)

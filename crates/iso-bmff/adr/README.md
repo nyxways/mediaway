@@ -10,3 +10,4 @@
 | [0006](0006-hevc-in-mp4.md) | HEVC in MP4: unescape the SPS, length-prefix the samples; every HEVC file this workspace wrote decoded zero frames |
 | [0007](0007-mux-payload-placements.md) | Opt-in mux payload placements: absolute output offset + length of every sample written |
 | [0008](0008-progressive-mp4-head.md) | A non-fragmented MP4 head with edit lists (`write_progressive`): FFmpeg applies an `elst` to sample tables only, not to fragmented MP4 |
+| [0009](0009-indexed-moov-for-existing-samples.md) | A `moov` with sample tables for samples already in a file (`write_indexed_moov`): the second half of a hybrid MP4; FFmpeg needs the fragments inside an `mdat` |

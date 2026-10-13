@@ -13,6 +13,7 @@
 - A fixed-size capture canvas for Windows (`windows_desktop::Canvas`): each captured frame, whatever its size, is copied centered onto one texture on the GPU, so a window recording keeps one encoder size through resizes
 - The Windows capture canvas can take a fixed part of each frame instead (`Canvas::place_texture_part`, `CanvasPlacement::part`): the part keeps its offset from the window's top-left through resizes and is black where a shrunk window no longer reaches, so a part of a window can be recorded while the window is covered
 - `iso_bmff::isobmff::write_progressive` writes the head of a non-fragmented MP4 (`ftyp`, a `moov` with real sample tables and an optional edit list per track, the `mdat` header) for samples all known before the file is written, the counterpart of `parse_stbl_samples`: a stream copy that starts at the keyframe before the moment it should show from can hide the packets before it with an edit list, which FFmpeg applies to a non-fragmented file and not to a fragmented one
+- `iso_bmff::isobmff::write_indexed_moov` writes a `moov` with sample tables for samples already in a file, at absolute offsets and with a chunk for each run of adjacent samples: appended after a fragmented recording's last fragment it makes the file an ordinary MP4 (a duration for Windows and chat apps) without rewriting a sample
 
 ### Changed
 

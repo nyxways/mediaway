@@ -73,6 +73,37 @@ impl WindowsVideoEncoder {
     pub const fn open(_config: &VideoEncoderConfig) -> Result<Self, EncodeError> {
         Err(EncodeError::Unsupported)
     }
+
+    /// [`Self::open`] for the CPU path ([`VideoInputPreference::CpuUploadOk`]) with
+    /// constant-quality rate control: the encoder spends the bits the picture needs to reach
+    /// `quality` (1 to 100, higher is better and larger; clamped) instead of aiming at
+    /// [`VideoEncoderConfig::bitrate_bps`], which is then only the figure the media types carry.
+    /// For an encode whose output should stay close to its source (an export of an edit), where
+    /// a constant bitrate starves busy pictures and wastes bits on still ones.
+    ///
+    /// Best effort in the encoder: an MFT that refuses the mode keeps its bitrate control.
+    ///
+    /// # Errors
+    ///
+    /// [`EncodeError::Unsupported`] for the Zero-Copy input path, which has no such control, or
+    /// the errors of [`Self::open`].
+    #[cfg(windows)]
+    pub fn open_constant_quality(
+        config: &VideoEncoderConfig,
+        quality: u8,
+    ) -> Result<Self, EncodeError> {
+        let inner = wmf::WmfVideoEncoder::open_with_quality(config, Some(quality))?;
+        Ok(Self { inner: Some(inner) })
+    }
+
+    /// Host / non-Windows build: encoder unavailable.
+    #[cfg(not(windows))]
+    pub const fn open_constant_quality(
+        _config: &VideoEncoderConfig,
+        _quality: u8,
+    ) -> Result<Self, EncodeError> {
+        Err(EncodeError::Unsupported)
+    }
 }
 
 #[cfg(feature = "video")]
@@ -277,6 +308,10 @@ fn closed_audio_stream_info() -> &'static StreamInfo {
         channels: 0,
     })
 }
+
+#[cfg(all(test, windows, feature = "video"))]
+#[path = "constant_quality_tests.rs"]
+mod constant_quality_tests;
 
 #[cfg(all(test, windows, feature = "video"))]
 #[allow(

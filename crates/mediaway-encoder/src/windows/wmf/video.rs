@@ -26,7 +26,7 @@ use super::dx11::{self, Dx11Session};
 use super::runtime::{sample_duration_hns, to_hns};
 use super::shared::{
     Drain, begin_streaming, bitrate_and_fps, configure_types, disable_b_frames, nv12_size,
-    output_buffer_hint, process_one_output,
+    output_buffer_hint, process_one_output, set_constant_quality,
 };
 
 /// Video encode session (CPU upload or DX11 Zero-Copy) for H.264 / HEVC / AV1 / VP9.
@@ -47,15 +47,29 @@ pub(crate) struct WmfVideoEncoder {
 impl WmfVideoEncoder {
     /// Open according to [`VideoEncoderConfig::input`].
     pub(crate) fn open(config: &VideoEncoderConfig) -> Result<Self, EncodeError> {
+        Self::open_with_quality(config, None)
+    }
+
+    /// [`Self::open`], with constant-quality rate control (`quality` 1 to 100) on the CPU path
+    /// instead of the bitrate target. The Zero-Copy path has no such control here.
+    ///
+    /// # Errors
+    /// [`EncodeError::Unsupported`] for a `quality` with [`VideoInputPreference::ZeroCopyGpu`];
+    /// otherwise as [`Self::open`].
+    pub(crate) fn open_with_quality(
+        config: &VideoEncoderConfig,
+        quality: Option<u8>,
+    ) -> Result<Self, EncodeError> {
         validate_common(config)?;
         ensure_mf_runtime()?;
         match config.input {
-            VideoInputPreference::CpuUploadOk => Self::open_cpu(config),
-            VideoInputPreference::ZeroCopyGpu => Self::open_dx11(config),
+            VideoInputPreference::CpuUploadOk => Self::open_cpu(config, quality),
+            VideoInputPreference::ZeroCopyGpu if quality.is_none() => Self::open_dx11(config),
+            VideoInputPreference::ZeroCopyGpu => Err(EncodeError::Unsupported),
         }
     }
 
-    fn open_cpu(config: &VideoEncoderConfig) -> Result<Self, EncodeError> {
+    fn open_cpu(config: &VideoEncoderConfig, quality: Option<u8>) -> Result<Self, EncodeError> {
         let output_subtype = video_subtype(config.codec)?;
         let transform: IMFTransform = if config.codec == CodecKind::H264 {
             // SAFETY: inbox sync H.264 MFT.
@@ -69,6 +83,9 @@ impl WmfVideoEncoder {
         // No B-frames (before the types are set): the soft encoder's reordering makes the first
         // `pts` a frame late and the `dts` run behind the `pts` (see `shared::disable_b_frames`).
         disable_b_frames(&transform);
+        if let Some(quality) = quality {
+            set_constant_quality(&transform, quality);
+        }
 
         let (bitrate, fps_num, fps_den) = bitrate_and_fps(
             config.bitrate_bps,

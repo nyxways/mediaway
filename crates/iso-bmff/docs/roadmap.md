@@ -29,4 +29,8 @@ Freestanding ISOBMFF/MP4. Workspace index: [`docs/roadmap.md`](../../../docs/roa
 - [x] Opt-in mux payload placements (`Muxer::with_placements` / `poll_placements`): where
       each sample's payload landed in the output — [`adr/0007`](../adr/0007-mux-payload-placements.md)
       — 2026-09-25. First caller: qarec's disk-backed replay ring.
+- [x] Non-fragmented head with edit lists (`isobmff::write_progressive`): a stream copy that
+      starts at the keyframe before the moment it should show from, FFmpeg trims it only in
+      a non-fragmented file — [`adr/0008`](../adr/0008-progressive-mp4-head.md) — 2026-10-13.
+      First caller: Recoway's checkpoint clips.
 - [ ] More codecs / sample entries as needed (`hev1` variant, `dvhe`/Dolby Vision, …)

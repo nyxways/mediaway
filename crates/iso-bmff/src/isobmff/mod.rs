@@ -10,6 +10,7 @@ pub mod fragment;
 pub mod ftyp;
 pub mod header;
 pub mod moov;
+pub mod progressive;
 pub mod sample_entry;
 pub mod stbl;
 
@@ -20,5 +21,6 @@ pub use fourcc::{FourCc, tag};
 pub use fragment::{MoofInfo, TrunSample, parse_moof, write_fragment};
 pub use ftyp::write_ftyp;
 pub use header::{Header, parse_header, write_box};
-pub use moov::{MoovTrack, parse_moov, write_moov};
+pub use moov::{MOVIE_TIMESCALE, MoovTrack, parse_moov, write_moov};
+pub use progressive::{ProgressiveTrack, write_progressive};
 pub use stbl::{StblSample, parse_stbl_samples};

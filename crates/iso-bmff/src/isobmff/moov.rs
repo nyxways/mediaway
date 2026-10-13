@@ -3,7 +3,8 @@
 #![forbid(unsafe_code)]
 
 use super::cenc_box::TrackEncryption;
-use super::elst::{expand_samples_by_edit_list, parse_edts};
+use super::elst::{EditListEntry, expand_samples_by_edit_list, parse_edts};
+use super::progressive::Tables;
 use super::sample_entry::{parse_sample_entry, write_stsd};
 use super::stbl::parse_stbl_samples;
 use super::{FourCc, StblSample, parse_header, tag, write_box};
@@ -22,12 +23,16 @@ pub struct MoovTrack {
     pub encryption: Option<TrackEncryption>,
 }
 
+/// The `mvhd` timescale the `moov` writers use: an `elst` entry's `segment_duration` is counted in
+/// it (milliseconds), where its `media_time` is in the track's own `mdhd` timescale.
+pub const MOVIE_TIMESCALE: u32 = 1000;
+
 /// Write `moov` (+ `mvex`/`trex`) for fragmented MP4.
 pub fn write_moov(buf: &mut Vec<u8>, tracks: &[Track]) {
     write_box(buf, tag::MOOV, |b| {
-        write_mvhd(b, tracks.len());
+        write_mvhd(b, tracks.len(), 0);
         for t in tracks {
-            write_trak(b, t);
+            write_trak(b, t, &[], None);
         }
         write_box(b, tag::MVEX, |bx| {
             for t in tracks {
@@ -90,13 +95,15 @@ fn parse_mvhd_timescale(body: &[u8]) -> Option<u32> {
     ]))
 }
 
-fn write_mvhd(buf: &mut Vec<u8>, n_tracks: usize) {
+/// `mvhd` for `n_tracks` tracks; `duration` in [`MOVIE_TIMESCALE`] ticks (zero for a fragmented
+/// file, whose length the fragments tell).
+pub(super) fn write_mvhd(buf: &mut Vec<u8>, n_tracks: usize, duration: u32) {
     write_box(buf, tag::MVHD, |b| {
         b.extend_from_slice(&0u32.to_be_bytes());
         b.extend_from_slice(&0u32.to_be_bytes());
         b.extend_from_slice(&0u32.to_be_bytes());
-        b.extend_from_slice(&1000u32.to_be_bytes());
-        b.extend_from_slice(&0u32.to_be_bytes());
+        b.extend_from_slice(&MOVIE_TIMESCALE.to_be_bytes());
+        b.extend_from_slice(&duration.to_be_bytes());
         b.extend_from_slice(&0x0001_0000u32.to_be_bytes());
         b.extend_from_slice(&0x0100u16.to_be_bytes());
         b.extend_from_slice(&[0u8; 10]);
@@ -112,8 +119,23 @@ fn identity_matrix(b: &mut Vec<u8>) {
     }
 }
 
-fn write_trak(buf: &mut Vec<u8>, track: &Track) {
+/// A `trak`: for a fragmented file `tables` is `None` (its sample tables are empty and its
+/// durations zero), for a non-fragmented one the real tables, whose lengths the headers carry.
+pub(super) fn write_trak(
+    buf: &mut Vec<u8>,
+    track: &Track,
+    edits: &[EditListEntry],
+    tables: Option<&Tables<'_>>,
+) {
     let audio = matches!(track.codec, Codec::Aac | Codec::Opus);
+    // The track's length in the movie timescale: what its edit shows, else all of its media.
+    let movie_duration = tables.map_or(0, |t| {
+        if edits.is_empty() {
+            t.movie_duration(track.time_base.den)
+        } else {
+            edits.iter().map(|e| e.segment_duration).sum()
+        }
+    });
     write_box(buf, tag::TRAK, |b| {
         write_box(b, tag::TKHD, |tk| {
             tk.extend_from_slice(&7u32.to_be_bytes());
@@ -121,7 +143,11 @@ fn write_trak(buf: &mut Vec<u8>, track: &Track) {
             tk.extend_from_slice(&0u32.to_be_bytes());
             tk.extend_from_slice(&(track.id.saturating_add(1)).to_be_bytes());
             tk.extend_from_slice(&0u32.to_be_bytes());
-            tk.extend_from_slice(&0u32.to_be_bytes());
+            tk.extend_from_slice(
+                &u32::try_from(movie_duration)
+                    .unwrap_or(u32::MAX)
+                    .to_be_bytes(),
+            );
             tk.extend_from_slice(&[0u8; 8]);
             tk.extend_from_slice(&0u16.to_be_bytes());
             tk.extend_from_slice(&0u16.to_be_bytes());
@@ -131,13 +157,17 @@ fn write_trak(buf: &mut Vec<u8>, track: &Track) {
             tk.extend_from_slice(&(track.width << 16).to_be_bytes());
             tk.extend_from_slice(&(track.height << 16).to_be_bytes());
         });
+        if !edits.is_empty() {
+            write_edts(b, edits);
+        }
         write_box(b, tag::MDIA, |md| {
             write_box(md, tag::MDHD, |h| {
                 h.extend_from_slice(&0u32.to_be_bytes());
                 h.extend_from_slice(&0u32.to_be_bytes());
                 h.extend_from_slice(&0u32.to_be_bytes());
                 h.extend_from_slice(&track.time_base.den.to_be_bytes());
-                h.extend_from_slice(&0u32.to_be_bytes());
+                let media = tables.map_or(0, Tables::media_duration);
+                h.extend_from_slice(&u32::try_from(media).unwrap_or(u32::MAX).to_be_bytes());
                 h.extend_from_slice(&0x55C4u16.to_be_bytes());
                 h.extend_from_slice(&0u16.to_be_bytes());
             });
@@ -179,6 +209,10 @@ fn write_trak(buf: &mut Vec<u8>, track: &Track) {
                 });
                 write_box(mf, tag::STBL, |st| {
                     write_stsd(st, track);
+                    if let Some(tables) = tables {
+                        tables.write(st);
+                        return;
+                    }
                     for empty in [b"stts", b"stsc", b"stco"] {
                         write_box(st, FourCc(*empty), |e| {
                             e.extend_from_slice(&0u32.to_be_bytes());
@@ -195,6 +229,35 @@ fn write_trak(buf: &mut Vec<u8>, track: &Track) {
                     });
                 });
             });
+        });
+    });
+}
+
+/// `edts` holding an `elst` of `edits`: version 0 (32-bit) when all the values fit, else version 1.
+fn write_edts(buf: &mut Vec<u8>, edits: &[EditListEntry]) {
+    write_box(buf, tag::EDTS, |e| {
+        write_box(e, tag::ELST, |l| {
+            let narrow = edits.iter().all(|edit| {
+                u32::try_from(edit.segment_duration).is_ok()
+                    && i32::try_from(edit.media_time).is_ok()
+            });
+            // Version in the top byte of version/flags, then the entry count.
+            l.extend_from_slice(&(u32::from(!narrow) << 24).to_be_bytes());
+            l.extend_from_slice(&u32::try_from(edits.len()).unwrap_or(u32::MAX).to_be_bytes());
+            for edit in edits {
+                if narrow {
+                    l.extend_from_slice(
+                        &u32::try_from(edit.segment_duration)
+                            .unwrap_or(0)
+                            .to_be_bytes(),
+                    );
+                    l.extend_from_slice(&i32::try_from(edit.media_time).unwrap_or(0).to_be_bytes());
+                } else {
+                    l.extend_from_slice(&edit.segment_duration.to_be_bytes());
+                    l.extend_from_slice(&edit.media_time.to_be_bytes());
+                }
+                l.extend_from_slice(&edit.media_rate.to_be_bytes());
+            }
         });
     });
 }

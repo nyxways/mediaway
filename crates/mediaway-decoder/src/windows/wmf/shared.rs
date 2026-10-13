@@ -172,12 +172,21 @@ pub(super) fn packet_to_sample(
     // Annex-B samples but normalizes `extra_data` to an avcC record for the container
     // (`mediaway-encoder`'s `refresh_extradata`), so a direct encoder→decoder feed has
     // AVCC `extra_data` with already-Annex-B packets — converting those as AVCC corrupts
-    // them. Detect per-packet (same start-code probe the muxer's `to_avcc` uses).
+    // them. Detect per-packet: a packet whose length prefixes walk exactly to its end is
+    // length-prefixed (a start-code probe alone takes a first NAL of 256 to 511 bytes, which
+    // begins `00 00 01 xx`, for Annex-B); otherwise the start-code probe the muxer's `to_avcc`
+    // uses decides.
     let annex_b_payload = match framing {
-        NalFraming::Avc(n) if !iso_bmff::bitstream::avc::is_annex_b(&packet.payload) => {
+        NalFraming::Avc(n)
+            if iso_bmff::bitstream::is_length_prefixed(&packet.payload, n)
+                || !iso_bmff::bitstream::avc::is_annex_b(&packet.payload) =>
+        {
             iso_bmff::bitstream::avc::avcc_payload_to_annex_b(&packet.payload, n)
         }
-        NalFraming::Hevc(n) if !iso_bmff::bitstream::hevc::is_annex_b(&packet.payload) => {
+        NalFraming::Hevc(n)
+            if iso_bmff::bitstream::is_length_prefixed(&packet.payload, n)
+                || !iso_bmff::bitstream::hevc::is_annex_b(&packet.payload) =>
+        {
             iso_bmff::bitstream::hevc::hvcc_payload_to_annex_b(&packet.payload, n)
         }
         _ => packet.payload.clone(), // clone: Bytes ref-count bump, not a payload copy

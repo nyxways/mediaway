@@ -2,7 +2,7 @@
 
 #![allow(unsafe_code)]
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 
 use crate::{DecodeError, VideoDecoder, VideoDecoderConfig, VideoOutputPreference};
 use iso_bmff::bitstream::avc::{annex_b_sequence_header, parse_avc_decoder_config};
@@ -66,6 +66,51 @@ enum PendingFrame {
     Cpu(VideoFrame),
 }
 
+/// The timestamps of the packets handed to the MFT whose frames have not come out yet.
+///
+/// The inbox H.264 decoder sometimes stamps a frame with a time no packet had. Found 2026-10-14
+/// on a 241-frame recording whose last frame is an IDR picture: the 36 frames the MFT holds back
+/// come out at the drain with their packets' times, and the last one, the IDR, comes out with
+/// time 0 (`GetSampleTime` returns `Ok(0)`, not an error), which is also the first frame's time;
+/// 121-frame and 61-frame cuts of the same recording ending on an IDR did the same or not,
+/// depending on how many frames were waiting. A consumer that finds frames by time loses the
+/// frame. Frames come out of a decoder in display order, so the frame stamped with an unknown time
+/// is the one with the earliest input time still waiting.
+#[derive(Debug, Default)]
+struct InFlight(BTreeMap<i64, u32>);
+
+impl InFlight {
+    /// A packet with time `pts` went in.
+    fn add(&mut self, pts: i64) {
+        *self.0.entry(pts).or_insert(0) += 1;
+    }
+
+    /// Takes one waiting packet with time `pts`; whether there was one.
+    fn take(&mut self, pts: i64) -> bool {
+        match self.0.get_mut(&pts) {
+            Some(count) if *count > 1 => {
+                *count -= 1;
+                true
+            }
+            Some(_) => self.0.remove(&pts).is_some(),
+            None => false,
+        }
+    }
+
+    /// The time for a frame the MFT stamped `stamp`: `stamp` when a packet had that time, else the
+    /// earliest time still waiting, else `stamp`.
+    fn claim(&mut self, stamp: i64) -> i64 {
+        if self.take(stamp) {
+            return stamp;
+        }
+        let Some(&first) = self.0.keys().next() else {
+            return stamp;
+        };
+        self.take(first);
+        first
+    }
+}
+
 /// H.264 decode session (DX11 Zero-Copy output, or CPU/software output).
 pub(crate) struct WmfH264Decoder {
     transform: IMFTransform,
@@ -84,6 +129,8 @@ pub(crate) struct WmfH264Decoder {
     /// as produced by demuxed MP4 samples) and must be converted to Annex-B before
     /// reaching the MFT; `None` when already Annex-B (e.g. straight from an encoder).
     nal_length_size: Option<u8>,
+    /// Times of the packets whose frames have not come out ([`InFlight`]).
+    in_flight: InFlight,
 }
 
 impl WmfH264Decoder {
@@ -123,6 +170,7 @@ impl WmfH264Decoder {
             dx11: Some(session),
             output_buf_size,
             nal_length_size,
+            in_flight: InFlight::default(),
         })
     }
 
@@ -154,6 +202,7 @@ impl WmfH264Decoder {
             dx11: None,
             output_buf_size,
             nal_length_size,
+            in_flight: InFlight::default(),
         })
     }
 
@@ -245,7 +294,9 @@ impl WmfH264Decoder {
     fn adopt_output_sample(&mut self, sample: IMFSample) -> Result<(), DecodeError> {
         let pts_hns = unsafe { sample.GetSampleTime() }.unwrap_or(0);
         let dur_hns = unsafe { sample.GetSampleDuration() }.unwrap_or(0);
-        let pts = from_hns(pts_hns, self.time_base_num, self.time_base_den);
+        let pts = self
+            .in_flight
+            .claim(from_hns(pts_hns, self.time_base_num, self.time_base_den));
         let duration =
             u64::try_from(from_hns(dur_hns, self.time_base_num, self.time_base_den).max(0))
                 .unwrap_or(0);
@@ -295,6 +346,7 @@ impl VideoDecoder for WmfH264Decoder {
         if packet.is_discard {
             return Ok(());
         }
+        self.in_flight.add(packet.pts);
         self.push_transform_packet(packet)
     }
 

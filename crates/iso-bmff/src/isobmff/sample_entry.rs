@@ -5,6 +5,7 @@
 
 use super::cenc_box::{TrackEncryption, parse_tenc};
 use super::{parse_header, tag, write_box};
+use crate::bitstream::aac::parse_audio_specific_config;
 use crate::types::{Bytes, Codec, Track};
 
 /// Write `stsd` with one sample entry for `track`.
@@ -432,38 +433,77 @@ fn write_av01(buf: &mut Vec<u8>, track: &Track) {
     });
 }
 
+/// The `AudioSpecificConfig` written when the track has none: AAC-LC, 44.1 kHz, stereo.
+const DEFAULT_ASC: [u8; 2] = [0x12, 0x10];
+
+/// `ES_DescrTag`, `DecoderConfigDescrTag`, `DecSpecificInfoTag` and `SLConfigDescrTag`
+/// (ISO/IEC 14496-1 § 7.2.2.1, Table 1).
+const ES_DESCR_TAG: u8 = 0x03;
+const DECODER_CONFIG_TAG: u8 = 0x04;
+const DEC_SPECIFIC_INFO_TAG: u8 = 0x05;
+const SL_CONFIG_TAG: u8 = 0x06;
+
+/// `mp4a` + its `esds` (ISO/IEC 14496-12 § 12.2.3, 14496-14 § 3.1.2).
+///
+/// `channelcount` and `samplerate` come from the `AudioSpecificConfig` (the sample entry and the
+/// decoder config must agree), never from the track timescale, which is whatever the file counts
+/// time in. `samplerate` is a 16.16 fixed-point field whose integer part is 16 bits: a rate above
+/// 65535 Hz (88.2 and 96 kHz AAC) is written as 0, as `FFmpeg` does, and a reader takes the rate
+/// from the `AudioSpecificConfig` instead.
 fn write_mp4a(buf: &mut Vec<u8>, track: &Track) {
+    let asc: &[u8] = if track.extra_data.is_empty() {
+        &DEFAULT_ASC
+    } else {
+        &track.extra_data
+    };
+    let config = parse_audio_specific_config(asc);
+    let channels = config.map_or(2, |c| if c.channels == 0 { 2 } else { c.channels });
+    let rate = config.map_or(track.time_base.den, |c| c.sample_rate);
     write_box(buf, tag::MP4A, |a| {
         a.extend_from_slice(&[0u8; 6]);
         a.extend_from_slice(&1u16.to_be_bytes());
         a.extend_from_slice(&[0u8; 8]);
-        a.extend_from_slice(&2u16.to_be_bytes());
+        a.extend_from_slice(&channels.to_be_bytes());
         a.extend_from_slice(&16u16.to_be_bytes());
         a.extend_from_slice(&0u32.to_be_bytes());
-        a.extend_from_slice(&(track.time_base.den << 16).to_be_bytes());
+        let rate_field = u16::try_from(rate).map_or(0, |r| u32::from(r) << 16);
+        a.extend_from_slice(&rate_field.to_be_bytes());
         write_box(a, tag::ESDS, |e| {
             e.extend_from_slice(&0u32.to_be_bytes());
-            let asc: &[u8] = if track.extra_data.is_empty() {
-                &[0x12, 0x10]
-            } else {
-                &track.extra_data
-            };
-            e.push(0x03);
-            e.push(u8::try_from(asc.len() + 23).unwrap_or(u8::MAX));
-            e.extend_from_slice(&(track.id as u16 + 1).to_be_bytes());
-            e.push(0);
-            e.push(0x04);
-            e.push(u8::try_from(asc.len() + 15).unwrap_or(u8::MAX));
-            e.push(0x40);
-            e.push(0x15);
-            e.extend_from_slice(&[0u8; 3]);
-            e.extend_from_slice(&128_000u32.to_be_bytes());
-            e.extend_from_slice(&128_000u32.to_be_bytes());
-            e.push(0x05);
-            e.push(u8::try_from(asc.len()).unwrap_or(u8::MAX));
-            e.extend_from_slice(asc);
+            write_descriptor(e, ES_DESCR_TAG, |es| {
+                es.extend_from_slice(&(track.id as u16 + 1).to_be_bytes());
+                es.push(0);
+                write_descriptor(es, DECODER_CONFIG_TAG, |dc| {
+                    // objectTypeIndication 0x40 (MPEG-4 Audio), streamType 5 (audio) << 2 | 1.
+                    dc.push(0x40);
+                    dc.push(0x15);
+                    dc.extend_from_slice(&[0u8; 3]);
+                    dc.extend_from_slice(&128_000u32.to_be_bytes());
+                    dc.extend_from_slice(&128_000u32.to_be_bytes());
+                    write_descriptor(dc, DEC_SPECIFIC_INFO_TAG, |si| si.extend_from_slice(asc));
+                });
+                // Mandatory in an MP4 (14496-14 § 3.1.2): predefined 2, "the MP4 file's own
+                // framing".
+                write_descriptor(es, SL_CONFIG_TAG, |sl| sl.push(0x02));
+            });
         });
     });
+}
+
+/// An MPEG-4 Systems descriptor: its tag, then its body length as an expandable size (7 bits a
+/// byte, high bit set on all but the last; ISO/IEC 14496-1 § 8.3.3), then `body`'s bytes. The
+/// length is counted from the bytes written, so it cannot disagree with them.
+fn write_descriptor(out: &mut Vec<u8>, tag: u8, body: impl FnOnce(&mut Vec<u8>)) {
+    let mut inner = Vec::new();
+    body(&mut inner);
+    out.push(tag);
+    let len = inner.len();
+    let groups = (usize::BITS - len.leading_zeros()).div_ceil(7).max(1);
+    for g in (0..groups).rev() {
+        let bits = ((len >> (7 * g)) & 0x7f) as u8;
+        out.push(if g == 0 { bits } else { bits | 0x80 });
+    }
+    out.extend_from_slice(&inner);
 }
 
 fn find_child_payload(data: &[u8], box_tag: [u8; 4]) -> Option<&[u8]> {

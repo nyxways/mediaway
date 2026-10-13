@@ -387,3 +387,18 @@ fn a_track_longer_than_a_32_bit_count_of_ticks_has_a_64_bit_media_duration() {
     );
     assert_eq!(moov_of(&head)[0].info.time_base.den, 1_000_000);
 }
+
+#[test]
+fn only_an_audio_track_has_a_volume() {
+    // ISO/IEC 14496-12 § 8.3.2: the `tkhd` volume is 1.0 for audio and 0 for any other track.
+    let tkhd_volume = |track: &Track| {
+        let head = single(track, &[], &[], 0);
+        let moov = moov_body(&head);
+        let trak = find_path(moov, &[b"trak"]);
+        let tkhd = find_path(trak, &[b"tkhd"]);
+        // version + flags, 2 times, track id, reserved, duration, 8 reserved, layer, group: 36 bytes.
+        u16::from_be_bytes([tkhd[36], tkhd[37]])
+    };
+    assert_eq!(tkhd_volume(&video()), 0);
+    assert_eq!(tkhd_volume(&audio()), 0x0100);
+}

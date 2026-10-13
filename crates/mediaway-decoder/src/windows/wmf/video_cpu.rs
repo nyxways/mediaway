@@ -57,7 +57,7 @@ use super::shared::{
 /// sessions are NV12-only by design (`validate`), so a real MFT that only offers a different
 /// subtype for a given real stream is an honest "unsupported for this pixel format", not a
 /// transport failure.
-fn negotiate_nv12_output_type(transform: &IMFTransform) -> Result<(), DecodeError> {
+pub(super) fn negotiate_nv12_output_type(transform: &IMFTransform) -> Result<(), DecodeError> {
     for i in 0.. {
         let media_type = match unsafe { transform.GetOutputAvailableType(0, i) } {
             Ok(mt) => mt,
@@ -179,10 +179,10 @@ impl WmfMultiCodecCpuDecoder {
     /// Handle `MF_E_TRANSFORM_STREAM_CHANGE` from `ProcessOutput`.
     ///
     /// Real finding (this session, verified with a live HEVC decode on this machine): unlike
-    /// H.264's inbox decoder — where the width/height given at `open()` already matches what
-    /// the bitstream's own SPS says, so [`super::h264::WmfH264Decoder`]'s
-    /// `configure_decode_types`-based re-apply (rebuilding an output type from our own
-    /// guessed `width`/`height`) never actually gets exercised — the HEVC/AV1 Store-extension
+    /// H.264's inbox decoder at a size that is a multiple of 16 — where the width/height given
+    /// at `open()` already matches what the bitstream's own SPS says, so no stream change comes
+    /// (at other sizes it does, and [`super::h264::WmfH264Decoder`]'s CPU path now negotiates
+    /// with this same function, 2026-10-13) — the HEVC/AV1 Store-extension
     /// decoder MFTs on this box only learn the real output geometry once they parse the
     /// first frame, and reject a caller-constructed output media type after the stream
     /// change (confirmed via a raw-HRESULT diagnostic: `SetOutputType` with our own type

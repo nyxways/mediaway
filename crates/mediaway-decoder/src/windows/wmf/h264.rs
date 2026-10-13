@@ -202,7 +202,25 @@ impl WmfH264Decoder {
         Ok(())
     }
 
+    /// Handle `MF_E_TRANSFORM_STREAM_CHANGE` from `ProcessOutput`.
+    ///
+    /// CPU path: adopt the MFT's own proposed NV12 output type and leave the input type alone,
+    /// as [`super::video_cpu::WmfMultiCodecCpuDecoder`] does. Real finding (2026-10-13, Recoway
+    /// region recordings of 850 x 474 and 724 x 274, sizes that are not multiples of 16): the
+    /// inbox H.264 decoder signals a stream change when its first frame is ready (it pads the
+    /// output to whole macroblocks), and re-setting the input type and restarting streaming
+    /// there, as this did, discarded every buffered frame. Each such recording decoded to zero
+    /// frames, flush included. Recordings of 16-aligned sizes never reached this path.
     fn apply_stream_change(&mut self) -> Result<(), DecodeError> {
+        if self.dx11.is_none() {
+            super::video_cpu::negotiate_nv12_output_type(&self.transform)?;
+            let (width, height) = read_output_dimensions(&self.transform)?;
+            if let StreamInfo::Video { geometry, .. } = &mut self.info {
+                *geometry = VideoGeometry { width, height };
+            }
+            self.output_buf_size = output_buffer_size(&self.transform)?;
+            return Ok(());
+        }
         let (width, height) = read_output_dimensions(&self.transform)?;
         if let StreamInfo::Video { geometry, .. } = &mut self.info {
             *geometry = VideoGeometry { width, height };
@@ -363,3 +381,7 @@ fn resolve_annex_b_extra_data(extra_data: &Bytes) -> (Bytes, Option<u8>) {
         None => (extra_data.clone(), None), // clone: Bytes ref-count bump, not a payload copy
     }
 }
+
+#[cfg(test)]
+#[path = "h264_tests.rs"]
+mod tests;

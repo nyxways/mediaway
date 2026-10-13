@@ -60,8 +60,11 @@ windows = { workspace = true, features = [
     "Win32_Media_MediaFoundation",
     "Win32_Security",
     "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
     "Win32_System_LibraryLoader",
+    "Win32_System_Ole",
     "Win32_System_Threading",
+    "Win32_System_Variant",
 ] }
 vpl-sys = { workspace = true }
 

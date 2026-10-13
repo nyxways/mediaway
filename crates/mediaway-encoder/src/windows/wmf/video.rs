@@ -25,8 +25,8 @@ use super::codec::{is_supported_video_codec, video_subtype};
 use super::dx11::{self, Dx11Session};
 use super::runtime::{sample_duration_hns, to_hns};
 use super::shared::{
-    Drain, begin_streaming, bitrate_and_fps, configure_types, nv12_size, output_buffer_hint,
-    process_one_output,
+    Drain, begin_streaming, bitrate_and_fps, configure_types, disable_b_frames, nv12_size,
+    output_buffer_hint, process_one_output,
 };
 
 /// Video encode session (CPU upload or DX11 Zero-Copy) for H.264 / HEVC / AV1 / VP9.
@@ -65,6 +65,10 @@ impl WmfVideoEncoder {
             // HEVC/AV1/VP9: no inbox soft encoder on most SKUs — enumerate any MFT.
             dx11::activate_encoder_mft(&output_subtype, false)?
         };
+
+        // No B-frames (before the types are set): the soft encoder's reordering makes the first
+        // `pts` a frame late and the `dts` run behind the `pts` (see `shared::disable_b_frames`).
+        disable_b_frames(&transform);
 
         let (bitrate, fps_num, fps_den) = bitrate_and_fps(
             config.bitrate_bps,

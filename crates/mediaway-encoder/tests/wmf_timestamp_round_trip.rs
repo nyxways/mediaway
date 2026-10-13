@@ -22,6 +22,11 @@
 //! An earlier version of this file tested H.264 alone, and credited the result to the wrong
 //! mechanism. ADR-0013 § Correction records that.
 //!
+//! The reorder and the one-tick delay described above are the inbox MFT's default. The CPU path
+//! now asks it for no B-frames (`shared::disable_b_frames`), which
+//! `h264_cpu_packets_come_in_presentation_order_from_the_first_input_time` pins; the assertions
+//! above stay valid for a stream that does reorder.
+//!
 //! Each case skips rather than fails when the machine has no encoder MFT for it, matching the
 //! other Windows integration tests: which encoders are registered is a property of the OS
 //! install.
@@ -277,4 +282,26 @@ fn hevc_decode_timestamps_follow_a_variable_frame_rate() {
 #[test]
 fn h264_decode_timestamps_follow_a_variable_frame_rate() {
     assert_dts_follows_real_time(CodecKind::H264);
+}
+
+/// The CPU H.264 path asks the inbox encoder for no B-frames (`shared::disable_b_frames`), so a
+/// packet's presentation time is its decode time and the first one is the first input's: an MP4
+/// written from it starts at 0 and its decode times are the presentation times. With B-frames
+/// the same input came back as `1, 3, 2, 5, 4, ...` against decode times `0, 1, 2, 3, ...`: the
+/// first picture a frame late, which a fragmented file (whose edit list `FFmpeg`'s demuxer does not
+/// apply) shows late.
+#[test]
+fn h264_cpu_packets_come_in_presentation_order_from_the_first_input_time() {
+    for ticks in [constant_rate(), variable_rate(), irregular_rate()] {
+        let Some(packets) = encode(CodecKind::H264, &ticks) else {
+            return;
+        };
+        let pts: Vec<i64> = packets.iter().map(|p| p.pts).collect();
+        let dts: Vec<i64> = packets.iter().map(|p| p.dts).collect();
+        assert_eq!(
+            pts, ticks,
+            "presentation times are the input times, in order"
+        );
+        assert_eq!(dts, ticks, "decode times are the presentation times");
+    }
 }

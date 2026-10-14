@@ -96,7 +96,7 @@ Still CI-only; no release packaging.
   parity.
 - The Node and Python binding loaders **already anticipate Linux** at the
   source level: `bindings/nodejs/packages/ffi/src/index.ts`'s
-  `libraryFilename()` and `bindings/python/mediaway/_ffi.py`'s
+  `libraryFilename()` and `bindings/python/mediaway/_ffi_base.py`'s
   `_library_filename()` both switch on `win32`/Linux and resolve
   `libmediaway_ffi.so`, but explicitly `throw`/`raise` for any other platform
   with the comment *"macOS support is not claimed here since it has never
@@ -420,7 +420,7 @@ outside `docs/adr/` is touched by it.
   `tools/scripts/build-node-packages.ts`
 - crate: `crates/mediaway-ffi/Cargo.toml` (single consolidated cdylib)
 - binding sources: `bindings/nodejs/packages/ffi/src/index.ts`,
-  `bindings/python/mediaway/_ffi.py`, `bindings/python/setup.py`,
+  `bindings/python/mediaway/_ffi_base.py`, `bindings/python/setup.py`,
   `bindings/csharp/src/Directory.Build.targets`,
   `bindings/cpp/CMakeLists.txt`
 - related ADR: [ADR-0003](0003-crate-packaging.md),

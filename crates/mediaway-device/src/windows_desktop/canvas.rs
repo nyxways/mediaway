@@ -15,6 +15,10 @@
 //! part's size, and the part keeps its offset from the picture's top-left whatever the picture's
 //! size, so recording a part of a window survives the window being resized. What of the part the
 //! picture no longer reaches (it shrank past it) is black.
+//!
+//! Or a region of each picture that may itself change size is placed centered (`place_texture_region`):
+//! the canvas stays large, as for a whole window, so a recording of a part can follow a rectangle
+//! that is moved or resized.
 
 #![allow(unsafe_code)]
 
@@ -85,6 +89,41 @@ impl CanvasPlacement {
             height: if empty { 0 } else { height },
             source_x: origin.0,
             source_y: origin.1,
+        }
+    }
+
+    /// Where the `(x, y, width, height)` region of a `content` picture goes on a `canvas`: the
+    /// region is cut to what the picture holds, then placed as [`Self::centered`] places a picture
+    /// of that size (even offsets, cut around its center on an axis where it is larger than the
+    /// canvas). A region that starts outside the picture is empty ([`Self::is_empty`]).
+    #[must_use]
+    pub const fn region(
+        canvas: (u32, u32),
+        content: (u32, u32),
+        region: (u32, u32, u32, u32),
+    ) -> Self {
+        let (origin_x, origin_y, region_width, region_height) = region;
+        let held_width = min(region_width, content.0.saturating_sub(origin_x));
+        let held_height = min(region_height, content.1.saturating_sub(origin_y));
+        if held_width == 0 || held_height == 0 {
+            return Self {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+                source_x: origin_x,
+                source_y: origin_y,
+            };
+        }
+        let (x, cut_x, width) = center(canvas.0, held_width);
+        let (y, cut_y, height) = center(canvas.1, held_height);
+        Self {
+            x,
+            y,
+            width,
+            height,
+            source_x: origin_x + cut_x,
+            source_y: origin_y + cut_y,
         }
     }
 
@@ -265,6 +304,28 @@ impl Canvas {
         self.copy_texture(source, placed)
     }
 
+    /// Places the `region` (`x, y, width, height` from the top-left) of the BGRA texture `source`
+    /// (an `ID3D11Texture2D*` on this canvas's device, holding a `content` picture at its
+    /// top-left) centered on the canvas ([`CanvasPlacement::region`]): one GPU copy, or none and
+    /// an all-black canvas when the region is outside the picture. Unlike
+    /// [`Self::place_texture_part`] the canvas is not the region's size, so the region may change
+    /// size from one call to the next.
+    ///
+    /// # Errors
+    /// [`CaptureError::InvalidInput`] for a null texture or an empty picture.
+    pub fn place_texture_region(
+        &mut self,
+        source: NativeHandle,
+        content: (u32, u32),
+        region: (u32, u32, u32, u32),
+    ) -> Result<CanvasFrame, CaptureError> {
+        if content.0 == 0 || content.1 == 0 {
+            return Err(CaptureError::InvalidInput);
+        }
+        let placed = CanvasPlacement::region(self.size, content, region);
+        self.copy_texture(source, placed)
+    }
+
     /// Copies `placed`'s part of `source` onto the next slot.
     fn copy_texture(
         &mut self,
@@ -289,8 +350,8 @@ impl Canvas {
             back: 1,
         };
         // SAFETY: both textures are live on the same device and BGRA; `area` lies inside the
-        // source (the caller vouches for the picture's size, and `centered` and `part` keep the
-        // area inside it) and lands inside the slot (both keep it on the canvas).
+        // source (the caller vouches for the picture's size, and `centered`, `part` and `region` keep
+        // the area inside it) and lands inside the slot (both keep it on the canvas).
         unsafe {
             self.context.CopySubresourceRegion(
                 &self.slots[slot].texture,
@@ -339,6 +400,23 @@ impl Canvas {
         self.upload(pixels, width, placed)
     }
 
+    /// Places the `region` of a `width` x `height` BGRA picture in memory centered on the canvas,
+    /// as [`Self::place_texture_region`] does a texture: one upload.
+    ///
+    /// # Errors
+    /// [`CaptureError::InvalidInput`] for an empty picture or too few bytes.
+    pub fn place_pixels_region(
+        &mut self,
+        pixels: &[u8],
+        width: u32,
+        height: u32,
+        region: (u32, u32, u32, u32),
+    ) -> Result<CanvasFrame, CaptureError> {
+        check_pixels(pixels, width, height)?;
+        let placed = CanvasPlacement::region(self.size, (width, height), region);
+        self.upload(pixels, width, placed)
+    }
+
     /// Uploads `placed`'s part of a picture `width` wide (checked by `check_pixels`) onto the
     /// next slot.
     fn upload(
@@ -363,8 +441,8 @@ impl Canvas {
         };
         // SAFETY: the slot is a live DEFAULT-usage texture; `area` is inside it; the source rows
         // start at `start` with a pitch of `width * 4` and the last row read ends within
-        // `pixels` (`check_pixels` made sure it holds the whole picture, and `centered` and
-        // `part` keep the area inside the picture past its offset).
+        // `pixels` (`check_pixels` made sure it holds the whole picture, and `centered`, `part`
+        // and `region` keep the area inside the picture past its offset).
         unsafe {
             self.context.UpdateSubresource(
                 &self.slots[slot].texture,

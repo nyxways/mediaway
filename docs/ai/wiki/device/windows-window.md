@@ -37,5 +37,12 @@
   the old. Also `place_pixels` (upload), `read_last` (staging read-back, waits for the GPU) and
   `put_canvas` (a whole canvas from memory) for an occasional still. Lets a window that changes
   size feed an encoder of a fixed size. Tests: `canvas_tests.rs` (real D3D11 device, no window).
+- Canvas part vs region (2026-10-14, for Recoway's `set_rect`): `place_*_part` makes the canvas the
+  part's size and puts the part at the canvas's top-left, so the part cannot change size.
+  `place_*_region(content, (x, y, w, h))` cuts the region to what the frame holds and places it
+  *centered* like a picture of its own size (`CanvasPlacement::region`, built on `centered`), so
+  the canvas stays large and a region may grow, shrink or move between calls; the recorder crops
+  the file to the largest picture at the end, as for a whole window. A region that starts outside
+  the frame is empty (all-black canvas, nothing copied).
 - ADR: [0004](../../../../crates/mediaway-device/adr/windows/0004-wgc-window-capture.md) ·
   cursor/border [0008](../../../../crates/mediaway-device/adr/0008-cursor-capture-and-wgc-border.md)

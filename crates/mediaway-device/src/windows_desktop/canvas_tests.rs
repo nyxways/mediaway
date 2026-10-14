@@ -305,3 +305,124 @@ fn a_part_of_pixels_in_memory_is_placed_as_a_texture_part_is() {
     assert_eq!(at(&pixels, 40, 19, 39), GREEN);
     assert_eq!(at(&pixels, 40, 20, 0), BLACK);
 }
+
+#[test]
+fn a_region_is_cut_to_the_picture_then_placed_centered() {
+    // Inside the picture: placed like a picture of its own size.
+    let inside = CanvasPlacement::region((400, 300), (1000, 800), (100, 50, 200, 100));
+    assert_eq!(
+        (inside.x, inside.y, inside.width, inside.height),
+        (100, 100, 200, 100)
+    );
+    assert_eq!((inside.source_x, inside.source_y), (100, 50));
+    // Past the picture's right edge: only what the picture holds (150 columns), centered by that
+    // size: (400 - 150) / 2 = 125, rounded down to the even offset 124.
+    let cut = CanvasPlacement::region((400, 300), (250, 800), (100, 50, 200, 100));
+    assert_eq!((cut.x, cut.width, cut.source_x), (124, 150, 100));
+    assert_eq!((cut.y, cut.height), (100, 100));
+    // Larger than the canvas: cut around its center, the source offset moves with it.
+    let large = CanvasPlacement::region((400, 300), (2000, 1000), (100, 50, 1000, 100));
+    assert_eq!((large.x, large.width, large.source_x), (0, 400, 100 + 300));
+    // Starting outside the picture: nothing.
+    assert!(CanvasPlacement::region((400, 300), (90, 800), (100, 50, 200, 100)).is_empty());
+    assert!(CanvasPlacement::region((400, 300), (1000, 40), (100, 50, 200, 100)).is_empty());
+    // A region the size of the picture at the origin is the picture, as `centered` has it.
+    assert_eq!(
+        CanvasPlacement::region((400, 300), (160, 120), (0, 0, 160, 120)),
+        CanvasPlacement::centered((400, 300), (160, 120))
+    );
+}
+
+#[test]
+fn a_region_that_changes_size_lands_centered_and_leaves_no_trace() {
+    let _lock = super::super::HARDWARE_TEST_LOCK.lock();
+    let Some(device) = device() else {
+        eprintln!("skip: no D3D11 device");
+        return;
+    };
+    // The source: a 400 x 300 picture, red left of column 150, green from it.
+    let mut source = Canvas::new(handle(&device), 400, 300).unwrap();
+    let mut picture = Vec::new();
+    for _ in 0..300 {
+        picture.extend(RED.repeat(150));
+        picture.extend(GREEN.repeat(250));
+    }
+    let src = source.place_pixels(&picture, 400, 300).unwrap();
+    let VideoFrameStorage::Gpu(GpuBufferHandle::DirectX11 { texture, .. }) = src.frame.storage
+    else {
+        panic!("a texture");
+    };
+    let mut canvas = Canvas::new(handle(&device), 200, 160).unwrap();
+    // 100 x 60 from (100, 50): 50 red columns then 50 green, centered at (50, 50).
+    let first = canvas
+        .place_texture_region(texture, (400, 300), (100, 50, 100, 60))
+        .unwrap();
+    assert_eq!((first.placed.x, first.placed.y), (50, 50));
+    let pixels = canvas.read_last().unwrap().unwrap();
+    assert_eq!(at(&pixels, 200, 50, 50), RED);
+    assert_eq!(at(&pixels, 200, 99, 109), RED);
+    assert_eq!(at(&pixels, 200, 100, 50), GREEN);
+    assert_eq!(at(&pixels, 200, 149, 109), GREEN);
+    assert_eq!(at(&pixels, 200, 49, 50), BLACK, "left of the region");
+    assert_eq!(at(&pixels, 200, 50, 110), BLACK, "below it");
+    // The region becomes smaller: what the larger one held is black again, in every slot.
+    for _ in 0..4 {
+        canvas
+            .place_texture_region(texture, (400, 300), (100, 50, 60, 40))
+            .unwrap();
+    }
+    let pixels = canvas.read_last().unwrap().unwrap();
+    assert_eq!(at(&pixels, 200, 70, 60), RED);
+    assert_eq!(
+        at(&pixels, 200, 50, 50),
+        BLACK,
+        "where the larger region began"
+    );
+    assert_eq!(
+        at(&pixels, 200, 129, 99),
+        GREEN,
+        "the smaller region's last pixel"
+    );
+    assert_eq!(
+        at(&pixels, 200, 130, 60),
+        BLACK,
+        "right of it, where the larger one reached"
+    );
+    assert_eq!(
+        at(&pixels, 200, 70, 100),
+        BLACK,
+        "below it, where the larger one reached"
+    );
+    // Outside the picture: an all-black canvas.
+    let empty = canvas
+        .place_texture_region(texture, (80, 300), (100, 50, 60, 40))
+        .unwrap();
+    assert!(empty.placed.is_empty());
+    let pixels = canvas.read_last().unwrap().unwrap();
+    assert!(pixels.as_chunks::<4>().0.iter().all(|px| *px == BLACK));
+}
+
+#[test]
+fn a_region_of_pixels_in_memory_is_placed_as_a_texture_region_is() {
+    let _lock = super::super::HARDWARE_TEST_LOCK.lock();
+    let Some(device) = device() else {
+        eprintln!("skip: no D3D11 device");
+        return;
+    };
+    let mut picture = Vec::new();
+    for y in 0..100u32 {
+        for _ in 0..100u32 {
+            picture.extend(if y < 30 { RED } else { GREEN });
+        }
+    }
+    let mut canvas = Canvas::new(handle(&device), 60, 60).unwrap();
+    let placed = canvas
+        .place_pixels_region(&picture, 100, 100, (10, 20, 40, 20))
+        .unwrap();
+    assert_eq!((placed.placed.x, placed.placed.y), (10, 20));
+    let pixels = canvas.read_last().unwrap().unwrap();
+    assert_eq!(at(&pixels, 60, 10, 20), RED, "source row 20");
+    assert_eq!(at(&pixels, 60, 49, 29), RED, "source row 29");
+    assert_eq!(at(&pixels, 60, 10, 30), GREEN, "source row 30");
+    assert_eq!(at(&pixels, 60, 9, 20), BLACK);
+}

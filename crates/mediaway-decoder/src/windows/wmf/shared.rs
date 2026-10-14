@@ -163,6 +163,12 @@ pub(super) fn packet_to_sample(
     time_base_den: u32,
     framing: NalFraming,
 ) -> Result<IMFSample, DecodeError> {
+    let payload = annex_b_payload(packet, framing)?;
+    payload_to_sample(&payload, packet, time_base_num, time_base_den)
+}
+
+/// `packet`'s payload as the MFT takes it: Annex-B for H.264 and HEVC, as it is otherwise.
+pub(super) fn annex_b_payload(packet: &Packet, framing: NalFraming) -> Result<Bytes, DecodeError> {
     if packet.payload.is_empty() {
         return Err(DecodeError::InvalidInput);
     }
@@ -194,6 +200,16 @@ pub(super) fn packet_to_sample(
     if annex_b_payload.is_empty() {
         return Err(DecodeError::InvalidInput);
     }
+    Ok(annex_b_payload)
+}
+
+/// An `IMFSample` holding a copy of `annex_b_payload`, with `packet`'s time and duration.
+pub(super) fn payload_to_sample(
+    annex_b_payload: &[u8],
+    packet: &Packet,
+    time_base_num: u64,
+    time_base_den: u32,
+) -> Result<IMFSample, DecodeError> {
     let len = u32::try_from(annex_b_payload.len()).map_err(|_| DecodeError::InvalidInput)?;
     let sample: IMFSample = unsafe { MFCreateSample() }.map_err(|_| DecodeError::Backend)?;
     let buffer: IMFMediaBuffer =

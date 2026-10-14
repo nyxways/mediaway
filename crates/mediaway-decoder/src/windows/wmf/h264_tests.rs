@@ -6,7 +6,9 @@
     reason = "unit tests"
 )]
 
+use super::super::shared::packet_to_sample;
 use super::*;
+use iso_bmff::bitstream::avc::{avcc_payload_to_annex_b, is_annex_b};
 use mediaway_common::{CodecKind, ColorRange, Rational};
 use mediaway_encoder::windows::WindowsVideoEncoder;
 use mediaway_encoder::{VideoEncoder, VideoEncoderConfig, VideoInputPreference};
@@ -126,6 +128,149 @@ fn a_size_that_is_not_a_multiple_of_16_decodes_every_frame_on_the_cpu() {
             unreachable!("CPU output");
         };
         assert!(data.len() >= (f.width * f.height * 3 / 2) as usize);
+    }
+}
+
+/// A 640 x 400 luma ramp along both axes, so every part of the picture has its own value.
+fn ramp_640x400() -> Bytes {
+    let (w, h) = (640usize, 400usize);
+    let mut out = vec![128u8; w * h + w * (h / 2)];
+    for y in 0..h {
+        for x in 0..w {
+            out[y * w + x] = u8::try_from(16 + (x + y) * 200 / (w + h)).unwrap();
+        }
+    }
+    Bytes::from(out)
+}
+
+/// The Annex-B sequence header of `extra_data` with its SPS cropped to `crop`; `packets` are made
+/// Annex-B with their in-band SPSs cropped too.
+fn crop_sps(extra_data: &Bytes, packets: &mut [Packet], crop: SpsCrop) -> Bytes {
+    let (header, _) = resolve_annex_b_extra_data(extra_data);
+    let header = annex_b_replacing_sps(&header, |nal| sps_with_crop(nal, crop))
+        .expect("the sequence header has an SPS to crop");
+    for packet in packets {
+        let annex_b = if is_annex_b(&packet.payload) {
+            packet.payload.clone()
+        } else {
+            avcc_payload_to_annex_b(&packet.payload, 4)
+        };
+        packet.payload =
+            annex_b_replacing_sps(&annex_b, |nal| sps_with_crop(nal, crop)).unwrap_or(annex_b);
+    }
+    header
+}
+
+/// Every frame `decoder` gives for `packets`, the flush included.
+fn decode_all(decoder: &mut WmfH264Decoder, packets: &[Packet]) -> Vec<VideoFrame> {
+    let mut frames = Vec::new();
+    for packet in packets {
+        decoder.push_packet(packet).expect("push_packet");
+        while let Some(f) = decoder.poll_frame().expect("poll_frame") {
+            frames.push(f);
+        }
+    }
+    decoder.flush().expect("flush");
+    while let Some(f) = decoder.poll_frame().expect("poll_frame") {
+        frames.push(f);
+    }
+    frames
+}
+
+/// Found 2026-10-14 (`without_offset_crop`): given an SPS that crops at a left or top offset, the
+/// inbox decoder wrote only the crop's size of the coded picture, from its top-left, and left the
+/// rest of the output buffer as it was. Encodes a 640 x 400 ramp, crops its SPS (sequence header
+/// and in-band) to 480 x 360 at (80, 20) as an MP4 demuxer would hand it over, and checks the
+/// decoded coded picture right of and below the crop's size.
+#[test]
+fn a_crop_at_an_offset_still_decodes_the_whole_coded_picture_on_the_cpu() {
+    const OFFSET_CROP: SpsCrop = SpsCrop {
+        left: 80,
+        right: 80,
+        top: 20,
+        bottom: 20,
+    };
+    let mut encoder = match WindowsVideoEncoder::open(&VideoEncoderConfig {
+        codec: CodecKind::H264,
+        width: 640,
+        height: 400,
+        time_base: Rational::new(1, 30),
+        bitrate_bps: 4_000_000,
+        pixel_format: PixelFormat::Nv12,
+        color_range: ColorRange::Video,
+        input: VideoInputPreference::CpuUploadOk,
+        gpu_device: None,
+        gop_size: 30,
+        rate_control: None,
+        intra_refresh_period: None,
+    }) {
+        Ok(encoder) => encoder,
+        Err(e) => {
+            eprintln!("skip: no CPU H.264 encoder MFT ({e:?})");
+            return;
+        }
+    };
+    let source = ramp_640x400();
+    let mut packets = Vec::new();
+    for n in 0..5 {
+        encoder
+            .push_frame(&VideoFrame {
+                pts: n,
+                duration: 1,
+                width: 640,
+                height: 400,
+                format: PixelFormat::Nv12,
+                storage: VideoFrameStorage::Cpu {
+                    data: source.clone(),
+                },
+            })
+            .expect("encode");
+        while let Some(p) = encoder.poll_packet().expect("poll_packet") {
+            packets.push(p);
+        }
+    }
+    encoder.flush().expect("encoder flush");
+    while let Some(p) = encoder.poll_packet().expect("poll_packet") {
+        packets.push(p);
+    }
+    let header = crop_sps(
+        encoder.stream_info().extra_data(),
+        &mut packets,
+        OFFSET_CROP,
+    );
+
+    let mut decoder = WmfH264Decoder::open(&VideoDecoderConfig {
+        codec: CodecKind::H264,
+        width: 480,
+        height: 360,
+        time_base: Rational::new(1, 30),
+        pixel_format: PixelFormat::Nv12,
+        output: VideoOutputPreference::CpuFramesOk,
+        gpu_device: None,
+        extra_data: header,
+    })
+    .expect("the CPU H.264 decoder");
+    let frames = decode_all(&mut decoder, &packets);
+    assert_eq!(frames.len(), 5, "every frame");
+    for f in &frames {
+        assert_eq!((f.width, f.height), (640, 400), "the coded picture");
+        let VideoFrameStorage::Cpu { data } = &f.storage else {
+            unreachable!("CPU output");
+        };
+        // Inside the crop, right of its width, below its height, and the far corner.
+        for (x, y) in [
+            (300usize, 200usize),
+            (600, 200),
+            (300, 390),
+            (630, 395),
+            (5, 5),
+        ] {
+            let (got, want) = (data[y * 640 + x], source[y * 640 + x]);
+            assert!(
+                got.abs_diff(want) <= 12,
+                "luma at ({x}, {y}): {got}, the source has {want}"
+            );
+        }
     }
 }
 

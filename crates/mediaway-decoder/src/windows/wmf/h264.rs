@@ -5,7 +5,10 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use crate::{DecodeError, VideoDecoder, VideoDecoderConfig, VideoOutputPreference};
-use iso_bmff::bitstream::avc::{annex_b_sequence_header, parse_avc_decoder_config};
+use iso_bmff::bitstream::avc::{
+    SpsCrop, annex_b_replacing_sps, annex_b_sequence_header, parse_avc_decoder_config,
+    parse_sps_geometry, sps_with_crop,
+};
 use mediaway_common::{
     Bytes, GpuBufferHandle, GpuDeviceHandle, NativeHandle, Packet, PixelFormat, StreamInfo,
     VideoFrame, VideoFrameStorage, VideoGeometry,
@@ -21,8 +24,9 @@ use super::cpu::{self, open_sw_decoder};
 use super::dx11::{self, Dx11Session};
 use super::runtime::from_hns;
 use super::shared::{
-    Drain, NalFraming, begin_streaming, configure_decode_types, notify_end_streaming,
-    output_buffer_size, packet_to_sample, process_one_output, read_output_dimensions,
+    Drain, NalFraming, annex_b_payload, begin_streaming, configure_decode_types,
+    notify_end_streaming, output_buffer_size, payload_to_sample, process_one_output,
+    read_output_dimensions,
 };
 
 /// Keeps DXGI output sample + texture alive until the surface is recycled.
@@ -111,7 +115,35 @@ impl InFlight {
     }
 }
 
+/// `annex_b` (a sequence header or an access unit) with each SPS that crops at a left or top offset
+/// changed to crop nothing; `None` when there is none.
+///
+/// The inbox software decoder ("Microsoft H264 Video Decoder MFT") mishandles such a crop. Found
+/// 2026-10-14 with a screen recorder whose recordings crop a fixed-size canvas to the window's
+/// picture, and measured on a 640 x 400 stream cropped to 480 x 360 at (80, 20): the output type is
+/// 640 x 400 with the crop as its apertures, but only the crop's width and height are written, from
+/// the coded picture's top-left (matching an uncropped decode there exactly); the 80 columns right
+/// and 20 rows below are left as the buffer was, with a 1-D or a 2-D output buffer alike. A crop of
+/// the right and bottom edges only (1080 lines coded as 1088) is unaffected, so it is left alone.
+///
+/// The CPU path returns the coded picture whatever the crop (the apertures are not passed on), so
+/// taking the crop out changes nothing for a caller but makes the whole picture real. Cost: an SPS
+/// rewrite and one copy of the access unit for each access unit carrying such an SPS; the walk
+/// stops at the first slice ([`annex_b_replacing_sps`]).
+fn without_offset_crop(annex_b: &[u8]) -> Option<Bytes> {
+    annex_b_replacing_sps(annex_b, |nal| {
+        parse_sps_geometry(nal)?
+            .crop
+            .has_offset()
+            .then(|| sps_with_crop(nal, SpsCrop::default()))
+            .flatten()
+    })
+}
+
 /// H.264 decode session (DX11 Zero-Copy output, or CPU/software output).
+///
+/// CPU frames are the decoder's coded picture (whole macroblocks), not cropped to the SPS's
+/// `frame_cropping` rectangle; a caller that wants the shown picture cuts it out.
 pub(crate) struct WmfH264Decoder {
     transform: IMFTransform,
     info: StreamInfo,
@@ -181,7 +213,11 @@ impl WmfH264Decoder {
     fn open_cpu(config: &VideoDecoderConfig) -> Result<Self, DecodeError> {
         let input_subtype = video_subtype(config.codec)?;
         let transform = open_sw_decoder(&input_subtype)?;
-        let (annex_b_extra_data, nal_length_size) = resolve_annex_b_extra_data(&config.extra_data);
+        let (mut annex_b_extra_data, nal_length_size) =
+            resolve_annex_b_extra_data(&config.extra_data);
+        if let Some(whole) = without_offset_crop(&annex_b_extra_data) {
+            annex_b_extra_data = whole;
+        }
         configure_decode_types(
             &transform,
             config.width,
@@ -215,13 +251,17 @@ impl WmfH264Decoder {
             dx11::drain_events_nonblocking(session)?;
             dx11::wait_need_input(session)?;
         }
-        let sample = packet_to_sample(
+        let mut payload = annex_b_payload(
             packet,
-            self.time_base_num,
-            self.time_base_den,
             self.nal_length_size
                 .map_or(NalFraming::AsIs, NalFraming::Avc),
         )?;
+        if self.dx11.is_none()
+            && let Some(whole) = without_offset_crop(&payload)
+        {
+            payload = whole;
+        }
+        let sample = payload_to_sample(&payload, packet, self.time_base_num, self.time_base_den)?;
         unsafe { self.transform.ProcessInput(0, &sample, 0) }.map_err(|_| DecodeError::Backend)?;
         if let Some(session) = self.dx11.as_mut() {
             dx11::consume_need_input(session);

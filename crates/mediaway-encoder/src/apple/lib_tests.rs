@@ -42,17 +42,15 @@ fn open_unsupported_codec_returns_unsupported_without_hardware() {
     ));
 }
 
-/// `VideoInputPreference::ZeroCopyGpu` is not implemented this stage (`CVPixelBuffer`/
-/// `IOSurface` Zero-Copy input is deferred — ADR-0001 § Scope) and is rejected before touching
-/// the session, so this is deterministic on every machine too.
+/// `VideoInputPreference::ZeroCopyGpu` is implemented (a caller-supplied `CVPixelBuffer` goes to
+/// the session without a copy), so `open` accepts it and the input mode only matters per frame.
+/// This asserted `Unsupported` while Zero-Copy input was still deferred; the first real macOS run
+/// showed that had gone stale.
 #[test]
-fn open_zero_copy_gpu_returns_unsupported_without_hardware() {
+fn open_zero_copy_gpu_opens_a_session() {
     let mut cfg = tiny_h264_cfg();
     cfg.input = VideoInputPreference::ZeroCopyGpu;
-    assert!(matches!(
-        AppleVideoEncoder::open(&cfg),
-        Err(EncodeError::Unsupported)
-    ));
+    assert!(AppleVideoEncoder::open(&cfg).is_ok());
 }
 
 /// End-to-end through the public [`AppleVideoEncoder`] wrapper (delegation to the inner

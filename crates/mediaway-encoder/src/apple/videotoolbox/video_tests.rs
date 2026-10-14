@@ -38,10 +38,19 @@ fn validate_accepts_h264_cpu_upload_config() {
     assert!(validate(&tiny_h264_cfg(64, 64)).is_ok());
 }
 
+/// HEVC has a `VideoToolbox` encoder here; this was asserted as unsupported back when the crate was
+/// H.264-only, and the first real macOS run showed the assertion had gone stale.
 #[test]
-fn validate_rejects_non_h264_codec() {
+fn validate_accepts_hevc() {
     let mut cfg = tiny_h264_cfg(64, 64);
     cfg.codec = CodecKind::Hevc;
+    assert!(validate(&cfg).is_ok());
+}
+
+#[test]
+fn validate_rejects_a_codec_videotoolbox_has_no_encoder_for() {
+    let mut cfg = tiny_h264_cfg(64, 64);
+    cfg.codec = CodecKind::Av1;
     assert_eq!(validate(&cfg), Err(EncodeError::Unsupported));
 }
 

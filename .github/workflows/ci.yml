@@ -316,6 +316,7 @@ jobs:
           contains(needs.affected.outputs.set, 'mediaway-encoder') ||
           contains(needs.affected.outputs.set, 'mediaway-decoder') ||
           contains(needs.affected.outputs.set, 'mediaway-device') ||
+          contains(needs.affected.outputs.set, 'mediaway-ffi') ||
           contains(needs.affected.outputs.set, 'mediaway-common')) }}
     steps:
       - uses: actions/checkout@v4
@@ -335,6 +336,13 @@ jobs:
         run: |
           cargo clippy -p mediaway-device --all-features --all-targets -- -D warnings
 
+      # The C ABI crate reaches the Apple backends (`mediaway_audio_encoder_open` opens
+      # `AppleAudioEncoder`, `mediaway_audio_decode_session_open` opens `apple::AacDecoder`), but no
+      # job built it for Apple, so a defect there surfaced only in the release pipeline's RC gate.
+      - name: Lint mediaway-ffi for macOS (native)
+        run: |
+          cargo clippy -p mediaway-ffi --all-features --all-targets -- -D warnings
+
       # The one place the Apple audio backends actually RUN. They were lint-only until the v0.2.0
       # release pipeline's RC gate found `AacDecoder::open` failing on a real runner, so there is
       # no other CI evidence they work. `--nocapture` because the tests print the `OSStatus` the
@@ -343,6 +351,20 @@ jobs:
         run: |
           cargo test -p mediaway-decoder --lib apple::audiotoolbox -- --nocapture --test-threads=1
           cargo test -p mediaway-encoder --lib apple::audiotoolbox -- --nocapture --test-threads=1
+
+      # The Apple AAC path through the C ABI, end to end on a real Mac: the exact route that failed
+      # in the release pipeline's RC gate.
+      - name: Test the Apple AAC path through the C ABI on real macOS
+        run: |
+          cargo test -p mediaway-ffi --features pipeline --test aac_decode_smoke -- --nocapture --test-threads=1
+
+      # The Apple `*_tests.rs` files were never run by any CI job until the first real macOS run,
+      # which found two stale assertions (HEVC and Zero-Copy input had since been implemented).
+      # `--test-threads=1` because these tests open real VideoToolbox / AudioToolbox sessions.
+      - name: Run every encoder and decoder test on real macOS
+        timeout-minutes: 15
+        run: |
+          cargo test -p mediaway-encoder -p mediaway-decoder --lib --no-fail-fast -- --test-threads=1
 
   apple-ios:
     name: apple compile (iOS cross-compile, mediaway-encoder, mediaway-decoder, mediaway-device)
@@ -359,6 +381,7 @@ jobs:
           contains(needs.affected.outputs.set, 'mediaway-encoder') ||
           contains(needs.affected.outputs.set, 'mediaway-decoder') ||
           contains(needs.affected.outputs.set, 'mediaway-device') ||
+          contains(needs.affected.outputs.set, 'mediaway-ffi') ||
           contains(needs.affected.outputs.set, 'mediaway-common')) }}
     steps:
       - uses: actions/checkout@v4
@@ -380,6 +403,10 @@ jobs:
       - name: Lint mediaway-device for iOS (cross-compile)
         run: |
           cargo clippy --target aarch64-apple-ios -p mediaway-device --all-features --all-targets -- -D warnings
+
+      - name: Lint mediaway-ffi for iOS (cross-compile)
+        run: |
+          cargo clippy --target aarch64-apple-ios -p mediaway-ffi --all-features --all-targets -- -D warnings
 
   e2e-web:
     name: e2e-web (optional)

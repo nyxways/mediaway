@@ -1,12 +1,15 @@
 //! Integration: real AAC encode -> decode round trip through `mediaway-ffi`'s C ABI
 //! (`adr/pipeline/0007-stream-bytes-aac-decode-support-probe.md` §2).
 //!
-//! Encodes synthetic PCM with `mediaway_audio_encoder_open` (Windows WMF AAC), takes the
-//! `AudioSpecificConfig` from its stream info, and feeds the packets to
-//! `mediaway_audio_decode_session_open` with `mediaway_audio_decode_config_aac`. The AAC
-//! encoder is Windows-only, so this test is too; the Apple decode arm is compile-checked only.
+//! Encodes synthetic PCM with `mediaway_audio_encoder_open` (Windows WMF AAC, or Apple
+//! `AudioToolbox` on macOS), takes the `AudioSpecificConfig` from its stream info, and feeds the
+//! packets to `mediaway_audio_decode_session_open` with `mediaway_audio_decode_config_aac`.
+//!
+//! It runs on macOS in CI: that is the C ABI route that failed on a real Mac in the v0.2.0 release
+//! pipeline (the Apple decoder rejected the bare `AudioSpecificConfig` as its cookie, and the
+//! Apple encoder exposed the `esds` descriptor as `extra_data`).
 
-#![cfg(all(windows, feature = "pipeline"))]
+#![cfg(all(any(windows, target_os = "macos"), feature = "pipeline"))]
 #![allow(unsafe_code)]
 #![allow(
     clippy::unwrap_used,

@@ -5,6 +5,10 @@
 use bytes::Bytes;
 use memchr::memmem;
 
+mod sps;
+
+pub use sps::{SpsCrop, SpsGeometry, parse_sps_geometry, sps_with_crop};
+
 /// AVCC conversion result.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AvccOut {
@@ -147,6 +151,65 @@ pub fn avcc_payload_to_annex_b(data: &[u8], nal_length_size: u8) -> Bytes {
         pos += len;
     }
     Bytes::from(out)
+}
+
+/// The Annex-B access unit `data` with each SPS NAL that `replace` returns a new NAL for replaced
+/// by it; `None` when `replace` replaced nothing (keep `data` as it is).
+///
+/// Only the NAL units before the first slice (types 1 to 5) are looked at: a parameter set of an
+/// access unit comes before its first slice (ITU-T H.264 § 7.4.1.2.3), so the slice data, nearly
+/// all of the bytes, is never scanned. The output uses 4-byte start codes for the NALs it walked
+/// and keeps the rest of `data` byte for byte. It is a new buffer, made only when an SPS changed.
+#[must_use]
+pub fn annex_b_replacing_sps<F>(data: &[u8], mut replace: F) -> Option<Bytes>
+where
+    F: FnMut(&[u8]) -> Option<Vec<u8>>,
+{
+    // (start of the NAL's start code, end of the NAL, the new NAL)
+    let mut changes: Vec<(usize, usize, Vec<u8>)> = Vec::new();
+    let mut pos = 0usize;
+    while let Some((code_at, code_len)) = find_three_byte_start_code(data.get(pos..)?) {
+        let code = pos + code_at;
+        let start = code + code_len;
+        let Some(header) = data.get(start) else {
+            break;
+        };
+        if (1..=5).contains(&(header & 0x1f)) {
+            break;
+        }
+        let end =
+            find_three_byte_start_code(&data[start..]).map_or(data.len(), |(at, _)| start + at);
+        if header & 0x1f == 7
+            && let Some(nal) = replace(&data[start..end])
+        {
+            changes.push((code, end, nal));
+        }
+        pos = end;
+    }
+    if changes.is_empty() {
+        return None;
+    }
+    let mut out = Vec::with_capacity(data.len() + 8 * changes.len());
+    let mut copied = 0usize;
+    for (code, end, nal) in changes {
+        out.extend_from_slice(&data[copied..code]);
+        out.extend_from_slice(&[0, 0, 0, 1]);
+        out.extend_from_slice(&nal);
+        copied = end;
+    }
+    out.extend_from_slice(&data[copied..]);
+    Some(Bytes::from(out))
+}
+
+/// Next Annex-B start code by its `00 00 01`: `(offset, code_len)`, the 4-byte form when a zero
+/// byte comes before it. Unlike [`find_start_code`] it never searches past the first `00 00 01`.
+fn find_three_byte_start_code(hay: &[u8]) -> Option<(usize, usize)> {
+    let at = memmem::find(hay, &[0, 0, 1])?;
+    if at > 0 && hay[at - 1] == 0 {
+        Some((at - 1, 4))
+    } else {
+        Some((at, 3))
+    }
 }
 
 fn read_nal_length(len_bytes: &[u8]) -> Option<usize> {

@@ -21,6 +21,14 @@ ignore = [
     # itself states "no safe upgrade is available" (rav1e has not migrated to
     # the `pastey` fork yet). Not a vulnerability. Revisit when rav1e drops it.
     "RUSTSEC-2024-0436",
+    # `zbus_names`, `zvariant` and `zvariant_derive` come in through `ashpd` -> `zbus 5`
+    # (mediaway-device's Linux screen-cast portal client). Upstream merged all three into
+    # `zbus` 6.0.0 and marked the standalone crates unmaintained; the advisories say "no
+    # safe upgrade is available" until ashpd moves to zbus 6. Not vulnerabilities.
+    # Revisit when ashpd depends on zbus 6.
+    "RUSTSEC-2026-0370", # zvariant
+    "RUSTSEC-2026-0371", # zbus_names
+    "RUSTSEC-2026-0372", # zvariant_derive
 ]
 
 [licenses]

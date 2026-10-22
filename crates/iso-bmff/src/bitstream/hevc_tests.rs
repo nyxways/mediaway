@@ -254,3 +254,61 @@ fn hvcc_payload_to_annex_b_stops_cleanly_on_truncated_length() {
     let out = hvcc_payload_to_annex_b(&truncated, 4);
     assert!(out.is_empty());
 }
+
+// NAL headers (first byte `type << 1`, second `0x01`): SEI prefix 39, IDR_W_RADL 19, CRA 21,
+// TRAIL_R 1, VPS 32, SPS 33, PPS 34.
+fn annex_b_of(nals: &[&[u8]]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for nal in nals {
+        out.extend_from_slice(&[0, 0, 0, 1]);
+        out.extend_from_slice(nal);
+    }
+    out
+}
+
+const HEADER: &[u8] = &[0, 0, 0, 1, 0x40, 0x01, 0xaa, 0, 0, 0, 1, 0x42, 0x01, 0xbb];
+
+#[test]
+fn with_parameter_sets_puts_the_header_before_a_bare_idr() {
+    // The shape of a recorder's `hev1` keyframe: an SEI and the IDR, no VPS/SPS/PPS.
+    let idr = annex_b_of(&[&[0x4e, 0x01, 0x03], &[0x26, 0x01, 0xaf]]);
+    let out = with_parameter_sets(&idr, HEADER).expect("a bare IDR needs the header");
+    assert_eq!(&out[..HEADER.len()], HEADER);
+    assert_eq!(&out[HEADER.len()..], &idr[..]);
+}
+
+#[test]
+fn with_parameter_sets_covers_every_irap_type() {
+    for nal_type in 16u8..=23 {
+        let au = annex_b_of(&[&[nal_type << 1, 0x01, 0x80]]);
+        assert!(
+            with_parameter_sets(&au, HEADER).is_some(),
+            "nal_unit_type {nal_type} is a random-access picture"
+        );
+    }
+}
+
+#[test]
+fn with_parameter_sets_leaves_a_picture_that_carries_its_own() {
+    for parameter_set in [32u8, 33, 34] {
+        let au = annex_b_of(&[&[parameter_set << 1, 0x01, 0x0c], &[0x26, 0x01, 0xaf]]);
+        assert_eq!(
+            with_parameter_sets(&au, HEADER),
+            None,
+            "nal_unit_type {parameter_set} already in the picture"
+        );
+    }
+}
+
+#[test]
+fn with_parameter_sets_leaves_pictures_that_are_not_random_access() {
+    let trail = annex_b_of(&[&[0x4e, 0x01, 0x03], &[0x02, 0x01, 0xd0]]);
+    assert_eq!(with_parameter_sets(&trail, HEADER), None);
+    assert_eq!(with_parameter_sets(&[], HEADER), None);
+}
+
+#[test]
+fn with_parameter_sets_without_a_header_changes_nothing() {
+    let idr = annex_b_of(&[&[0x26, 0x01, 0xaf]]);
+    assert_eq!(with_parameter_sets(&idr, &[]), None);
+}

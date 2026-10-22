@@ -6,7 +6,7 @@
     reason = "unit tests"
 )]
 
-use super::super::shared::packet_to_sample;
+use super::super::shared::{annex_b_payload, payload_to_sample};
 use super::*;
 use iso_bmff::bitstream::avc::{avcc_payload_to_annex_b, is_annex_b};
 use mediaway_common::{CodecKind, ColorRange, Rational};
@@ -36,6 +36,17 @@ fn moving_nv12(n: i64) -> Bytes {
 /// whole macroblocks). The CPU path used to set the input type again and restart streaming there,
 /// which discarded every buffered frame: such a stream decoded to zero frames, flush included.
 /// Encodes `FRAMES` frames at 724 x 274 with the CPU encoder and decodes them all back.
+/// A packet as the MFT is given it: Annex-B, however it arrived.
+fn packet_to_sample(
+    packet: &Packet,
+    time_base_num: u64,
+    time_base_den: u32,
+    framing: NalFraming,
+) -> Result<windows::Win32::Media::MediaFoundation::IMFSample, crate::DecodeError> {
+    let payload = annex_b_payload(packet, framing)?;
+    payload_to_sample(&payload, packet, time_base_num, time_base_den)
+}
+
 #[test]
 fn a_size_that_is_not_a_multiple_of_16_decodes_every_frame_on_the_cpu() {
     let mut encoder = match WindowsVideoEncoder::open(&VideoEncoderConfig {

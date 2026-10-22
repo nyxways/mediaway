@@ -40,8 +40,9 @@ use windows::Win32::Media::MediaFoundation::{
 use super::codec::{is_supported_video_codec, video_subtype};
 use super::cpu::{nv12_bytes_from_output_sample, open_sw_decoder};
 use super::shared::{
-    Drain, NalFraming, begin_streaming, configure_decode_types, notify_end_streaming,
-    output_buffer_size, packet_to_sample, process_one_output, read_output_dimensions,
+    Drain, NalFraming, annex_b_payload, begin_streaming, configure_decode_types,
+    notify_end_streaming, output_buffer_size, payload_to_sample, process_one_output,
+    read_output_dimensions,
 };
 
 /// After `MF_E_TRANSFORM_STREAM_CHANGE`, adopt the decoder's own proposed NV12 output type
@@ -91,6 +92,9 @@ pub(crate) struct WmfMultiCodecCpuDecoder {
     output_buf_size: u32,
     /// How this stream's packets are framed, decided once from `extra_data` at open.
     framing: NalFraming,
+    /// HEVC only: the Annex-B VPS/SPS/PPS to put in front of a random-access picture that has
+    /// none of its own ([`with_stream_parameter_sets`]). Empty for every other stream.
+    parameter_sets: mediaway_common::Bytes,
 }
 
 /// The sequence header to configure the MFT with, and the framing its packets will need.
@@ -118,6 +122,23 @@ fn resolve_framing(
     }
 }
 
+/// `payload` (an Annex-B picture) with `parameter_sets` in front when it is a random-access
+/// picture that has none ([`iso_bmff::bitstream::hevc::with_parameter_sets`]).
+///
+/// The HEVC MFT takes VPS/SPS/PPS from the stream and not from the sequence header it was
+/// configured with, so a picture read back out of an `hev1` MP4 that keeps them only in the
+/// `hvcC` record (a game recorder's 4K file, 2026-10-22) is accepted and gives no frame. Cheap
+/// when there is nothing to add: one walk over the NAL headers of a keyframe-or-not picture.
+fn with_stream_parameter_sets(
+    parameter_sets: &mediaway_common::Bytes,
+    payload: mediaway_common::Bytes,
+) -> mediaway_common::Bytes {
+    if parameter_sets.is_empty() {
+        return payload;
+    }
+    iso_bmff::bitstream::hevc::with_parameter_sets(&payload, parameter_sets).unwrap_or(payload)
+}
+
 impl WmfMultiCodecCpuDecoder {
     /// Open a software HEVC/AV1/VP9 decoder MFT for `config`.
     ///
@@ -136,6 +157,13 @@ impl WmfMultiCodecCpuDecoder {
         let input_subtype = video_subtype(config.codec)?;
         let transform = open_sw_decoder(&input_subtype)?;
         let (sequence_header, framing) = resolve_framing(config.codec, &config.extra_data);
+        let parameter_sets = if config.codec == CodecKind::Hevc
+            && iso_bmff::bitstream::hevc::is_annex_b(&sequence_header)
+        {
+            sequence_header.clone() // clone: Bytes ref-count bump; the MFT config below borrows it too
+        } else {
+            mediaway_common::Bytes::new()
+        };
         configure_decode_types(
             &transform,
             config.width,
@@ -154,12 +182,16 @@ impl WmfMultiCodecCpuDecoder {
             flushed: false,
             output_buf_size,
             framing,
+            parameter_sets,
         })
     }
 
     fn push_transform_packet(&mut self, packet: &Packet) -> Result<(), DecodeError> {
-        let sample =
-            packet_to_sample(packet, self.time_base_num, self.time_base_den, self.framing)?;
+        let payload = with_stream_parameter_sets(
+            &self.parameter_sets,
+            annex_b_payload(packet, self.framing)?,
+        );
+        let sample = payload_to_sample(&payload, packet, self.time_base_num, self.time_base_den)?;
         unsafe { self.transform.ProcessInput(0, &sample, 0) }.map_err(|_| DecodeError::Backend)?;
         self.drain_output()?;
         Ok(())

@@ -156,6 +156,45 @@ pub fn annex_b_sequence_header(config: &HevcDecoderConfig) -> Bytes {
     Bytes::from(out)
 }
 
+/// `annex_b` with `sequence_header` in front, or `None` when it goes on as it is.
+///
+/// `sequence_header` is Annex-B VPS+SPS+PPS ([`annex_b_sequence_header`]); it is put in front
+/// when `annex_b` is a random-access picture that carries no parameter set of its own.
+///
+/// An `hvc1`/`hev1` MP4 may keep VPS/SPS/PPS only in the `hvcC` record (ISO/IEC 14496-15: with
+/// `hvc1` they are only in the sample entry, with `hev1` they *may* also be in the samples; a
+/// 4K 60 fps game recording in `hev1` had none in its samples). A decoder that is not fed them
+/// first (the inbox Media Foundation HEVC decoder takes them from the stream, not from its
+/// configured sequence header) accepts every packet and returns no picture.
+///
+/// A random-access picture is an IRAP slice, `nal_unit_type` 16..=23 (BLA, IDR, CRA and the
+/// reserved IRAP types); a picture that already has any VPS/SPS/PPS is left alone, so a stream
+/// that carries them (this workspace's own encoder's) is never given a second copy.
+#[must_use]
+pub fn with_parameter_sets(annex_b: &[u8], sequence_header: &[u8]) -> Option<Bytes> {
+    if sequence_header.is_empty() {
+        return None;
+    }
+    let mut random_access = false;
+    for nal in NalIter::new(annex_b) {
+        if nal.len() < 2 {
+            continue;
+        }
+        match nal_unit_type(nal) {
+            VPS_NUT | SPS_NUT | PPS_NUT => return None,
+            16..=23 => random_access = true,
+            _ => {}
+        }
+    }
+    if !random_access {
+        return None;
+    }
+    let mut out = Vec::with_capacity(sequence_header.len() + annex_b.len());
+    out.extend_from_slice(sequence_header);
+    out.extend_from_slice(annex_b);
+    Some(Bytes::from(out))
+}
+
 /// Convert one length-prefixed access unit to Annex-B (4-byte start codes).
 ///
 /// Stops at the first malformed/truncated NAL length rather than panicking; whatever

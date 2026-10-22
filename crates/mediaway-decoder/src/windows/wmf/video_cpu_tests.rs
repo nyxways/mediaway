@@ -506,3 +506,121 @@ fn av1_and_vp9_have_no_nal_framing_to_resolve() {
         assert_eq!(header, extra, "{codec:?}");
     }
 }
+
+// -------------------------------------------------------------------------------------------
+// `hev1` samples that keep VPS/SPS/PPS only in the `hvcC` record — 2026-10-22
+// -------------------------------------------------------------------------------------------
+
+/// `nal_unit_type` of an Annex-B NAL without its start code.
+fn hevc_nal_type(nal: &[u8]) -> u8 {
+    (nal[0] >> 1) & 0x3f
+}
+
+/// The NAL units of an Annex-B picture, without start codes.
+fn annex_b_nals(data: &[u8]) -> Vec<&[u8]> {
+    let mut starts = Vec::new();
+    let mut i = 0;
+    while i + 3 <= data.len() {
+        if data[i..i + 3] == [0, 0, 1] {
+            starts.push(i + 3);
+            i += 3;
+        } else {
+            i += 1;
+        }
+    }
+    starts
+        .iter()
+        .enumerate()
+        .map(|(n, &start)| {
+            let end = starts.get(n + 1).map_or(data.len(), |&next| next - 3);
+            // A 4-byte start code leaves its zero byte on the end of the NAL before it.
+            let nal = &data[start..end];
+            nal.strip_suffix(&[0]).unwrap_or(nal)
+        })
+        .collect()
+}
+
+#[test]
+fn a_bare_keyframe_gets_the_record_s_parameter_sets() {
+    let header = mediaway_common::Bytes::from(annex_b_parameter_sets());
+    let idr = mediaway_common::Bytes::from_static(&[0, 0, 0, 1, 0x26, 0x01, 0xaf, 0x04]);
+    let out = with_stream_parameter_sets(&header, idr.clone());
+    assert_eq!(out.len(), header.len() + idr.len());
+    assert_eq!(&out[..header.len()], &header[..]);
+    assert_eq!(&out[header.len()..], &idr[..]);
+}
+
+#[test]
+fn a_picture_with_nothing_to_add_is_passed_on_as_it_is() {
+    let header = mediaway_common::Bytes::from(annex_b_parameter_sets());
+    let trail = mediaway_common::Bytes::from_static(&[0, 0, 0, 1, 0x02, 0x01, 0xd0]);
+    assert_eq!(with_stream_parameter_sets(&header, trail.clone()), trail);
+    // No parameter sets to give (H.264 is never here; AV1/VP9 and Annex-B-less HEVC have none).
+    let idr = mediaway_common::Bytes::from_static(&[0, 0, 0, 1, 0x26, 0x01, 0xaf]);
+    assert_eq!(
+        with_stream_parameter_sets(&mediaway_common::Bytes::new(), idr.clone()),
+        idr
+    );
+}
+
+/// The failure this fixes, end to end: a real HEVC picture read back out of an `hev1` MP4 whose
+/// samples have no VPS/SPS/PPS, only the `hvcC` record does. Without the parameter sets in
+/// front of the keyframe the MFT took every packet and produced no frame (measured on a 4K
+/// 60 fps game recording and on a stream made here). Skips, as the round trip above does,
+/// where there is no HEVC encoder or decoder MFT.
+#[test]
+fn hevc_samples_without_in_band_parameter_sets_decode() {
+    let Some((packets, extra_data)) = encode_one_codec_cpu(CodecKind::Hevc) else {
+        return;
+    };
+    // The record: from the encoder's own `extra_data` when that is a sequence header, else from
+    // the parameter sets in its first picture.
+    let Some(hvcc) = [&extra_data[..], &packets[0].payload[..]]
+        .into_iter()
+        .find_map(|annex_b| iso_bmff::bitstream::hevc::to_hvcc(annex_b).hvcc)
+    else {
+        eprintln!("skip: the encoder's stream has no VPS+SPS+PPS to make an hvcC from");
+        return;
+    };
+    // Its pictures as an MP4 would hold them: length-prefixed, parameter sets taken out.
+    let stripped: Vec<Packet> = packets
+        .iter()
+        .map(|packet| {
+            let kept: Vec<u8> = annex_b_nals(&packet.payload)
+                .into_iter()
+                .filter(|nal| !(32..=34).contains(&hevc_nal_type(nal)))
+                .flat_map(|nal| [&[0, 0, 0, 1][..], nal].concat())
+                .collect();
+            Packet {
+                payload: iso_bmff::bitstream::hevc::to_hvcc(&kept).payload,
+                ..packet.clone()
+            }
+        })
+        .collect();
+    let config = VideoDecoderConfig {
+        codec: CodecKind::Hevc,
+        width: WIDTH,
+        height: HEIGHT,
+        time_base: Rational::new(1, 30),
+        pixel_format: PixelFormat::Nv12,
+        output: VideoOutputPreference::CpuFramesOk,
+        gpu_device: None,
+        extra_data: hvcc,
+    };
+    let Ok(mut decoder) = WmfMultiCodecCpuDecoder::open(&config) else {
+        eprintln!("skip: no CPU HEVC decoder MFT");
+        return;
+    };
+    for packet in &stripped {
+        decoder.push_packet(packet).expect("push_packet");
+    }
+    decoder.flush().expect("flush");
+    let mut frames = 0;
+    while decoder.poll_frame().expect("poll_frame").is_some() {
+        frames += 1;
+    }
+    assert!(
+        frames > 0,
+        "the decoder took the keyframe and gave no picture: its parameter sets were not in front of it"
+    );
+}

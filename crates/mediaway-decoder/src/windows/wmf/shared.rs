@@ -157,16 +157,6 @@ pub(super) enum NalFraming {
     Hevc(u8),
 }
 
-pub(super) fn packet_to_sample(
-    packet: &Packet,
-    time_base_num: u64,
-    time_base_den: u32,
-    framing: NalFraming,
-) -> Result<IMFSample, DecodeError> {
-    let payload = annex_b_payload(packet, framing)?;
-    payload_to_sample(&payload, packet, time_base_num, time_base_den)
-}
-
 /// `packet`'s payload as the MFT takes it: Annex-B for H.264 and HEVC, as it is otherwise.
 pub(super) fn annex_b_payload(packet: &Packet, framing: NalFraming) -> Result<Bytes, DecodeError> {
     if packet.payload.is_empty() {

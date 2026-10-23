@@ -14,7 +14,7 @@ native-library discovery layer.
 
 ## What changed per binding
 
-- **Python** (`_ffi.py`): library filename was hardcoded to `mediaway_ffi.dll`.
+- **Python** (`_ffi_base.py`): library filename was hardcoded to `mediaway_ffi.dll`.
   Added `_library_filename()` (`platform.system()` → `.dll`/`libmediaway_ffi.so`;
   raises on anything else — no macOS claim).
 - **Node.js** (`ffi/src/index.ts`): same fix via `process.platform` →

@@ -1,10 +1,6 @@
-# Mediaway release notes
+# Mediaway v0.2.2
 
-<!-- Accumulate development changes under ## Unreleased below. See
-     docs/ai/wiki/meta/release-notes.md and AGENTS.md § 10 (Release notes).
-     Finalize with /release-notes <version>; reset with /release-notes reset. -->
-
-## Unreleased
+## What's new
 
 ### Added
 
@@ -32,8 +28,65 @@
 - Windows loopback capture (system and per-app sound) delivered sound after a silent stretch too early against wall-clock video: packets WASAPI marks silent were dropped uncounted, and an idle output device delivers no packets at all. Silent packets are now delivered as zeros and idle time is filled with zeros from the packets' QPC times, so a frame's `pts` (its sample index) follows the wall clock
 - The `esds` of an MP4 AAC track declared an `SLConfigDescriptor` it did not contain (the ES descriptor's length was three bytes longer than its content), the `mp4a` sample rate field held the track timescale truncated to 16 bits (16960 Hz for a microsecond timescale) instead of the audio rate, and a video track's `tkhd` had volume 1.0. The descriptors now carry their own counted lengths and the mandatory `SLConfigDescriptor`; the sample entry takes the rate and channel count from the `AudioSpecificConfig` (0 in the rate field above 65535 Hz, as FFmpeg writes it); only an audio track has a volume
 
-### Removed
+## Overview
 
-### Deprecated
+Mediaway is a cross-platform media toolkit built on Zero-Copy paths (GPU handles or shared CPU buffers), sans-io cores for mux/demux/bitstream/config, and low-level APIs as first-class entry points. The workspace ships freestanding, independently versioned core crates (`iso-bmff`, `ebml-webm`, `flv-core`, `adts-core`, `ogg-core`, `riff-wave-core`, `mpeg-ts-core`, `mpeg-audio`, `iso-cenc`, `rtmp`, `rtp-core`) plus one `mediaway` umbrella with five capability crates (`container`, `encoder`, `decoder`, `device`, `sw`) and a single C ABI (`mediaway-ffi`).
 
-### Breaking
+This release is for the Rust crates and the Windows screen/window recording and editing path: whole-monitor capture, a fixed capture canvas, a progressive MP4 head and an indexed `moov`, constant-quality H.264 encode, and a run of H.264/HEVC decode, capture-clock and MP4 box fixes. `iso-bmff` moves to 0.1.3 because the new MP4 writers and the HEVC parameter-set helpers live there. The C ABI is unchanged from v0.2.1 (container 8, pipeline 7, device 2).
+
+## Platforms
+
+- Windows (win64): primary target and where this release's changes were verified. Capture of a whole monitor through Windows Graphics Capture, the fixed capture canvas, audio playback that starts within about 20 ms, constant-quality CPU H.264 encode, and H.264/HEVC CPU decode fixes. The D3D12 native decode paths are unchanged and still deliberately not hardware-run (known TDR on the existing D3D12 H.264 decode path).
+- Linux: unchanged this release. VA-API, DMA-BUF Zero-Copy and the AMF encode
+  backend are compile/test-verified on WSL2 only, with no real VA-API or AMD GPU
+  hardware available. A capture region is refused with `Unsupported`.
+- macOS / iOS: unchanged this release. The Apple AAC path is the only Apple backend that has run on a real Mac in CI; every other Apple backend (VideoToolbox H.264/HEVC/VP9/AV1/ProRes, camera, screen, Opus) is still compile- and lint-verified only.
+- Android: unchanged. NDK `AMediaCodec` decode and Camera2/AAudio/`MediaProjection`
+  capture remain authored without a device or emulator, and are not in CI.
+- Web (wasm32): unchanged. `@mediaway/browser` ships `iso-bmff-wasm` and WebCodecs
+  encode/decode, compile-verified only; the Opus-in-MP4 fix applies to its muxer.
+
+## Codecs
+
+- Encode: H.264 — NVENC, Vulkan Video, QuickSync (VPL), VA-API (GOP), AMF,
+  Apple (unverified); HEVC — VA-API (GOP), AMF, Apple (unverified) and, on
+  Windows, now muxed into playable MP4; VP9 — VA-API (narrow real-driver support,
+  untested); AV1 — software (rav1e), AMF (untested), Vulkan (implemented but
+  driver-blocked on this workspace's reference GPU); ProRes — Apple (unverified).
+- Decode: H.264/HEVC — Media Foundation and Vulkan Video (hardware-verified),
+  VA-API (GOP, untested), D3D12 (HEVC, sans-io only), Apple (unverified); HEVC
+  read back out of an MP4 now decodes on Windows; VP9 — VA-API (untested), Apple
+  (unverified); AV1 — Vulkan (keyframe-only, hardware-verified), VA-API
+  (keyframe-only, untested), D3D12 (keyframe-only, sans-io only), Apple
+  (unverified); ProRes — Apple (unverified).
+- Audio: Opus — Windows decode via Media Foundation, cross-platform software
+  encode/decode (`unsafe-libopus`), native Apple encode/decode (unverified for Opus), and a
+  real `Opus`/`dOps` MP4 track; AAC — Windows encode and now decode via Media
+  Foundation (hardware-verified round trip), software encode (C# `AudioEncoder`),
+  Apple encode/decode (verified on a real macOS runner: round trip to PCM); audio processing module (sonora). AAC decode
+  and the Opus decode session are both reachable from all five native bindings
+  through one C ABI call, but AAC is the OS's own decoder, so its samples can
+  differ between hosts, unlike the software Opus decoder.
+- Containers: ISOBMFF/MP4, WebM, FLV, MPEG-TS, ADTS, Ogg, RIFF/WAVE, MPEG
+  audio — all verified playable in mpv; CENC encryption/decryption; RTMP
+  (proposed, unpublished); `rtp-core` for RTP payloadization (H.264/HEVC). New:
+  a replay ring over encoded packets and MP4 payload placements.
+
+## Bindings
+
+The native bindings (C, C#, Python, Node, C++) and `@mediaway/browser` carry no API change in this release: the C ABI is unchanged, and the packages are re-stamped with 0.2.2 from the workspace version. [`mediaway_ffi.h`](https://github.com/nyxways/mediaway/releases/tag/v0.2.2) and the CMake/CPack archives are on the GitHub Release page; [`Mediaway.*`](https://www.nuget.org/packages/Mediaway.Common) on NuGet, [`mediaway`](https://pypi.org/project/mediaway/) on PyPI and [`@mediaway/ffi`](https://www.npmjs.com/package/@mediaway/ffi), [`@mediaway/container`](https://www.npmjs.com/package/@mediaway/container), [`@mediaway/device`](https://www.npmjs.com/package/@mediaway/device), [`@mediaway/encoder`](https://www.npmjs.com/package/@mediaway/encoder), [`@mediaway/decoder`](https://www.npmjs.com/package/@mediaway/decoder), [`@mediaway/browser`](https://www.npmjs.com/package/@mediaway/browser) on npm. The Rust crates are on [crates.io](https://crates.io/crates/mediaway).
+
+## Breaking changes
+
+None. No public Rust type or C ABI version changed in this release; every addition is a new function, type or method.
+
+## Maturity bar
+
+Not production-ready. The changes in this release were verified on Windows hardware (the new capture, canvas, MP4 writer, encoder and decoder paths run against real files and the test machine's GPUs); treat every path without an explicit "hardware-verified" tag as unverified. The exceptions to read twice are unchanged from v0.2.1:
+
+- **Apple VideoToolbox, camera, screen and Opus, Android, Linux VA-API/AMF and the D3D12 decode paths** are authored and compile- or test-verified only, with no real-hardware run. The Apple AAC path is the only Apple backend that has run on a real Mac in CI.
+- **Bindings on Linux and macOS** are verified for the container capability at most.
+- **AAC decode output is host-dependent** by construction: it is the OS's codec.
+- **H.264/HEVC CPU decode on Windows** is the inbox Media Foundation software decoder, which has quirks (crop offsets, parameter sets, held-back frames) that this release works around; a stream shape not in the tests may expose another.
+
+Costly paths (CPU readback, SW fallbacks, the throwaway sessions behind the capability probes, a window region away from the origin) are documented at each API (`docs/spec/caveats-and-clarity.md`). See `docs/spec/status.md`.

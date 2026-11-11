@@ -366,8 +366,16 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.98.0
 
-      - name: Add iOS target
-        run: rustup target add aarch64-apple-ios
+      - name: Add iOS targets (device and Apple Silicon Simulator)
+        run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+
+      - name: Lint the umbrella and the C ABI for iOS (cross-compile)
+        run: |
+          cargo clippy --target aarch64-apple-ios -p mediaway -p mediaway-container -p mediaway-ffi --all-features --all-targets -- -D warnings
+
+      - name: Check the Simulator target (cross-compile)
+        run: |
+          cargo check --target aarch64-apple-ios-sim -p mediaway-encoder -p mediaway-decoder -p mediaway-device -p mediaway-ffi --all-features
 
       - name: Lint mediaway-encoder for iOS (cross-compile)
         run: |
@@ -380,6 +388,46 @@ jobs:
       - name: Lint mediaway-device for iOS (cross-compile)
         run: |
           cargo clippy --target aarch64-apple-ios -p mediaway-device --all-features --all-targets -- -D warnings
+
+  apple-xcframework:
+    name: Mediaway.xcframework (iOS device, iOS Simulator, macOS)
+    runs-on: macos-15
+    needs: [affected]
+    # Builds what `bindings/swift` links, on a real Mac with Xcode: the static library for each slice and
+    # `xcodebuild -create-xcframework`. Nothing is run; this is the first place the iOS static library is
+    # linked-for and packaged at all (docs/contributing/ios-on-a-mac.md).
+    if: >-
+      ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/')) &&
+          (needs.affected.outputs.set == 'ALL' ||
+          contains(needs.affected.outputs.set, 'mediaway-ffi')) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.98.0
+
+      - name: Build the XCFramework (debug, to keep the job short)
+        env:
+          MEDIAWAY_XCF_PROFILE: debug
+          MEDIAWAY_XCF_MACOS: "1"
+        run: bash tools/scripts/build-xcframework.sh
+
+      - name: Check the slices and the headers
+        run: |
+          set -euo pipefail
+          fw=target/xcframework/Mediaway.xcframework
+          plutil -p "$fw/Info.plist"
+          for slice in "$fw"/*/; do
+            echo "== $slice"
+            lipo -info "$slice"libmediaway_ffi.a
+            test -f "$slice"Headers/module.modulemap
+            test -f "$slice"Headers/mediaway/pipeline.h
+          done
+          test "$(ls -d "$fw"/*/ | wc -l)" -eq 3
+
+      - name: The Swift package resolves against it
+        working-directory: bindings/swift
+        run: swift package describe
 
   e2e-web:
     name: e2e-web (optional)

@@ -15,8 +15,8 @@ use std::ptr;
 
 use mediaway_common::{AudioFrame, Bytes, CodecKind, Packet, SampleFormat, StreamInfo};
 use unsafe_libopus::{
-    OpusDecoder as RawOpusDecoder, opus_decode_float, opus_decoder_create, opus_decoder_destroy,
-    opus_strerror,
+    OPUS_RESET_STATE, OpusDecoder as RawOpusDecoder, opus_decode_float, opus_decoder_create,
+    opus_decoder_ctl, opus_decoder_destroy, opus_packet_get_nb_samples, opus_strerror,
 };
 
 use crate::opus::config::{OpusDecoderConfig, frame_size_samples};
@@ -179,6 +179,107 @@ impl OpusDecoder {
             format: SampleFormat::F32,
             data: Bytes::from(data),
         });
+        Ok(())
+    }
+
+    /// Decode (or conceal) one frame of audio straight into `out` — the low-level path
+    /// ([`push_packet`](Self::push_packet) is the convenience layer over the same libopus call).
+    ///
+    /// Returns the number of samples **per channel** written. `out.len() / channels` is the
+    /// capacity (and, for the two loss cases below, the exact duration to produce):
+    ///
+    /// - `data = Some(packet), fec = false`: normal decode. Capacity should cover the packet's
+    ///   longest frame (120 ms at the session rate is always enough).
+    /// - `data = None`: packet-loss concealment (PLC). `out` must be a multiple of 2.5 ms and
+    ///   is the duration to conceal; libopus extrapolates from its decoder state.
+    /// - `data = Some(next_packet), fec = true`: recover the **previous** (lost) frame from the
+    ///   in-band FEC carried by `next_packet`. `out` must be exactly the lost frame's duration.
+    ///   When `next_packet` carries no FEC, libopus conceals instead.
+    ///
+    /// Zero allocation. An empty `Some(&[])` is treated like `None`.
+    ///
+    /// # Errors
+    ///
+    /// [`OpusError::Closed`] after [`flush`](Self::flush); [`OpusError::Backend`] when libopus
+    /// rejects the call (corrupt packet, `out` too small or not a legal duration for PLC).
+    pub fn decode_float_into(
+        &mut self,
+        data: Option<&[u8]>,
+        out: &mut [f32],
+        fec: bool,
+    ) -> Result<usize, OpusError> {
+        if self.closed {
+            return Err(OpusError::Closed);
+        }
+        let channels = usize::from(self.channels).max(1);
+        let frame_capacity = (out.len() / channels).min(i32::MAX as usize) as i32;
+        let (data_ptr, data_len) = match data {
+            Some(d) if !d.is_empty() => (d.as_ptr(), d.len().min(i32::MAX as usize) as i32),
+            _ => (ptr::null(), 0),
+        };
+        // SAFETY: `self.ptr` is a live decoder owned by this struct; `data_ptr`/`data_len` are
+        // either null/0 (PLC) or a valid pointer/length pair borrowed from `data` for this
+        // call; `out` is valid for writes of `frame_capacity * channels <= out.len()` samples.
+        let decoded = unsafe {
+            opus_decode_float(
+                self.ptr.as_ptr(),
+                data_ptr,
+                data_len,
+                out.as_mut_ptr(),
+                frame_capacity,
+                i32::from(fec),
+            )
+        };
+        if decoded < 0 {
+            return Err(OpusError::Backend {
+                code: decoded,
+                message: opus_strerror(decoded),
+            });
+        }
+        Ok(decoded as usize)
+    }
+
+    /// Number of samples per channel `packet` decodes to at the session's sample rate
+    /// (`opus_packet_get_nb_samples`), without decoding it.
+    ///
+    /// # Errors
+    ///
+    /// [`OpusError::Backend`] when `packet` is empty or not a valid Opus packet.
+    pub fn packet_samples(&self, packet: &[u8]) -> Result<usize, OpusError> {
+        // SAFETY: `packet` is a valid slice for the duration of the call; the pointer/length
+        // pair is read-only and `opus_packet_get_nb_samples` does not retain it.
+        let n = unsafe {
+            opus_packet_get_nb_samples(
+                packet.as_ptr(),
+                packet.len().min(i32::MAX as usize) as i32,
+                self.sample_rate as i32,
+            )
+        };
+        if n < 0 {
+            return Err(OpusError::Backend {
+                code: n,
+                message: opus_strerror(n),
+            });
+        }
+        Ok(n as usize)
+    }
+
+    /// Reset the decoder to its freshly-opened state (forget the signal history). Call when a
+    /// stream restarts after a long gap so concealment does not extrapolate stale audio.
+    ///
+    /// # Errors
+    ///
+    /// [`OpusError::Backend`] on a libopus failure.
+    pub fn reset(&mut self) -> Result<(), OpusError> {
+        // SAFETY: `self.ptr` is a live decoder owned by this struct; `OPUS_RESET_STATE` takes
+        // no argument.
+        let code = unsafe { opus_decoder_ctl!(self.ptr.as_ptr(), OPUS_RESET_STATE) };
+        if code < 0 {
+            return Err(OpusError::Backend {
+                code,
+                message: opus_strerror(code),
+            });
+        }
         Ok(())
     }
 

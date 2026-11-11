@@ -318,6 +318,140 @@ impl AudioProcessor {
         }
     }
 
+    /// Feed one 10 ms **render** (far-end / playback) block — interleaved `f32` in `[-1, 1]`,
+    /// exactly `render_block_frames * render_channels` samples — straight into the echo
+    /// canceller. The low-level, allocation-free twin of
+    /// [`push_render_frame`](Self::push_render_frame) (no `AudioFrame`, no accumulator).
+    /// Only 1 or 2 render channels are supported on this path.
+    ///
+    /// Panic-safe like the frame API: a `sonora` panic disables the instance
+    /// ([`is_disabled`](Self::is_disabled)) and later calls become no-ops.
+    ///
+    /// # Errors
+    ///
+    /// [`ApmError::FrameLengthMismatch`] when `interleaved` is not exactly one block (or the
+    /// stream has more than 2 channels); [`ApmError::BackendPanicked`] on a `sonora` panic;
+    /// [`ApmError::Backend`] when `sonora` rejects the block.
+    pub fn push_render_block(&mut self, interleaved: &[f32]) -> Result<(), ApmError> {
+        let channels = self.render_channels;
+        let frames = self.render_block_frames;
+        if !(1..=2).contains(&channels) || interleaved.len() != frames * channels {
+            return Err(ApmError::FrameLengthMismatch {
+                expected: frames,
+                actual: interleaved.len() / channels.max(1),
+            });
+        }
+        let Some(inner) = self.inner.as_mut() else {
+            return Ok(());
+        };
+        deinterleave(interleaved, channels, &mut self.render_in);
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            match (self.render_in.as_slice(), self.render_out.as_mut_slice()) {
+                ([i0], [o0]) => {
+                    inner.process_render_f32(&[i0.as_slice()], &mut [o0.as_mut_slice()])
+                }
+                ([i0, i1], [o0, o1]) => inner.process_render_f32(
+                    &[i0.as_slice(), i1.as_slice()],
+                    &mut [o0.as_mut_slice(), o1.as_mut_slice()],
+                ),
+                _ => Ok(()),
+            }
+        }));
+        match result {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(err)) => Err(ApmError::Backend(err)),
+            Err(_) => {
+                self.inner = None;
+                Err(ApmError::BackendPanicked)
+            }
+        }
+    }
+
+    /// Process one 10 ms **capture** (microphone) block: `input` and `output` are interleaved
+    /// `f32` in `[-1, 1]`, exactly `capture_block_frames * capture_channels` samples each. The
+    /// low-level, allocation-free twin of
+    /// [`push_capture_frame`](Self::push_capture_frame) +
+    /// [`poll_processed_frame`](Self::poll_processed_frame). Only 1 or 2 channels.
+    ///
+    /// Once disabled by a `sonora` panic, `output` receives the raw `input` (passthrough) and
+    /// the call returns `Ok` — the same graceful degradation as the frame API.
+    ///
+    /// # Errors
+    ///
+    /// [`ApmError::FrameLengthMismatch`] when a slice is not exactly one block;
+    /// [`ApmError::BackendPanicked`] on the call that panics (the output is the raw input);
+    /// [`ApmError::Backend`] when `sonora` rejects the block.
+    pub fn process_capture_block(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+    ) -> Result<(), ApmError> {
+        let channels = self.capture_channels;
+        let frames = self.capture_block_frames;
+        let len = frames * channels;
+        if !(1..=2).contains(&channels) || input.len() != len || output.len() != len {
+            return Err(ApmError::FrameLengthMismatch {
+                expected: frames,
+                actual: input.len().min(output.len()) / channels.max(1),
+            });
+        }
+        let Some(inner) = self.inner.as_mut() else {
+            output.copy_from_slice(input);
+            return Ok(());
+        };
+        deinterleave(input, channels, &mut self.capture_in);
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            match (self.capture_in.as_slice(), self.capture_out.as_mut_slice()) {
+                ([i0], [o0]) => {
+                    inner.process_capture_f32(&[i0.as_slice()], &mut [o0.as_mut_slice()])
+                }
+                ([i0, i1], [o0, o1]) => inner.process_capture_f32(
+                    &[i0.as_slice(), i1.as_slice()],
+                    &mut [o0.as_mut_slice(), o1.as_mut_slice()],
+                ),
+                _ => Ok(()),
+            }
+        }));
+        match result {
+            Ok(Ok(())) => {
+                for (ch, buf) in self.capture_out.iter().enumerate() {
+                    for (f, &sample) in buf.iter().enumerate().take(frames) {
+                        output[f * channels + ch] = sample;
+                    }
+                }
+                Ok(())
+            }
+            Ok(Err(err)) => {
+                output.copy_from_slice(input);
+                Err(ApmError::Backend(err))
+            }
+            Err(_) => {
+                self.inner = None;
+                output.copy_from_slice(input);
+                Err(ApmError::BackendPanicked)
+            }
+        }
+    }
+
+    /// Frames per channel in one processing block (10 ms at the capture rate).
+    #[must_use]
+    pub const fn capture_block_frames(&self) -> usize {
+        self.capture_block_frames
+    }
+
+    /// Frames per channel in one render block (10 ms at the render rate).
+    #[must_use]
+    pub const fn render_block_frames(&self) -> usize {
+        self.render_block_frames
+    }
+
+    /// `sonora`'s live statistics (ERLE, echo return loss, delay estimate, residual echo
+    /// likelihood …), refreshed by each capture block. `None` once the instance is disabled.
+    #[must_use]
+    pub fn statistics(&self) -> Option<&sonora::AudioProcessingStats> {
+        self.inner.as_ref().map(AudioProcessing::statistics)
+    }
+
     /// Estimated render→capture round-trip delay (echo-alignment hint).
     /// No-op once [`is_disabled`](Self::is_disabled). Not wrapped in
     /// `catch_unwind` — not one of this crate's documented panic-safety

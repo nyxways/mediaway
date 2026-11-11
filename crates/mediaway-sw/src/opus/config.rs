@@ -27,6 +27,32 @@ impl OpusApplication {
     }
 }
 
+/// Signal-type hint for [`crate::opus::encoder::OpusEncoder::set_signal`] — mirrors `OPUS_SIGNAL_*`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpusSignal {
+    /// Let the encoder decide (`OPUS_AUTO`).
+    Auto,
+    /// Speech: favors the SILK coder (better at low bitrates, carries in-band FEC).
+    Voice,
+    /// Music or other non-speech audio: favors CELT.
+    Music,
+}
+
+/// Coded audio bandwidth for [`crate::opus::encoder::OpusEncoder::set_max_bandwidth`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpusBandwidth {
+    /// 4 kHz.
+    Narrow,
+    /// 6 kHz.
+    Medium,
+    /// 8 kHz.
+    Wide,
+    /// 12 kHz.
+    SuperWide,
+    /// 20 kHz.
+    Full,
+}
+
 /// Parameters for opening an [`crate::opus::OpusEncoder`] session.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpusEncoderConfig {

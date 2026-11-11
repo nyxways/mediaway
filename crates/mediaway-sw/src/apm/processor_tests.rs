@@ -177,3 +177,40 @@ fn pts_advances_by_one_block_per_produced_frame() {
     let second = apm.poll_processed_frame().unwrap().expect("second block");
     assert_eq!(second.pts, 100 + BLOCK as i64);
 }
+
+#[test]
+fn block_api_matches_the_frame_api_and_never_allocates_a_frame() {
+    let cfg = ApmConfig::default();
+    let mut blocks = AudioProcessor::open(cfg.clone(), stream_format(), stream_format()).unwrap();
+    let mut frames = AudioProcessor::open(cfg, stream_format(), stream_format()).unwrap();
+    let input: Vec<f32> = (0..BLOCK).map(|i| (i as f32 * 0.1).sin() * 0.25).collect();
+    let mut out = vec![0.0f32; BLOCK];
+    blocks.process_capture_block(&input, &mut out).unwrap();
+    frames.push_capture_frame(&frame(0, &input)).unwrap();
+    let reference = frames.poll_processed_frame().unwrap().unwrap();
+    assert_eq!(out, bytes_to_f32(&reference.data));
+}
+
+#[test]
+fn block_api_rejects_wrong_lengths_and_feeds_render() {
+    let mut apm = AudioProcessor::open(
+        ApmConfig {
+            echo_canceller: Some(EchoCanceller::default()),
+            ..ApmConfig::default()
+        },
+        stream_format(),
+        stream_format(),
+    )
+    .unwrap();
+    let block = vec![0.1f32; BLOCK];
+    let mut out = vec![0.0f32; BLOCK];
+    apm.push_render_block(&block).unwrap();
+    apm.process_capture_block(&block, &mut out).unwrap();
+    assert!(apm.push_render_block(&block[..BLOCK - 1]).is_err());
+    assert!(
+        apm.process_capture_block(&block, &mut out[..BLOCK - 1])
+            .is_err()
+    );
+    assert_eq!(apm.capture_block_frames(), BLOCK);
+    assert!(apm.statistics().is_some());
+}

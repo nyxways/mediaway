@@ -126,6 +126,37 @@ impl VoiceActivityDetector {
         }
     }
 
+    /// Speech probability (`0.0..=1.0`) of one 10 ms **mono** block of `f32` samples in
+    /// `[-1, 1]` (exactly `sample_rate / 100` samples). The low-level, allocation-free twin of
+    /// [`analyze`](Self::analyze): the block is scaled to the 16-bit magnitude the RNN VAD
+    /// expects internally, so callers keep working in `[-1, 1]` floats.
+    ///
+    /// # Errors
+    ///
+    /// [`ApmError::FrameLengthMismatch`] when `mono` is not exactly one block;
+    /// [`ApmError::BackendPanicked`] once disabled (see [`analyze`](Self::analyze)).
+    pub fn analyze_block(&mut self, mono: &[f32]) -> Result<f32, ApmError> {
+        let Some(inner) = self.inner.as_mut() else {
+            return Err(ApmError::BackendPanicked);
+        };
+        if mono.len() != self.frame_len {
+            return Err(ApmError::FrameLengthMismatch {
+                expected: self.frame_len,
+                actual: mono.len(),
+            });
+        }
+        for (dst, &src) in self.scratch.iter_mut().zip(mono) {
+            *dst = src * SONORA_PCM_SCALE;
+        }
+        let scratch = &mut self.scratch;
+        if let Ok(probability) = catch_unwind(AssertUnwindSafe(|| inner.analyze(scratch))) {
+            Ok(probability)
+        } else {
+            self.inner = None;
+            Err(ApmError::BackendPanicked)
+        }
+    }
+
     /// `true` after a caught backend panic — every subsequent
     /// [`analyze`](Self::analyze) call returns
     /// [`ApmError::BackendPanicked`]. Construct a new instance to retry.

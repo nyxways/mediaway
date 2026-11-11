@@ -84,7 +84,7 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
 ### 2. Codecs, Hardware Acceleration & OS Backends
 - [ ] **Linux Hardware Verification**: the VA-API backends (`mediaway-encoder`/`mediaway-decoder`
       `linux` modules) are compile-verified via WSL2 only — no run against physical `/dev/dri`
-      hardware yet.
+      hardware yet. How to run it: `docs/contributing/linux-hardware.md`.
 - [ ] **Windows D3D12 Decoder Hang Investigation**: still reproduces `DXGI_ERROR_DEVICE_HUNG`
       after 4 real bugs already fixed (readback pitch, NV12 chroma-plane barrier, RBSP bit
       offset, `BitOffsetToSliceData`); root cause narrowed to the opaque DXVA picture-parameter
@@ -292,7 +292,7 @@ Platform backends (`mediaway-*-windows`, …) get their own `docs/roadmap.md` wh
       `ComGuard` for the object's whole lifetime instead of two independent short-lived scopes.
 - [ ] **Linux Capture Hardware Verification**: `xdg-desktop-portal` ScreenCast, PipeWire mic, and
       V4L2 camera capture are compile-verified via WSL2 only — zero runtime verification on a
-      real Linux desktop yet.
+      real Linux desktop yet. How to run it: `docs/contributing/linux-hardware.md`.
 
 ## Workspace bootstrap
 

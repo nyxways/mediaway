@@ -260,7 +260,7 @@ jobs:
 
   native-assets-macos:
     name: native assets (macOS x86_64 + arm64 .dylib)
-    runs-on: macos-14
+    runs-on: macos-15
     needs: [version, crates]
     env:
       # Uniform floor across both architectures (ADR-0024) — Big Sur is the
@@ -469,9 +469,9 @@ jobs:
 
   bindings-tests-macos:
     name: bindings tests (RC gate, macOS, container + hardware pipeline)
-    runs-on: macos-14
+    runs-on: macos-15
     needs: [version, native-assets-macos]
-    # macos-14 is real Apple Silicon hardware with a VideoToolbox backend —
+    # macos-15 is real Apple Silicon hardware with a VideoToolbox backend —
     # unlike bindings-tests-linux, this RC gate also exercises the same
     # hardware-backed AutoEncoder/AutoDecoder round trip
     # bindings-tests (win-x64) already runs for WMF/Opus (ADR-0024).

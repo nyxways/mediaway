@@ -607,16 +607,50 @@ pub(crate) fn query_video_format(
         .image_usage(usage)
         .push_next(&mut profile_list)
         .build();
-    // SAFETY: `format_info` (and its chained `profile_list`, in turn chaining
-    // `profile_info`) stays alive for this call; the trait wrapper performs
-    // the standard two-call array-enumeration pattern internally.
-    let formats = unsafe {
-        instance.get_physical_device_video_format_properties_khr(physical_device, &format_info)
-    }
-    .map_err(|result| VulkanEncodeSessionError::VkCall {
+    // The driver reads every output element's `s_type` and `p_next` before it
+    // writes the element, so the array must hold initialised structs.
+    // vulkanalia's `get_physical_device_video_format_properties_khr` hands the
+    // driver the uninitialised spare capacity of a `Vec`, which sent NVIDIA
+    // driver 621.01 through a garbage `p_next` (an intermittent access
+    // violation for HEVC and AV1); the two-call pattern is written out here
+    // with `Default` elements, which carry the right `s_type` and a null `p_next`.
+    let get_formats = instance
+        .commands()
+        .get_physical_device_video_format_properties_khr;
+    let vk_call_error = |result: vk::Result| VulkanEncodeSessionError::VkCall {
         call: "vkGetPhysicalDeviceVideoFormatPropertiesKHR",
-        result,
-    })?;
+        result: result.into(),
+    };
+    let mut count = 0u32;
+    // SAFETY: `format_info` (and its chained `profile_list`, in turn chaining
+    // `profile_info`) stays alive for both calls; a null array asks only for
+    // the count.
+    let result = unsafe {
+        get_formats(
+            physical_device,
+            &raw const format_info,
+            &raw mut count,
+            std::ptr::null_mut(),
+        )
+    };
+    if result != vk::Result::SUCCESS {
+        return Err(vk_call_error(result));
+    }
+    let mut formats = vec![vk::VideoFormatPropertiesKHR::default(); count as usize];
+    // SAFETY: as above; `formats` holds `count` initialised elements, the
+    // capacity the driver is told it may write.
+    let result = unsafe {
+        get_formats(
+            physical_device,
+            &raw const format_info,
+            &raw mut count,
+            formats.as_mut_ptr(),
+        )
+    };
+    if result != vk::Result::SUCCESS && result != vk::Result::INCOMPLETE {
+        return Err(vk_call_error(result));
+    }
+    formats.truncate(count as usize);
     formats
         .first()
         .map(|f| f.format)

@@ -49,7 +49,7 @@ members = [
 # See docs/spec/crate-packaging.md · docs/adr/0003-crate-packaging.md
 
 [workspace.package]
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 rust-version = "1.96"
 license = "MIT OR Apache-2.0"
@@ -60,7 +60,7 @@ publish = false # early development — see docs/spec/status.md
 [workspace.dependencies]
 mediaway-common = { path = "crates/mediaway-common", version = "0.2" } # lockstep with workspace version
 iso-cenc = { path = "crates/iso-cenc", version = "0.1.1" }
-iso-bmff = { path = "crates/iso-bmff", version = "0.1.2" }
+iso-bmff = { path = "crates/iso-bmff", version = "0.1.3" }
 ebml-webm = { path = "crates/ebml-webm", version = "0.2.1" }
 riff-wave-core = { path = "crates/riff-wave-core", version = "0.1.1" }
 adts-core = { path = "crates/adts-core", version = "0.1.1" }

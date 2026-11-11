@@ -21,6 +21,7 @@ Each language folder is self-contained: its own `README.md` is the entry point. 
 | C# | [`csharp/`](csharp/) | P/Invoke over the C ABI (net8.0 + netstandard2.0) | ✅ verified | Windows (full) · Linux (container) | [src](csharp/src/) · [unity UPM](csharp/unity/com.mediaway.unity/README.md) (🔷) |
 | Python | [`python/`](python/) | `ctypes` over the C ABI | ✅ verified | Windows (full) · Linux (container) | [README](python/README.md) |
 | Node.js | [`nodejs/`](nodejs/) | FFI over the C ABI (`koffi`; napi-rs is the eventual official path) | ✅ verified | Windows (full) · Linux (container) | [README](nodejs/README.md) |
+| Swift | [`swift/`](swift/) | Binary target over the C ABI (`Mediaway.xcframework`) | 📐 design | iOS · macOS (built in CI, never run) | [README](swift/README.md) |
 | Browser | [`browser/`](browser/) | WASM (`wasm-bindgen`) + WebCodecs — **not** the C ABI | ✅ verified (mux/demux + WebCodecs encode) | Wherever the browser runs | [README](browser/README.md) |
 
 Node.js and the browser are **two distinct hosts** for JS/TS with two distinct interop paths — see `docs/spec/c-ffi.md` § Tier C. Do not collapse them.

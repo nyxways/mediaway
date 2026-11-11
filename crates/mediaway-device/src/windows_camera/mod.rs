@@ -5,19 +5,19 @@
 #![cfg_attr(windows, allow(unsafe_code))]
 #![cfg_attr(not(windows), deny(unsafe_code))]
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "camera"))]
 mod capture;
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "camera"))]
 pub use capture::{WindowsCameraCapture, enumerate_cameras};
 
-#[cfg(not(windows))]
+#[cfg(not(all(windows, feature = "camera")))]
 mod host_stub;
-#[cfg(not(windows))]
+#[cfg(not(all(windows, feature = "camera")))]
 pub use host_stub::{WindowsCameraCapture, enumerate_cameras};
 
 /// Serializes tests that touch real hardware (Media Foundation). Mirrors
 /// [`crate::windows`]'s `HARDWARE_TEST_LOCK` — each hardware-touching module needs its own,
 /// since Rust's default test harness runs `#[test]`s concurrently on separate threads.
-#[cfg(all(test, windows))]
+#[cfg(all(test, windows, feature = "camera"))]
 pub(crate) static HARDWARE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

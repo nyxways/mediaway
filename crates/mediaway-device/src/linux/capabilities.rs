@@ -6,20 +6,34 @@
 //! real-probe branches has been exercised against a real portal/compositor
 //! session, `PipeWire` daemon, or V4L2 device — compile-checked only.
 
+// Each family's imports exist only with its crate feature; a disabled family answers
+// `Unavailable::NotImplemented` (see the `not(feature = ..)` twins below).
+#[cfg(any(feature = "camera", feature = "desktop"))]
+use crate::Select;
+#[cfg(feature = "camera")]
 use crate::camera::{
     CameraCapture, CameraCaptureConfig, CaptureOutputPreference as CameraOutputPreference,
 };
+#[cfg(feature = "desktop")]
 use crate::desktop::{
     CaptureOutputPreference as DesktopOutputPreference, CaptureSharing, DesktopCaptureSource,
     DesktopVideoCapture, DesktopVideoCaptureConfig,
 };
-use crate::{CaptureError, DeviceKind, PermissionState, Select, Support, Unavailable};
-use mediaway_common::{NativeHandle, Rational};
+use crate::{CaptureError, DeviceKind, PermissionState, Support, Unavailable};
+#[cfg(feature = "desktop")]
+use mediaway_common::NativeHandle;
+#[cfg(any(feature = "camera", feature = "desktop"))]
+use mediaway_common::Rational;
 
+#[cfg(feature = "camera")]
 use crate::linux::camera::{self, LinuxCameraCapture};
+#[cfg(feature = "audio")]
 use crate::linux::mic;
+#[cfg(feature = "desktop")]
 use crate::linux::portal;
+#[cfg(feature = "desktop")]
 use crate::linux::screencast::LinuxScreenCapture;
+#[cfg(feature = "desktop")]
 use crate::linux::window::LinuxWindowCapture;
 
 /// Live support probe for `kind` on this machine.
@@ -50,6 +64,7 @@ pub fn support(kind: DeviceKind) -> Support {
 /// kernel/distro version, they're gated by which desktop session is running;
 /// like a literal missing device, this can change without a rebuild (start a
 /// desktop session, install `xdg-desktop-portal-gtk`, …).
+#[cfg(feature = "desktop")]
 fn screencast_portal_support() -> Support {
     if portal::probe_screencast().is_ok() {
         Support::Supported
@@ -61,6 +76,7 @@ fn screencast_portal_support() -> Support {
 /// Enumerates capture-capable `V4L2` nodes (see [`camera::enumerate_camera_paths`])
 /// — cheaper than a real [`LinuxCameraCapture::open`] (no `mmap` arena, no
 /// worker thread, no format negotiation).
+#[cfg(feature = "camera")]
 fn camera_support() -> Support {
     if camera::enumerate_camera_paths().is_empty() {
         Support::Unavailable(Unavailable::NoDeviceFound)
@@ -73,12 +89,28 @@ fn camera_support() -> Support {
 /// connection (see [`mic::probe_daemon_reachable`]) — cheaper than a real
 /// `LinuxMicrophoneCapture::open` (no stream, no format negotiation, no
 /// worker thread).
+#[cfg(feature = "audio")]
 fn microphone_support() -> Support {
     if mic::probe_daemon_reachable() {
         Support::Supported
     } else {
         Support::Unavailable(Unavailable::NoDeviceFound)
     }
+}
+
+#[cfg(not(feature = "desktop"))]
+const fn screencast_portal_support() -> Support {
+    Support::Unavailable(Unavailable::NotImplemented)
+}
+
+#[cfg(not(feature = "camera"))]
+const fn camera_support() -> Support {
+    Support::Unavailable(Unavailable::NotImplemented)
+}
+
+#[cfg(not(feature = "audio"))]
+const fn microphone_support() -> Support {
+    Support::Unavailable(Unavailable::NotImplemented)
 }
 
 /// Best-effort permission probe for `kind`.
@@ -120,6 +152,7 @@ pub fn request_permission(kind: DeviceKind) -> Result<PermissionState, CaptureEr
     }
 }
 
+#[cfg(feature = "desktop")]
 fn probe_screen_permission() -> Result<PermissionState, CaptureError> {
     let cfg = DesktopVideoCaptureConfig {
         source: DesktopCaptureSource::Screen {
@@ -143,6 +176,7 @@ fn probe_screen_permission() -> Result<PermissionState, CaptureError> {
     }
 }
 
+#[cfg(feature = "desktop")]
 fn probe_window_permission() -> Result<PermissionState, CaptureError> {
     // The `window` field is ignored by `LinuxWindowCapture::open` (portal
     // picker chooses interactively — see that fn's docs); any nonzero handle
@@ -168,6 +202,7 @@ fn probe_window_permission() -> Result<PermissionState, CaptureError> {
     }
 }
 
+#[cfg(feature = "camera")]
 fn probe_camera_permission() -> Result<PermissionState, CaptureError> {
     let cfg = CameraCaptureConfig {
         select: Select::Default,
@@ -186,6 +221,23 @@ fn probe_camera_permission() -> Result<PermissionState, CaptureError> {
     }
 }
 
-#[cfg(test)]
+// A disabled family never reaches its probe: `request_permission` returns early on
+// `Support::Unavailable`.
+#[cfg(not(feature = "desktop"))]
+const fn probe_screen_permission() -> Result<PermissionState, CaptureError> {
+    Ok(PermissionState::NotSupported)
+}
+
+#[cfg(not(feature = "desktop"))]
+const fn probe_window_permission() -> Result<PermissionState, CaptureError> {
+    Ok(PermissionState::NotSupported)
+}
+
+#[cfg(not(feature = "camera"))]
+const fn probe_camera_permission() -> Result<PermissionState, CaptureError> {
+    Ok(PermissionState::NotSupported)
+}
+
+#[cfg(all(test, feature = "audio", feature = "camera", feature = "desktop"))]
 #[path = "capabilities_tests.rs"]
 mod tests;

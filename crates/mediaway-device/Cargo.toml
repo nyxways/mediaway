@@ -72,7 +72,7 @@ windows-core = { workspace = true }
 
 
 [target.'cfg(target_os = "linux")'.dependencies]
-ashpd = { workspace = true, default-features = false, features = [
+ashpd = { workspace = true, optional = true, default-features = false, features = [
     "screencast",
     "async-io",
 ] }
@@ -80,11 +80,11 @@ ashpd = { workspace = true, default-features = false, features = [
 # `v0_3_44` unlocks `pw::keys::TARGET_OBJECT` (mic.rs device targeting, ADR-0004
 # addendum) — PipeWire 0.3.44 released 2021; every mainstream distro's PipeWire
 # packages this workspace targets are newer.
-pipewire = { workspace = true, features = ["v0_3_44"] }
+pipewire = { workspace = true, optional = true, features = ["v0_3_44"] }
 # Safe V4L2 bindings for camera capture (build-time: bindgen + libclang +
 # system <linux/videodev2.h>, no runtime library link). See
 # adr/0002-v4l2-camera-capture.md.
-v4l = { workspace = true }
+v4l = { workspace = true, optional = true }
 
 
 [target.'cfg(target_os = "android")'.dependencies]
@@ -218,4 +218,17 @@ web-sys = { workspace = true, features = [
 
 
 [features]
-default = []
+# Backend families (ADR-0010). The default turns everything on, as before the split; a consumer
+# that only needs one family opts out of the rest (`default-features = false, features =
+# ["audio"]`). A disabled family falls back to the same `host_stub` the other platforms use, so
+# the facade types (`audio`, `camera`, `desktop`) and `support()` stay available and report
+# `Unsupported` / `NotImplemented`.
+# - `audio`:   microphone + playback backends (Linux: PipeWire).
+# - `camera`:  camera backends (Linux: V4L2 via `v4l`, which needs libclang at build time).
+# - `desktop`: screen/window/loopback backends (Linux: xdg-desktop-portal via `ashpd` + PipeWire).
+# Windows keeps WASAPI always (device enumeration shares it); Android / Apple / Web are not yet
+# trimmed by these features (their backends compile as before).
+default = ["audio", "camera", "desktop"]
+audio = ["dep:pipewire"]
+camera = ["dep:v4l"]
+desktop = ["dep:ashpd", "dep:pipewire"]

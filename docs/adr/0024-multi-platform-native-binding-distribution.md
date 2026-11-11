@@ -412,6 +412,12 @@ outside `docs/adr/` is touched by it.
   a clear thrown error vs. a silent missing-module failure) needs to be
   designed as part of Stage 1's implementation, not fully specified here.
 
+## Updates
+
+- 2026-11-11: GitHub retired its `macos-14` images on 2026-11-02 (the Apple jobs were cancelled at start with
+  "The configuration 'macos-14-arm64-us-default' is not supported"). Every `macos-14` above is now `macos-15`,
+  still a pinned Apple Silicon image rather than `macos-latest`. The decision is unchanged; only the label moved.
+
 ## References
 
 - workflow: `.github/workflows/release.yml`, `.github/workflows/ci.yml`

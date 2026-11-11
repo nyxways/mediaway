@@ -15,6 +15,7 @@ Process detail stays in `docs/conventions/`; product design stays in `docs/spec/
 |-----|--------|
 | [for-agents.md](for-agents.md) | **AI assistants:** mandatory reading order + constraints |
 | [getting-started.md](getting-started.md) | Clone, toolchain, hooks, first test |
+| [linux-hardware.md](linux-hardware.md) | First session on a Linux machine with the hardware: report script, what to check |
 | [documentation.md](documentation.md) | What to write where (humans vs agents) |
 | [pull-requests.md](pull-requests.md) | Branch, commits, **full PR checklist**, merge |
 | Issues / discussions | [`../conventions/issues.md`](../conventions/issues.md) |

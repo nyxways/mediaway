@@ -31,36 +31,48 @@
 // which would reintroduce `unreachable_pub` warnings. Keep `pub(crate)`.
 #![cfg_attr(target_os = "linux", allow(clippy::redundant_pub_crate))]
 
-#[cfg(target_os = "linux")]
+// Backend families (crate features `audio` / `camera` / `desktop`): a disabled family is replaced
+// by the same `host_stub` the non-Linux hosts use, and its native dependency (PipeWire / V4L2 /
+// the portal client) is not even built. `capabilities` is always real on Linux and reports a
+// disabled family as `NotImplemented` (see its `cfg` branches).
+#[cfg(all(target_os = "linux", feature = "camera"))]
 mod camera;
 #[cfg(target_os = "linux")]
 mod capabilities;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "desktop"))]
 mod format;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "audio"))]
 mod mic;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "desktop"))]
 mod portal;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "desktop"))]
 mod screencast;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "desktop"))]
 mod window;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "camera"))]
 pub use camera::LinuxCameraCapture;
 #[cfg(target_os = "linux")]
 pub use capabilities::{request_permission, support};
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "audio"))]
 pub use mic::LinuxMicrophoneCapture;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "desktop"))]
 pub use screencast::LinuxScreenCapture;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "desktop"))]
 pub use window::LinuxWindowCapture;
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(any(
+    not(target_os = "linux"),
+    not(feature = "audio"),
+    not(feature = "camera"),
+    not(feature = "desktop")
+))]
 mod host_stub;
+#[cfg(not(all(target_os = "linux", feature = "camera")))]
+pub use host_stub::LinuxCameraCapture;
+#[cfg(not(all(target_os = "linux", feature = "audio")))]
+pub use host_stub::LinuxMicrophoneCapture;
+#[cfg(not(all(target_os = "linux", feature = "desktop")))]
+pub use host_stub::{LinuxScreenCapture, LinuxWindowCapture};
 #[cfg(not(target_os = "linux"))]
-pub use host_stub::{
-    LinuxCameraCapture, LinuxMicrophoneCapture, LinuxScreenCapture, LinuxWindowCapture,
-    request_permission, support,
-};
+pub use host_stub::{request_permission, support};

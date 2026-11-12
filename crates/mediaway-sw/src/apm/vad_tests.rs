@@ -134,3 +134,12 @@ fn speech_like_frame_reports_higher_probability_than_near_silent() {
          speech={speech_max} silent={silent_max}"
     );
 }
+
+#[test]
+fn analyze_block_scores_silence_low_and_rejects_wrong_length() {
+    let mut vad = VoiceActivityDetector::open(SAMPLE_RATE).unwrap();
+    let silence = vec![0.0f32; BLOCK];
+    let p = vad.analyze_block(&silence).unwrap();
+    assert!((0.0..=1.0).contains(&p) && p < 0.5, "silence scored {p}");
+    assert!(vad.analyze_block(&silence[..BLOCK - 1]).is_err());
+}

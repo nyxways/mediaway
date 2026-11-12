@@ -15,12 +15,16 @@ use std::ptr;
 
 use mediaway_common::{AudioFrame, Bytes, CodecKind, Packet, SampleFormat, StreamInfo};
 use unsafe_libopus::{
-    OPUS_SET_BITRATE_REQUEST, OPUS_SET_INBAND_FEC_REQUEST, OPUS_SET_PACKET_LOSS_PERC_REQUEST,
-    OpusEncoder as RawOpusEncoder, opus_encode_float, opus_encoder_create, opus_encoder_ctl,
-    opus_encoder_destroy, opus_strerror,
+    OPUS_AUTO, OPUS_BAD_ARG, OPUS_BANDWIDTH_FULLBAND, OPUS_BANDWIDTH_MEDIUMBAND,
+    OPUS_BANDWIDTH_NARROWBAND, OPUS_BANDWIDTH_SUPERWIDEBAND, OPUS_BANDWIDTH_WIDEBAND,
+    OPUS_GET_IN_DTX_REQUEST, OPUS_GET_LOOKAHEAD_REQUEST, OPUS_SET_BITRATE_REQUEST,
+    OPUS_SET_COMPLEXITY_REQUEST, OPUS_SET_DTX_REQUEST, OPUS_SET_INBAND_FEC_REQUEST,
+    OPUS_SET_MAX_BANDWIDTH_REQUEST, OPUS_SET_PACKET_LOSS_PERC_REQUEST, OPUS_SET_SIGNAL_REQUEST,
+    OPUS_SET_VBR_REQUEST, OPUS_SIGNAL_MUSIC, OPUS_SIGNAL_VOICE, OpusEncoder as RawOpusEncoder,
+    opus_encode_float, opus_encoder_create, opus_encoder_ctl, opus_encoder_destroy, opus_strerror,
 };
 
-use crate::opus::config::{OpusEncoderConfig, frame_size_samples};
+use crate::opus::config::{OpusBandwidth, OpusEncoderConfig, OpusSignal, frame_size_samples};
 use crate::opus::error::OpusError;
 
 /// Output payload buffer allocated per encode call. `unsafe-libopus`'s own
@@ -226,6 +230,182 @@ impl OpusEncoder {
     /// Pull the next compressed packet, if any.
     pub fn poll_packet(&mut self) -> Result<Option<Packet>, OpusError> {
         Ok(self.pending.pop_front())
+    }
+
+    /// Encode one frame of interleaved `f32` PCM straight into `out` — the low-level path
+    /// ([`push_frame`](Self::push_frame) is the convenience layer over the same libopus call).
+    ///
+    /// `pcm.len()` must be `frame_samples * channels` for a legal Opus frame duration (2.5, 5,
+    /// 10, 20, 40, 60 ms … at the session's sample rate); the session's configured `time_base`
+    /// is **not** enforced here, so a caller may switch durations between calls. Returns the
+    /// number of bytes written to `out`. A length of 1 or 2 bytes is a DTX packet (libopus
+    /// emits those while DTX is on and the input is silent).
+    ///
+    /// Zero allocation: no scratch copy and no `Packet` is built.
+    ///
+    /// # Errors
+    ///
+    /// [`OpusError::Closed`] after [`flush`](Self::flush); [`OpusError::Backend`] when libopus
+    /// rejects the call (bad frame size, `out` too small — 1275 bytes always suffices for one
+    /// frame, and 4000 is the libopus reference buffer).
+    pub fn encode_float_into(&mut self, pcm: &[f32], out: &mut [u8]) -> Result<usize, OpusError> {
+        if self.closed {
+            return Err(OpusError::Closed);
+        }
+        let channels = usize::from(self.channels);
+        if channels == 0 || pcm.is_empty() || !pcm.len().is_multiple_of(channels) {
+            return Err(OpusError::Backend {
+                code: OPUS_BAD_ARG,
+                message: opus_strerror(OPUS_BAD_ARG),
+            });
+        }
+        let frame = (pcm.len() / channels) as i32;
+        let cap = out.len().min(i32::MAX as usize) as i32;
+        // SAFETY: `self.ptr` is a live encoder owned by this struct; `pcm` holds exactly
+        // `frame * channels` samples (checked above); `out` is a valid writable buffer of at
+        // least `cap` bytes for the duration of the call.
+        let len = unsafe {
+            opus_encode_float(
+                self.ptr.as_ptr(),
+                pcm.as_ptr(),
+                frame,
+                out.as_mut_ptr(),
+                cap,
+            )
+        };
+        if len < 0 {
+            return Err(OpusError::Backend {
+                code: len,
+                message: opus_strerror(len),
+            });
+        }
+        Ok(len as usize)
+    }
+
+    fn ctl_set(&mut self, request: i32, value: i32) -> Result<(), OpusError> {
+        // SAFETY: `self.ptr` is a live encoder owned by this struct; every request passed by
+        // the setters below takes exactly one `i32` argument.
+        backend_result(unsafe { opus_encoder_ctl!(self.ptr.as_ptr(), request, value) })
+    }
+
+    fn ctl_get(&mut self, request: i32) -> Result<i32, OpusError> {
+        let mut value: i32 = 0;
+        // SAFETY: `self.ptr` is a live encoder owned by this struct; the getters below only
+        // pass requests that write a single `i32` through the pointer, which is valid for
+        // the call.
+        backend_result(unsafe { opus_encoder_ctl!(self.ptr.as_ptr(), request, &mut value) })?;
+        Ok(value)
+    }
+
+    /// Target bitrate in bits per second (clamped by libopus to its legal range).
+    ///
+    /// # Errors
+    ///
+    /// [`OpusError::Backend`] when libopus rejects the value.
+    pub fn set_bitrate(&mut self, bits_per_second: u32) -> Result<(), OpusError> {
+        self.ctl_set(
+            OPUS_SET_BITRATE_REQUEST,
+            i32::try_from(bits_per_second).unwrap_or(i32::MAX),
+        )
+    }
+
+    /// Computational complexity, `0..=10` (higher = better quality per bit, more CPU).
+    ///
+    /// # Errors
+    ///
+    /// [`OpusError::Backend`] when `complexity` is above 10.
+    pub fn set_complexity(&mut self, complexity: u8) -> Result<(), OpusError> {
+        self.ctl_set(OPUS_SET_COMPLEXITY_REQUEST, i32::from(complexity))
+    }
+
+    /// Discontinuous transmission: silent input yields 1-2 byte packets.
+    ///
+    /// # Errors
+    ///
+    /// [`OpusError::Backend`] on a libopus failure.
+    pub fn set_dtx(&mut self, enabled: bool) -> Result<(), OpusError> {
+        self.ctl_set(OPUS_SET_DTX_REQUEST, i32::from(enabled))
+    }
+
+    /// Hint about the signal type (biases the SILK/CELT choice).
+    ///
+    /// # Errors
+    ///
+    /// [`OpusError::Backend`] on a libopus failure.
+    pub fn set_signal(&mut self, signal: OpusSignal) -> Result<(), OpusError> {
+        self.ctl_set(
+            OPUS_SET_SIGNAL_REQUEST,
+            match signal {
+                OpusSignal::Auto => OPUS_AUTO,
+                OpusSignal::Voice => OPUS_SIGNAL_VOICE,
+                OpusSignal::Music => OPUS_SIGNAL_MUSIC,
+            },
+        )
+    }
+
+    /// Cap the coded audio bandwidth (the encoder still picks anything at or below it).
+    ///
+    /// # Errors
+    ///
+    /// [`OpusError::Backend`] on a libopus failure.
+    pub fn set_max_bandwidth(&mut self, bandwidth: OpusBandwidth) -> Result<(), OpusError> {
+        self.ctl_set(
+            OPUS_SET_MAX_BANDWIDTH_REQUEST,
+            match bandwidth {
+                OpusBandwidth::Narrow => OPUS_BANDWIDTH_NARROWBAND,
+                OpusBandwidth::Medium => OPUS_BANDWIDTH_MEDIUMBAND,
+                OpusBandwidth::Wide => OPUS_BANDWIDTH_WIDEBAND,
+                OpusBandwidth::SuperWide => OPUS_BANDWIDTH_SUPERWIDEBAND,
+                OpusBandwidth::Full => OPUS_BANDWIDTH_FULLBAND,
+            },
+        )
+    }
+
+    /// Variable bitrate on/off (on is the libopus default).
+    ///
+    /// # Errors
+    ///
+    /// [`OpusError::Backend`] on a libopus failure.
+    pub fn set_vbr(&mut self, enabled: bool) -> Result<(), OpusError> {
+        self.ctl_set(OPUS_SET_VBR_REQUEST, i32::from(enabled))
+    }
+
+    /// In-band FEC (LBRR) on/off. Only voice-coded (SILK) frames carry it, and it needs
+    /// [`set_packet_loss_percent`](Self::set_packet_loss_percent) above 0 to be used.
+    ///
+    /// # Errors
+    ///
+    /// [`OpusError::Backend`] on a libopus failure.
+    pub fn set_inband_fec(&mut self, enabled: bool) -> Result<(), OpusError> {
+        self.ctl_set(OPUS_SET_INBAND_FEC_REQUEST, i32::from(enabled))
+    }
+
+    /// Expected packet loss in percent (`0..=100`): sizes the in-band FEC and tunes SILK.
+    ///
+    /// # Errors
+    ///
+    /// [`OpusError::Backend`] when `percent` is above 100.
+    pub fn set_packet_loss_percent(&mut self, percent: u8) -> Result<(), OpusError> {
+        self.ctl_set(OPUS_SET_PACKET_LOSS_PERC_REQUEST, i32::from(percent))
+    }
+
+    /// Algorithmic delay of the encoder in samples at the session's sample rate (the
+    /// look-ahead the listener hears on top of the frame length).
+    ///
+    /// # Errors
+    ///
+    /// [`OpusError::Backend`] on a libopus failure.
+    pub fn lookahead(&mut self) -> Result<u32, OpusError> {
+        Ok(u32::try_from(self.ctl_get(OPUS_GET_LOOKAHEAD_REQUEST)?).unwrap_or(0))
+    }
+
+    /// Whether the last encoded frame was a DTX (silence) frame.
+    ///
+    /// # Errors
+    ///
+    /// [`OpusError::Backend`] on a libopus failure.
+    pub fn in_dtx(&mut self) -> Result<bool, OpusError> {
+        Ok(self.ctl_get(OPUS_GET_IN_DTX_REQUEST)? != 0)
     }
 
     /// Signal end-of-input. `push_frame` always encodes and enqueues

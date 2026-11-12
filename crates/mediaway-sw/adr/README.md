@@ -4,6 +4,7 @@
 |----|-------|--------|
 | [0001](0001-h264-baseline-decoder-first.md) | Pure Rust codec scope — H.264 baseline decode first, sans-io bitstream boundary | Accepted |
 | [0002](0002-rav1e-av1-encode.md) | AV1 encode via `rav1e`, sans-io adapter around its `Context`/`Frame` API | Accepted |
+| [0004](0004-codec-feature-split.md) | Codec families behind cargo features; low-level Opus / APM block APIs | Accepted |
 
 Template: [`template.md`](template.md)
 

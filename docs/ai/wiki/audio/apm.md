@@ -71,3 +71,12 @@ See also: [pipeline/frame-filter-hook](../pipeline/frame-filter-hook.md) (the
 video-side precedent this design explicitly diverges from, with reasons) and
 [device/windows-audio](../device/windows-audio.md) (the capture stage this
 crate sits downstream of).
+
+## Low-level block API (sw ADR-0004, for real-time callers)
+
+- `AudioProcessor::push_render_block(&[f32])` / `process_capture_block(&[f32], &mut [f32])`:
+  interleaved `f32` in `[-1, 1]`, exactly one 10 ms block, 1 or 2 channels, no allocation, same
+  panic-safety (after a caught panic the output is the raw input). `statistics()` exposes ERLE,
+  echo return loss and the delay estimate (`ApmStats`).
+- `VoiceActivityDetector::analyze_block(&[f32])`: mono `f32`, scaling to i16 magnitude is internal.
+- Opus has matching `encode_float_into` / `decode_float_into` (PLC, FEC recovery) in `opus/`.

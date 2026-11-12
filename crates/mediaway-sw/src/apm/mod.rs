@@ -51,3 +51,7 @@ pub use sonora::Config as ApmConfig;
 /// not a custom abstraction over `sonora`).
 #[cfg(feature = "apm")]
 pub use sonora::config;
+
+/// `sonora`'s live statistics snapshot returned by [`AudioProcessor::statistics`].
+#[cfg(feature = "apm")]
+pub use sonora::AudioProcessingStats as ApmStats;

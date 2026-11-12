@@ -1,4 +1,8 @@
-//! Non-Linux host stubs.
+//! Host stubs: every backend off Linux, and on Linux the families whose crate feature
+//! (`audio` / `camera` / `desktop`) is disabled.
+
+// On Linux only the disabled families' stubs are re-exported, so the rest is unused there.
+#![cfg_attr(target_os = "linux", allow(dead_code, unreachable_pub))]
 
 use crate::audio::{AudioCapture, AudioCaptureConfig};
 use crate::desktop::{DesktopVideoCapture, DesktopVideoCaptureConfig};

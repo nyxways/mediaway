@@ -9,38 +9,38 @@
 #![cfg_attr(windows, allow(unsafe_code))]
 #![cfg_attr(not(windows), deny(unsafe_code))]
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "desktop"))]
 mod canvas;
-#[cfg(windows)]
+#[cfg(all(windows, feature = "desktop"))]
 mod capture_exclusion;
-#[cfg(windows)]
+#[cfg(all(windows, feature = "desktop"))]
 mod desktop_audio;
-#[cfg(windows)]
+#[cfg(all(windows, feature = "desktop"))]
 mod dxgi;
-#[cfg(windows)]
+#[cfg(all(windows, feature = "desktop"))]
 mod dxgi_exclusive;
-#[cfg(windows)]
+#[cfg(all(windows, feature = "desktop"))]
 mod dxgi_shared;
-#[cfg(windows)]
+#[cfg(all(windows, feature = "desktop"))]
 mod wgc;
 
 mod options;
 pub use options::{CaptureBorder, FrameDimensions, WindowCaptureOptions};
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "desktop"))]
 pub use canvas::{Canvas, CanvasFrame, CanvasPlacement};
-#[cfg(windows)]
+#[cfg(all(windows, feature = "desktop"))]
 pub use capture_exclusion::exclude_window_from_capture;
-#[cfg(windows)]
+#[cfg(all(windows, feature = "desktop"))]
 pub use desktop_audio::WindowsDesktopAudioCapture;
-#[cfg(windows)]
+#[cfg(all(windows, feature = "desktop"))]
 pub use dxgi::{WindowsScreenCapture, enumerate_outputs};
-#[cfg(windows)]
+#[cfg(all(windows, feature = "desktop"))]
 pub use wgc::WindowsWindowCapture;
 
-#[cfg(not(windows))]
+#[cfg(not(all(windows, feature = "desktop")))]
 mod host_stub;
-#[cfg(not(windows))]
+#[cfg(not(all(windows, feature = "desktop")))]
 pub use host_stub::{
     WindowsDesktopAudioCapture, WindowsScreenCapture, WindowsWindowCapture, enumerate_outputs,
     exclude_window_from_capture,
@@ -49,9 +49,9 @@ pub use host_stub::{
 /// Serializes tests that touch real hardware (DXGI/WGC). Mirrors
 /// [`crate::windows`]'s `HARDWARE_TEST_LOCK` — each hardware-touching module needs its own,
 /// since Rust's default test harness runs `#[test]`s concurrently on separate threads.
-#[cfg(all(test, windows))]
+#[cfg(all(test, windows, feature = "desktop"))]
 pub(crate) static HARDWARE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-#[cfg(all(test, windows))]
+#[cfg(all(test, windows, feature = "desktop"))]
 #[path = "lib_tests.rs"]
 mod tests;

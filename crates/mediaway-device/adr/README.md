@@ -11,6 +11,7 @@
 | [0007](0007-gpu-device-factory.md) | GPU device factory — adapter enumeration + configurable DirectX11 device creation | Accepted |
 | [0008](0008-cursor-capture-and-wgc-border.md) | Cursor capture as a config field; the WGC border as a Windows option | Accepted |
 | [0009](0009-capture-region.md) | Capture a region of the surface, cropped on the GPU or by the pool | Accepted (WGC) |
+| [0010](0010-backend-feature-families.md) | Backend families (`audio` / `camera` / `desktop`) behind cargo features | Accepted |
 
 Template: [`template.md`](template.md)
 

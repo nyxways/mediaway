@@ -13,9 +13,9 @@ authors.workspace = true
 [dependencies]
 mediaway-common = { workspace = true }
 thiserror = { workspace = true }
-rav1e = { workspace = true }
+rav1e = { workspace = true, optional = true }
 
-unsafe-libopus = { workspace = true }
+unsafe-libopus = { workspace = true, optional = true }
 
 sonora = { workspace = true, optional = true }
 sonora-agc2 = { workspace = true, optional = true }
@@ -27,7 +27,13 @@ workspace = true
 
 
 [features]
-default = []
+# Codec families. Defaults keep the pre-split behavior (every codec compiled); a consumer that
+# only needs one (e.g. a voice stack: `default-features = false, features = ["opus", "apm", "vad"]`)
+# skips the rest — notably `rav1e` (AV1). See adr/0004-codec-feature-split.md.
+default = ["av1", "h264", "opus"]
+av1 = ["dep:rav1e"]
+h264 = []
+opus = ["dep:unsafe-libopus"]
 apm = ["dep:sonora"]
 vad = ["dep:sonora-agc2", "dep:sonora-simd"]
-full = ["apm", "vad"]
+full = ["av1", "h264", "opus", "apm", "vad"]

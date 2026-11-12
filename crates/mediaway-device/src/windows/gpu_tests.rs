@@ -6,12 +6,17 @@
 )]
 
 use super::{GpuAdapterSelect, GpuDevice, GpuDeviceOptions, enumerate_gpu_adapters};
+// Only the real-capture test below needs these (it drives the `desktop` backend).
+#[cfg(feature = "desktop")]
 use crate::Select;
+#[cfg(feature = "desktop")]
 use crate::desktop::{
     CaptureOutputPreference, CaptureSharing, DesktopCaptureSource, DesktopVideoCapture,
     DesktopVideoCaptureConfig,
 };
+#[cfg(feature = "desktop")]
 use crate::windows_desktop::WindowsScreenCapture;
+#[cfg(feature = "desktop")]
 use mediaway_common::Rational;
 
 #[test]
@@ -97,6 +102,7 @@ fn create_default_and_explicit_index_devices_or_skip() {
 
 /// The real point of this factory: a device it creates must be genuinely usable by
 /// existing Zero-Copy capture code, not just structurally return a non-null handle.
+#[cfg(feature = "desktop")]
 #[test]
 fn created_device_drives_real_screen_capture_or_skip() {
     let _guard = crate::windows::HARDWARE_TEST_LOCK

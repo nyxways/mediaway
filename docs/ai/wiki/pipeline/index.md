@@ -15,3 +15,4 @@
 | [ffi-stream-aac-probe](ffi-stream-aac-probe.md) | C ABI 7: `poll_bytes` streaming (`finish` = unpolled tail), AAC decode (OS codec, host-dependent), costly capability probes (ADR-0007) |
 | [screen-record-av](screen-record-av.md) | Screen + mic → H.264 + AAC → two-track fMP4, via `EncodeSession::open_with_audio` |
 | [trim-and-splice](trim-and-splice.md) | Decode → trim → splice → re-encode; found the AVCC/Annex-B mux gap |
+| [live-h264](live-h264.md) | Live window share: NVENC H.264 from D3D11 textures (on-demand IDR, runtime bitrate) → DXVA decode via the inbox MFT; no HW H.264 decoder MFT exists on NVIDIA / Intel |

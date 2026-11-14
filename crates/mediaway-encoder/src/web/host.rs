@@ -8,8 +8,12 @@
 
 use wasm_bindgen::prelude::*;
 
-use crate::web::chunks::{EncodedAudioChunks, EncodedVideoChunks};
-use crate::web::config::{WebAudioOpenConfig, WebVideoOpenConfig};
+#[cfg(feature = "audio")]
+use crate::web::chunks::EncodedAudioChunks;
+use crate::web::chunks::EncodedVideoChunks;
+#[cfg(feature = "audio")]
+use crate::web::config::WebAudioOpenConfig;
+use crate::web::config::WebVideoOpenConfig;
 
 /// Host build: `WebCodecs` unavailable.
 #[cfg(all(feature = "audio", feature = "video"))]

@@ -14,6 +14,12 @@
 //! `cargo check --workspace`. Mirrors `mediaway-encoder-linux`'s
 //! `cfg(not(target_os = "linux"))` stub pattern.
 //!
+//! The real backend also needs the `quicksync` cargo feature (on by default). It is the
+//! only thing that pulls `vpl-sys`, whose build step runs `bindgen` and so needs libclang;
+//! with the feature off this module is the same `Unsupported` stub as off Windows, and
+//! [`crate::auto`] / `support()` report Quick Sync as not implemented
+//! ([ADR-0007](../../adr/0007-quicksync-feature.md)).
+//!
 //! Policy: [ADR-0001](../adr/0001-onevpl-quicksync-encode-surface.md) — binding
 //! choice (`vpl-sys`, hand-rolled `libloading` MVP dispatcher), scope, and the
 //! 2026-07-29 addendum documenting what was actually built/hardware-verified.
@@ -32,14 +38,14 @@ use crate::{VideoEncoder, VideoEncoderConfig};
 use mediaway_common::VideoFrame;
 use mediaway_common::{Bytes, Packet, StreamInfo};
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "quicksync"))]
 mod session;
 
 /// Quick Sync / Arc video encode session (oneVPL H.264 CPU-upload when opened on Windows).
 pub struct QuickSyncVideoEncoder {
-    #[cfg(windows)]
+    #[cfg(all(windows, feature = "quicksync"))]
     inner: Option<session::QuickSyncSession>,
-    #[cfg(not(windows))]
+    #[cfg(not(all(windows, feature = "quicksync")))]
     _priv: (),
 }
 
@@ -54,20 +60,21 @@ impl QuickSyncVideoEncoder {
     /// or [`EncodeError::Backend`] when no oneVPL runtime / Intel GPU
     /// implementation is available (expected on any host without the Intel
     /// graphics driver package installed — see this crate's `adr/0001`).
-    #[cfg(windows)]
+    #[cfg(all(windows, feature = "quicksync"))]
     pub fn open(config: &VideoEncoderConfig) -> Result<Self, EncodeError> {
         let inner = session::QuickSyncSession::open(config)?;
         Ok(Self { inner: Some(inner) })
     }
 
-    /// Host / non-Windows build: encoder unavailable.
-    #[cfg(not(windows))]
+    /// Non-Windows build, or the `quicksync` cargo feature is off (no `vpl-sys`, see
+    /// `adr/0007-quicksync-feature.md`): encoder unavailable.
+    #[cfg(not(all(windows, feature = "quicksync")))]
     pub const fn open(_config: &VideoEncoderConfig) -> Result<Self, EncodeError> {
         Err(EncodeError::Unsupported)
     }
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "quicksync"))]
 impl VideoEncoder for QuickSyncVideoEncoder {
     fn stream_info(&self) -> &StreamInfo {
         #[allow(
@@ -100,7 +107,7 @@ impl VideoEncoder for QuickSyncVideoEncoder {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(all(windows, feature = "quicksync")))]
 impl VideoEncoder for QuickSyncVideoEncoder {
     fn stream_info(&self) -> &StreamInfo {
         closed_stream_info()
@@ -134,6 +141,6 @@ fn closed_stream_info() -> &'static StreamInfo {
     })
 }
 
-#[cfg(all(test, windows))]
+#[cfg(all(test, windows, feature = "quicksync"))]
 #[path = "lib_tests.rs"]
 mod tests;

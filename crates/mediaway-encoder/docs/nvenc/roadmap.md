@@ -71,3 +71,39 @@ not a driver/hardware gap. Real output confirmed: HEVC Annex-B with an inline VP
 temporal-delimiter → sequence-header → frame OBU shape on the first packet. NVENC still has
 no VP9 encoder at all (VP9 is decode-only) — `validate()` rejects it; not a gap this axis will
 ever close.
+
+### 5 — Live H.264 (D3D11 Zero-Copy input, low latency) — 2026-11-15
+
+[ADR-0002](../../adr/nvenc/0002-live-h264-session.md): `nvenc::NvencLiveEncoder` over a
+hand-written NVENC SDK 13.0 subset (layouts pinned by `const` asserts).
+
+- [x] Caller D3D11 BGRA / RGBA / NV12 texture input, registered once (cache of 8), mapped per
+      frame — **zc** (no upload, no readback); NVENC converts RGB → YUV, VUI BT.709 limited
+- [x] H.264 High, P1..P7 (default P4), ultra-low / low-latency tuning, CBR, one-frame VBV,
+      no B-frames, no lookahead, zero reorder delay — one packet per pushed frame
+- [x] Infinite GOP + `request_keyframe()` (IDR with SPS/PPS); `set_bitrate()`
+      (`nvEncReconfigureEncoder`, no IDR); `resize()` (reset + IDR, up to `max_*`);
+      optional intra refresh with recovery-point SEI
+- [x] Hardware-verified on the RTX 4090 (driver 621.14): `nvenc::live::session::tests`
+      (keyframes on demand, bitrate change, resize, intra refresh) and `mediaway-decoder`'s
+      `tests/live_h264_roundtrip.rs` (decoded by the DXVA MFT, luma PSNR 47.1 dB vs a BT.709
+      reference, 28.2 dB vs BT.601)
+- [ ] D3D12 texture input (fence points); async mode; Linux
+
+**Latency, measured 2026-11-15** (`machine_id: ad-hoc` — Windows 11 build 26300, i9-13900K,
+64 GB, RTX 4090, driver 621.14; the GPU was shared with other work, `nvidia-smi` showed 96 %
+graphics utilization right after the runs). 1920 x 1080 BGRA, 60 fps paced (one frame per
+16.7 ms), 10 Mbps CBR, P4, ultra-low latency; 600 frames, first 60 not counted; screen-like
+synthetic picture with a moving block; release build. Path class **zc**.
+
+| Step | median | p95 |
+|------|--------|-----|
+| encode: `encode_d3d11` → packet (map, encode, bitstream lock waits for the GPU) | 3.0-3.4 ms | 7.6-8.1 ms |
+
+Range = three runs. Average packet 19.1 kB (9.2 Mbit/s). `oracle_ref`: N/A — `ffmpeg
+h264_nvenc` has no per-frame submit→packet timing to compare like for like.
+
+```bash
+cargo nextest run --release -p mediaway-decoder --test live_h264_roundtrip --run-ignored all \
+    -E 'test(live_latency)' --no-capture
+```

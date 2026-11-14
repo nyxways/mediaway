@@ -19,8 +19,12 @@ mod cpu;
 mod dx11;
 #[cfg(feature = "video")]
 mod h264;
+#[cfg(feature = "video")]
+pub mod live;
 #[cfg(feature = "audio")]
 pub mod opus;
+#[cfg(feature = "video")]
+mod readback;
 mod runtime;
 #[cfg(feature = "video")]
 mod shared;

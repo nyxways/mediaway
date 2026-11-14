@@ -11,7 +11,7 @@
   encode page also had **no** working Media Foundation decode HW MFT on either GPU
   (`DecodeError::Unsupported` on both NVIDIA RTX 4090 and Intel UHD 770) even though
   `ffmpeg h264_cuvid`/NVDEC decodes fine outside MF — `zc_wmf_h264_dx11` came back
-  N/A there, consistent with `open_dx11_zero_copy_or_skip`'s own graceful skip.
+  N/A there (graceful skip). GPU decode that works there: [live-h264](../pipeline/live-h264.md).
 
 ## CPU decode bug (found + fixed 2026-08-05)
 

@@ -45,6 +45,11 @@ pub use wmf::opus::{OpusDecoderConfig, WmfOpusDecoder};
 #[cfg(all(windows, feature = "audio"))]
 pub use wmf::aac::{AacDecoderConfig, WmfAacDecoder};
 
+/// Live H.264 GPU decode (DXVA through the inbox Media Foundation decoder, D3D11 NV12 out,
+/// loss recovery, optional NV12 readback) — see `adr/windows/0007-wmf-live-h264-decode.md`.
+#[cfg(all(windows, feature = "video"))]
+pub use wmf::live::{WmfLiveH264Config, WmfLiveH264Decoder};
+
 #[cfg(all(windows, any(feature = "video", feature = "audio")))]
 mod wmf;
 

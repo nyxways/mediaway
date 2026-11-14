@@ -8,6 +8,7 @@
 | [0004](0004-backend-preference.md) | Backend preference hierarchy (Auto/Os/Gpu/Sw) | Accepted |
 | [0005](0005-resolution-aware-capability-probe.md) | Resolution-aware encoder capability probe (`support_at`) | Accepted |
 | [0006](0006-finish-ends-a-stream.md) | `finish(self)` ends a stream; dropping discards what is in flight | Accepted |
+| [0007](0007-quicksync-feature.md) | Quick Sync (`vpl-sys`) behind a `quicksync` cargo feature | Accepted |
 
 Template: [`template.md`](template.md)
 

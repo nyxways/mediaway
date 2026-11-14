@@ -22,10 +22,6 @@ mediaway-sw = { workspace = true }
 # runtime — never a build-time link requirement. See adr/0001 (2026-07-29
 
 
-# oneVPL bindings only on Windows this stage: this crate must stay buildable
-# (as an honest `Unsupported` stub) on non-Windows hosts running
-# `cargo check --workspace` without pulling in `vpl-sys`'s `bindgen`/`libclang`
-# build step. Mirrors `mediaway-encoder-linux`'s `[target.'cfg(target_os = "linux")'.dependencies]`.
 iso-bmff = { workspace = true, features = ["full"] }
 bytes = { workspace = true }
 wasm-bindgen = { workspace = true }
@@ -66,7 +62,9 @@ windows = { workspace = true, features = [
     "Win32_System_Threading",
     "Win32_System_Variant",
 ] }
-vpl-sys = { workspace = true }
+# oneVPL bindings (Quick Sync). Windows only, and optional behind the `quicksync` feature:
+# `vpl-sys` runs `bindgen` at build time and so needs libclang. See adr/0007-quicksync-feature.md.
+vpl-sys = { workspace = true, optional = true }
 
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -175,7 +173,12 @@ web-sys = { workspace = true, features = [
 
 
 [features]
-default = ["full", "video"]
+# `quicksync`: the real Intel Quick Sync (oneVPL) backend on Windows. Pulls `vpl-sys`, whose
+# build needs libclang; off, `quicksync::QuickSyncVideoEncoder` is the `Unsupported` stub.
+# On by default (no behavior change); a consumer that wants no bindgen step uses
+# `default-features = false, features = ["video"]` (ADR-0007).
+default = ["full", "video", "quicksync"]
+quicksync = ["video", "dep:vpl-sys"]
 audio = []
 video = []
 full = ["audio", "video"]

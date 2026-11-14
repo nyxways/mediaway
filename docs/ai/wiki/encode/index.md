@@ -5,6 +5,7 @@
 | [scaffold](scaffold.md) | Facade traits + `auto`; Windows WMF/DX11 |
 | [auto](auto.md) | High-level auto encode · path classes · `mediaway-codec` |
 | [backend-preference](backend-preference.md) | Auto/Os/Cpu/Gpu(Graphics\|VendorHw)/Sw · README axes |
+| [feature-gates](feature-gates.md) | Cargo features `audio` / `video` / `quicksync`; NVENC-only consumer builds without libclang (ADR-0007) |
 | [async-mft](async-mft.md) | **Async vs sync encoder MFTs** — unlock/HaveOutput/interleave contract; the NVIDIA Zero-Copy bug (ADR-0012) |
 | [capability-probe](capability-probe.md) | `encoder_support{,_at}` · live probe · **support is resolution-dependent** (ADR-0005) |
 | [web-gpu-frame](web-gpu-frame.md) | Web: WebGPU-backed `VideoFrame` — no `GPUTexture` ctor, canvas path, honesty label |

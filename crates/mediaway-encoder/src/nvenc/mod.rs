@@ -35,6 +35,11 @@ use mediaway_common::{Bytes, Packet, StreamInfo};
 
 #[cfg(windows)]
 mod dx11;
+mod live;
+
+pub use live::{
+    IntraRefresh, NvencLatency, NvencLiveConfig, NvencLiveEncoder, NvencLiveInput, NvencPreset,
+};
 
 /// NVENC video encode session (H.264 / HEVC / AV1 CPU-upload when opened on Windows).
 pub struct NvencVideoEncoder {

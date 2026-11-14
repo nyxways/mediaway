@@ -88,7 +88,9 @@ impl From<DecodeError> for MediawayPipelineStatus {
     fn from(err: DecodeError) -> Self {
         match err {
             DecodeError::NoBackend => Self::NoBackend,
-            DecodeError::Unsupported => Self::Unsupported,
+            // No hardware decoder: the C ABI has no dedicated status; the stream is unsupported
+            // on this path.
+            DecodeError::Unsupported | DecodeError::NoHardwareDecoder => Self::Unsupported,
             DecodeError::InvalidInput => Self::InvalidInput,
             DecodeError::Backend => Self::DecoderBackendFailure,
             DecodeError::Closed => Self::DecoderClosed,

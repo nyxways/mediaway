@@ -165,7 +165,7 @@ fn drain_events(session: &mut Dx11Session) -> Result<(), DecodeError> {
     Ok(())
 }
 
-fn enable_multithread(device: &ID3D11Device) {
+pub(super) fn enable_multithread(device: &ID3D11Device) {
     if let Ok(mt) = device.cast::<ID3D11Multithread>() {
         unsafe {
             // Best-effort; decoding may still work if already protected.

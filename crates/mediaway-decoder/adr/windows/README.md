@@ -8,6 +8,7 @@
 | [0004](0004-d3d12-hevc-single-forward-ref-p-slice-decode.md) | D3D12 native HEVC decode — single-forward-reference P-slice, Main profile | Proposed |
 | [0005](0005-d3d12-av1-key-frame-decode.md) | D3D12 native AV1 decode — `KEY_FRAME`-only, Main profile | Proposed |
 | [0006](0006-wmf-aac-decode.md) | WMF AAC decode session (`CMSAACDecMFT`) | Accepted |
+| [0007](0007-wmf-live-h264-decode.md) | Live H.264 GPU decode through the inbox DXVA decoder MFT | Accepted |
 
 Template: copy from [`mediaway-decoder/adr/template.md`](../../mediaway-decoder/adr/template.md).
 

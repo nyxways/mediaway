@@ -323,3 +323,34 @@ CPU↔GPU query-poll stall per frame), not Zero-Copy.
       round-trip test fed the decoder straight from the encoder, so the container — the whole
       difference — was never in the loop.
 
+
+### 9 — Live H.264 GPU decode (ADR-0007) — 2026-11-15
+
+- [x] `WmfLiveH264Decoder` over the inbox **synchronous** "Microsoft H264 Video Decoder MFT"
+      with a D3D11 device manager = DXVA decode. (`MFT_ENUM_FLAG_HARDWARE` finds no H.264
+      decoder on the RTX 4090 or the UHD 770 — stage 1's path stays `Unsupported` there.)
+- [x] GPU decode is checked, not assumed: MFT-provided samples, DXGI-backed output, texture
+      bound `D3D11_BIND_DECODER`; otherwise `DecodeError::NoHardwareDecoder`
+- [x] `MF_LOW_LATENCY`: frame *n* is out right after packet *n* (B-frame-free stream)
+- [x] Loss: `reset()` (flush) + drop until the next IDR; gaps without a reset keep decoding
+- [x] Mid-stream size change (new SPS) → stream change → new NV12 output type, shown size
+      from the display aperture (1080 of 1088 rows)
+- [x] `read_nv12` into caller buffers via one reused staging texture (**readback**)
+- [x] Hardware-verified on the RTX 4090: `tests/live_h264_roundtrip.rs` (NVENC live encode →
+      this decoder, 1080p: IDR on demand, bitrate change, 3 lost P frames without reset,
+      5 lost + reset + 15 dropped until the IDR, 1080p → 720p resize, luma PSNR > 30 dB
+      checked, 47.1 dB measured)
+
+**Latency, measured 2026-11-15**, same conditions as `mediaway-encoder`'s
+`docs/nvenc/roadmap.md` stage 5 (`machine_id: ad-hoc`, RTX 4090 shared with other work,
+1080p60 paced, 10 Mbps, release, 540 counted frames, three runs); sender and receiver on two
+D3D11 devices of the same GPU.
+
+| Step (from `push_packet`) | Path class | median | p95 |
+|------|------|--------|-----|
+| frame returned by `poll_frame` (decode submitted) | zc | 0.30-0.33 ms | 0.45-0.48 ms |
+| GPU finished (D3D11 event query) | zc | 2.5-2.6 ms | 4.3-4.5 ms |
+| NV12 in CPU buffers (`read_nv12` returned) | readback | 4.7-5.3 ms | 9.0-9.8 ms |
+
+`oracle_ref`: N/A — no per-frame latency in an `ffmpeg` CLI run. Command: see the encoder
+roadmap, stage 5.

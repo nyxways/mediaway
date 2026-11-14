@@ -23,4 +23,8 @@ pub enum DecodeError {
     /// Session already finished or not open.
     #[error("decoder session closed")]
     Closed,
+    /// A hardware (GPU) decoder was required, but this machine has none that takes this
+    /// stream, so only software decode would work. Callers can fall back to a software path.
+    #[error("no hardware decoder available for this stream")]
+    NoHardwareDecoder,
 }

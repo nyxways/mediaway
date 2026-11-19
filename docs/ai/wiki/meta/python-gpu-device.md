@@ -8,7 +8,7 @@ handle (no way to construct a real one) and unconditionally raised
 `CaptureUnsupportedError`. `Window` capture keeps that same behavior — still
 genuinely unreachable, no native constructor this pass.
 
-## `_ffi.py` additions
+## `_ffi_pipeline.py` additions (`_ffi.py` re-exports it)
 
 `GpuAdapterInfo`/`GpuAdapterSelect`/`GpuDeviceOptions` `ctypes.Structure`s
 mirror `mediaway_gpu_adapter_info_t`/`_select_t`/`_options_t` exactly (owned
